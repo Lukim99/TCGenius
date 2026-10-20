@@ -7062,7 +7062,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         if (targetHpRatio <= .30) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + .18;
         if (targetHpRatio >= .70 || targetHpRatio <= .30) markSet('최후 통첩');
     }
-    if (targetHpRatio <= .60 && getEquippedNamed(user, '정복자의 최후통첩')) { extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + .20; markEquipment('정복자의 최후통첩'); }
+    if (targetHpRatio <= .60 && getEquippedNamed(user, '정복자의 최후통첩')) { extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stepValue('정복자의 최후통첩', .20, 0); markEquipment('정복자의 최후통첩'); }
     if (targetHpRatio <= .50 && stageOf('최후통첩 아머')) { extra.receivedDamageReduction = Number(extra.receivedDamageReduction || 0) + stepValue('최후통첩 아머', .10, .04); markEquipment('최후통첩 아머'); }
     if (targetHpRatio <= .30 && stageOf('최후통첩 트라우저')) { extra.pntBonus = Number(extra.pntBonus || 0) + stepValue('최후통첩 트라우저', 150, 40); markEquipment('최후통첩 트라우저'); }
     if (targetHpRatio <= .30 && stageOf('최후통첩 슈즈')) { extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + stepValue('최후통첩 슈즈', .20, .05); markEquipment('최후통첩 슈즈'); }
@@ -7084,7 +7084,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
     const mpRatio = Number(user.mp || 0) / Math.max(1, Number(stats.mp || 1));
     if (getEquippedPassiveIds(user).has(4) && mpRatio >= .75) markEquipment('마력 감응');
     if (stageOf('마나 증폭 장치')) {
-        if (mpRatio > .20) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.manaAmplifierFinalAtk || stepValue('마나 증폭 장치', .10, .06));
+        if (mpRatio > .20) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.manaAmplifierFinalAtk || (.10 + .06 * Math.max(0, stageOf('마나 증폭 장치') - 1))) * paradise.equipmentMultiplier(user, '마나 증폭 장치') / paradise.equipmentMultiplier(user, '마나 증폭 장치', 'static');
         if (mpRatio >= .50) extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + stepValue('마나 증폭 장치', .08, .04);
         if (mpRatio > .20) markEquipment('마나 증폭 장치');
     }
@@ -7130,7 +7130,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         ['마나번 로브', 'manaBurnElementBuff', .02, 'allElementAtk', stepValue('마나번 로브', 60, 10)],
         ['마나번 트라우저', 'manaBurnCritBuff', .02, 'critChanceBonus', stepValue('마나번 트라우저', .10, .02)],
         ['마나번 슈즈', 'manaBurnExtraBuff', .02, 'extraDamageBonus', stepValue('마나번 슈즈', .10, .03)],
-        ['현자의 마나번 로브', 'manaBurnElementBuff', .01, 'allElementAtk', 100]
+        ['현자의 마나번 로브', 'manaBurnElementBuff', .01, 'allElementAtk', stepValue('현자의 마나번 로브', 100, 0)]
     ];
     for (let unit = 0; unit < attackUnitCount; unit++) {
         if (Number(state.flowingBloodNext || 0) > 0) {
@@ -7332,13 +7332,15 @@ function applyCurrentSkillHitEquipment(user, skill, extra) {
     if (now < Number(state.currentShoesReadyAt || 0)) return;
     const cooldownEnd = Number(user.field.skillCooldowns && user.field.skillCooldowns[skill.name] || now);
     const remaining = Math.max(0, cooldownEnd - now);
-    const reduction = Math.min(5000, remaining * .08);
+    const passiveMultiplier = paradise.equipmentMultiplier(user, '해류를 거스르는 신발');
+    const reduction = Math.min(5000 * passiveMultiplier, remaining * .08 * passiveMultiplier);
     user.field.skillCooldowns[skill.name] = Math.max(now, cooldownEnd - reduction);
     const stats = calculateUserStats(user);
-    user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * .03)));
+    const recoveryRate = .03 * passiveMultiplier;
+    if (!isBlackCurtainHealingBlocked(user)) user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * recoveryRate)));
     if (extra) {
         extra.mpAfter = user.mp;
-        extra.notice = (extra.notice ? extra.notice + ' / ' : '') + '해류를 거스르는 신발: 쿨타임 ' + (reduction / 1000).toFixed(1) + '초 감소, MP 3% 회복';
+        extra.notice = (extra.notice ? extra.notice + ' / ' : '') + '해류를 거스르는 신발: 쿨타임 ' + (reduction / 1000).toFixed(1) + '초 감소' + (isBlackCurtainHealingBlocked(user) ? '' : ', MP ' + Number((recoveryRate * 100).toFixed(2)) + '% 회복');
         markTriggeredCombatEffect(extra, 'equipment', '해류를 거스르는 신발');
         markTriggeredCombatEffect(extra, 'combat', '쿨타임 감소');
         markTriggeredCombatEffect(extra, 'combat', 'MP 회복');
@@ -7483,10 +7485,14 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     const targetStats = enemy.mirror ? Object.assign({}, enemy, require('./pvp').getCorridorMirrorStats(enemy.mirror)) : enemy;
     const bonus = enemy.kind === 'normal' ? Number(stats.damageBonus || 0) + Number(slots.damageBonus || 0) : enemy.kind === 'elite' ? Number(stats.eliteDmg || 0) : Number(stats.bossDmg || 0);
     const raw = extra.precalculatedDamage ? Number(rawDamage) : Number(rawDamage) * (1 + bonus);
+    extra.paradiseEnemyHpBefore = enemy.hp;
+    paradise.prepareAttack(user, extra);
     const attackExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     const hit = calculateAttackHitResult(raw, Math.max(0, Number(targetStats.def || 0) - Number(stats.atkDefReduce || 0)), Number(extra.pnt ?? stats.pnt ?? 0) + Number(extra.pntBonus || 0), stats, slots, attackExtra, getCombatStats(targetStats));
     const multiplier = paradise.attackMultiplier(user, extra);
     hit.finalDamage = Math.max(0, Math.round(hit.finalDamage * multiplier));
+    if (multiplier !== 1) for (const detail of hit.hitDetails || []) detail.damage = Math.round(Number(detail.damage || 0) * multiplier);
+    paradise.modifyHit(user, extra, hit);
     if (enemy.mirror) {
         enemy.mirror.hp = enemy.hp;
         const result = require('./pvp').corridorMirrorHit(enemy.mirror, user, hit.finalDamage, extra);
@@ -7495,7 +7501,6 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         if (result.reflectedDamage) user.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, user.hp, Math.max(0, user.hp - result.reflectedDamage), Date.now()), stats.hp);
     }
     paradise.afterAttack(user, extra, hit);
-    if (multiplier !== 1) for (const detail of hit.hitDetails || []) detail.damage = Math.round(Number(detail.damage || 0) * multiplier);
     applyNmmStackGain(user, extra, hit); applyTenthAtkCounter(user, extra, hit);
     queueBlackShadow(user, extra, hit.finalDamage); recordFieldJudgmentDamage(user, attackExtra, hit.finalDamage);
     if (!enemy.mirror) enemy.hp = Math.max(0, enemy.hp - hit.finalDamage);
@@ -7828,8 +7833,8 @@ function prepareTranscendSkillEffects(user, skill, stats) {
     }
     if (state.judgeDiceBuff && now < Number(state.judgeDiceBuff.expiredAt || 0)) {
         const types = state.judgeDiceBuff.types || [state.judgeDiceBuff.type];
-        if (types.includes('crit')) result.extra.critChanceBonus = Number(result.extra.critChanceBonus || 0) + .30;
-        if (types.includes('critMul')) result.extra.critMulBonus = Number(result.extra.critMulBonus || 0) + .50;
+        if (types.includes('crit')) result.extra.critChanceBonus = Number(result.extra.critChanceBonus || 0) + value('심판의 주사위', .30, 0);
+        if (types.includes('critMul')) result.extra.critMulBonus = Number(result.extra.critMulBonus || 0) + value('심판의 주사위', .50, 0);
         markEquipment('심판의 주사위');
     }
     if (skill && skill.name == '자인' && found('궁택토')) { result.cooldownOverride = 0; markEquipment('궁택토'); }
@@ -7947,7 +7952,7 @@ function executeMainCardSkillInField(user, skillName) {
     user.mp = stats.kino ? 0 : mp - mpCost;
     if (user.field.paradise) {
         user.field.paradiseMpCeiling = user.mp;
-        paradise.onSkillUsed(user, stats.kino ? 0 : mpCost);
+        paradise.onSkillUsed(user, stats.kino ? 0 : mpCost, skillData.skill.name);
     }
     if (stats.kino) Object.assign(stats, calculateUserStats(user));
 

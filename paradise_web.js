@@ -5,8 +5,10 @@ const combatEffects = require('./public/combat-effects');
 function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getCharacterSprite, getMonsterSprite, getEquipmentIconUrl, getItemIconUrl, getCombatView }) {
     const weeklyRewards = require('./paradise_rewards');
     weeklyRewards.startWeeklyRewards();
-    const advanceMirror = async user => {
-        if (!rpgenius.advanceParadiseMirror(user)) return;
+    const advanceCombat = async user => {
+        const rebalanced = corridor.rebalanceEnemy(user);
+        const advanced = rpgenius.advanceParadiseMirror(user);
+        if (!rebalanced && !advanced) return;
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
         await rpgenius.commitProtectedUserChange(user, keys);
     };
@@ -37,7 +39,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             res.setHeader('Cache-Control', 'no-store');
             const view = await rpgenius.enqueueFieldAction(user, async () => {
                 const latest = await rpgenius.getRPGUserByName(req.session.name);
-                await advanceMirror(latest);
+                await advanceCombat(latest);
                 return state(latest);
             });
             res.json(view);
@@ -61,7 +63,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                 if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
                 const payload = await rpgenius.enqueueFieldAction(seed, async () => {
                     const user = await rpgenius.getRPGUserByName(req.session.name);
-                    await advanceMirror(user);
+                    await advanceCombat(user);
                     const receipt = user.paradiseReceipt;
                     if (receipt?.id === body.requestId) {
                         if (receipt.action !== action) return { error: '이미 다른 동작에 사용한 요청입니다.' };
@@ -96,6 +98,11 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                         }
                     }
                     if (result.error) return { ...result, state: state(user) };
+                    if (user.paradise.rewardReveal) {
+                        result.reveal ||= user.paradise.rewardReveal;
+                        result.message = [result.message, user.paradise.rewardReveal.text].filter(Boolean).join('\n');
+                        delete user.paradise.rewardReveal;
+                    }
                     user.paradise.revision++;
                     user.paradiseReceipt = { id: body.requestId, action, message: result.message || '완료', reveal: result.reveal || null };
                     // 입장권, 탐험 전이, 카드/재화 정산을 동일한 유저 문서에 조건부 저장한다.

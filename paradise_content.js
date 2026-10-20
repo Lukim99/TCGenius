@@ -9,6 +9,8 @@ const CATEGORIES = {
     cursedTreasure: 'reward', greed: 'reward', contract: 'reward'
 };
 const a = (id, name, floors, desc, effect, options = {}) => ({ id, name, floors, desc, effect, rarity: 'gold', category: CATEGORIES[id] || 'basic', ...options });
+const SILVER_EQUIPMENT = new Set(['bloodHat', 'foreshadow', 'foreshadowCrit', 'deepArmor', 'filter', 'blackShoes', 'flowingBlood', 'preview', 'underestimate', 'jinsai', 'fortunePouch', 'gungtaek', 'faultyBattery', 'kingNecklace', 'kingRing', 'blackPants', 'ultimatumArmor', 'ultimatumPants', 'bloodFlow', 'bloodyShoes']);
+const PRISMATIC_EQUIPMENT = new Set(['beginner', 'prism', 'dmc', 'coin', 'quattro', 'baseball', 'firstFist', 'elementBooster', 'skyHat', 'theKingmaker', 'sageRobe', 'conquerorHat', 'judgeDice', 'currentShoes']);
 const AUGMENTS = [
     a('lastStand', '최후의 저항', 8, 'HP 30% 이하일 때 최종 피해 +40%', { lastStand: 1 }),
     a('firstStrike', '첫 번째 일격', 10, '매 전투 첫 공격의 피해량 2배', { firstStrike: 1 }),
@@ -52,9 +54,59 @@ const AUGMENTS = [
         ['deepArmor', '심해의 갑옷', 5, 3, '스킬 사용 시 보호막 획득량', 2],
         ['deepHat', '심해의 모자', 6, 3, '스킬 사용 후 다음 일반 공격 피해 증가 효과', 2],
         ['monorail', '모노레일 타이머', 7, 3, '15초간 스킬 미사용 후 치명타 피해 증가 효과', 2],
-        ['coupled', '결합 타이머', 9, 3, '10초간 스킬 미사용 후 추가 피해 증가 효과', 2]
-    ].map(([id, equipment, floors, battles, label, multiplier]) => a(id, equipment + ' 강화', floors,
-        `다음 ${battles}회 전투에서 ${label} ${multiplier}배`, {}, { equipment, battles, multiplier })),
+        ['coupled', '결합 타이머', 9, 3, '10초간 스킬 미사용 후 추가 피해 증가 효과', 2],
+        ['manaRobe', '마나번 로브', 8, 3, 'MP 소모로 얻는 모든 속성 강화', 2],
+        ['manaPants', '마나번 트라우저', 8, 3, 'MP 소모로 얻는 치명타 확률 증가량', 2],
+        ['manaShoes', '마나번 슈즈', 8, 3, 'MP 소모로 얻는 추가 피해 증가량', 2],
+        ['ultimatumHat', '최후통첩 모자', 8, 3, 'HP 50% 이하 적 적중 시 공격력 증가량', 2],
+        ['ultimatumArmor', '최후통첩 아머', 5, 3, 'HP 50% 이하 적에게 받는 피해 감소량', 2],
+        ['ultimatumPants', '최후통첩 트라우저', 7, 3, 'HP 30% 이하 적에 대한 방어 관통 증가량', 2],
+        ['ultimatumShoes', '최후통첩 슈즈', 8, 3, 'HP 30% 이하 적에 대한 추가 피해 증가량', 2],
+        ['emberHat', '잿불 모자', 10, 3, '장비가 부여하는 화상 피해', 2],
+        ['blackShoes', '검은 잔향 신발', 6, 3, '스킬 사용 후 암속성 추가 피해 증가량', 2],
+        ['flowingBlood', '흐르는 피', -3, 2, 'HP 소모 후 다음 공격의 최종 피해 증가량', 2],
+        ['preview', '예고편', 5, 3, '적중 후 다음 공격의 최종 피해 증가량', 2],
+        ['dmc', 'DMC 마이크', 12, 3, '세 번째 스킬의 최종 피해 증가량', 2],
+        ['underestimate', '과소평가', -5, 2, '전투 시작 10초 후 공격력·치명타 피해 증가량', 2],
+        ['coin', '일레이나 전용 동전', 12, 3, '동전으로 얻는 수속성 강화·치명타 확률 증가량', 1.5],
+        ['prison', '감옥열쇠', 8, 3, '초과 치명타 확률의 스킬 피해 전환 비율', 2],
+        ['bamboo', '범부의 대나무', 10, 3, '진정한 범부의 공격력·스킬 추가 피해 증가량', 2],
+        ['jinsai', '진사이', -5, 2, 'HP 20% 이하에서 최종 피해 증가량', 2],
+        ['shieldClan', '강릉함씨 32대손', 8, 3, '보호막이 있을 때 공격력 증가량', 2],
+        ['rottenWater', '썩어버린 물', 8, 3, '썩은물 중첩의 스킬 공격력 증가량', 2],
+        ['fortunePouch', '행운의 복주머니', 6, 3, '골드 획득 효과 발동 후 추가 피해 증가량', 2],
+        ['settlementRing', '포상 정산 반지', 10, 3, 'HP·MP 비율 차이로 얻는 공격력·최종 피해 증가량', 2],
+        ['manaAmplifier', '마나 증폭 장치', 10, 3, 'MP 조건에 따른 공격력·추가 피해 증가량', 2],
+        ['gungtaek', '궁택토', 8, 3, '패시브의 스킬 피해 증가량', 2, true],
+        ['quattro', '콰트로 1악장', 15, 2, '패시브의 추가 피해·치명타 피해 증가량', 1.5, true],
+        ['dayNight', '낮과 밤의 경계', 10, 3, '화속성 강화·암속성 저항·치명타 확률 증가량', 1.5, true],
+        ['baseball', '야구공', 12, 2, '스킬 피해·최종 피해 증가량과 받는 피해 감소량', 1.5, true],
+        ['firstFist', '초심권', 12, 3, '궁극기 피해 증가량·궁극기 쿨타임 감소량', 1.5, true],
+        ['elementBooster', '엘리멘탈 부스터', 10, 3, '모든 속성 강화·저항과 속성 추가 피해 증가량', 1.5, true],
+        ['faultyBattery', '불량 배터리', 6, 3, '패시브의 스킬 피해 증가량', 2, true],
+        ['emberArmor', '잿불 갑옷', 8, 3, '패시브의 화속성 강화·저항 증가량', 1.5, true],
+        ['emberPants', '잿불 하의', 10, 3, '화상 피해·화상 지속시간 증가량', 2, true],
+        ['deepPants', '심해의 하의', 8, 3, '패시브의 수속성 강화·저항 증가량', 1.5, true],
+        ['skyArmor', '천공의 갑옷', 10, 3, '명속성 공격의 최종 피해 증가량', 2, true],
+        ['skyHat', '천공의 모자', 12, 3, '치명타 발생 시 명속성 추가 피해', 1.5, true],
+        ['skyPants', '천공의 하의', 8, 3, '비치명타 공격의 명속성 추가 피해', 2, true],
+        ['skyShoes', '천공의 신발', 8, 3, '패시브의 명속성 강화·저항 증가량', 1.5, true],
+        ['blackHat', '검은 잔향 모자', 8, 3, '패시브의 암속성 강화·저항 증가량', 1.5, true],
+        ['twelveTimer', '십이장기 타이머', 8, 3, '스킬 피해·치명타 확률 증가량', 2, true],
+        ['kingNecklace', '킹메이커 목걸이', 5, 3, '공격력 버프 효율 증가량', 2, true],
+        ['kingRing', '킹메이커 반지', 5, 3, '보호막 효율 증가량', 2, true],
+        ['theKingmaker', '더 킹메이커', 10, 3, '공격력 버프 효율·보호막 효율·모든 속성 저항 증가량', 1.5, true],
+        ['pantheon', '판테온 레거시', 8, 3, '방어 관통·스킬 피해 증가량', 2, true],
+        ['bloodFlow', '피의 흐름', 6, 3, '저체력일 때 받는 피해 감소량', 1.5, true],
+        ['bloodyShoes', '블러디 슈즈', 8, 3, 'HP 50% 이하에서 추가 피해 증가량', 2, true],
+        ['blackArmor', '검은 잔향 갑옷', 10, 3, '암속성 저항 증가량과 암속성 강화 전환 비율', 1.5, true],
+        ['blackPants', '검은 잔향 하의', 6, 3, 'HP 60% 이하에서 스킬 공격력 증가량', 2, true],
+        ['sageRobe', '현자의 마나번 로브', 12, 3, 'MP 소모로 얻는 모든 속성 강화', 2],
+        ['conquerorHat', '정복자의 최후통첩', 12, 3, 'HP 60% 이하 적에 대한 최종 피해 증가량', 2],
+        ['judgeDice', '심판의 주사위', 12, 3, '추첨으로 얻는 치명타 확률·치명타 피해 증가량', 1.5],
+        ['currentShoes', '해류를 거스르는 신발', 12, 3, '스킬 적중 시 쿨타임 감소 비율·상한과 MP 회복량', 1.5]
+    ].map(([id, equipment, floors, battles, label, multiplier, staticPassive = false]) => a(id, equipment + ' 강화', floors,
+        `다음 ${battles}회 전투에서 ${label} ${multiplier}배`, {}, { equipment, battles, multiplier, staticPassive, rarity: SILVER_EQUIPMENT.has(id) ? 'silver' : PRISMATIC_EQUIPMENT.has(id) ? 'prismatic' : 'gold' })),
     a('ironSkin', '천상의 갑주', 6, '방어력 +20%, 받는 피해 -5%', { def: .20, taken: -.05 }, { rarity: 'silver', category: 'defense' }),
     a('breath', '고요한 숨결', 5, '최대 MP +20%, 즉시 MP 20% 회복', { mp: .20 }, { special: 'breath', rarity: 'silver' }),
     a('pilgrim', '순례자의 축복', 8, '최대 HP +15%, 즉시 HP 15% 회복', { hp: .15 }, { special: 'pilgrim', rarity: 'silver' }),
@@ -62,7 +114,8 @@ const AUGMENTS = [
     a('clarity', '균열의 통찰', 5, '최종 피해 +10%, 뒤틀림 -10', { final: .10 }, { special: 'clarity' }),
     a('glass', '유리 날개', 30, '최종 피해 +35%, 최대 HP -20%', { final: .35, hp: -.20 }, { dangerous: true, rarity: 'cursed' }),
     a('rest', '길 잃은 별빛', -5, 'HP·MP 30% 회복', {}, { special: 'rest', rarity: 'silver' }),
-    ...require('./paradise_augments_extra')
+    ...require('./paradise_augments_extra'),
+    ...require('./paradise_augments_adventure')
 ];
 
 const RELICS = [

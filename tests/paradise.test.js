@@ -341,13 +341,13 @@ test('권장 전투력의 모든 기준층과 엘리트 1.2배가 실제 몬스�
         const actual = rpg.computeCombatPowerFromStats(normal);
         assert.equal(normal.recommendedPower, actual.total);
         assert.ok(Math.abs(actual.total - cp) <= 1, String(floor));
-        assert.ok(Math.abs(actual.defense / actual.total - .75) < .002, String(floor));
-        assert.ok(Math.abs(actual.offense / actual.total - .25) < .002, String(floor));
-        assert.ok(normal.def <= 132, 'HP 위주 성장');
+        assert.ok(normal.hp >= cp * .5 && normal.hp < cp * .51, 'HP는 전투력에 비례해 성장');
+        assert.ok(actual.offense > actual.defense, String(floor));
         assert.ok(Number.isSafeInteger(normal.hp));
         if (previous) {
             assert.ok(normal.atk > previous.atk);
             assert.ok(normal.hp > previous.hp);
+            assert.ok(normal.def > previous.def);
         }
         previous = normal;
         corridor.startCombat(user, 'elite', null, () => .99);
@@ -359,6 +359,52 @@ test('권장 전투력의 모든 기준층과 엘리트 1.2배가 실제 몬스�
     corridor.startCombat(user, 'elite', null, () => 0);
     assert.ok(user.paradise.enemy.traits.length);
     assert.equal(user.paradise.enemy.recommendedPower, rpg.computeCombatPowerFromStats(user.paradise.enemy).total);
+});
+
+test('13층 도박사의 과도한 HP를 낮추고 자체 전투력 15.6만을 유지한다', async () => {
+    const user = await reset(); corridor.enter(user, () => .99);
+    user.paradise.floor = 13; forceEvent(user, 'casino');
+    corridor.chooseEvent(user, 'attack', {}, () => .99);
+    const enemy = user.paradise.enemy;
+    assert.equal(enemy.name, '잊혀진 도박사');
+    assert.equal(rpg.computeCombatPowerFromStats(enemy).total, 156000);
+    assert.ok(enemy.maxHp >= 78000 && enemy.maxHp < 80000);
+    assert.ok(enemy.atk > 3500 && enemy.def > 14);
+});
+
+test('진행 중인 구형 전투는 HP 비율과 강화·진행 상태를 보존하여 한 번만 보정한다', async () => {
+    const user = await reset(); corridor.enter(user, () => .99);
+    user.paradise.floor = 13; user.paradise.distortion = 75;
+    user.paradise.nextEliteHp = true; user.paradise.nextEliteAttack = true;
+    user.paradise.relics.push('hourglass');
+    user.paradise.temporary.push({ id: 'collapse', battles: 3 });
+    corridor.startCombat(user, 'elite', { reward: 'casino' }, () => .99);
+    const expected = structuredClone(user.paradise.enemy), field = structuredClone(user.field);
+    const battle = structuredClone(user.paradise.battle), sequence = structuredClone(user.paradise.sequence);
+    Object.assign(user.paradise.enemy, { hp: 14408462, maxHp: 28816924, atk: 8000, def: 14 });
+    delete user.paradise.enemy.statVersion;
+    user.field.elite.hp = user.paradise.enemy.hp;
+    await user.save();
+    const beforeWrites = writes.length;
+    const first = await request('/api/paradise'), enemy = first.data.run.enemy;
+    assert.equal(first.status, 200);
+    assert.equal(enemy.maxHp, expected.maxHp); assert.equal(enemy.atk, expected.atk); assert.equal(enemy.def, expected.def);
+    assert.equal(enemy.hp, Math.round(enemy.maxHp * .5));
+    assert.deepEqual(enemy.traits, expected.traits); assert.equal(enemy.id, expected.id); assert.equal(enemy.name, expected.name);
+    const stored = persisted.get(account.id);
+    assert.deepEqual(stored.field, { ...field, elite: { ...field.elite, hp: enemy.hp } });
+    assert.deepEqual(stored.paradise.battle, battle); assert.deepEqual(stored.paradise.sequence, sequence);
+    assert.equal(writes.length, beforeWrites + 1);
+    assert.deepEqual((await request('/api/paradise')).data.run.enemy, enemy);
+    assert.equal(writes.length, beforeWrites + 1);
+    for (const type of ['hell', 'mirror', 'ended']) {
+        const copy = structuredClone(stored); delete copy.paradise.enemy.statVersion;
+        if (type === 'hell') copy.paradise.mode = 'hell';
+        if (type === 'mirror') copy.paradise.enemy.kind = 'mirror';
+        if (type === 'ended') copy.paradise.status = 'ended';
+        const before = structuredClone(copy);
+        assert.equal(corridor.rebalanceEnemy(copy), false); assert.deepEqual(copy, before);
+    }
 });
 
 test('황금 상자는 희귀 보상을 미리 노출하지 않고 실제 획득한 계약만 알려준다', async () => {
@@ -379,6 +425,44 @@ test('황금 상자는 희귀 보상을 미리 노출하지 않고 실제 획득
             corridor.claim(user); assert.equal(user.inventory.card.length, count);
         } else assert.equal(contract.bonus, 1);
     }
+});
+
+test('증강 도감은 새 등급·장착·유물·계약 조건을 모두 제공한다', async () => {
+    await reset();
+    const result = await request('/api/dex/augments');
+    assert.equal(result.status, 200);
+    assert.equal(result.data.augments.length, 193);
+    assert.equal(result.data.augments.filter(a => a.equipment).length, 72);
+    assert.match(result.data.augments.find(a => a.id === 'emptyHand').condition, /유물 3개/);
+    assert.match(result.data.augments.find(a => a.id === 'doubleSignature').condition, /계약/);
+    assert.equal(result.data.augments.find(a => a.id === 'sevenBells').rarity, 'prismatic');
+});
+
+test('계약 진행과 잭팟 결과는 재접속·중복 요청에도 한 번만 지급된다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = await reset(); corridor.enter(user, () => .99);
+    user.paradise.phase = 'augment'; user.paradise.choices = ['sevenBells']; await user.save();
+    let state = (await request('/api/paradise')).data;
+    const slotBody = { ...bodyFor(state), choice: 'sevenBells' };
+    const jackpot = await request('/api/paradise/augment', slotBody);
+    assert.match(jackpot.data.reveal.text, /7 · 7 · 7/);
+    assert.equal(jackpot.data.state.run.contracts[0].star, 9);
+    const repeated = await request('/api/paradise/augment', slotBody);
+    assert.deepEqual(repeated.data.reveal, jackpot.data.reveal);
+    assert.equal(repeated.data.state.run.contracts.length, 1);
+    const latest = await rpg.getRPGUserByName(account.name);
+    buff(latest, 'basicContract');
+    corridor.victory(latest, () => .99); corridor.nextEncounter(latest, () => .99);
+    latest.paradise.enemy.hp = 1; latest.paradise.enemy.atk = 0; await latest.save();
+    state = (await request('/api/paradise')).data;
+    assert.equal(state.run.quests[0].remaining, 1);
+    const attackBody = bodyFor(state), completed = await request('/api/paradise/attack', attackBody);
+    assert.equal(completed.status, 200);
+    assert.match(completed.data.reveal.text, /검 한 자루의 약속 · 계약 달성/);
+    assert.equal(completed.data.state.run.contracts.length, 2);
+    const retry = await request('/api/paradise/attack', attackBody);
+    assert.deepEqual(retry.data.reveal, completed.data.reveal); assert.equal(retry.data.state.run.contracts.length, 2);
+    assert.equal((await request('/api/paradise')).data.run.quests[0].status, 'completed');
 });
 test('실제 일반 공격으로 승리하면 세 강화가 나타나고 동일 선택을 재전송해도 중복 획득하지 않는다', async () => {
     let user = await reset(); corridor.enter(user, () => .99);
@@ -566,7 +650,7 @@ test('전투 사망 후에도 계약이 남고 다음 탐험에 회랑 강화가
 });
 
 test('추가 장비 전용 증강 15개도 유효 장착 장비만 제시하며 실제 공격/보호막 수치를 강화한다', async t => {
-    const additions = corridor.AUGMENTS.filter(a => a.equipment).slice(7);
+    const additions = corridor.AUGMENTS.filter(a => a.equipment).slice(7, 22);
     assert.equal(additions.length, 15);
     const user = await reset(); corridor.enter(user, () => .99);
     const offered = new Set();
