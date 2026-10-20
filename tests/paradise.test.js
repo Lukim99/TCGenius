@@ -125,6 +125,26 @@ test('낙원 전투는 필드 HUD 데이터와 중복 재생 없는 실제 타�
     assert.deepEqual(poll.data.run.combatEvents, first.data.state.run.combatEvents);
 });
 
+test('캐릭터 증강의 스킬 봉인과 무료 MP를 전투 HUD에 반영한다', async () => {
+    let user = await reset();
+    user.main_card = { id: 11, star: 9, type: '전직' };
+    corridor.enter(user); buff(user, 'solitaryIktae'); corridor.startCombat(user, 'normal'); await user.save();
+    const sealed = (await request('/api/paradise')).data;
+    assert.ok(sealed.battle.skills.length > 0);
+    assert.ok(sealed.battle.skills.every(skill => skill.disabledReason === '고독한 이익태로 스킬이 봉인되어 있습니다.'));
+
+    user = await reset();
+    user.main_card = { id: 10, star: 9, type: '전직' };
+    corridor.enter(user); buff(user, 'burstReprise'); corridor.startCombat(user, 'normal');
+    user.paradise.battle.characters = { freeBribe: true }; await user.save();
+    const free = (await request('/api/paradise')).data;
+    assert.equal(free.battle.skills.find(skill => skill.name === '비리').mpCost, 0);
+    assert.ok(free.battle.skills.every(skill => !skill.disabledReason));
+    user = await rpg.getRPGUserByName(account.name);
+    user.paradise.battle.characters.freeBribe = false; await user.save();
+    assert.ok((await request('/api/paradise')).data.battle.skills.find(skill => skill.name === '비리').mpCost > 0);
+});
+
 test('탐험 사망 시 바깥 HP는 보존하고 마지막 타격은 패배 사건으로 전달한다', async t => {
     const user = await reset(); const outsideHp = user.hp; corridor.enter(user); corridor.startCombat(user, 'judge');
     corridor.getResources(user).hp = 1; Object.assign(user.paradise.enemy, { hp: 100000000, maxHp: 100000000, atk: 100000000, pnt: 100000000 });
@@ -611,7 +631,7 @@ test('증강 도감은 모든 증강을 제공하되 등장 조건 안내를 노
     await reset();
     const result = await request('/api/dex/augments');
     assert.equal(result.status, 200);
-    assert.equal(result.data.augments.length, 193);
+    assert.equal(result.data.augments.length, 226);
     assert.equal(result.data.augments.filter(a => a.equipment).length, 72);
     assert.ok(result.data.augments.every(a => !Object.hasOwn(a, 'condition') && !a.desc.includes('등장')));
     assert.equal(result.data.augments.find(a => a.id === 'sevenBells').rarity, 'prismatic');

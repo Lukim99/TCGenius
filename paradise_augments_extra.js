@@ -51,7 +51,7 @@ module.exports = [
     a('stepTax', '계단의 통행료', 25, '탐험 종료 보상이 25% 증가하고 최대 HP가 15% 감소합니다.', { reward: .25, hp: -.15 }, 'reward', { dangerous: true, rarity: 'cursed' }),
     a('quietPilgrimage', '느린 순례', 3, '이후 전투에서 승리할 때마다 공격력이 3%씩 증가합니다. 최대 30%까지 증가합니다.', { victoryAtkGrowth: .03 }, 'exploration'),
     a('eliteDebt', '정예 사냥 계약', 10, '다음 전투에서 엘리트 몬스터와 조우합니다. 탐험 종료 보상이 25% 증가하고 받는 피해가 10% 증가합니다.', { reward: .25, taken: .10 }, 'reward', { dangerous: true, rarity: 'cursed', acquire: { forceElite: true } }),
-    a('relicSeeker', '유물 수집가의 짐', 8, '회랑 유물 하나를 즉시 획득합니다. 공격력이 15% 감소합니다.', { atk: -.15 }, 'exploration', { acquire: { relic: true } }),
+    a('relicSeeker', '유물 수집가의 짐', 8, '천상 유물 하나를 즉시 획득합니다. 공격력이 15% 감소합니다.', { atk: -.15 }, 'exploration', { acquire: { relic: true } }),
     a('splitBargain', '아픈 만큼 챙긴다', 15, '탐험 종료 보상이 40% 증가하고 받는 피해가 20% 증가합니다.', { reward: .40, taken: .20 }, 'reward', { dangerous: true, rarity: 'cursed' }),
     a('borrowedArmor', '빌려 입은 성갑', 18, '다음 3회 전투에서 받는 피해가 50% 감소합니다. 세 번 승리하면 갑옷이 사라지고 이후 받는 피해가 10% 증가합니다.', {}, 'defense', { acquire: { temporary: { battles: 3, effects: { taken: -.50 }, afterEffects: { taken: .10 } } } }),
     a('borrowedTomorrow', '내일의 나에게', 20, '다음 2회 전투에서 공격력이 60% 증가합니다. 두 번 승리한 뒤에는 이번 탐험 동안 공격력이 15% 감소합니다.', {}, 'risk', { dangerous: true, rarity: 'cursed', acquire: { temporary: { battles: 2, effects: { atk: .60 }, afterEffects: { atk: -.15 } } } }),

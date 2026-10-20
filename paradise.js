@@ -79,6 +79,11 @@ function equipmentMultiplier(user, name, scope = 'combat') {
 }
 function sumEffects(run) {
     const effects = { ...run.effects };
+    // 진행 중인 탐험의 구형 악마의 거래에도 같은 밸런스를 적용한다.
+    if (run.acquired.devil && effects.noHealing && !effects.devil) {
+        effects.atk = Number(effects.atk || 0) - .25;
+        effects.extraDamage = Number(effects.extraDamage || 0) + .666;
+    }
     for (const buff of run.temporary) if (buff.battles > 0) for (const [key, n] of Object.entries(buff.effects || {})) effects[key] = Number(effects[key] || 0) + n;
     if (has(run, 'redContract')) { effects.hp = Number(effects.hp || 0) - .20; effects.final = Number(effects.final || 0) + .20; }
     if (has(run, 'necklace')) effects.taken = Number(effects.taken || 0) + .15;
@@ -99,7 +104,7 @@ function applyStats(user, stats) {
     stats.takenDamage = Number(stats.takenDamage || 0) + Number(effects.taken || 0) + (missingHp >= .65 ? Number(effects.lowHpGuard || 0) : 0) - (effects.eclipse && run.distortion < 50 ? .10 : 0);
     stats.maxCmb = Number(stats.maxCmb || 0) + Number(effects.maxCmb || 0);
     stats.critMul = Number(stats.critMul || 0) + Number(run.focus || 0) + missingHp * Number(effects.woundedCrit || 0);
-    for (const key of ['crit', 'critMul', 'cmb', 'critDef', 'avd', 'mpReduce', 'eliteDmg', 'bossDmg', 'damageBonus']) stats[key] = Number(stats[key] || 0) + Number(effects[key] || 0);
+    for (const key of ['crit', 'critMul', 'cmb', 'critDef', 'avd', 'mpReduce', 'eliteDmg', 'bossDmg', 'damageBonus', 'extraDamage']) stats[key] = Number(stats[key] || 0) + Number(effects[key] || 0);
     for (const key of ['crit', 'cmb', 'critDef', 'avd']) stats[key] = Math.max(0, stats[key]);
     stats.critMul = Math.max(1, stats.critMul);
     stats.mpReduce = Math.max(-1, stats.mpReduce);
@@ -117,13 +122,9 @@ function clampResources(user) {
     resources.hp = clamp(Number(resources.hp), 1, stats.hp);
     resources.mp = clamp(Number(resources.mp), 0, stats.mp);
 }
-function addEffect(user, effects, copyable = true) {
+function addEffect(user, effects) {
     const run = user.paradise;
     for (const [key, n] of Object.entries(effects)) run.effects[key] = Number(run.effects[key] || 0) + n;
-    if (copyable) {
-        const copy = Object.fromEntries(Object.entries(effects).filter(([key, n]) => ['atk', 'def', 'hp', 'mp', 'final', 'maxCmb', 'taken', 'crit', 'critMul', 'cmb', 'critDef', 'avd', 'mpReduce', 'eliteDmg', 'bossDmg', 'damageBonus', 'cooldown'].includes(key) && (['taken', 'mpReduce', 'cooldown'].includes(key) ? n < 0 : n > 0)));
-        if (Object.keys(copy).length) run.lastStatBuff = copy;
-    }
     clampResources(user);
 }
 function move(user, floors, dangerous = false) {
@@ -143,14 +144,15 @@ function grantRelic(user, special, random = Math.random) {
     const relic = pick(pool, random);
     if (!has(run, relic.id)) run.relics.push(relic.id);
     clampResources(user);
-    log(run, '회랑 유물 획득 · ' + relic.name);
+    log(run, '천상 유물 획득 · ' + relic.name);
     return relic.name + ' 획득';
 }
 function obtainedAugment(run, id) { return !!run.acquired[id] || (run.discardedAugments || []).includes(id); }
 function ordinaryRelics(run) { return run.relics.filter(id => RELICS.some(r => r.id === id && !r.special) && !(id === 'feather' && run.featherUsed)); }
 function eligibleAugment(user, choice, equipped = equipmentOptions(user).map(e => e.name)) {
     const run = user.paradise;
-    return (!choice.equipment || equipped.includes(choice.equipment)) && (choice.special !== 'duplicate' || run.lastStatBuff)
+    return (!choice.equipment || equipped.includes(choice.equipment))
+        && (choice.character == null || require('./paradise_augments_characters').eligible(user, choice))
         && (!choice.requiresEquipment || equipped.length > 0)
         && (!choice.requiresRelics || ordinaryRelics(run).length >= choice.requiresRelics)
         && (!choice.requiresCardContract || run.contracts.some(c => c.star));
@@ -175,7 +177,7 @@ function offerAugments(user, random = Math.random) {
 }
 function continueExploration(user, random = Math.random) {
     const run = user.paradise;
-    if (run.phase !== 'augment' || run.choices.some(id => !obtainedAugment(run, id))) return { error: '먼저 증강을 선택해주세요.' };
+    if (run.phase !== 'augment' || run.choices.some(id => AUGMENTS.some(a => a.id === id) && !obtainedAugment(run, id))) return { error: '먼저 증강을 선택해주세요.' };
     move(user, 5); nextEncounter(user, random);
     return { message: '새로운 증강이 없어 5층을 올라갔습니다.' };
 }
@@ -262,7 +264,7 @@ function startCombat(user, kind = 'normal', sequence = null, random = Math.rando
     if (kind === 'mirror') {
         const baseUser = { ...user, field: null, paradise: null, hp: undefined, mp: undefined };
         const mirror = require('./pvp').createCorridorMirror(baseUser);
-        Object.assign(enemy, structuredClone(mirror.snapshot.stats), { kind, name: '거울 속의 ' + user.name, hp: mirror.hp, maxHp: mirror.maxHp, mp: mirror.mp, maxMp: mirror.maxMp, mirror, traits: ['회랑 강화·유물 없음 · HP·MP 100%'] });
+        Object.assign(enemy, structuredClone(mirror.snapshot.stats), { kind, name: '거울 속의 ' + user.name, hp: mirror.hp, maxHp: mirror.maxHp, mp: mirror.mp, maxMp: mirror.maxMp, mirror, traits: ['천상 증강·유물 없음 · HP·MP 100%'] });
         enemy.recommendedPower = rpg().calculateCombatPower(baseUser).total;
     }
     if (kind === 'elite' && run.nextEliteAttack) { enemy.atk = Math.round(enemy.atk * 1.5); run.nextEliteAttack = false; enemy.traits.push('저주받은 보물 · 공격력 +50%'); }
@@ -317,6 +319,7 @@ function chooseAugment(user, id, random = Math.random) {
     const run = user.paradise;
     if (run.phase !== 'augment' || !run.choices.includes(id) || obtainedAugment(run, id)) return { error: '현재 제시된 강화 중 하나를 선택해주세요.' };
     const choice = AUGMENTS.find(a => a.id === id);
+    if (!choice) return { error: '현재 제시된 증강 중 하나를 선택해주세요.' };
     let message = choice.name + ' 획득', reveal = null;
     if (choice.equipment && !equipmentOptions(user).some(e => e.name === choice.equipment)) return { error: '해당 장비가 장착되어 있지 않습니다.' };
     if (!eligibleAugment(user, choice)) return { error: '이 증강의 장착·유물·계약 조건을 더 이상 만족하지 않습니다.' };
@@ -324,7 +327,6 @@ function chooseAugment(user, id, random = Math.random) {
     switch (choice.special) {
         case 'future': run.temporary.push({ id, name: choice.name, battles: 3, effects: { atk: .50 }, forceEliteAfter: true }); break;
         case 'insurance': run.insurance = true; break;
-        case 'duplicate': addEffect(user, Object.fromEntries(Object.entries(run.lastStatBuff).map(([key, value]) => [key, value * .5]))); break;
         case 'forbidden': run.temporary.push({ id, name: choice.name, battles: 1, effects: { taken: .50 }, cooldown: .50 }); break;
         case 'rewind': heal(user, 1, 1); run.forceElite = true; break;
         case 'gambler': { const won = random() < .5; addEffect(user, { atk: won ? .30 : -.20 }); message = '회랑의 도박사 · ' + (won ? '성공!\n공격력 +30%' : '실패\n공격력 -20%'); break; }
@@ -415,9 +417,9 @@ function eventChoices(user) {
     const chance = has(user.paradise, 'dice') ? 10 : 0, equipment = event.equipment;
     const entries = {
         puzzle: [['solve', '봉인을 푼다', '제한 시간은 120초.\n성공하면 공격력 +10% 또는 최종 피해 +8%.\n10층을 오르고 뒤틀림이 10 줄어듭니다.\n실패하면 현재 HP가 15% 줄어듭니다.'], ['skip', '그냥 지나간다', '퍼즐을 건너뛰고 5층을 올라갑니다.']],
-        casino: [['safe', '안전한 도박', `성공 확률 ${70 + chance}%.\n성공하면 10층 이동, 공격력 +10%.\n실패하면 현재 HP -10%.`], ['risk', '위험한 도박', `성공 확률 ${30 + chance}%.\n성공하면 50층 이동, 공격력 +30%.\n실패하면 공격력 -15%.`], ['attack', '도박사를 공격한다', '엘리트 도박사와 싸웁니다.\n이기면 회랑 유물 하나를 얻습니다.']],
+        casino: [['safe', '안전한 도박', `성공 확률 ${70 + chance}%.\n성공하면 10층 이동, 공격력 +10%.\n실패하면 현재 HP -10%.`], ['risk', '위험한 도박', `성공 확률 ${30 + chance}%.\n성공하면 50층 이동, 공격력 +30%.\n실패하면 공격력 -15%.`], ['attack', '도박사를 공격한다', '엘리트 도박사와 싸웁니다.\n이기면 천상 유물 하나를 얻습니다.']],
         forge: [['enhance', '장비를 강화한다', `${equipment}\n다음 3번의 전투에서 패시브 수치가 2배.\n대신 다음 엘리트의 HP가 50% 늘어납니다.`], ['modify', '장비를 개조한다', `${equipment}\n이번 탐험 동안 패시브 수치 +20%.\n대신 최대 HP가 15% 줄어듭니다.`], ['skip', '거절한다', '5층을 올라갑니다.\n최대 HP의 10%를 회복합니다.']],
-        mirror: [['fight', '거울을 부순다', '장비와 모든 기술을 복제한 자신과 싸웁니다.\n복제본에게는 회랑 강화와 유물이 없습니다.\n승리하면 공격력 +20%, 종료 보상 +30%.'], ['trade', '거울 속 자신과 거래한다', '지금까지 얻은 강화·저주·유물을 모두 버립니다.\n대신 종료 보상이 40% 늘어납니다.\n이미 맺은 보상 계약은 유지됩니다.'], ['skip', '거울을 무시한다', '거울을 지나 5층을 올라갑니다.']],
+        mirror: [['fight', '거울을 부순다', '장비와 모든 기술을 복제한 자신과 싸웁니다.\n복제본에게는 천상 증강과 유물이 없습니다.\n승리하면 공격력 +20%, 종료 보상 +30%.'], ['trade', '거울 속 자신과 거래한다', '지금까지 얻은 강화·저주·유물을 모두 버립니다.\n대신 종료 보상이 40% 늘어납니다.\n이미 맺은 보상 계약은 유지됩니다.'], ['skip', '거울을 무시한다', '거울을 지나 5층을 올라갑니다.']],
         chests: [['red', '붉은 상자', '공격력을 키울 기회.\n공격 관련 강화가 나올 확률이 높습니다.'], ['blue', '푸른 상자', '몸을 지키고 회복할 기회.\n방어·회복 강화가 나올 확률이 높습니다.'], ['gold', '황금 상자', '진귀한 보물이 잠들어 있을지도 모릅니다.\n하지만 강한 저주가 따라올 수 있습니다.']],
         judge: [['three', '세 번의 시련', '일반 몬스터 3마리와 연속으로 싸웁니다.\n모두 이기면 공격력 +15%.'], ['elite', '정예의 시련', '엘리트 몬스터 한 마리와 싸웁니다.\n이기면 공격력 +25%.'], ['boss', '심판자에게 도전한다', '매우 강력한 심판자와 싸웁니다.\n승리하면 최종 피해 +35%, 종료 보상 +50%의 유물.\n8성 전직 카드 계약도 얻습니다.']],
         well: [['blood', '피를 바친다', '최대 HP를 20% 바칩니다.\n공격력이 30% 늘고 뒤틀림이 10 쌓입니다.'], ['drink', '우물의 물을 마신다', 'HP와 MP를 모두 회복합니다.\n대신 다음 2번의 전투에서 받는 피해 +20%.'], ['destroy', '우물을 파괴한다', '일반 몬스터 2마리와 연속으로 싸웁니다.\n모두 이기면 최대 HP +10%.']],
@@ -448,21 +450,21 @@ function chooseEvent(user, id, input = {}, random = Math.random) {
                 outcomePositive = won;
                 if (won) { move(user, id === 'safe' ? 10 : 50); addEffect(user, { atk: id === 'safe' ? .10 : .30 }); }
                 else if (id === 'safe') resources.hp = Math.max(1, Math.floor(resources.hp * .9));
-                else addEffect(user, { atk: -.15 }, false);
+                else addEffect(user, { atk: -.15 });
                 message = won ? `도박 성공!\n${id === 'safe' ? '+10층 · 공격력 +10%' : '+50층 · 공격력 +30%'}` : `도박 실패\n${id === 'safe' ? '현재 HP -10%' : '공격력 -15%'}`;
             }
             break;
         case 'forge':
             if (id !== 'skip' && !equipmentOptions(user).some(e => e.name === event.equipment)) return { error: '강화 가능한 장비를 더 이상 장착하고 있지 않습니다.' };
             if (id === 'enhance') { run.temporary.push({ id: 'forge', name: event.equipment + ' · 대장장이 강화', equipment: event.equipment, battles: 3, multiplier: 2 }); run.nextEliteHp = true; }
-            else if (id === 'modify') { run.equipmentPermanent[event.equipment] = Number(run.equipmentPermanent[event.equipment] || 0) + .20; addEffect(user, { hp: -.15 }, false); }
+            else if (id === 'modify') { run.equipmentPermanent[event.equipment] = Number(run.equipmentPermanent[event.equipment] || 0) + .20; addEffect(user, { hp: -.15 }); }
             else { move(user, 5); heal(user, .10); }
             break;
         case 'mirror':
             if (id === 'fight') battle('mirror', 1, 'mirror');
             else if (id === 'trade') {
                 run.discardedAugments = [...new Set([...(run.discardedAugments || []), ...Object.keys(run.acquired)])];
-                run.effects = {}; run.relics = []; run.temporary = []; run.quests = []; run.equipmentPermanent = {}; run.acquired = {}; run.lastStatBuff = null; run.compass = 0; run.ring = 0; run.focus = 0; run.insurance = false; run.forceElite = false; run.nextEliteAttack = false; run.nextEliteHp = false;
+                run.effects = {}; run.relics = []; run.temporary = []; run.quests = []; run.equipmentPermanent = {}; run.acquired = {}; run.compass = 0; run.ring = 0; run.focus = 0; run.insurance = false; run.forceElite = false; run.nextEliteAttack = false; run.nextEliteHp = false;
                 run.contracts.push({ bonus: .40, name: '거울과의 거래 · 종료 보상 +40%' }); clampResources(user);
             } else move(user, 5);
             break;
@@ -479,7 +481,7 @@ function chooseEvent(user, id, input = {}, random = Math.random) {
             }
             else if (id === 'gold' && roll < .42 + key) { const relic = grantRelic(user, null, random); addEffect(user, { atk: .25 }); message = '황금 상자 개봉\n' + relic + '\n공격력 +25%'; }
             else if (id === 'gold' && run.effects.goldAmnesty) message = '황금 방의 보호가 발동했습니다!\n' + grantRelic(user, null, random);
-            else if (id === 'gold') { outcomePositive = false; addEffect(user, { taken: .15 }, false); run.distortion = clamp(run.distortion + 15, 0, 100); message = '저주가 스며듭니다. 받는 피해 +15%, 뒤틀림 +15.'; }
+            else if (id === 'gold') { outcomePositive = false; addEffect(user, { taken: .15 }); run.distortion = clamp(run.distortion + 15, 0, 100); message = '저주가 스며듭니다. 받는 피해 +15%, 뒤틀림 +15.'; }
             else {
                 const defensive = id === 'blue' ? roll < .8 + key : roll >= .8 + key;
                 if (defensive) { const buff = pick([{ hp: .15 }, { def: .20 }], random); addEffect(user, buff); heal(user, .20, .20); message = '방어의 축복\n' + (buff.hp ? '최대 HP +15%' : '방어력 +20%') + '\nHP·MP 20% 회복'; }
@@ -530,6 +532,8 @@ function grantAdventureReward(user, reward, random = Math.random) {
         user.paradise.contracts.push(contract); lines.push(contract.name + ' 계약 획득');
     }
     for (let i = 0; i < Number(reward.relics || 0); i++) lines.push(grantRelic(user, null, random));
+    if (reward.atk) { addEffect(user, { atk: reward.atk }); lines.push(`공격력 +${Math.round(reward.atk * 100)}%`); }
+    if (reward.heal) { heal(user, 1, 1); lines.push(user.paradise.effects.noHealing ? '회복 봉쇄' : 'HP·MP 전부 회복'); }
     if (reward.restore) { heal(user, 1, 1); user.paradise.distortion = Math.max(0, user.paradise.distortion - 30); lines.push(user.paradise.effects.noHealing ? '회복 봉쇄 · 뒤틀림 -30' : 'HP·MP 전부 회복 · 뒤틀림 -30'); }
     return lines.join('\n');
 }
@@ -548,7 +552,8 @@ function resolveQuests(user, random) {
         quest.progress += quest.condition === 'criticals' ? Number(run.battle.criticalHits || 0) : quest.condition === 'untouched' ? (run.battle.hasTakenHpDamage ? 0 : 1) : 1;
         if (quest.remaining <= 0) {
             const success = quest.progress >= (quest.target || quest.battles);
-            questResult(run, quest, success, success ? grantAdventureReward(user, quest.reward, random) : '');
+            const reward = ['duelistContract', 'deathHandshake'].includes(quest.id) ? AUGMENTS.find(a => a.id === quest.id).quest.reward : quest.reward;
+            questResult(run, quest, success, success ? grantAdventureReward(user, reward, random) : '');
         } else if (quest.forceElite) run.forceElite = true;
     }
 }
@@ -708,6 +713,8 @@ function onDamageTaken(user, lostHp) {
 function survive(user, nextHp, maxHp) {
     const run = user.paradise;
     if (nextHp > 0) return nextHp;
+    const characterHp = require('./paradise_augments_characters').survive(user, nextHp, maxHp);
+    if (characterHp > 0) return characterHp;
     if (run.effects.unyielding && !run.battle.survived) { run.battle.survived = true; log(run, '불굴의 의지 · HP 1로 생존'); return 1; }
     if (run.battle.insurance) { run.battle.insurance = false; log(run, '회랑의 보험 발동'); return run.effects.noHealing ? 1 : Math.max(1, Math.round(maxHp * .30)); }
     if (has(run, 'feather') && !run.featherUsed) { run.featherUsed = true; log(run, '불사의 깃털 발동'); return run.effects.noHealing ? 1 : Math.max(1, Math.round(maxHp * .30)); }
@@ -737,7 +744,7 @@ function victory(user, random = Math.random) {
         buff.battles--;
         if (!buff.battles && buff.forceEliteAfter) run.forceElite = true;
         if (!buff.battles && buff.rewardAfter) { run.effects.reward = Number(run.effects.reward || 0) + buff.rewardAfter; log(run, buff.name + ' 달성 · 종료 보상 +' + Math.round(buff.rewardAfter * 100) + '%'); }
-        if (!buff.battles && buff.afterEffects) { addEffect(user, buff.afterEffects, false); log(run, buff.name + ' · 빌린 힘의 대가가 적용됩니다.'); }
+        if (!buff.battles && buff.afterEffects) { addEffect(user, buff.afterEffects); log(run, buff.name + ' · 빌린 힘의 대가가 적용됩니다.'); }
     }
     run.temporary = run.temporary.filter(buff => buff.battles > 0);
     run.relics = run.relics.filter(id => id !== 'hourglass');
@@ -761,7 +768,7 @@ function victory(user, random = Math.random) {
             case 'well': addEffect(user, { hp: .10 * units }); break;
         }
     } else if (elite) {
-        // 일반 엘리트도 회랑 유물을 지급한다. 목걸이/붕괴의 두 배는 실제 지급에 반영한다.
+        // 일반 엘리트도 천상 유물을 지급한다. 목걸이/붕괴의 두 배는 실제 지급에 반영한다.
         for (let i = 0; i < units; i++) if (random() < .35) grantRelic(user, null, random);
     }
     if (enemy.kind === 'final') { finish(user, 'cleared'); return; }
@@ -841,9 +848,9 @@ function view(user) {
     if (!run) return require('./paradise_hell').decorateView(result, user);
     const { mirror, ...enemy } = run.enemy || {};
     result.run = { id: run.id, status: run.status, phase: run.phase, floor: run.floor, clearedFloor: run.clearedFloor, distortion: run.distortion, outcome: run.outcome || null, claimed: !!run.claimed, battlesWon: run.battlesWon, elitesWon: run.elitesWon, enemy: run.phase === 'combat' ? enemy : null,
-        choices: run.phase === 'augment' ? run.choices.filter(id => !obtainedAugment(run, id)).map(id => AUGMENTS.find(a => a.id === id)).map(({ id, name, desc, floors, rarity, category, equipment, dangerous }) => ({ id, name, desc, floors, rarity, category, equipment, dangerous: !!dangerous })) : [],
+        choices: run.phase === 'augment' ? run.choices.filter(id => !obtainedAugment(run, id)).map(id => AUGMENTS.find(a => a.id === id)).filter(Boolean).map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous }) => ({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous })) : [],
         event: run.event ? { id: run.event.id, ...EVENTS[run.event.id], equipment: run.event.equipment || null, choices: run.phase === 'event' ? eventChoices(user) : [], ...(run.phase === 'puzzle' ? { puzzle: run.event.puzzle.publicPuzzle, deadline: run.event.deadline } : {}) } : null,
-        relics: run.relics.map(id => ({ ...RELICS.find(r => r.id === id), spent: id === 'feather' && !!run.featherUsed })), effects: Object.entries(run.acquired).map(([id, count]) => ({ ...AUGMENTS.find(a => a.id === id), count })), permanentEffects: sumEffects(run), temporary: run.temporary.filter(buff => !buff.equipment || EQUIPMENT_AUGMENTS.get(buff.equipment)?.id !== buff.id).map(({ name, battles }) => ({ name, battles })), equipmentPermanent: run.equipmentPermanent,
+        relics: run.relics.map(id => ({ ...RELICS.find(r => r.id === id), spent: id === 'feather' && !!run.featherUsed })), effects: Object.entries(run.acquired).filter(([id]) => AUGMENTS.some(a => a.id === id)).map(([id, count]) => ({ ...AUGMENTS.find(a => a.id === id), count })), permanentEffects: sumEffects(run), temporary: run.temporary.filter(buff => !buff.equipment || EQUIPMENT_AUGMENTS.get(buff.equipment)?.id !== buff.id).map(({ name, battles }) => ({ name, battles })), equipmentPermanent: run.equipmentPermanent,
         contracts: run.contracts, quests: (run.quests || []).map(q => ({ name: q.name, remaining: q.remaining, progress: q.progress, target: q.target || q.battles, status: q.status })), history: run.history.slice(0, 20), lastOutcome: run.lastOutcome || null, rewards: previewRewards(run), rewardBonus: run.rewardBonus || 0, nextActionAt: Number(user.field?.nextActionAt || 0),
         rewardSummary: run.mode === 'hell' ? [] : claimedRewards(run),
         skills: rpg().getMainCardSkills(user).map(({ skill }) => ({ name: skill.name, cost: skill.mp_cost, cooldownEnd: Number(user.field?.skillCooldowns?.[skill.name] || 0) })) };

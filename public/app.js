@@ -8196,18 +8196,18 @@ function dexAugmentCard(entry) {
         el('div', { class: 'dex-augment-head' },
             el('h3', null, entry.name),
             el('span', { class: 'dex-augment-floors' + (entry.floors < 0 ? ' descending' : '') }, (entry.floors > 0 ? '+' : '') + entry.floors + '층')),
-        el('div', { class: 'dex-augment-meta' }, [AUGMENT_RARITIES[entry.rarity], AUGMENT_CATEGORIES[entry.category], entry.equipment ? '장착 전용' : null].filter(Boolean).join(' · ')),
+        el('div', { class: 'dex-augment-meta' }, [AUGMENT_RARITIES[entry.rarity], AUGMENT_CATEGORIES[entry.category], entry.equipment ? '장착 전용' : entry.characterName ? entry.characterName + ' 전용' : null].filter(Boolean).join(' · ')),
         el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc))
     );
 }
 
 function renderAugmentDex(grid) {
-    const toolbar = dexCollection(grid, augmentDexState, [['all', '전체'], ['common', '공통'], ['equipment', '장착 전용']], '증강 이름 · 효과 · 장비 검색', list => {
+    const toolbar = dexCollection(grid, augmentDexState, [['all', '전체'], ['common', '공통'], ['equipment', '장착 전용'], ['character', '카드 전용']], '증강 이름 · 효과 · 장비 · 캐릭터 검색', list => {
         list.className = 'dex-augment-grid';
         const query = augmentDexState.search.trim().toLocaleLowerCase();
         const entries = (augmentDexData.augments || []).filter(entry =>
-            [entry.name, entry.desc, entry.equipment || '', AUGMENT_CATEGORIES[entry.category] || ''].join(' ').toLocaleLowerCase().includes(query)
-            && (augmentDexState.filter === 'all' || (augmentDexState.filter === 'equipment' ? entry.equipment : !entry.equipment))
+            [entry.name, entry.desc, entry.equipment || '', entry.characterName || '', AUGMENT_CATEGORIES[entry.category] || ''].join(' ').toLocaleLowerCase().includes(query)
+            && (augmentDexState.filter === 'all' || (augmentDexState.filter === 'equipment' ? entry.equipment : augmentDexState.filter === 'character' ? entry.character != null : !entry.equipment && entry.character == null))
             && (augmentDexState.category === 'all' || entry.category === augmentDexState.category));
         list.replaceChildren(...(entries.length ? entries.map(dexAugmentCard) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
         return entries.length;

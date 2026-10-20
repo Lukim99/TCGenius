@@ -33,11 +33,21 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         if (view.run?.enemy) view.run.enemy.sprite = view.run.enemy.kind === 'mirror' ? view.player.sprite : getMonsterSprite(view.run.enemy);
         if (view.run) view.run.combatLog = user.paradise.combatLog || [];
         if (view.run) view.run.combatEvents = user.paradise.combatEvents || [];
-        if (view.run?.phase === 'combat') view.battle = getCombatView(user);
+        if (view.run?.phase === 'combat') {
+            view.battle = getCombatView(user);
+            const characters = require('./paradise_augments_characters'), blocked = characters.skillBlocked(user);
+            for (const skill of view.battle.skills) {
+                if (blocked) skill.disabledReason = blocked;
+                if (characters.freeSkill(user, skill.name)) skill.mpCost = 0;
+            }
+        }
         if (view.run?.rewardSummary) view.run.rewardSummary = view.run.rewardSummary.map(reward => rewardView(reward, user));
-        if (view.run) for (const choice of view.run.choices) if (choice.equipment) {
-            const equipped = rpgenius.getEquippedEquipmentData(user).find(e => e.data.name === choice.equipment);
-            if (equipped) choice.iconUrl = getEquipmentIconUrl(equipped.data);
+        if (view.run) for (const choice of view.run.choices) {
+            if (choice.character != null) choice.iconUrl = view.player.sprite;
+            if (choice.equipment) {
+                const equipped = rpgenius.getEquippedEquipmentData(user).find(e => e.data.name === choice.equipment);
+                if (equipped) choice.iconUrl = getEquipmentIconUrl(equipped.data);
+            }
         }
         return view;
     };

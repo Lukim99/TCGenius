@@ -5,7 +5,7 @@ const CATEGORIES = {
     manaCycle: 'recovery', thirst: 'recovery', breath: 'recovery', pilgrim: 'recovery', rest: 'recovery',
     focus: 'critical', dice: 'critical', encore: 'critical', dropout: 'critical', charm: 'critical', foreshadowCrit: 'critical', monorail: 'critical',
     combo: 'combo', staff: 'skill', shoes: 'skill', filter: 'skill',
-    duplicate: 'exploration', rewind: 'exploration', clarity: 'exploration',
+    rewind: 'exploration', clarity: 'exploration',
     cursedTreasure: 'reward', greed: 'reward', contract: 'reward'
 };
 const a = (id, name, floors, desc, effect, options = {}) => ({ id, name, floors, desc, effect, rarity: 'gold', category: CATEGORIES[id] || 'basic', ...options });
@@ -24,8 +24,7 @@ const AUGMENTS = [
     a('comeback', '역전의 용사', 5, '받은 피해가 최대 HP의 10%에 이를 때마다 다음 공격의 피해가 5%씩 증가합니다. 최대 30%까지 증가합니다.', { comeback: 1 }),
     a('future', '미래의 대가', -10, '다음 3회 전투에서 공격력이 50% 증가합니다. 이후 엘리트 몬스터와 조우합니다.', {}, { special: 'future', dangerous: true, rarity: 'cursed' }),
     a('insurance', '회랑의 보험', 12, '다음 전투에서 사망하면 한 번에 한해 최대 HP의 30%로 부활합니다.', {}, { special: 'insurance' }),
-    a('duplicate', '복제된 축복', 15, '직전에 획득한 능력치 강화 효과의 50%를 추가로 획득합니다.', {}, { special: 'duplicate', rarity: 'prismatic' }),
-    a('devil', '악마의 거래', 20, '공격력이 25% 증가합니다. 이후 HP와 MP를 포함한 모든 회복 효과를 무효화합니다.', { atk: .25, noHealing: 1 }, { dangerous: true, rarity: 'cursed' }),
+    a('devil', '악마의 거래', 20, '추가 피해가 66.6% 증가합니다. 이후 HP와 MP를 포함한 모든 회복 효과를 무효화합니다.', { extraDamage: .666, noHealing: 1, devil: 1 }, { dangerous: true, rarity: 'cursed' }),
     a('forbidden', '금지된 힘', 25, '다음 전투에서 모든 스킬의 쿨타임이 50% 감소하고 받는 피해가 50% 증가합니다.', {}, { special: 'forbidden', dangerous: true, rarity: 'cursed' }),
     a('rewind', '시간 역행', -15, 'HP와 MP를 모두 회복합니다. 다음 전투에서 엘리트 몬스터와 조우합니다.', {}, { special: 'rewind' }),
     a('gambler', '회랑의 도박사', 15, '50% 확률로 공격력이 30% 증가하고, 나머지 50% 확률로 공격력이 20% 감소합니다.', {}, { special: 'gambler' }),
@@ -115,7 +114,8 @@ const AUGMENTS = [
     a('glass', '유리 날개', 30, '최종 피해가 35% 증가하고 최대 HP가 20% 감소합니다.', { final: .35, hp: -.20 }, { dangerous: true, rarity: 'cursed' }),
     a('rest', '길 잃은 별빛', -5, '최대 HP와 MP의 30%를 회복합니다.', {}, { special: 'rest', rarity: 'silver' }),
     ...require('./paradise_augments_extra'),
-    ...require('./paradise_augments_adventure')
+    ...require('./paradise_augments_adventure'),
+    ...require('./paradise_augments_characters')
 ];
 
 const RELICS = [

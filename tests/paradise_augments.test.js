@@ -39,6 +39,63 @@ function choose(user, id, random = () => .99) {
     return corridor.chooseAugment(user, id, random);
 }
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} !== ${expected}`);
+test('악마의 거래는 공격력 대신 추가 피해 66.6%를 적용하고 구형 획득에도 같은 효과를 낸다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh(), original = rpg.calculateUserStats(user);
+    Object.assign(user.paradise.enemy, { hp: 1e9, maxHp: 1e9, def: 0, atk: 0 });
+    rpg.buildHuntResult(user, {}, 100, { isBasic: true });
+    const baseDamage = user.paradise.combatEvents.at(-1).damage;
+    choose(user, 'devil');
+    const stats = rpg.calculateUserStats(user);
+    assert.equal(stats.atk, original.atk);
+    close(stats.extraDamage - original.extraDamage, .666);
+    Object.assign(user.paradise.enemy, { hp: 1e9, maxHp: 1e9, def: 0, atk: 0 });
+    rpg.buildHuntResult(user, {}, 100, { isBasic: true });
+    const damage = user.paradise.combatEvents.at(-1).damage;
+    assert.ok(damage >= baseDamage * 1.65 && damage <= baseDamage * 1.67, `${damage} / ${baseDamage}`);
+    Object.assign(corridor.getResources(user), { hp: 1, mp: 0 });
+    corridor.heal(user, 1, 1);
+    assert.deepEqual(corridor.getResources(user), { hp: 1, mp: 0 });
+    user.paradise.effects = { atk: .25, noHealing: 1 };
+    const legacy = rpg.calculateUserStats(user);
+    assert.equal(legacy.atk, original.atk);
+    close(legacy.extraDamage, stats.extraDamage);
+});
+
+test('복제된 축복은 제거되며 저장된 선택지에만 남아 있어도 탐험을 계속할 수 있다', () => {
+    const user = fresh();
+    assert.ok(!corridor.AUGMENTS.some(a => a.id === 'duplicate'));
+    user.paradise.phase = 'augment'; user.paradise.choices = ['duplicate'];
+    assert.deepEqual(corridor.view(user).run.choices, []);
+    assert.ok(corridor.chooseAugment(user, 'duplicate').error);
+    assert.ok(!corridor.continueExploration(user, () => .99).error);
+    assert.equal(user.paradise.phase, 'combat');
+});
+
+test('결투 계약은 공격력 25%, 사신 계약은 완전 회복과 9성 각성 계약을 한 번 지급한다', () => {
+    for (const legacy of [false, true]) {
+        const duel = fresh(); choose(duel, 'duelistContract');
+        if (legacy) duel.paradise.quests[0].reward = { star: 7, type: '일반' };
+        for (let i = 0; i < 3; i++) {
+            if (i) corridor.startCombat(duel, 'normal', null, () => .99);
+            corridor.victory(duel, () => .99);
+        }
+        close(duel.paradise.effects.atk, .25); assert.equal(duel.paradise.contracts.length, 0);
+        corridor.startCombat(duel, 'normal', null, () => .99); corridor.victory(duel, () => .99);
+        close(duel.paradise.effects.atk, .25);
+        const death = fresh(); choose(death, 'deathHandshake');
+        if (legacy) death.paradise.quests[0].reward = { star: 8, type: '각성' };
+        corridor.getResources(death).mp = 0;
+        corridor.victory(death, () => .99);
+        const stats = rpg.calculateUserStats(death);
+        assert.deepEqual(corridor.getResources(death), { hp: stats.hp, mp: stats.mp });
+        assert.deepEqual(death.paradise.contracts, [{ star: 9, type: '각성', name: '9성 각성 카드' }]);
+    }
+    const blocked = fresh(); choose(blocked, 'devil'); choose(blocked, 'deathHandshake');
+    corridor.getResources(blocked).mp = 0; corridor.victory(blocked, () => .99);
+    assert.deepEqual(corridor.getResources(blocked), { hp: 1, mp: 0 });
+    assert.equal(blocked.paradise.contracts[0].star, 9);
+});
 const equipmentAdditions = corridor.AUGMENTS.filter(a => a.equipment).slice(22);
 const adventure = require('../paradise_augments_adventure');
 function equipped(id, stage = 1) {

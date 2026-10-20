@@ -79,7 +79,7 @@ test('인증 없는 상태에서 플레이 API에 접근할 수 없다', async (
     assert.equal((await request('/api/game/state', undefined, false)).status, 401);
     assert.equal((await request('/api/inventory/actions/confirm', {}, false)).status, 401);
 });
-test('회랑 증강 도감은 실제 증강 정의와 장착 조건을 읽기 전용으로 제공한다', async () => {
+test('천상 증강 도감은 실제 증강 정의와 장착 조건을 읽기 전용으로 제공한다', async () => {
     const { AUGMENTS } = require('../paradise_content');
     assert.equal((await request('/api/dex/augments', undefined, false)).status, 401);
     const count = databaseWrites;
@@ -91,9 +91,11 @@ test('회랑 증강 도감은 실제 증강 정의와 장착 조건을 읽기 �
         assert.equal(entry.desc, source.desc);
         assert.equal(entry.floors, source.floors);
         assert.equal(entry.category, source.category);
-        if (entry.equipment) assert.equal(entry.condition, entry.equipment + ' 장착 시에만 등장');
+        assert.equal(entry.character, source.character);
+        assert.equal(entry.characterName, source.characterName);
+        assert.equal(entry.condition, undefined);
     }
-    assert.equal(response.data.augments.find(entry => entry.id === 'duplicate').condition, '능력치 강화 효과를 획득한 뒤 등장');
+    assert.equal(response.data.augments.find(entry => entry.id === 'duplicate'), undefined);
     assert.equal(databaseWrites, count, '도감 열람은 데이터를 변경하지 않는다');
 });
 test('핫딜샵 중단 시 메뉴와 직접 구매를 막고 상품, 재화, 구매 기록을 보존한다', async () => {

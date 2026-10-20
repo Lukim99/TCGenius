@@ -1128,8 +1128,8 @@ server.get('/api/dex/potential', requireUser, (req, res) => {
 
 server.get('/api/dex/augments', requireUser, (req, res) => {
     const { AUGMENTS } = require('./paradise_content');
-    res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, dangerous }) => ({
-        id, name, desc, floors, rarity, category, equipment, dangerous: !!dangerous
+    res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous }) => ({
+        id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous
     })) });
 });
 
@@ -9483,7 +9483,7 @@ function renderUserDashboard(sess, opts) {
     <aside class="dex-sidebar" aria-label="도감 종류">
       <h2>도감</h2>
       <div class="dex-tabs">
-        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="artifact">아티팩트</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button><button class="dex-tab" data-tab="augment">회랑 증강</button>
+        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="artifact">아티팩트</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button><button class="dex-tab" data-tab="augment">천상 증강</button>
       </div>
     </aside>
     <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>
