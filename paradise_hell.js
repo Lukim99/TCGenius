@@ -167,7 +167,7 @@ function openChest(user, id) {
 }
 function decorateView(view, user) {
     const config = rpg().getDataCache('Paradise', null)?.hell, items = rpg().getDataCache('Item', []);
-    view.hell = { enabled: !validateConfig(config) && config.enabled, keys: KEYS.map(key => ({ name: key.name, drops: key.drops, iconUrl: '/static/assets/paradise/' + key.icon + '.webp', count: rpg().getInventoryItemCount(user, items.findIndex(item => item?.name === key.name)) })) };
+    view.hell = { enabled: !validateConfig(config) && config.enabled, keys: KEYS.map(key => ({ name: key.name, drops: key.drops, iconUrl: '/rpg-ui?file=%EB%82%99%EC%9B%90%2F' + key.icon + '.webp', count: rpg().getInventoryItemCount(user, items.findIndex(item => item?.name === key.name)) })) };
     if (!view.run) return view;
     const run = user.paradise;
     view.run.mode = run.mode || 'heaven'; view.run.maxFloor = run.mode === 'hell' ? 100 : 999;

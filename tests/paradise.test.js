@@ -94,11 +94,21 @@ test('회랑 API는 인증이 필요하고 임의 상태 전이를 허용하지 
     assert.equal((await request('/api/paradise/event', { ...bodyFor(state), choice: 'rift' })).status, 400);
 });
 
+test('배포 전에 열린 화면의 낙원 에셋 요청은 S3 동기화 경로로 연결한다', async () => {
+    for (const file of ['corridor.webp', 'gambler.webp', 'audio/heaven.mp3']) {
+        const response = await fetch(base + '/static/assets/paradise/' + file, { headers: { Cookie: cookie() }, redirect: 'manual' });
+        assert.equal(response.status, 307);
+        assert.equal(response.headers.get('location'), '/rpg-ui?file=' + encodeURIComponent('낙원/' + file));
+    }
+    const missing = await fetch(base + '/static/assets/paradise/missing.webp', { headers: { Cookie: cookie() }, redirect: 'manual' });
+    assert.equal(missing.status, 404);
+});
+
 test('낙원 전투는 필드 HUD 데이터와 중복 재생 없는 실제 타격 사건을 전달한다', async () => {
     const user = await reset();
     corridor.enter(user); corridor.startCombat(user, 'judge'); await user.save();
     const before = (await request('/api/paradise')).data;
-    assert.equal(before.run.enemy.sprite, '/static/assets/paradise/judge-boss.webp');
+    assert.equal(before.run.enemy.sprite, '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fjudge-boss.webp');
     assert.equal(before.battle.player.spriteUrl, before.player.sprite);
     assert.ok(before.battle.skills.every(skill => Number.isFinite(skill.mpCost)));
     const body = bodyFor(before);
@@ -782,7 +792,7 @@ test('도박사·붕괴·최종 보스는 개별 전투 이미지로 연결된�
         await user.save();
         const view = (await request('/api/paradise')).data;
         assert.equal(view.run.enemy.name, name);
-        assert.equal(view.run.enemy.sprite, '/static/assets/paradise/' + image);
+        assert.equal(view.run.enemy.sprite, '/rpg-ui?file=%EB%82%99%EC%9B%90%2F' + image);
     }
 });
 

@@ -619,7 +619,7 @@ function claim(user) {
 function view(user) {
     const run = user.paradise, config = rpg().getDataCache('Paradise', null), stats = rpg().calculateUserStats(user);
     const ticketId = rpg().getDataCache('Item', []).findIndex(i => i?.name === TICKET);
-    const result = { serverTime: Date.now(), weekly: weeklyInfo(user), enabled: !validateConfig(config) && config.enabled, ticket: { name: TICKET, count: ticketId < 0 ? 0 : rpg().getInventoryItemCount(user, ticketId), iconUrl: '/static/assets/paradise/ticket.webp' }, revision: Number(run?.revision || 0), runId: run?.id || null,
+    const result = { serverTime: Date.now(), weekly: weeklyInfo(user), enabled: !validateConfig(config) && config.enabled, ticket: { name: TICKET, count: ticketId < 0 ? 0 : rpg().getInventoryItemCount(user, ticketId), iconUrl: '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fticket.webp' }, revision: Number(run?.revision || 0), runId: run?.id || null,
         player: { name: user.name, hp: Number(user.hp ?? stats.hp), maxHp: stats.hp, mp: Number(user.mp ?? stats.mp), maxMp: stats.mp, atk: stats.atk, def: stats.def, combatPower: rpg().calculateCombatPower(user).total },
         baseRewards: config?.baseRewards || [], entryBlocked: user.field && !user.field.paradise ? '다른 전투를 먼저 마쳐주세요.' : null, run: null };
     if (!run) return require('./paradise_hell').decorateView(result, user);

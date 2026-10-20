@@ -1,6 +1,6 @@
 (function () {
     'use strict';
-    const base = '/static/assets/paradise/audio/';
+    const base = '/rpg-ui?file=%EB%82%99%EC%9B%90%2Faudio%2F';
     const effects = new Set(), last = new Map();
     let muted = localStorage.getItem('paradise-muted') === '1', scene = null, track = null, previous = null, pending = null, fade = 0, generation = 0;
     const audible = () => !muted && !document.hidden;

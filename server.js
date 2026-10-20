@@ -1477,13 +1477,19 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
 const EVENT_DICE_ITEM_NAME = '유생의 주사위';
 registerYutRoutes(server, { rpgenius, requireUser, getItemDisplayAssets });
 registerPointMineRoutes(server, { rpgenius, requireUser, getItemDisplayAssets, serializeItemUse });
+// 배포 전에 열려 있던 낙원 화면의 이미지·음원 요청도 S3 동기화 경로로 연결한다.
+server.get(/^\/static\/assets\/paradise\/(.+)$/, requireUser, (req, res) => {
+    const file = req.params[0];
+    if (!require('./scripts/paradise_assets.json').some(asset => asset.file === file)) return res.status(404).end();
+    res.redirect(307, getGeneralFieldAssetUrl('낙원/' + file));
+});
 registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getItemIconUrl, getEquipmentIconUrl, getCharacterSprite: getHFieldCharacterSprite,
     getCombatView: user => ({ player: buildHFieldState(user).player, skills: getHFieldSkills(user, serializeCard(user.main_card, user), user.field?.name) }),
     getMonsterSprite: enemy => {
-        if (enemy.portrait === 'gambler') return '/static/assets/paradise/gambler.webp';
-        if (enemy.kind === 'judge') return '/static/assets/paradise/judge-boss.webp';
-        if (enemy.kind === 'rift') return '/static/assets/paradise/rift-boss.webp';
-        if (enemy.kind === 'final') return '/static/assets/paradise/final-warden.webp';
+        if (enemy.portrait === 'gambler') return '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fgambler.webp';
+        if (enemy.kind === 'judge') return '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fjudge-boss.webp';
+        if (enemy.kind === 'rift') return '/rpg-ui?file=%EB%82%99%EC%9B%90%2Frift-boss.webp';
+        if (enemy.kind === 'final') return '/rpg-ui?file=%EB%82%99%EC%9B%90%2Ffinal-warden.webp';
         const atlas = enemy.sourceField === '인트리그미션' ? { atlasUrl: getGeneralFieldAssetUrl('필드/몬스터/인트리그미션.png'), row: 0, rows: 1 } : getGeneralFieldAtlas(enemy.sourceIndex);
         return atlas ? { ...atlas, column: enemy.kind === 'normal' ? 0 : 1 } : null;
     }
@@ -5849,9 +5855,9 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
-    if (item.name === '천상의 회랑 입장권') return '/static/assets/paradise/ticket.webp';
+    if (item.name === '천상의 회랑 입장권') return '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fticket.webp';
     const paradiseRewardIcons = { '천상의 증표': 'heaven-token', '지옥 열쇠': 'hell-key', '화려한 지옥 열쇠': 'hell-key-ornate', '찬란한 지옥 열쇠': 'hell-key-radiant' };
-    if (paradiseRewardIcons[item.name]) return '/static/assets/paradise/' + paradiseRewardIcons[item.name] + '.webp';
+    if (paradiseRewardIcons[item.name]) return '/rpg-ui?file=%EB%82%99%EC%9B%90%2F' + paradiseRewardIcons[item.name] + '.webp';
     if (item.name === '곡괭이 상자 열쇠') return '/static/assets/point-mine/key.png';
     if (item.name === '윷') return '/item-image?dir=%EC%9D%B4%EB%B2%A4%ED%8A%B8&file=%EC%9C%B7.png';
     if (item.name === '송편') return getItemImageUrl('이벤트', '송편.png');

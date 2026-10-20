@@ -4,7 +4,11 @@
 
 ## 심판자
 
-`public/assets/paradise/judge-boss.webp`: 내장 imagegen으로 기존 `judge.webp`의 검은 갑옷 심판자를 전투용 투명 전신으로 분리했다. 이벤트 배경은 보존했다. 원본 PNG를 높이 1100px, WebP 품질 90으로 변환했으며 알파를 유지했다.
+2026-10-20 S3 이전: 이미지 21개와 음원 8개를 `s3://eefl-image/tcgenius/assets/ui/낙원/`에 등록했다. 기존 `asset_store.js`가 부팅 시 `DB/RPGenius/ui/낙원/`으로 동기화하며, 앱에서는 인증된 `/rpg-ui?file=낙원/…` 경로로 제공한다. Git에 바이너리 사본을 중복 보관하지 않는다. `scripts/paradise_assets.json`에 파일 목록과 SHA-256을 기록했고 `scripts/migrate_paradise_assets_to_s3.js --apply`는 동일 파일을 건너뛰고 내용이 다른 기존 파일의 덮어쓰기를 거부한다.
+
+사용자가 마지막으로 첨부한 `codex-clipboard-a5600aec-2542-4dc0-a352-4a4795ad964b.png`를 손실 없이 WebP로 변환한 `paradise.webp`는 사냥 메뉴의 낙원 이미지와 입구 배경에만 사용한다. 천상 선택 패널·회랑 전투·탐험은 기존 `corridor.webp`, 지옥은 기존 `hell.webp`를 유지한다. 29개 파일을 S3에서 다시 읽어 SHA-256과 MIME 형식을 확인했고, 회랑·음원 및 이전 URL 연결 테스트 52개가 통과했다.
+
+`DB/RPGenius/ui/낙원/judge-boss.webp`: 내장 imagegen으로 기존 `judge.webp`의 검은 갑옷 심판자를 전투용 투명 전신으로 분리했다. 이벤트 배경은 보존했다. 원본 PNG를 높이 1100px, WebP 품질 90으로 변환했으며 알파를 유지했다.
 
 최종 프롬프트:
 
@@ -18,9 +22,9 @@ Use case: background-extraction. Asset type: transparent full-body fantasy RPG b
 
 | 파일 | 사용 위치 |
 | --- | --- |
-| `public/assets/paradise/gambler.webp` | 카지노에서 도박사를 직접 공격했을 때 |
-| `public/assets/paradise/rift-boss.webp` | 회랑 붕괴에서 균열로 뛰어들었을 때 |
-| `public/assets/paradise/final-warden.webp` | 999층 최종 수문장 |
+| `DB/RPGenius/ui/낙원/gambler.webp` | 카지노에서 도박사를 직접 공격했을 때 |
+| `DB/RPGenius/ui/낙원/rift-boss.webp` | 회랑 붕괴에서 균열로 뛰어들었을 때 |
+| `DB/RPGenius/ui/낙원/final-warden.webp` | 999층 최종 수문장 |
 
 도박사는 기존 `casino.webp`를 참조했다. 최종 프롬프트:
 
@@ -48,8 +52,8 @@ Claude CLI `claude-opus-5-5`에 이벤트 선택지의 가독성과 결과 연�
 
 | 파일 | 곡 | 길이 |
 | --- | --- | --- |
-| `public/assets/paradise/audio/heaven.mp3` | [천상의 회랑 — 끝없는 계단](https://suno.com/song/795cb414-c7f0-4d99-afc3-2a87cfa40369) | 3:19 |
-| `public/assets/paradise/audio/hell.mp3` | [지옥 — 붉은 심연](https://suno.com/song/db586fab-bbb6-463c-a8cd-d421d14f78e4) | 3:25 |
+| `DB/RPGenius/ui/낙원/audio/heaven.mp3` | [천상의 회랑 — 끝없는 계단](https://suno.com/song/795cb414-c7f0-4d99-afc3-2a87cfa40369) | 3:19 |
+| `DB/RPGenius/ui/낙원/audio/hell.mp3` | [지옥 — 붉은 심연](https://suno.com/song/db586fab-bbb6-463c-a8cd-d421d14f78e4) | 3:25 |
 
 천상 Styles 프롬프트:
 
@@ -71,7 +75,7 @@ Instrumental infernal dungeon descent battle soundtrack. Basalt citadel above la
 
 탐험 조작의 브라우저 오실레이터 합성음을 제거했다. 전투 타격·스킬·치명타·승패 음원과 음량은 기존 필드의 `SOUNDS` 매핑을 그대로 사용하고, 낙원 음소거와 탭 숨김 상태를 따른다. 아래 CC0 외부 음원의 기존 변환본을 낙원용 경로로 복사했다. 원본과 기존 레이드 매핑은 [레이드 에셋](raid-assets.md)에 기록돼 있다. 출처와 라이선스를 다시 확인했다: [rubberduck — 80 CC0 RPG SFX](https://opengameart.org/node/86018), [Lentikula — Basic Spell Impacts](https://lentikula.itch.io/freecc0-basic-spell-impacts-sfx), [Druid Spell Impacts](https://lentikula.itch.io/druid-spell-impacts), [Healing Spell Impacts](https://lentikula.itch.io/healing-spell-impacts).
 
-| 낙원 파일 (`public/assets/paradise/audio/`) | 기존 변환본 (`ui/sfx/raid/`) | 용도 |
+| 낙원 파일 (`DB/RPGenius/ui/낙원/audio/`) | 기존 변환본 (`ui/sfx/raid/`) | 용도 |
 | --- | --- | --- |
 | `hover.mp3` | `mirror-glint-v2.mp3`, 첫 0.12초, 끝 0.065초 페이드 | 증강 호버·버튼 |
 | `reveal.mp3` | `dealing-aura-v2.mp3` | 증강 등장·제단 |

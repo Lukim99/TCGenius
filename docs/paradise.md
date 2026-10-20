@@ -100,7 +100,7 @@ Claude CLI `claude-opus-5-5`에 최초 시각 설계 2회(합계 약 $0.26)를 �
 
 한글 폰트는 로컬 `public/fonts/pretendard/PretendardVariable.woff2`로 통일하고, 로딩이 끝난 후 카드 텍스처를 갱신한다. [Pretendard v1.3.9](https://github.com/orioncactus/pretendard/tree/v1.3.9)의 OFL 라이선스를 같은 폴더 `LICENSE`에 보존한다.
 
-생성형 이미지 13종(회랑, 입장권, 사건 7종, 증표·열쇠 4종)은 built-in imagegen으로 만들었다. 프롬프트와 추가 아이템 제작 명세는 `output/paradise/image-prompts.json`, `reward-image-prompts.json`, 실제 사용 에셋은 `public/assets/paradise/*.webp`에 있다. 원본은 `output/paradise/source/`에 보존한다. 아이템은 기존 중앙 배치·투명 여백을 참고했으며 열쇠 3종은 imagegen으로 여백을 한 번 더 조정했다. PNG의 투명도를 보존해 WebP로 인코딩했다.
+생성형 이미지 13종(회랑, 입장권, 사건 7종, 증표·열쇠 4종)은 built-in imagegen으로 만들었다. 프롬프트와 추가 아이템 제작 명세는 `output/paradise/image-prompts.json`, `reward-image-prompts.json`, 실제 사용 에셋은 `DB/RPGenius/ui/낙원/*.webp`에 있다. 원본은 `output/paradise/source/`에 보존한다. 아이템은 기존 중앙 배치·투명 여백을 참고했으며 열쇠 3종은 imagegen으로 여백을 한 번 더 조정했다. PNG의 투명도를 보존해 WebP로 인코딩했다.
 
 ```powershell
 node --test tests/paradise.test.js tests/pvp_engine.test.js tests/pvp_web.test.js tests/wisdom_puzzle.test.js
@@ -144,9 +144,9 @@ node --test tests/paradise.test.js tests/pvp_engine.test.js tests/pvp_web.test.j
 
 `node scripts/register_paradise_content.js --configure-hell --apply`로 누락된 운영 `Paradise.hell` 설정만 명시 등록했다. 기존 아이템·다른 낙원 설정은 보존했으며 서버 시작이나 import에서 등록하지 않는다. 재실행 시 기존 지옥 설정도 덮어쓰지 않는다. 등록 전 상태와 결과는 `output/paradise/hell/authority-before.json`, `registration-result.txt`에 있다.
 
-지옥 배경 `public/assets/paradise/hell.webp`는 사용자가 첨부한 픽셀 아트 원본을 손실 없이 WebP로 변환했다. 원본은 `output/paradise/hell/background-source.png`에 보존한다.
+지옥 배경 `DB/RPGenius/ui/낙원/hell.webp`는 사용자가 첨부한 픽셀 아트 원본을 손실 없이 WebP로 변환했다. 원본은 `output/paradise/hell/background-source.png`에 보존한다.
 
-지옥 화면 구현과 추가 개봉 규칙 반영을 Claude CLI `claude-opus-5-5`에 2회 위임했다. 두 번째 결과의 세션 누적 비용은 약 $2.56이며 `output/paradise/hell/design-opus.json`, `design-opus-amendment.json`에 기록했다. WebGL 배경의 불씨·낙하·착지와 캔버스 제단, 모바일 상자 탐색, 결과 페이지를 구현했다. `public/assets/paradise/hell-chest.webp`, `hell-chest-rich.webp`는 built-in imagegen으로 생성한 투명 상자 에셋이며 생성 프롬프트는 `output/paradise/hell/chest-prompts.json`, 원본 PNG는 같은 출력 폴더에 보존한다. 기존 아이템처럼 중심 배치와 투명 여백을 두고 일반·풍요 상자의 화면 크기를 맞췄다. 선택 시 부유·발광·불씨 연출을 적용하며 동작 줄이기 설정을 따른다.
+지옥 화면 구현과 추가 개봉 규칙 반영을 Claude CLI `claude-opus-5-5`에 2회 위임했다. 두 번째 결과의 세션 누적 비용은 약 $2.56이며 `output/paradise/hell/design-opus.json`, `design-opus-amendment.json`에 기록했다. WebGL 배경의 불씨·낙하·착지와 캔버스 제단, 모바일 상자 탐색, 결과 페이지를 구현했다. `DB/RPGenius/ui/낙원/hell-chest.webp`, `hell-chest-rich.webp`는 built-in imagegen으로 생성한 투명 상자 에셋이며 생성 프롬프트는 `output/paradise/hell/chest-prompts.json`, 원본 PNG는 같은 출력 폴더에 보존한다. 기존 아이템처럼 중심 배치와 투명 여백을 두고 일반·풍요 상자의 화면 크기를 맞췄다. 선택 시 부유·발광·불씨 연출을 적용하며 동작 줄이기 설정을 따른다.
 
 2026-10-20 지옥 추가 후 위 테스트 명령으로 **43개 통과**(`output/paradise/hell/tests.txt`). 열쇠 차감, 1~20층·로켓 이동, 100층 제한, 9개 제단과 확률 경계, 모든 11개 구간×9종 보상의 실제 지급, 추가 개봉, 풍요 강화석, 전투 API 승패, 사망·포기 정산, 카드 공간 부족, 재접속·동시 요청 중복 지급 방지를 확인했다.
 

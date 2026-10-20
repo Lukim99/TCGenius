@@ -6,7 +6,7 @@
     const fmt = n => Number(n || 0).toLocaleString('ko-KR');
     const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
     const ratio = (n, max) => clamp(Number(n) / Math.max(1, Number(max)), 0, 1);
-    const asset = name => '/static/assets/paradise/' + name + '.webp';
+    const asset = name => '/rpg-ui?file=%EB%82%99%EC%9B%90%2F' + name + '.webp';
     const FONT = 'ParadiseSans,Pretendard,"Apple SD Gothic Neo","Malgun Gothic",sans-serif';
     const colors = { silver: '#c9d7de', gold: '#e8c272', prismatic: '#c4a2f2', cursed: '#e0707f' };
     const metals = { silver: ['#f4f8fa', '#7f8d96', '#e2e9ec', '#66737b'], gold: ['#fff0c2', '#b4842f', '#f2d184', '#86601f'], prismatic: ['#ffd9f3', '#8fd3ff', '#c4a3ff', '#ffe0a3', '#97eed2'], cursed: ['#ffb8c1', '#84243a', '#df6b7d', '#561522'], ember: ['#ffd2a0', '#8a2f14', '#f08048', '#4f1a0c'], iron: ['#e6ddd0', '#6d625a', '#c4b8aa', '#4a403a'] };
@@ -270,7 +270,7 @@
     function sceneBackground(w, h, t) {
         if (state?.run?.mode === 'hell' || state && !state.run && overlay === 'hell') return hellBackground(w, h, t);
         const scene = activeScene, event = ['casino', 'forge', 'mirror', 'chests', 'judge', 'well', 'puzzle'].includes(scene);
-        const bg = renderer.image(asset(event ? scene : 'corridor')), dim = scene === 'augment' || overlay ? .5 : scene === 'lobby' ? .6 : scene === 'combat' ? .9 : 1;
+        const bg = renderer.image(asset(event ? scene : scene === 'lobby' ? 'paradise' : 'corridor')), dim = scene === 'augment' || overlay ? .5 : scene === 'lobby' ? .6 : scene === 'combat' ? .9 : 1;
         const drift = reduced ? 0 : Math.sin(t / 11000) * 8;
         renderer.cover(bg, -12 + drift, -8, w + 24, h + 16, [dim, dim, dim, 1]);
         const particleColor = scene === 'forge' ? [1, .45, .10] : scene === 'well' || scene === 'collapse' ? [1, .12, .18] : scene === 'casino' || scene === 'chests' ? [1, .77, .29] : [.44, .83, .83];
