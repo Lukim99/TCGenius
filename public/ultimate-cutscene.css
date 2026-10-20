@@ -1,0 +1,23 @@
+.ultimate-cutscene {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    overflow: hidden;
+}
+.ultimate-cutscene[hidden] { display: none; }
+.ultimate-cutscene img {
+    position: absolute;
+    left: 50%;
+    top: 40%;
+    transform: translate(-50%, -50%);
+    width: min(100%, 1180px);
+    max-height: 42%;
+    object-fit: contain;
+    user-select: none;
+}
+.ultimate-cutscene-contained { position: absolute; z-index: 5; }
+.ultimate-cutscene-contained img { top: 46%; max-height: 70%; }
+@media (max-width: 700px) {
+    .ultimate-cutscene img { top: 38%; width: 100%; }
+}

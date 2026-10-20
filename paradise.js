@@ -359,7 +359,7 @@ function enter(user, random = Math.random) {
     if (!user.main_card || user.need_character_card_select) return { error: '메인 카드를 먼저 선택해주세요.' };
     if (user.pendingAction || user.pendingFragment || user.fishing === true) return { error: '진행 중인 작업이나 보상 선택을 먼저 완료해주세요.' };
     const config = rpg().getDataCache('Paradise', null);
-    if (validateConfig(config) || !config.enabled) return { error: '천상의 회랑 입장이 아직 열리지 않았습니다.' };
+    if (validateConfig(config) || !config.enabled) return { error: '천상 입장이 아직 열리지 않았습니다.' };
     const id = rpg().getDataCache('Item', []).findIndex(i => i?.name === TICKET);
     if (id < 0 || rpg().getInventoryItemCount(user, id) < 1) return { error: TICKET + ' 1장이 필요합니다.' };
     const stats = rpg().calculateUserStats(user);
@@ -368,7 +368,7 @@ function enter(user, random = Math.random) {
     user.paradise.resources = { hp: stats.hp, mp: stats.mp };
     user.paradise.milestoneRewards = structuredClone(config.milestoneRewards || []);
     startCombat(user, 'normal', null, random);
-    return { message: '입장권 1장을 사용했습니다. 천상의 회랑에 입장합니다.' };
+    return { message: '입장권 1장을 사용했습니다. 천상에 입장합니다.' };
 }
 function chooseAugment(user, id, random = Math.random) {
     const resources = getResources(user);

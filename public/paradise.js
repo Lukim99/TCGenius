@@ -6,7 +6,7 @@
     const fmt = n => Number(n || 0).toLocaleString('ko-KR');
     const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
     const ratio = (n, max) => clamp(Number(n) / Math.max(1, Number(max)), 0, 1);
-    const asset = name => '/rpg-ui?file=%EB%82%99%EC%9B%90%2F' + name + '.webp';
+    const asset = name => '/rpg-ui?file=%EB%82%99%EC%9B%90%2F' + (name === 'hell' ? 'hell-hd-v2' : name) + '.webp';
     const FONT = 'ParadiseSans,Pretendard,"Apple SD Gothic Neo","Malgun Gothic",sans-serif';
     const colors = { silver: '#c9d7de', gold: '#e8c272', prismatic: '#c4a2f2', cursed: '#e0707f' };
     const metals = { silver: ['#f4f8fa', '#7f8d96', '#e2e9ec', '#66737b'], gold: ['#fff0c2', '#b4842f', '#f2d184', '#86601f'], prismatic: ['#ffd9f3', '#8fd3ff', '#c4a3ff', '#ffe0a3', '#97eed2'], cursed: ['#ffb8c1', '#84243a', '#df6b7d', '#561522'], ember: ['#ffd2a0', '#8a2f14', '#f08048', '#4f1a0c'], iron: ['#e6ddd0', '#6d625a', '#c4b8aa', '#4a403a'] };
@@ -159,6 +159,7 @@
     }
     async function fetchRanking() { try { const response = await fetch('/api/paradise/ranking', { cache: 'no-store' }); if (response.ok) ranking = await response.json(); else announce('주간 랭킹을 불러오지 못했습니다.'); } catch (_) { announce('주간 랭킹 연결을 확인해주세요.'); } }
     function accept(next) {
+        battle.prepare(next.player?.card);
         const run = next.run;
         const previous=battleState(state), upcoming=battleState(next), events=run?.combatEvents||[];
         const latest=previous&&events.filter(e=>e.enemyId===previous.target.id).at(-1);
@@ -233,7 +234,11 @@
         else { ctx.fillStyle = hovered ? 'rgba(30,40,50,.88)' : 'rgba(12,18,25,.74)'; ctx.fill(); ctx.strokeStyle = hovered ? 'rgba(240,220,170,.55)' : 'rgba(255,255,255,.14)'; }
         ctx.lineWidth = 1; ctx.stroke();
         const color = options.disabled ? (options.primary ? '#8d8572' : 'rgba(230,235,238,.32)') : options.primary ? '#1d1608' : '#ece8de';
-        text(ctx, options.glyph ?? label, x + w / 2, y + h / 2 + .5, options.size || 14, color, 'center', options.primary ? 700 : 600, w - 16, !options.primary);
+        if (options.icon) {
+            const cx = x + w / 2;
+            iconAt(options.icon, cx - 60, y + (h - 36) / 2, 36);
+            text(ctx, options.glyph ?? label, cx - 14, y + h / 2 + .5, options.size || 14, color, 'left', 700, w / 2, false);
+        } else text(ctx, options.glyph ?? label, x + w / 2, y + h / 2 + .5, options.size || 14, color, 'center', options.primary ? 700 : 600, w - 16, !options.primary);
         if (options.strike) line(ctx, x + w * .3, y + h * .72, x + w * .7, y + h * .28, color, 1.5);
         register(x, y, w, h, label, fn, options.disabled);
     }
@@ -438,16 +443,15 @@
             rr(ctx, x, top, pw, ph, 3); ctx.strokeStyle = i && !can ? 'rgba(170,90,100,.45)' : metal(ctx, i ? 'ember' : 'gold', x, top, pw, ph); ctx.lineWidth = i && !can ? 1 : hovered ? 2.5 : 2; ctx.stroke();
             if (i && !can) { const ly = top + ph * .42; ctx.beginPath(); ctx.arc(cx, ly - 4, 9, Math.PI, 0); ctx.strokeStyle = '#d6aeb3cc'; ctx.lineWidth = 3; ctx.stroke(); rr(ctx, cx - 14, ly - 4, 28, 22, 4); ctx.fillStyle = '#d6aeb3cc'; ctx.fill(); }
             else { path(ctx, [[cx, top - 8], [cx + 9, top], [cx, top + 8], [cx - 9, top]]); ctx.fillStyle = metal(ctx, i ? 'ember' : 'gold', cx - 9, top - 8, 18, 16); ctx.fill(); }
-            text(ctx, i ? '지옥' : '천상의 회랑', cx, top + ph - 46, mobile ? 18 : 22, i ? (can ? '#ffd8bc' : '#c9a5aa') : '#f6edd8', 'center', 700, pw - 20);
-            text(ctx, i ? (!state.hell?.enabled ? '준비 중' : keyCount ? `열쇠 ${keyCount}개` : '열쇠 없음') : `최고 ${state.weekly.bestFloor || 0}층 · 입장권 ${state.ticket.count}장`, cx, top + ph - 20, mobile ? 13 : 14, i ? (can ? '#f0b48a' : '#9c7d82') : '#d8c99f', 'center', 500, pw - 16);
-            register(x, top, pw, ph, i ? '지옥 · 열쇠 선택' : '천상의 회랑 입장', i ? openHell : () => mutate('enter'), i ? !canHell : !state.enabled || state.ticket.count < 1 || !!state.entryBlocked);
+            text(ctx, i ? '지옥' : '천상', cx, top + ph - 46, mobile ? 18 : 22, i ? (can ? '#ffd8bc' : '#c9a5aa') : '#f6edd8', 'center', 700, pw - 20);
+            text(ctx, i ? (!state.hell?.enabled ? '준비 중' : keyCount ? `열쇠 ${keyCount}개` : '열쇠 없음') : `최고 ${state.weekly.bestFloor || 0}층`, cx, top + ph - 20, mobile ? 13 : 14, i ? (can ? '#f0b48a' : '#9c7d82') : '#d8c99f', 'center', 500, pw - 16);
+            register(x, top, pw, ph, i ? '지옥 · 열쇠 선택' : '천상 입장', i ? openHell : () => mutate('enter'), i ? !canHell : !state.enabled || state.ticket.count < 1 || !!state.entryBlocked);
         }
         const by = top + ph + 24, bs = mobile ? 14 : 16;
-        hitButton(w / 2 - gap / 2 - pw, by, pw, 52, !state.enabled ? '입장 준비 중' : state.ticket.count < 1 ? '입장권 없음' : '입장 · 입장권 1장 사용', () => mutate('enter'), { primary: true, size: bs, disabled: !canEnter });
+        hitButton(w / 2 - gap / 2 - pw, by, pw, 52, !state.enabled ? '준비 중' : state.ticket.count < 1 ? '입장권 없음' : '입장 ×1', () => mutate('enter'), { primary: true, icon: state.ticket.iconUrl, size: bs, disabled: !canEnter });
         hitButton(w / 2 + gap / 2, by, pw, 52, !state.hell?.enabled ? '준비 중' : keyCount ? '열쇠 선택' : '열쇠 없음', openHell, { primary: true, size: bs, disabled: !canHell });
         if (mobile) text(ctx, `전투력 ${fmt(state.player.combatPower)}`, w / 2, by + 74, 13, '#a3b2b8', 'center');
         if (state.entryBlocked) paragraph(ctx, state.entryBlocked, w / 2, by + (mobile ? 100 : 78), Math.min(w - 48, 480), 13, '#eba493', 19, 2, 'center');
-        hitButton(16, h - 52, 88, 36, '회랑 안내', () => { overlay = 'guide'; });
     }
     function heavenEntryScene(w, h, t) {
         const age = t - heavenEntry.at, duration = reduced ? 180 : 1850, p = clamp(age / duration, 0, 1);
@@ -481,7 +485,7 @@
             ctx.save(); ctx.globalAlpha *= 1 - clamp((p - .3) / .3, 0, 1);
             ctx.drawImage(ticket.image, sx, sy, sw, sh, cx - size / 2, cy - size * sh / sw / 2, size, size * sh / sw); ctx.restore();
         }
-        text(ctx, '천상의 회랑', cx, cy + gateH * .68, w < 700 ? 24 : 32, '#f2e5c6', 'center', 700);
+        text(ctx, '천상', cx, cy + gateH * .68, w < 700 ? 24 : 32, '#f2e5c6', 'center', 700);
         ctx.restore();
         regions = []; puzzleForm.hidden = true;
     }
@@ -802,7 +806,7 @@
         const keys = state.hell?.keys || [], hell = state.run?.mode === 'hell';
         const mobile = w < 700, bw = Math.min(w - 24, 680), bh = Math.min(h - (mobile ? 88 : 140), overlay === 'hell' ? 200 + keys.length * 92 : overlay === 'retire' && hell ? 360 : 640), x = (w - bw) / 2, y = (h - bh) / 2;
         ctx.fillStyle = 'rgba(4,8,12,.68)'; ctx.fillRect(0, 0, w, h); panel(ctx, x, y, bw, bh, { alpha: .97, r: 14 }); regions = [];
-        const title = { ranking: '주간 순위', inventory: '탐험 기록', retire: hell ? '탐험 포기' : '귀환', guide: '회랑 안내', hell: '지옥 열쇠', notice: '알림' }[overlay];
+        const title = { ranking: '주간 순위', inventory: '탐험 기록', retire: hell ? '탐험 포기' : '귀환', hell: '지옥 열쇠', notice: '알림' }[overlay];
         text(ctx, title, x + 24, y + 34, mobile ? 20 : 22, '#f5ecd6', 'left', 700); line(ctx, x + 20, y + 60, x + bw - 20, y + 60, 'rgba(255,255,255,.09)');
         hitButton(x + bw - 52, y + 14, 36, 36, '닫기', () => { overlay = null; syncPuzzle(); }, { glyph: '×', size: 20 });
         if (overlay === 'notice') {
@@ -873,8 +877,6 @@
         } else if (overlay === 'retire') {
             const used = paragraph(ctx, '탐험을 종료하고 획득한 계약과 보상을 정산합니다. 입장권은 반환되지 않습니다.', x + 24, y + 96, bw - 48, 16, '#dde3e3', 26, 4);
             text(ctx, '주간 최고 도달층은 보존됩니다.', x + 24, y + 96 + used + 10, 14, '#e2cf9c', 'left', 600); hitButton(w / 2 - 120, y + bh - 128, 240, 48, '귀환하고 정산', () => { overlay = null; mutate('retire'); }, { primary: true, size: 15 }); hitButton(w / 2 - 120, y + bh - 68, 240, 44, '탐험 계속', () => { overlay = null; syncPuzzle(); });
-        } else {
-            const lines = ['입장권 1장으로 1층부터 시작합니다. HP와 MP는 다음 전투로 이어집니다.', '전투와 사건 뒤, 세 개의 증강 중 하나를 선택합니다. 선택지는 각각 한 번씩 새로고침할 수 있습니다.', '탐험 제한 시간은 15분이며 증강 선택 중에는 멈춥니다. 시간이 끝나면 자동 귀환하고 획득한 보상을 정산합니다.', '큰 도약과 위험한 계약은 뒤틀림을 높입니다. 100이 되면 회랑이 붕괴합니다.', '직접 귀환은 증강 선택 단계에서만 가능합니다. 전투에서 패배하면 보상을 잃습니다. 999층 정복 후에도 귀환해주세요.', '기본 보상과 입장권 획득처는 운영자 설정에 따릅니다. 주간 기록은 매주 월요일 0시 초기화됩니다.']; let yy = y + 92; for (const value of lines) yy += paragraph(ctx, value, x + 24, yy, bw - 48, 15, '#d3dbdc', 23, 4) + 14;
         }
     }
     function syncRegions() {
@@ -894,6 +896,7 @@
         if (sceneCanvas.width !== Math.round(w * dpr) || sceneCanvas.height !== Math.round(h * dpr)) { sceneCanvas.width = hudCanvas.width = Math.round(w * dpr); sceneCanvas.height = hudCanvas.height = Math.round(h * dpr); }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h); regions = [];
         const inCombat=!heavenEntry&&(state?.run?.phase==='combat'||t<battleUntil);
+        if (!inCombat && !battleRoot.hidden) battle.stopCutscene();
         battleRoot.hidden=!inCombat; sceneCanvas.hidden=inCombat;
         if(!inCombat){renderer.begin(w, h);sceneBackground(w,h,t);}
         if (!state) text(ctx, '불러오는 중…', w / 2, h / 2, 16, '#d8cfb8', 'center', 600);

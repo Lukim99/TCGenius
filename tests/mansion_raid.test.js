@@ -298,6 +298,38 @@ test('글버지는 시전자별로 갱신·만료·회복하며 다른 보호막
     } finally { a.sseRes = null; clock.mock.restore(); }
 });
 
+test('궁극기 컷씬은 공격·소환·강화 시전에 한 번 전달되고 실패한 사용과 재접속에서는 나오지 않는다', async () => {
+    const room = await battle(), member = room.members[0];
+    let sent = '', watched = '';
+    member.sseRes = { write: text => { sent += text; } };
+    room.spectators = new Map();
+    room.spectators.set('cutscene-observer', { res: { write: text => { watched += text; } } });
+    const events = text => [...text.matchAll(/event: skill-cast\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+    try {
+        room.awaitingChoices = false;
+        for (const [name, character] of [['유드 알레프', '빵귤'], ['수나타 소환', '이익태'], ['범인은 이 안에', '흠시원']]) {
+            const raw = require('../DB/RPGenius/Skills.json').find(skill => skill.name === name);
+            member.card = { name: character, type: '각성', star: 6 };
+            member.skills = [name];
+            member.skillDefs[name] = { source: 'mainCard', raw, star: 6, mp: 1, cd: 120 };
+            member.runtime.actionUntil = 0;
+            assert.equal(party.useSkill(member.name, name).ok, true);
+            assert.ok(party.useSkill(member.name, name).error, '쿨타임 실패는 연출을 만들지 않는다');
+        }
+        const casts = events(sent);
+        assert.deepEqual(casts.map(event => event.cardName), ['빵귤', '이익태', '흠시원']);
+        assert.equal(new Set(casts.map(event => event.id)).size, 3);
+        assert.deepEqual(events(watched), casts, '관전자에게도 같은 시전 사건을 전달한다');
+        assert.ok(casts.every(event => event.action === 'skill' && event.at > 0 && event.roomId === room.id && event.phaseIndex === room.phaseIndex));
+        assert.ok(!JSON.stringify(party.getMyRoomSnapshot(member.name)).includes('skill-cast'));
+        member.runtime.actionUntil = 0; member.runtime.cooldownsUntil['범인은 이 안에'] = 0; member.runtime.mp = 0;
+        assert.ok(party.useSkill(member.name, '범인은 이 안에').error);
+        assert.equal(events(sent).length, 3, 'MP 부족 시 연출을 만들지 않는다');
+    } finally {
+        room.awaitingChoices = true; member.sseRes = null; room.spectators.delete('cutscene-observer');
+    }
+});
+
 test('파티 워뇨띠 각성·심해의 갑옷·오로라는 각자 갱신되고 만료된다', async () => {
     const room = await battle('normal', 2), [w, ally] = room.members;
     Object.assign(w.baseSnapshot.stats, { wonyoddi: true, randoStar: 4, randoEquipment: {}, awakening: { effect: 'modeSwitch', value: 777 } });

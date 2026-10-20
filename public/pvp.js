@@ -7,6 +7,7 @@
 
     const uiAsset = file => '/rpg-ui?file=' + encodeURIComponent(file);
     const effectCatalog = window.CombatEffects || null;
+    const ultimateCutscene = window.UltimateCutscene?.create({ now: () => Date.now() + clockOffset });
     const ASSETS = {
         background: uiAsset('필드/뉴비즈.png'),
         impact: uiAsset('필드/hfield-impact-v2.png')
@@ -683,6 +684,7 @@
 
     function applyView(next, options) {
         if (!next) return;
+        if (view?.id !== next.id) ultimateCutscene?.reset();
         const silent = !!(options && options.silent);
         clockOffset = Number(next.serverNow || Date.now()) - Date.now();
         const events = (next.events || []).filter(event => Number(event.seq || 0) > lastSeq).sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
@@ -691,6 +693,8 @@
         view = next;
         stage = next.result ? 'result' : 'battle';
         if (renderer) renderer.setSides(next.me, next.opp);
+        ultimateCutscene?.prepare(next.me?.skills, next.me?.cardName);
+        ultimateCutscene?.prepare(next.opp?.skills, next.opp?.cardName);
         if (silent) events.forEach(event => addLog(event.text));
         else {
             let delay = 0;
@@ -721,6 +725,7 @@
             if (skill && skill.element) event.effectElement = skill.element;
         }
         if (effectCatalog) effectCatalog.annotateEvent(event);
+        ultimateCutscene?.play(event, view?.[actor]?.cardName);
         const skillAudience = action === 'skill' && effectCatalog && effectCatalog.skillTarget ? effectCatalog.skillTarget(event) : action === 'skill' ? 'target' : null;
         const hasTargetImpact = Number(event.damage || 0) > 0 || (Array.isArray(event.hits) && event.hits.some(hit => Number(hit && hit.damage || 0) > 0));
         addLog(event.text, actor === 'opp' && Number(event.damage || 0) > 0 ? 'bad' : action === 'start' ? 'good' : '');
@@ -799,6 +804,7 @@
     }
 
     async function loadLobby() {
+        ultimateCutscene?.reset();
         stage = 'lobby';
         try {
             const payload = await request('/api/pvp');

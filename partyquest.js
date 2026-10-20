@@ -5170,6 +5170,12 @@ function useSkill(name, skillName, targetName) {
     equipmentSkill.extra.skillName = skillName;
     equipmentSkill.extra.mpCost = mp;
     activatePartyTcg(room, me, equipmentSkill.extra);
+    room.skillCastSerial = Number(room.skillCastSerial || 0) + 1;
+    broadcast(room, 'skill-cast', {
+        id: room.id + ':' + room.startedAt + ':skill-' + room.skillCastSerial,
+        roomId: room.id, startedAt: room.startedAt, phaseIndex: room.phaseIndex,
+        at: nowMs(), action: 'skill', skillName, actor: me.name, cardName: me.card?.name
+    });
     executeSkillEffect(room, me, skillName, def, targetName, equipmentSkill);
     broadcastRoom(room);
     return { ok: true };

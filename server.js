@@ -9529,7 +9529,7 @@ function renderHFieldApp(sess) {
   <canvas id="hfHud"></canvas>
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};</script>
-<script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-shortcuts.js"></script>
 <script src="/static/hfield.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
@@ -9547,7 +9547,7 @@ function renderGeneralFieldApp(sess, mode = 'regular') {
   <canvas id="hfHud"></canvas>
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};window.FIELD_MODE=${JSON.stringify(mode)};</script>
-<script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-shortcuts.js"></script>
 <script src="/static/hfield.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
@@ -9580,7 +9580,7 @@ function renderWorldBossApp(sess) {
   <button id="wbRewardClose" class="wb-skill-select" type="button" autofocus>확인</button>
 </dialog>
 <script>window.WORLD_BOSS_ME=${JSON.stringify(sess.name)};</script>
-<script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-shortcuts.js"></script>
 <script src="/static/worldboss.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
@@ -9597,7 +9597,7 @@ function renderPvpApp(sess, opponent) {
   <canvas id="pvpHud"></canvas>
 </main>
 <script>window.PVP_ME=${JSON.stringify(sess.name)};window.PVP_OPPONENT=${JSON.stringify(opponent || '')};</script>
-<script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/pvp.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
@@ -9879,7 +9879,7 @@ function renderPartyApp(sess) {
 <script src="/static/raid-pattern-fx.js"></script>
 <script src="/static/birthday-raid.js"></script>
 <script src="/static/raid-party-fx.js"></script>
-<script src="/static/party.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/party.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }

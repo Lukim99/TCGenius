@@ -5,6 +5,7 @@
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),ratio=(v,m)=>m>0?clamp(Number(v||0)/Number(m),0,1):0;
     const number=v=>Math.round(Number(v||0)).toLocaleString('ko-KR');
     const uiAsset=file=>'/rpg-ui?file='+encodeURIComponent(file),effectCatalog=window.CombatEffects;
+    const ultimateCutscene=window.UltimateCutscene?.create({now:()=>Date.now()+clockOffset});
     const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
     const sideX=(side,narrow)=>side==='target'?(narrow?.70:.67):(narrow?.23:.27);
     const combatPopY=()=>innerWidth<700?.6:.44,recoveryPopY=()=>innerWidth<700?.66:.5;
@@ -128,6 +129,8 @@
             return this.textures.get(url);
         }
         applyState(next){
+            if(!next.inField||next.inField&&!this.lastState?.inField)ultimateCutscene?.reset();
+            ultimateCutscene?.prepare(next.skills,next.player?.cardName);
             if(next.inField&&!(this.lastState&&this.lastState.inField)){
                 this.active='idle';this.animationAt=performance.now();this.lastPose=null;this.previousPose=null;this.effect=null;this.effectSprites=[];this.recentEffects.clear();
             }
@@ -445,6 +448,7 @@
         if(!event)return;
         if(event.message)addLog(event.message,event.defeated?'bad':'');
         if(event.skipped)return;
+        ultimateCutscene?.play(event,state?.player?.cardName);
         renderer.animate(event);
         const hits=event.hits&&event.hits.length?event.hits:Number(event.damage)>0?[{damage:event.damage,critical:Number(event.criticalCount)>0}]:[];
         const received=event.receivedHits&&event.receivedHits.length?event.receivedHits:Number(event.received)>0?[{damage:event.received}]:[];

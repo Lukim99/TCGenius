@@ -7,6 +7,7 @@
 
     const uiAsset = file => '/rpg-ui?file=' + encodeURIComponent(file);
     const effectCatalog = window.CombatEffects || null;
+    const ultimateCutscene = window.UltimateCutscene?.create({ now: () => Date.now() + clockOffset });
     const embedded = window.FIELD_MODE === 'paradise';
     const dailyMode = window.FIELD_MODE === 'daily';
     const trainingMode = window.FIELD_MODE === 'training';
@@ -229,6 +230,8 @@
             image.src = url;
         }
         setState(next) {
+            if (!next?.inField || next.inField && !this.state?.inField) ultimateCutscene?.reset();
+            ultimateCutscene?.prepare(next?.skills, next?.player?.cardName);
             if (next && next.player && next.player.spriteUrl && this.playerUrl !== next.player.spriteUrl) {
                 this.playerUrl = next.player.spriteUrl; this.loadTexture('player', this.playerUrl);
             }
@@ -584,6 +587,7 @@
             if(critical||destiny)this.burst(player.x,player.y,destiny?[.72,.3,1,.65]:[1,.58,.14,.65],critical?14:10);
         }
         animateEnemy(event, previous) {
+            ultimateCutscene?.play(event, previous?.player?.cardName);
             const now = performance.now(), actor = this.targetEffectPoint(previous, event, false), target = this.playerEffectPoint('target');
             const audience = event.action === 'skill' ? effectCatalog?.skillTarget(event) : null;
             if (event.action !== 'tick') {
@@ -597,6 +601,7 @@
             else if (event.action === 'skill' && audience !== 'actor') this.castEffect(target.x, target.y, event, 'target');
         }
         animate(event, previous) {
+            ultimateCutscene?.play(event, previous?.player?.cardName || this.state?.player?.cardName);
             const now = performance.now();
             const skillAudience = event.action === 'skill' && effectCatalog && effectCatalog.skillTarget ? effectCatalog.skillTarget(event) : event.action === 'skill' ? 'target' : null;
             const player = this.playerEffectPoint('actor');
@@ -993,9 +998,10 @@
         let runId = null, enemyId = null, initialized = false;
         window.ParadiseBattle = {
             onAction: null,
+            prepare(card) { if (['전직', '각성'].includes(card?.type)) ultimateCutscene?.prepare(card.classInfo?.skills, card.name); },
             update(next, events, id, quiet = false) {
                 const previous = state;
-                if (runId !== id) { seen.clear(); initialized = false; runId = id; hud.skillPage = 0; }
+                if (runId !== id) { seen.clear(); initialized = false; runId = id; hud.skillPage = 0; ultimateCutscene?.reset(); }
                 if (enemyId !== next?.target?.id) {
                     renderer.releaseHold(); renderer.particles=[]; renderer.effectSprites=[]; hud.damagePops=[];
                     renderer.enemyAttackAt=-10000;
@@ -1017,6 +1023,7 @@
                     if(event.received>0)renderer.later(()=>audio.hit(),90);
                     if(event.cleared||event.defeated){hud.showBanner(event.cleared?'전투 승리':'전투 종료');audio.play(event.cleared?'clear':'fail');}
                     duration=Math.max(duration,Math.min(2200,850+((event.hits||[]).length+(event.receivedHits||[]).length)*95));
+                    duration=Math.max(duration,(window.UltimateCutscene?.find(event,before.player?.cardName)?.duration||0)+150);
                 }
                 if(seen.size>100){const keep=[...seen].slice(-24);seen.clear();keep.forEach(id=>seen.add(id));}
                 logs=(next?.combatLog||[]).slice(0,4).reverse().map(text=>({text:cleanText(text)}));
@@ -1024,7 +1031,8 @@
                 return duration;
             },
             draw(time, locked) { busy=locked; renderer.render(time); hud.draw(); return hud.regions; },
-            reset() { renderer.releaseHold(); renderer.particles=[];renderer.effectSprites=[];hud.damagePops=[];renderer.attackAt=-10000;renderer.setState(null);state=null;initialized=false; },
+            stopCutscene() { ultimateCutscene?.reset(); },
+            reset() { ultimateCutscene?.reset(); renderer.releaseHold(); renderer.particles=[];renderer.effectSprites=[];hud.damagePops=[];renderer.attackAt=-10000;renderer.setState(null);state=null;initialized=false; },
             key(event) {
                 if(busy||!state?.inField||event.repeat)return;
                 if(event.code==='Space'||event.code==='KeyJ'){event.preventDefault();attack();}
