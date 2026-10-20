@@ -310,7 +310,7 @@ test('이익태: 광란의 익테봇은 실제 타이머를 2초로 설정하고
     await skill(user, '익테봇 소환');
     assert.ok(intervals.includes(2000));
     assert.equal(characters.iktaeInterval(user), 2000);
-    corridor.finish(user);
+    corridor.offerAugments(user); corridor.finish(user);
     assert.equal(characters.iktaeInterval(user), 4000);
 });
 

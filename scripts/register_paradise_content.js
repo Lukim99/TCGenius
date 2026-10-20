@@ -10,7 +10,7 @@ const rewardItems = [
     { name: '천상의 증표', type: '재료', desc: '천상의 회랑 탐험 달성 보상으로 획득하는 증표.' },
     ...['지옥 열쇠', '화려한 지옥 열쇠', '찬란한 지옥 열쇠'].map(name => ({ name, type: '재료', desc: '천상의 회랑 주간 랭킹 보상. 지옥 콘텐츠 개방 후 사용할 수 있습니다.' }))
 ];
-const milestoneRewards = [[1,1],[10,2],[100,3],[200,4],[300,5],[400,6],[500,7],[600,8],[700,10],[800,15],[900,20],[999,30]].map(([floor,count]) => ({ floor, count, name: '천상의 증표' }));
+const milestoneRewards = [[1,1],[10,2],[100,3],[200,4],[300,5],[400,6],[500,7],[600,8],[700,10],[800,15],[900,20],[999,30]].map(([floor,count]) => ({ floor, count: count * 100, name: '천상의 증표' }));
 const weeklyRewards = { participation: [{ type: '아이템', name: '지옥 열쇠', count: 3 }], ranks: [
     { from: 1, to: 1, rewards: [{ type: '아이템', name: '찬란한 지옥 열쇠', count: 3 }, { type: '가넷', count: 2000 }] },
     { from: 2, to: 2, rewards: [{ type: '아이템', name: '화려한 지옥 열쇠', count: 3 }, { type: '가넷', count: 1000 }] },

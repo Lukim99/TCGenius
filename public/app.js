@@ -8149,7 +8149,7 @@ let titlesData = null;
 const titleDexState = { search: '', filter: 'all' };
 const characterDexState = { search: '', filter: 'all' };
 const augmentDexState = { search: '', filter: 'all', category: 'all' };
-const AUGMENT_CATEGORIES = { basic: '공격', skill: '스킬', critical: '치명타', combo: '연격', defense: '방어·생존', recovery: '회복', exploration: '탐험', risk: '위험·거래', reward: '보상' };
+const AUGMENT_CATEGORIES = { basic: '공격', skill: '스킬', critical: '치명타', dot: '지속 피해', combo: '연격', shield: '보호막', ultimate: '궁극기', active: '스킬 습득', passive: '패시브 습득', defense: '방어·생존', recovery: '회복', exploration: '탐험', risk: '위험·거래', reward: '보상' };
 const AUGMENT_RARITIES = { silver: '실버', gold: '골드', prismatic: '프리즘', cursed: '저주' };
 let titleSaving = false;
 

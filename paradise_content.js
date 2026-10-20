@@ -115,7 +115,8 @@ const AUGMENTS = [
     a('rest', '길 잃은 별빛', -5, '최대 HP와 MP의 30%를 회복합니다.', {}, { special: 'rest', rarity: 'silver' }),
     ...require('./paradise_augments_extra'),
     ...require('./paradise_augments_adventure'),
-    ...require('./paradise_augments_characters')
+    ...require('./paradise_augments_characters'),
+    ...require('./paradise_augments_mechanics')
 ];
 
 const RELICS = [
@@ -133,7 +134,7 @@ const RELICS = [
     ['necklace', '저주받은 목걸이', '받는 피해 +15%, 엘리트 처치 보상 2배'],
     ['judgment', '심판자의 성흔', '최종 피해 +35%, 종료 보상 +50% · 심판자 전용'],
     ['riftHeart', '균열의 심장', '공격력 +40%, 받는 피해 -15%, 종료 보상 +75% · 붕괴 보스 전용']
-].map(([id, name, desc]) => ({ id, name, desc, special: ['judgment', 'riftHeart'].includes(id) }));
+].map(([id, name, desc]) => ({ id, name, desc, special: ['judgment', 'riftHeart'].includes(id), iconUrl: '/rpg-ui?file=' + encodeURIComponent('낙원/relic-' + id + '.webp') }));
 
 const EVENTS = {
     puzzle: { title: '현자의 봉인', story: '부서진 석판 위로 문양이 떠오릅니다. 짧은 시간 안에 봉인을 풀어야 합니다.', quote: '정답은 언제나 그 안에 있다.' },

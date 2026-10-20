@@ -137,7 +137,7 @@ test('장비 증강 72개는 유효 장착 조건·중복 제한을 지키며 �
             close(corridor.equipmentMultiplier(user, augment.equipment), augment.multiplier);
         }
         assert.ok(!user.paradise.choices.includes(augment.id));
-        corridor.finish(user);
+        corridor.offerAugments(user); corridor.finish(user);
         assert.equal(corridor.equipmentMultiplier(user, augment.equipment), 1);
     }
     assert.deepEqual(rpg.getDataCache('Equipment', {}), originals);
@@ -187,7 +187,7 @@ test('상시·조건부 장비 패시브 증강은 1·3단계 실제 스탯을 �
         for (const key of keys) assert.ok(after[key] > before[key], `${id} ${stage} ${key}: ${before[key]} → ${after[key]}`);
         for (const key of ['atk', 'hp', 'def']) assert.equal(after[key], before[key], `${id} ${key}`);
         if (id === 'baseball') assert.ok(after.takenDamage < before.takenDamage);
-        corridor.finish(user);
+        corridor.offerAugments(user); corridor.finish(user);
         assert.deepEqual(rpg.calculateUserStats(user), before, id + ' 종료 후 원상복구');
     }
 });
@@ -357,7 +357,7 @@ test('계약은 승리 조건·기한을 판정하고 보상 계약과 유물을
         assert.equal(quest.status, 'failed', id);
         assert.equal(user.paradise.contracts.length, 0); assert.equal(user.paradise.relics.length, 0);
     }
-    const abandoned = fresh(); choose(abandoned, 'relicParcel'); corridor.finish(abandoned);
+    const abandoned = fresh(); choose(abandoned, 'relicParcel'); corridor.offerAugments(abandoned); corridor.finish(abandoned);
     assert.equal(abandoned.paradise.quests[0].status, 'failed'); assert.equal(abandoned.paradise.relics.length, 0);
 });
 
@@ -593,7 +593,7 @@ test('MP 소모·쿨타임 증강은 실제 스킬 경로에 반영되고 종료
     assert.ok(!message.startsWith('❌'), message);
     assert.equal(corridor.getResources(user).mp, beforeMp - Math.round(skill.mp_cost * .75));
     assert.ok(user.field.skillCooldowns[skill.name] - at <= skill.cooltime * .75 + 100);
-    corridor.finish(user);
+    corridor.offerAugments(user); corridor.finish(user);
     assert.equal(corridor.cooldownMultiplier(user), 1);
     assert.equal(rpg.calculateUserStats(user).mpReduce || 0, 0);
 });

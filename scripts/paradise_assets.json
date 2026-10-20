@@ -114,5 +114,61 @@
   {
     "file": "audio/select.mp3",
     "sha256": "e1fe192342d5b4280f4adf0df710c0e6a92afa9ed13950fc6d2049f4f06062ff"
+  },
+  {
+    "file": "relic-crown.webp",
+    "sha256": "2f5d7f5e649a41dbe574757ed4a5b277e113bad15d262f7f73b551c2453102f8"
+  },
+  {
+    "file": "relic-compass.webp",
+    "sha256": "1ec6d30f318ca010dcbe030041281b302fab420d21cf760eb35fb02a0f1e842c"
+  },
+  {
+    "file": "relic-ring.webp",
+    "sha256": "e8c4da71164bd6df62f36e888e7e7fb4e6a9b3ec623599a4eb9e9a16751357f5"
+  },
+  {
+    "file": "relic-clock.webp",
+    "sha256": "9b496e2bc02ed4dfda16a5287f6bfc39eaae4b35f9e914a50b0619682faeb6be"
+  },
+  {
+    "file": "relic-feather.webp",
+    "sha256": "cc8f929f0752c4392513044eb004234e6a7ce65570bbf7fba840050fa30b5ef5"
+  },
+  {
+    "file": "relic-orb.webp",
+    "sha256": "4f19f5bcc5af04e204a70ea328840f1a8e75755df465311a5b19ae920d713561"
+  },
+  {
+    "file": "relic-dice.webp",
+    "sha256": "130578e32537640f672b4c77eddfd7decb1200590efecf37bc4352a48ea31027"
+  },
+  {
+    "file": "relic-redContract.webp",
+    "sha256": "de444831d7e7d6cbaafdd44bdef3fb68c99193288b005f708e2973ba3d344ab0"
+  },
+  {
+    "file": "relic-key.webp",
+    "sha256": "30214084aba74135d57643fde107fef6b36b80522ecae89dd7537f8bdf3a2bb2"
+  },
+  {
+    "file": "relic-hourglass.webp",
+    "sha256": "dd839892513ad5da5c687d9e86e433e98461e8eb7f357eb0acf64217b0fa0eaa"
+  },
+  {
+    "file": "relic-sheath.webp",
+    "sha256": "9a5be061ad90a2e32baa20ab8281e86bc06be61f8cb739f01f0c7b01e6db3312"
+  },
+  {
+    "file": "relic-necklace.webp",
+    "sha256": "6ee367250772fc054a64433775a01ddb65496e04574a590b7d9253ee41adc505"
+  },
+  {
+    "file": "relic-judgment.webp",
+    "sha256": "37820486978337ae7d6a733e427908dbc46904067a76fdab351fff0067b86bbe"
+  },
+  {
+    "file": "relic-riftHeart.webp",
+    "sha256": "179f552d7c2b6bd93741e9895b2db775e6b593486e73112bb274a4a4a45fe562"
   }
 ]

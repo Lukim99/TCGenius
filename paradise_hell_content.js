@@ -13,6 +13,8 @@ const INITIAL_CONFIG = { enabled: true, rewards: [
     { id: 'bait', name: '미끼', kind: 'item', item: '익명 지렁이', counts: [20,50,100,150,250,300,400,600,800,1200,2000] },
     { id: 'invitation', name: '초대장', kind: 'item', item: '헬 초대장', counts: [100,150,200,300,400,550,700,900,1200,1600,2000] },
     { id: 'key', name: '열쇠', kind: 'item', item: '지니어스의 열쇠', counts: [10,30,50,75,90,120,150,200,250,300,500] },
-    { id: 'fragment', name: '초월조각', kind: 'item', item: '초월 조각', counts: [3,6,10,15,20,30,40,55,70,95,130] }
+    { id: 'fragment', name: '초월조각', kind: 'item', item: '초월 조각', counts: [3,6,10,15,20,30,40,55,70,95,130] },
+    { id: 'goldPouch', name: '황금 주머니', kind: 'item', item: '황금 주머니', counts: [20,50,80,200,300,700,1500,3500,8000,20000,100000] },
+    { id: 'blackFlame', name: '검은 불', kind: 'item', item: '검은 불', counts: [5,10,25,50,80,120,200,270,360,480,800] }
 ] };
 module.exports = { KEYS, INITIAL_CONFIG };

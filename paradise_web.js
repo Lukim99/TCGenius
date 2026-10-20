@@ -36,9 +36,14 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         if (view.run?.phase === 'combat') {
             view.battle = getCombatView(user);
             const characters = require('./paradise_augments_characters'), blocked = characters.skillBlocked(user);
+            const mechanics = require('./paradise_mechanics'), stats = rpgenius.calculateUserStats(user);
+            view.battle.skills.push(...mechanics.skillView(user));
             for (const skill of view.battle.skills) {
                 if (blocked) skill.disabledReason = blocked;
                 if (characters.freeSkill(user, skill.name)) skill.mpCost = 0;
+                const payment = mechanics.payment(user, stats, skill.mpCost, skill.name);
+                skill.mpCost = payment.cost;
+                if (payment.hpCost) skill.hpCost = Number(skill.hpCost || 0) + payment.hpCost;
             }
         }
         if (view.run?.rewardSummary) view.run.rewardSummary = view.run.rewardSummary.map(reward => rewardView(reward, user));
@@ -93,7 +98,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                         return { ok: true, message: receipt.message, reveal: revealView(receipt.reveal, user), state: state(user) };
                     }
                     if (Number(user.paradise?.revision || 0) !== body.revision || (user.paradise?.id || null) !== (body.runId || null)) return { error: '다른 화면에서 탐험이 진행되었습니다. 현재 상태를 다시 불러왔습니다.', state: state(user), stale: true };
-                    if (!['enter', 'claim', 'chest'].includes(action) && !corridor.active(user)) return { error: '진행 중인 낙원 탐험이 없습니다.', state: state(user) };
+                    if (!['enter', 'claim', 'chest'].includes(action) && !corridor.active(user) && !(action === 'retire' && corridor.view(user).run?.canReturn)) return { error: '진행 중인 낙원 탐험이 없습니다.', state: state(user) };
                     let result;
                     if (action === 'enter') result = body.mode === 'hell' ? hell.enter(user, body.key) : body.mode && body.mode !== 'heaven' ? { error: '알 수 없는 낙원 입장입니다.' } : corridor.enter(user);
                     else if (action === 'descend') result = hell.descend(user, body.side);
@@ -104,7 +109,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     else if (action === 'event') result = corridor.chooseEvent(user, body.choice);
                     else if (action === 'puzzle') result = corridor.answerPuzzle(user, body.skip === true ? null : body.answer);
                     else if (action === 'claim') result = corridor.claim(user);
-                    else if (action === 'retire') { corridor.finish(user); result = { message: user.paradise.mode === 'hell' ? '지옥에서 귀환했습니다.' : '회랑에서 귀환했습니다. 종료 보상을 수령해주세요.' }; }
+                    else if (action === 'retire') result = corridor.finish(user);
                     else {
                         if (user.paradise.phase !== 'combat') return { error: '전투 중에만 공격할 수 있습니다.', state: state(user) };
                         const sequence = Number(user.paradise.combatSequence || 0), enemyId = user.paradise.enemy.id;

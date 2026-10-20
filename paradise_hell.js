@@ -29,7 +29,7 @@ function checkRewardItems(config) {
 }
 function enter(user, keyName, random = Math.random) {
     if (user.paradise?.status === 'active' || user.field || require('./partyquest').getRoomOf(user.name) || user.pvp?.battle && user.pvp.battle.phase !== 'ended') return { error: '진행 중인 전투나 탐험을 먼저 마쳐주세요.' };
-    if (user.paradise?.status === 'ended' && !user.paradise.claimed) return { error: '지난 탐험의 보상을 먼저 수령해주세요.' };
+    if (user.paradise?.status === 'ended' && !user.paradise.claimed && (user.paradise.mode === 'hell' || user.paradise.outcome !== 'defeated')) return { error: '지난 탐험의 보상을 먼저 수령해주세요.' };
     if (!user.main_card || user.need_character_card_select) return { error: '메인 카드를 먼저 선택해주세요.' };
     if (user.pendingAction || user.pendingFragment || user.fishing === true) return { error: '진행 중인 작업이나 보상 선택을 먼저 완료해주세요.' };
     const config = rpg().getDataCache('Paradise', null)?.hell;
@@ -65,7 +65,11 @@ function enterFloor(user, random) {
 function descend(user, side, random = Math.random) {
     const run = user.paradise;
     if (run?.mode !== 'hell' || run.phase !== 'descent' || run.dropsRemaining <= 0 || !['left','right'].includes(side)) return { error: '현재는 낙하할 수 없습니다.' };
-    const min = run.rocketJump ? 16 : 1, distance = min + Math.min(20 - min, Math.floor(random() * (21 - min))), from = run.floor;
+    const roll = random(), from = run.floor;
+    const distance = run.rocketJump ? 16 + Math.min(4, Math.floor(roll * 5))
+        : roll < .65 ? 1 + Math.min(9, Math.floor(roll / .65 * 10))
+        : roll < .90 ? 11 + Math.min(4, Math.floor((roll - .65) / .25 * 5))
+        : 16 + Math.min(4, Math.floor((roll - .90) / .10 * 5));
     run.floor = Math.min(100, from + distance); run.dropsRemaining--; run.rocketJump = false;
     run.lastDrop = { side, from, to: run.floor, distance: run.floor - from };
     enterFloor(user, random);

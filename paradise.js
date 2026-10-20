@@ -153,6 +153,7 @@ function eligibleAugment(user, choice, equipped = equipmentOptions(user).map(e =
     const run = user.paradise;
     return (!choice.equipment || equipped.includes(choice.equipment))
         && (choice.character == null || require('./paradise_augments_characters').eligible(user, choice))
+        && (!choice.requiresUltimate || rpg().getUltimateSkills(user).length > 0)
         && (!choice.requiresEquipment || equipped.length > 0)
         && (!choice.requiresRelics || ordinaryRelics(run).length >= choice.requiresRelics)
         && (!choice.requiresCardContract || run.contracts.some(c => c.star));
@@ -177,6 +178,7 @@ function offerAugments(user, random = Math.random) {
 }
 function continueExploration(user, random = Math.random) {
     const run = user.paradise;
+    if (run.completed) return { error: '999층을 정복했습니다. 귀환하여 보상을 정산해주세요.' };
     if (run.phase !== 'augment' || run.choices.some(id => AUGMENTS.some(a => a.id === id) && !obtainedAugment(run, id))) return { error: '먼저 증강을 선택해주세요.' };
     move(user, 5); nextEncounter(user, random);
     return { message: '새로운 증강이 없어 5층을 올라갔습니다.' };
@@ -229,7 +231,7 @@ function createMonster(user, kind = 'normal', random = Math.random) {
     const sourceIndex = rpg().getRegularFieldDungeons().findIndex(d => d.name === source.name);
     const base = kind === 'normal' ? source : source.elite || source;
     const power = run.mode === 'hell' ? require('./paradise_hell').recommendedPower(run.floor) : recommendedPower(run.floor) * (kind === 'elite' ? 1.2 : kind === 'judge' ? 3.5 : kind === 'rift' ? 4 : 1);
-    // 지옥은 기존 난이도를 유지한다. 천상은 아래에서 몬스터 자체의 전투력으로 보정한다.
+    // 지옥은 기존 공격·방어 수치를 구한 뒤 HP만 10배로 늘린다. 천상은 자체 전투력으로 보정한다.
     const defense = Math.max(0, Math.round(Math.sqrt(power) / 18));
     const template = { atk: Math.max(1, Number(base.atk || 1)), hp: Math.max(1, Number(base.hp || 1)), def: defense, pnt: Math.round(defense * .4), crit: Number(base.crit || .05), critMul: Number(base.critMul || 1.5), cmb: Number(base.cmb || .05), maxCmb: Number(base.maxCmb || 0) };
     let low = 0, high = Math.max(1, power);
@@ -243,6 +245,7 @@ function createMonster(user, kind = 'normal', random = Math.random) {
     const enemy = { ...template, id: crypto.randomUUID(), kind, name: kind === 'judge' ? '회랑의 심판자' : kind === 'rift' ? '균열을 삼키는 자' : kind === 'final' ? '천상의 마지막 수문장' : kind === 'normal' ? source.name + '의 망령' : base.name || source.name + '의 정예',
         hp: Math.max(1, Math.round(template.hp * high)), atk: Math.max(1, Math.round(template.atk * high)), recommendedPower: Math.round(power), sourceIndex, sourceField: source.name, traits: [] };
     if (run.mode !== 'hell') Object.assign(enemy, heavenMonsterStats(run.floor, kind));
+    else enemy.hp *= 10;
     enemy.maxHp = enemy.hp;
     if (run.mode === 'hell') enemy.name = (kind === 'boss' ? '지옥의 지배자 · ' : kind === 'elite' ? '지옥의 정예 · ' : '지옥의 ') + (base.name || source.name);
     if (run.distortion >= 50 && random() < (run.distortion >= 75 ? .65 : .20)) {
@@ -279,6 +282,7 @@ function startCombat(user, kind = 'normal', sequence = null, random = Math.rando
     run.insurance = false;
     user.field = { name: run.mode === 'hell' ? '지옥' : '천상의 회랑', paradise: true, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, equipmentState: {}, elite: kind === 'normal' ? null : { hp: enemy.hp, encounteredAt: Date.now() } };
     if (has(run, 'orb')) heal(user, 0, .30);
+    require('./paradise_mechanics').onBattle(user);
     log(run, `${enemy.name} 조우`);
 }
 function nextEncounter(user, random = Math.random) {
@@ -299,7 +303,7 @@ function nextEncounter(user, random = Math.random) {
 }
 function enter(user, random = Math.random) {
     if (user.paradise?.status === 'active' || user.field || require('./partyquest').getRoomOf(user.name) || user.pvp?.battle && user.pvp.battle.phase !== 'ended') return { error: '진행 중인 전투나 탐험을 먼저 마쳐주세요.' };
-    if (user.paradise?.status === 'ended' && !user.paradise.claimed) return { error: '지난 탐험의 종료 보상을 먼저 수령해주세요.' };
+    if (user.paradise?.status === 'ended' && !user.paradise.claimed && (user.paradise.mode === 'hell' || user.paradise.outcome !== 'defeated')) return { error: '지난 탐험의 종료 보상을 먼저 수령해주세요.' };
     if (!user.main_card || user.need_character_card_select) return { error: '메인 카드를 먼저 선택해주세요.' };
     if (user.pendingAction || user.pendingFragment || user.fishing === true) return { error: '진행 중인 작업이나 보상 선택을 먼저 완료해주세요.' };
     const config = rpg().getDataCache('Paradise', null);
@@ -317,7 +321,7 @@ function enter(user, random = Math.random) {
 function chooseAugment(user, id, random = Math.random) {
     const resources = getResources(user);
     const run = user.paradise;
-    if (run.phase !== 'augment' || !run.choices.includes(id) || obtainedAugment(run, id)) return { error: '현재 제시된 강화 중 하나를 선택해주세요.' };
+    if (run.completed || run.phase !== 'augment' || !run.choices.includes(id) || obtainedAugment(run, id)) return { error: '현재 제시된 강화 중 하나를 선택해주세요.' };
     const choice = AUGMENTS.find(a => a.id === id);
     if (!choice) return { error: '현재 제시된 증강 중 하나를 선택해주세요.' };
     let message = choice.name + ' 획득', reveal = null;
@@ -715,6 +719,8 @@ function survive(user, nextHp, maxHp) {
     if (nextHp > 0) return nextHp;
     const characterHp = require('./paradise_augments_characters').survive(user, nextHp, maxHp);
     if (characterHp > 0) return characterHp;
+    const mechanicHp = require('./paradise_mechanics').survive(user, nextHp);
+    if (mechanicHp > 0) return mechanicHp;
     if (run.effects.unyielding && !run.battle.survived) { run.battle.survived = true; log(run, '불굴의 의지 · HP 1로 생존'); return 1; }
     if (run.battle.insurance) { run.battle.insurance = false; log(run, '회랑의 보험 발동'); return run.effects.noHealing ? 1 : Math.max(1, Math.round(maxHp * .30)); }
     if (has(run, 'feather') && !run.featherUsed) { run.featherUsed = true; log(run, '불사의 깃털 발동'); return run.effects.noHealing ? 1 : Math.max(1, Math.round(maxHp * .30)); }
@@ -728,6 +734,7 @@ function survive(user, nextHp, maxHp) {
 }
 function victory(user, random = Math.random) {
     if (user.paradise.mode === 'hell') return require('./paradise_hell').victory(user, random);
+    require('./paradise_mechanics').onVictory(user);
     const run = user.paradise, enemy = run.enemy, elite = enemy.kind === 'elite';
     const units = (run.battle.doubledReward ? 2 : 1) * (elite && has(run, 'necklace') ? 2 : 1);
     run.battlesWon++; run.rewardUnits += units;
@@ -771,21 +778,43 @@ function victory(user, random = Math.random) {
         // 일반 엘리트도 천상 유물을 지급한다. 목걸이/붕괴의 두 배는 실제 지급에 반영한다.
         for (let i = 0; i < units; i++) if (random() < .35) grantRelic(user, null, random);
     }
-    if (enemy.kind === 'final') { finish(user, 'cleared'); return; }
+    if (enemy.kind === 'final') {
+        run.completed = true; run.phase = 'augment'; run.choices = []; run.event = null;
+        log(run, '999층 정복 · 귀환하여 보상을 정산해주세요.');
+        return;
+    }
     if (run.distortion >= 100) { run.phase = 'event'; run.event = { id: 'collapse' }; }
     else offerAugments(user, random);
 }
-function finish(user, outcome = 'retired') {
-    if (user.paradise.mode === 'hell') return require('./paradise_hell').finish(user, outcome);
+function canReturn(user) {
     const run = user.paradise;
+    return !!run && run.mode !== 'hell' && (run.status === 'active' && run.phase === 'augment'
+        || run.status === 'ended' && run.outcome === 'cleared' && !run.claimed && !run.returnedAt);
+}
+function rewardEligible(run) {
+    return run.outcome === 'retired' || run.outcome === 'cleared' && !!run.returnedAt;
+}
+function finish(user, outcome = 'retired') {
+    if (user.paradise.mode === 'hell') {
+        require('./paradise_hell').finish(user, outcome);
+        return { message: '지옥에서 귀환했습니다.' };
+    }
+    const run = user.paradise;
+    if (outcome !== 'defeated') {
+        if (!canReturn(user)) return { error: '귀환은 증강 선택 단계에서만 가능합니다.' };
+        run.returnedAt = Date.now();
+        outcome = run.completed || run.outcome === 'cleared' ? 'cleared' : 'retired';
+    }
     rpg().clearFieldRuntimeTimers(user.name);
     run.status = 'ended'; run.phase = 'ended'; run.outcome = outcome; run.endedAt = Date.now(); run.event = null; run.choices = [];
     for (const quest of run.quests || []) if (quest.status === 'active') quest.status = 'failed';
     run.rewardBonus = Number(run.effects.reward || 0) + Number(run.ring || 0) + (has(run, 'judgment') ? .50 : 0) + (has(run, 'riftHeart') ? .75 : 0) + run.contracts.reduce((sum, c) => sum + Number(c.bonus || 0), 0);
     user.field = null;
     log(run, outcome === 'cleared' ? '999층 완주 · 천상의 끝' : outcome === 'defeated' ? '탐험 종료 · 전투 불능' : '귀환 · 종료 보상 정산');
+    return { message: outcome === 'defeated' ? '전투에서 패배하여 탐험 보상과 계약 보상을 잃었습니다.' : '천상에서 귀환했습니다. 종료 보상을 수령해주세요.' };
 }
 function previewRewards(run) {
+    if (run.status === 'ended' && !rewardEligible(run)) return [];
     const multiplier = 1 + Math.max(0, Number(run.rewardBonus ?? (Number(run.effects.reward || 0) + Number(run.ring || 0) + run.contracts.reduce((sum, c) => sum + Number(c.bonus || 0), 0))));
     const battleMultiplier = run.battlesWon ? run.rewardUnits / run.battlesWon : 1;
     const rewards = (run.baseRewards || []).map(reward => ({ ...reward, count: Math.floor(Math.floor(run.clearedFloor / reward.perFloors) * reward.count * multiplier * battleMultiplier) })).filter(reward => reward.count > 0);
@@ -814,6 +843,7 @@ function claim(user) {
     if (run?.mode === 'hell') return run.claimed ? { message: '이미 수령한 보상입니다.' } : { error: '지옥 보상 상자를 직접 선택해주세요.' };
     if (!run || run.status !== 'ended') return { error: '탐험을 종료한 후 수령할 수 있습니다.' };
     if (run.claimed) return { message: '이미 수령한 보상입니다.' };
+    if (!rewardEligible(run)) return { error: run.outcome === 'defeated' ? '전투에서 패배하면 탐험 보상과 계약 보상을 받을 수 없습니다.' : '귀환한 후 보상을 수령해주세요.' };
     const rewards = previewRewards(run), items = rpg().getDataCache('Item', []);
     if (rewards.some(reward => reward.type === '아이템' && !items.some(i => i?.name === reward.name))) return { error: '종료 보상 아이템이 운영 DB에 없습니다. 운영자에게 설정 확인을 요청해주세요. 계약과 보상은 보존됩니다.' };
     const contracts = run.contracts.filter(c => c.star);
@@ -847,7 +877,7 @@ function view(user) {
         baseRewards: config?.baseRewards || [], entryBlocked: user.field && !user.field.paradise ? '다른 전투를 먼저 마쳐주세요.' : null, run: null };
     if (!run) return require('./paradise_hell').decorateView(result, user);
     const { mirror, ...enemy } = run.enemy || {};
-    result.run = { id: run.id, status: run.status, phase: run.phase, floor: run.floor, clearedFloor: run.clearedFloor, distortion: run.distortion, outcome: run.outcome || null, claimed: !!run.claimed, battlesWon: run.battlesWon, elitesWon: run.elitesWon, enemy: run.phase === 'combat' ? enemy : null,
+    result.run = { id: run.id, status: run.status, phase: run.phase, completed: !!run.completed, canReturn: canReturn(user), canClaim: run.status === 'ended' && !run.claimed && rewardEligible(run), floor: run.floor, clearedFloor: run.clearedFloor, distortion: run.distortion, outcome: run.outcome || null, claimed: !!run.claimed, battlesWon: run.battlesWon, elitesWon: run.elitesWon, enemy: run.phase === 'combat' ? enemy : null,
         choices: run.phase === 'augment' ? run.choices.filter(id => !obtainedAugment(run, id)).map(id => AUGMENTS.find(a => a.id === id)).filter(Boolean).map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous }) => ({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous })) : [],
         event: run.event ? { id: run.event.id, ...EVENTS[run.event.id], equipment: run.event.equipment || null, choices: run.phase === 'event' ? eventChoices(user) : [], ...(run.phase === 'puzzle' ? { puzzle: run.event.puzzle.publicPuzzle, deadline: run.event.deadline } : {}) } : null,
         relics: run.relics.map(id => ({ ...RELICS.find(r => r.id === id), spent: id === 'feather' && !!run.featherUsed })), effects: Object.entries(run.acquired).filter(([id]) => AUGMENTS.some(a => a.id === id)).map(([id, count]) => ({ ...AUGMENTS.find(a => a.id === id), count })), permanentEffects: sumEffects(run), temporary: run.temporary.filter(buff => !buff.equipment || EQUIPMENT_AUGMENTS.get(buff.equipment)?.id !== buff.id).map(({ name, battles }) => ({ name, battles })), equipmentPermanent: run.equipmentPermanent,
@@ -855,7 +885,7 @@ function view(user) {
         rewardSummary: run.mode === 'hell' ? [] : claimedRewards(run),
         skills: rpg().getMainCardSkills(user).map(({ skill }) => ({ name: skill.name, cost: skill.mp_cost, cooldownEnd: Number(user.field?.skillCooldowns?.[skill.name] || 0) })) };
     if (result.run) {
-        if (run.phase === 'augment' && !result.run.choices.length) result.run.continueWarning = powerWarning(user, 5, 'normal');
+        if (run.phase === 'augment' && !run.completed && !result.run.choices.length) result.run.continueWarning = powerWarning(user, 5, 'normal');
         result.run.highestFloor = Number(run.highestFloor || run.clearedFloor || run.floor);
         for (const choice of result.run.choices) choice.powerWarning = powerWarning(user, choice.floors, choice.id === 'rewind' || AUGMENTS.find(a => a.id === choice.id)?.acquire?.forceElite || AUGMENTS.find(a => a.id === choice.id)?.quest?.forceElite || run.forceElite ? 'elite' : 'normal');
         for (const choice of result.run.event?.choices || []) choice.powerWarning = eventPowerWarning(user, choice.id);

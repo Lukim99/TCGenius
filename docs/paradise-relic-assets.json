@@ -1,0 +1,76 @@
+{
+  "generator": "Built-in image_gen",
+  "format": "512 × 512 WebP with original alpha, centered within 294 × 294 to match item padding",
+  "assets": [
+    {
+      "id": "crown",
+      "file": "DB/RPGenius/ui/낙원/relic-crown.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: An ancient dark gold royal crown, five sharp points, inset ruby and subtle dried crimson streaks, elegant dangerous silhouette. No gore."
+    },
+    {
+      "id": "compass",
+      "file": "DB/RPGenius/ui/낙원/relic-compass.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A worn circular brass compass, aged engraved rim, cracked ivory dial and luminous teal needle, seen in three-quarter view. No letters or numbers."
+    },
+    {
+      "id": "ring",
+      "file": "DB/RPGenius/ui/낙원/relic-ring.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A thick antique gold ring set with an oversized emerald green gemstone, covetous curling gold claws, three-quarter view showing ring band."
+    },
+    {
+      "id": "clock",
+      "file": "DB/RPGenius/ui/낙원/relic-clock.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A shattered antique silver pocket watch with broken hands and a fractured crystal cover, icy cyan light leaking from a crack. No numbers or letters."
+    },
+    {
+      "id": "feather",
+      "file": "DB/RPGenius/ui/낙원/relic-feather.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A single immortal phoenix feather made of pearl white and warm gold filaments, a small amber gemstone at its quill, gently curved, luminous but crisp."
+    },
+    {
+      "id": "orb",
+      "file": "DB/RPGenius/ui/낙원/relic-orb.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A cobalt blue magical orb held by three small ornate silver claws, swirling violet and azure mana inside the glass sphere, rich jewel highlights."
+    },
+    {
+      "id": "dice",
+      "file": "DB/RPGenius/ui/낙원/relic-dice.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A single gambler's ivory six-sided die with deep ruby pips and intricate dark gold corner caps, tipped at a dynamic three-quarter angle. Real circular pips, no lettering."
+    },
+    {
+      "id": "redContract",
+      "file": "DB/RPGenius/ui/낙원/relic-redContract.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: An ancient rolled-open parchment contract tied by a crimson ribbon and closed with a large blood-red wax seal, blackened curled edges, tiny abstract indecipherable ink marks, no readable text."
+    },
+    {
+      "id": "key",
+      "file": "DB/RPGenius/ui/낙원/relic-key.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: An ornate celestial silver and pale gold skeleton key, ring-shaped bow with luminous aquamarine gem and winglike filigree, graceful diagonal composition."
+    },
+    {
+      "id": "hourglass",
+      "file": "DB/RPGenius/ui/낙원/relic-hourglass.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: An upside-down magical hourglass of antiqued bronze and crystal, turquoise sand floating upward, elegant curved supports, slight diagonal tilt."
+    },
+    {
+      "id": "sheath",
+      "file": "DB/RPGenius/ui/낙원/relic-sheath.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A forgotten empty sword scabbard of deep indigo leather with tarnished gold fittings and small pale blue inset stones, worn wrapping, diagonal composition. Empty sheath only, no sword."
+    },
+    {
+      "id": "necklace",
+      "file": "DB/RPGenius/ui/낙원/relic-necklace.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A cursed obsidian pendant with a purple gemstone shaped like a teardrop, thorned dark silver setting and a short elegantly curved chain, faint violet inner glow."
+    },
+    {
+      "id": "judgment",
+      "file": "DB/RPGenius/ui/낙원/relic-judgment.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: The Judge's sacred stigmata relic: a compact blackened steel and platinum sunburst emblem with a brilliant vertical gold slit in the center, angular severe sacred armor motif, faint gold radiance. A physical collectible emblem, no lettering."
+    },
+    {
+      "id": "riftHeart",
+      "file": "DB/RPGenius/ui/낙원/relic-riftHeart.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: The Heart of the Rift relic: a jagged faceted violet crystal heart encircled by two broken floating black-gold arcs, a luminous cyan crack through its center, intense contained magical energy. Crystal artifact, not an anatomical organ."
+    }
+  ]
+}

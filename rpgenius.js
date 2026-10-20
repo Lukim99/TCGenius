@@ -10,6 +10,7 @@ const combatEffects = require('./public/combat-effects.js');
 const wisdomPuzzle = require('./wisdom_puzzle');
 const paradise = require('./paradise');
 const paradiseCharacters = require('./paradise_augments_characters');
+const paradiseMechanics = require('./paradise_mechanics');
 const shopCatalog = require('./shop_catalog');
 const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
 const { regularCardPackBaseChance } = require('./chuseok_event');
@@ -441,6 +442,7 @@ async function runFieldMarkTick(userName, trainingUser) {
     if (context.type == 'hell' && context.phase == 'pillar') return;
     const dmg = Math.max(1, Math.round(Number(user.field.mark.dot || 0)));
     const extra = { isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1, attackElement: getAttackElement(user, null) }; // 지속 피해 틱은 단일 타격 (파티와 동일)
+    if (paradiseMechanics.active(user)) Object.assign(extra, { dotAttack: true, paradiseDot: true, skillName: '유서새김' });
     const lines = [];
     const tickBefore = captureFieldTickState(user);
     let tickDamage;
@@ -474,7 +476,7 @@ function ensureFieldEquipmentDotTimer(user, channel) {
     if (!user || !user.field || user.field.training) return;
     const deckStage = getIlionWeaponStage(user, '무한홀덤덱');
     const state = deckStage ? getEquipmentCombatState(user) : user.field.equipmentState || {};
-    if (!deckStage && !user.field.kino?.dot && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
+    if (!deckStage && !paradiseMechanics.hasTicks(user) && !user.field.kino?.dot && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
     if (deckStage) ilionCards.autoDrawAt(user.field, deckStage, Number(user.field.enteredAt || Date.now()));
     if (channel) activeFieldChannels[user.name] = channel;
     if (fieldEquipmentDotTimers[user.name]) return;
@@ -491,12 +493,12 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     const deckStage = getIlionWeaponStage(user, '무한홀덤덱');
     const state = user && user.field && (deckStage ? getEquipmentCombatState(user) : user.field.equipmentState);
-    if (!user || !user.field || !state || (!deckStage && !user.field.kino?.dot && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
+    if (!user || !user.field || !state || (!deckStage && !paradiseMechanics.hasTicks(user) && !user.field.kino?.dot && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
     const context = getFieldCombatContext(user);
     if (context.error) { clearFieldEquipmentDotTimer(userName); return; }
     const tickTargetKey = getFieldCombatTargetKey(user, context);
     const now = Date.now();
-    const pending = [];
+    const pending = paradiseMechanics.takeTicks(user, now);
     const ilionBefore = captureFieldTickState(user);
     const drawn = ilionCards.tick(user.field, user.field.skillCooldowns, deckStage, getIlionWeaponStage(user, '어머니의 마음'), Number(user.field.enteredAt || now), now);
     if (drawn) {
@@ -577,6 +579,7 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
         const effectContext = getFieldCombatContext(user);
         if (effectContext.error || getFieldCombatTargetKey(user, effectContext) !== tickTargetKey) break;
         const extra = { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, isBotAutoAttack: true, attackElement: effect.label === '카스 살포' ? effect.element : effect.element || (effect.precalculated ? '암' : '화'), precalculatedDamage: !!effect.precalculated, skillName: effect.label === '카스 살포' ? effect.label : null };
+        if (effect.paradiseDot || ['카스 살포', '화상', '겁화'].includes(effect.label)) { extra.paradiseDot = true; extra.skillName = effect.label; }
         const tickBefore = captureFieldTickState(user);
         let tickDamage;
         let effectMessage = '';
@@ -607,7 +610,7 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
         }
         pushFieldTickEvent(userName, String(effect.label || '장비 효과'), tickBefore, user, tickDamage, effectMessage);
     }
-    if (!deckStage && !user.field?.kino?.dot && !state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
+    if (!deckStage && !paradiseMechanics.hasTicks(user) && !user.field?.kino?.dot && !state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
     if (!trainingUser) await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
@@ -4938,6 +4941,14 @@ function findUsableSkill(user, skillName) {
     return getMainCardSkills(user).find(data => data.skill.name == skillName);
 }
 
+function getUltimateSkills(user) {
+    const card = readJson(CHARACTER_CARDS_PATH, [])[user.main_card?.id];
+    const indices = new Set(['전직', '각성'].includes(user.main_card?.type) ? card?.class?.skills || [] : []);
+    const specter = getCardSpecter(user.main_card);
+    if (typeof specter?.skill === 'number') indices.add(specter.skill);
+    return getMainCardSkills(user).filter(entry => indices.has(entry.index));
+}
+
 function getPassiveMpRecovery(user) {
     // 피아스트 개편으로 '공격 시 MP 회복' 패시브 제거됨
     return 0;
@@ -5490,7 +5501,10 @@ function finishDailyDungeonState(user, outcome) {
 
 function leaveField(user) {
     if (!user.field || !user.field.name) return '❌ 입장 중인 필드가 없습니다.';
-    if (user.field.paradise) { paradise.finish(user); return user.paradise.mode === 'hell' ? '✅ 지옥에서 귀환했습니다. 낙원 화면에서 마지막 클리어 층의 보상 상자를 확인해주세요.' : '✅ 천상의 회랑에서 귀환했습니다. 낙원 화면에서 종료 보상을 수령해주세요.'; }
+    if (user.field.paradise) {
+        const result = paradise.finish(user);
+        return result.error ? '❌ ' + result.error : '✅ ' + result.message;
+    }
     if (user.field.worldBoss && user.field.skillSelecting) {
         // 스킬 선택 단계는 아직 전투 시작 전(토큰/입장 횟수 미소모)이라 언제든 취소 가능.
         // 보스가 강제 처치되어 선택도 퇴장도 못하는 '갇힘' 상태도 이 경로로 빠져나간다.
@@ -7432,7 +7446,7 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
 function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines, at = Date.now()) {
     const resources = paradise.getResources(user);
     const run = user.paradise, enemy = run.enemy, field = user.field;
-    received = Math.round(received * paradise.incomingMultiplier(user, received));
+    received = Math.round(received * paradise.incomingMultiplier(user, received) * (received > 0 ? paradiseMechanics.incomingMultiplier(user) : 1));
     if (field.iktaeBot && field.iktaeBot.hp > 0 && at < Number(field.iktaeBot.expired_at || 0)) {
         const absorbed = Math.round(received * .30);
         received -= absorbed; field.iktaeBot.hp -= absorbed;
@@ -7442,6 +7456,7 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     received = consumeNextDamageReduction(user, received);
     if (isAwakeningInvincible(user.name, stats, at)) received = 0;
     const beforeShield = received;
+    const shieldBefore = Number(getFieldShield(user)?.amount || 0);
     received = applyFieldShieldAbsorption(user, received, lines);
     paradiseCharacters.onDamage(user, stats, beforeShield - received, received);
     const beforeHp = Number(resources.hp);
@@ -7449,6 +7464,9 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     const lostHp = Math.max(0, beforeHp - resources.hp);
     run.battle.comeback += lostHp / Math.max(1, stats.hp);
     paradise.onDamageTaken(user, lostHp);
+    const mechanicNotice = {};
+    paradiseMechanics.onDamage(user, stats, beforeShield - received, lostHp, shieldBefore, mechanicNotice);
+    if (mechanicNotice.notice) lines.push(mechanicNotice.notice);
     lines.push('❗ 받은 피해 ' + comma(lostHp));
     if (received > 0 && receivedHits) {
         let reflected = 0;
@@ -7508,6 +7526,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     extra.paradiseEnemyHpBefore = enemy.hp;
     paradise.prepareAttack(user, extra);
     paradiseCharacters.prepareAttack(user, stats, extra);
+    paradiseMechanics.prepareAttack(user, stats, extra);
     const attackExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     const hit = calculateAttackHitResult(raw, Math.max(0, Number(targetStats.def || 0) - Number(stats.atkDefReduce || 0)), Number(extra.pnt ?? stats.pnt ?? 0) + Number(extra.pntBonus || 0), stats, slots, attackExtra, getCombatStats(targetStats));
     const multiplier = paradise.attackMultiplier(user, extra);
@@ -7515,6 +7534,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     if (multiplier !== 1) for (const detail of hit.hitDetails || []) detail.damage = Math.round(Number(detail.damage || 0) * multiplier);
     paradise.modifyHit(user, extra, hit);
     paradiseCharacters.modifyHit(user, extra, hit);
+    paradiseMechanics.modifyHit(user, stats, extra, hit);
     if (enemy.mirror) {
         enemy.mirror.hp = enemy.hp;
         const result = require('./pvp').corridorMirrorHit(enemy.mirror, user, hit.finalDamage, extra);
@@ -7529,6 +7549,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     if (field.elite) field.elite.hp = enemy.hp;
     randoCharacters.onHit(stats, field, hit.hitCount, extra, enemy.hp === 0 ? 1 : 0, Date.now());
     paradiseCharacters.afterHit(user, stats, extra, hit);
+    paradiseMechanics.afterHit(user, stats, extra, hit);
     if (run.effects.focus) run.focus = Math.min(.50, Number(run.focus || 0) + .05 * Number(hit.criticalCount || 0));
     const lines = ['⚔️ ' + enemy.name + '에게 ' + comma(hit.finalDamage) + ' 피해' + (hit.criticalCount ? ' · 치명타 ' + hit.criticalCount + '회' : '')];
     if (extra.notice) lines.push(extra.notice);
@@ -7556,7 +7577,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     }
     run.combatLog = [...lines, ...(run.combatLog || [])].slice(0, 18);
     const defeated = resources.hp <= 0;
-    if (defeated) { paradise.finish(user, 'defeated'); lines.push(run.mode === 'hell' ? '지옥 탐험이 끝났습니다. 마지막 클리어 층의 보상 상자를 확인해주세요.' : '천상의 회랑 탐험이 끝났습니다. 종료 보상은 낙원에서 수령할 수 있습니다.'); }
+    if (defeated) { paradise.finish(user, 'defeated'); lines.push(run.mode === 'hell' ? '지옥 탐험이 끝났습니다. 마지막 클리어 층의 보상 상자를 확인해주세요.' : '전투에서 패배하여 탐험 보상과 계약 보상을 잃었습니다.'); }
     else if (enemy.hp <= 0) { paradise.victory(user); lines.push('전투 승리!'); }
     else if (manual) setNextFieldActionAt(user);
     // 전투 연출에는 회복과 섞인 HP 차이가 아니라 엔진이 판정한 타격을 전달한다.
@@ -7698,7 +7719,8 @@ function useSkillInField(user, skillName, channel) {
     }
     if (user.field.paradise) {
         const beforeHp = Number(resources.hp);
-        const result = executeMainCardSkillInField(user, skillName);
+        const gainedSkill = paradiseMechanics.skills(user).find(skill => skill.name === skillName);
+        const result = gainedSkill ? executeParadiseSkillInField(user, gainedSkill) : executeMainCardSkillInField(user, skillName);
         if (paradise.active(user) && user.paradise.effects.noHealing) {
             resources.hp = Math.min(resources.hp, beforeHp);
             if (user.field.paradiseMpCeiling != null) resources.mp = Math.min(resources.mp, user.field.paradiseMpCeiling);
@@ -7706,6 +7728,32 @@ function useSkillInField(user, skillName, channel) {
         return result;
     }
     return executeMainCardSkillInField(user, skillName);
+}
+
+function executeParadiseSkillInField(user, skill) {
+    const now = Date.now(), resources = paradise.getResources(user), field = user.field;
+    if (now < Number(field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다.';
+    if (now < Number(field.skillCooldowns[skill.name] || 0)) return '❌ 스킬 쿨타임입니다.';
+    if (skill.id === 'skillRupture' && !paradiseMechanics.dots(user).length) return '❌ 폭발시킬 지속 피해가 없습니다.';
+    const context = getFieldCombatContext(user);
+    if (context.error) return context.error;
+    const stats = calculateUserStats(user), maxResource = stats.kino ? stats.mental : stats.mp;
+    const payment = paradiseMechanics.payment(user, stats, Math.ceil(maxResource * skill.ratio), skill.name);
+    if (stats.kino) {
+        if (!randoCharacters.spendMental(stats, field, payment.cost, now)) return '❌ 정신력이 부족합니다.';
+    } else {
+        if (resources.mp < payment.cost) return '❌ MP가 부족합니다.';
+        resources.mp -= payment.cost;
+    }
+    resources.hp = Math.max(1, resources.hp - payment.hpCost - Math.floor(resources.hp * Number(skill.hpCost || 0)));
+    field.paradiseMpCeiling = resources.mp;
+    paradise.onSkillUsed(user, stats.kino ? 0 : payment.cost, skill.name);
+    const extra = { isSkill: true, skillName: skill.name, mpCost: payment.cost, resourceLabel: stats.kino ? '정신력' : 'MP' };
+    paradiseMechanics.onSkill(user, skill.name, stats, extra);
+    const damage = paradiseMechanics.activeSkill(user, skill, stats, extra);
+    const synthetic = { name: skill.name, cooltime: skill.cooldown, element: skill.element };
+    field.skillCooldowns[skill.name] = now + skill.cooldown * getSkillCooldownRate(stats) * paradise.cooldownMultiplier(user);
+    return applyFieldDamageAction(user, context, damage, extra, 'skill', synthetic);
 }
 
 function executeSelfDestructInField(user) {
@@ -7760,8 +7808,7 @@ function consumeNextDamageReduction(user, damage) {
 }
 
 function isUltimateSkillForUser(user, skill) {
-    const skills = getMainCardSkills(user);
-    return skills.length > 0 && skills[skills.length - 1].skill.name == (skill && skill.name);
+    return getUltimateSkills(user).some(entry => entry.skill.name === skill?.name);
 }
 
 function getSkillCooldownRate(stats) {
@@ -7932,6 +7979,7 @@ function commitFieldSkillCooldown(user, skill, stats, equipmentSkill, now) {
     duration *= paradise.cooldownMultiplier(user);
     user.field.skillCooldowns[skill.name] = Math.max(now, now + duration);
     paradiseCharacters.afterCooldown(user, skill.name);
+    paradiseMechanics.afterCooldown(user, skill.name);
     if (Number(equipmentSkill.ultimateCooldownReduction || 0) > 0) {
         const skills = getMainCardSkills(user);
         const ultimate = skills.length > 0 && skills[skills.length - 1].skill;
@@ -7972,13 +8020,15 @@ function executeMainCardSkillInField(user, skillName) {
         ? { mpCostMul: 1, extra: {}, cooldownFlatReduction: 0, notices: [], state: JSON.parse(JSON.stringify(getEquipmentCombatState(user))) }
         : prepareTranscendSkillEffects(user, skillData.skill, stats);
     if (paradiseCharacters.freeSkill(user, skillData.skill.name)) equipmentSkill.noMp = true;
-    const mpCost = stats.kino ? randoCharacters.mentalCost(stats, skillData.skill) : equipmentSkill.noMp ? 0 : Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * Number(equipmentSkill.mpCostMul || 1) * ilionCards.mpMultiplier(stats, user.field, skillData.skill.name, now)));
+    const originalMpCost = stats.kino ? randoCharacters.mentalCost(stats, skillData.skill) : equipmentSkill.noMp ? 0 : Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * Number(equipmentSkill.mpCostMul || 1) * ilionCards.mpMultiplier(stats, user.field, skillData.skill.name, now)));
+    const mechanicPayment = paradiseMechanics.payment(user, stats, originalMpCost, skillData.skill.name), mpCost = mechanicPayment.cost;
     if (stats.kino) {
         if (user.field.kino.exhausted) return '❌ 정신력이 30까지 회복될 때까지 전투불능 상태입니다.';
         if (!randoCharacters.spendMental(stats, user.field, mpCost, now)) return '❌ 정신력이 부족합니다.';
     } else if (mp < mpCost) return '❌ MP가 부족합니다.';
     user.field.equipmentState = equipmentSkill.state;
     if (typeof equipmentSkill.hpAfter != 'undefined') resources.hp = Math.max(1, Number(equipmentSkill.hpAfter));
+    if (mechanicPayment.hpCost) resources.hp = Math.max(1, resources.hp - mechanicPayment.hpCost);
     if (equipmentSkill.selfShield) grantFieldShield(user, 'equipment:심해의 갑옷', equipmentSkill.selfShield);
     resources.mp = stats.kino ? 0 : mp - mpCost;
     if (user.field.paradise) {
@@ -8000,6 +8050,7 @@ function executeMainCardSkillInField(user, skillName) {
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
     extra.receivedDamageMul = getActiveFieldDamageMultiplier(user);
     paradiseCharacters.onSkill(user, skillData.skill, stats, extra);
+    paradiseMechanics.onSkill(user, skillData.skill.name, stats, extra);
     if (stats.wonyoddi && ['모드 전환', '원영적사고 모드 전환'].includes(skillData.skill.name)) {
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user); else setNextFieldActionAt(user);
@@ -17180,6 +17231,9 @@ module.exports = {
     calculateAttackHitResult,
     getSkillValue,
     getMainCardSkills,
+    getUltimateSkills,
+    isUltimateSkillForUser,
+    ensureFieldEquipmentDotTimer,
     cardAwakening,
     getCardAwakeningSpecter,
     resolveAwakeningHp,

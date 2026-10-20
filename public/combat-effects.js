@@ -19,6 +19,12 @@
     };
 
     const SKILL_RESULTS = Object.freeze({
+        '도화선 점화': [id('combat', '화상')],
+        '응혈 폭발': [id('combat', '중첩 소모')],
+        '유리 방벽': [id('combat', '보호막 부여')],
+        '그림자 연무': [id('combat', '행동 가속')],
+        '시간 접기': [id('combat', '버프')],
+        '판돈 뒤집기': [id('combat', '버프')],
         '헤즈업': [id('combat', '버프')],
         '자인': [id('combat', '버프'), id('combat', '공격력 강화')],
         '시벌론': [id('combat', '행동 가속')],
@@ -56,6 +62,8 @@
 
     // 스킬 원본 설명 기준: 공격 연출은 대상, 자기 강화/회복 연출은 시전자에게 배치한다.
     const SKILL_TARGETS = Object.freeze({
+        '도화선 점화': 'target', '응혈 폭발': 'target', '유리 방벽': 'both',
+        '그림자 연무': 'both', '시간 접기': 'actor', '판돈 뒤집기': 'both',
         '헤즈업': 'both', '느억맘': 'target',
         '모드 전환': 'actor', '원영적사고 모드 전환': 'actor', '아이돌 할래?': 'target', '카스 살포': 'target',
         '자인': 'both', '시벌론': 'actor', '글버지': 'both', '불사조': 'both', '피아스트': 'both',
