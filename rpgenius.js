@@ -486,6 +486,7 @@ function clearFieldEquipmentDotTimer(userName) {
 }
 async function runFieldEquipmentDotTick(userName, trainingUser) {
     const user = trainingUser || await getRPGUserByName(userName);
+    const resources = paradise.getResources(user);
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     const deckStage = getIlionWeaponStage(user, '무한홀덤덱');
     const state = user && user.field && (deckStage ? getEquipmentCombatState(user) : user.field.equipmentState);
@@ -563,10 +564,10 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
         if (healTicks > 0) {
             const stats = calculateUserStats(user);
             const maxHp = Number(stats.hp || 0);
-            const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
-            user.hp = Math.min(maxHp, beforeHp + applyRecoveryEfficiency(maxHp * IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * healTicks, user, stats));
-            const recovered = user.hp - beforeHp;
-            if (recovered > 0) lines.push('🔥 불굴 효과로 HP +' + comma(recovered) + ' 회복 (' + comma(user.hp) + '/' + comma(maxHp) + ')');
+            const beforeHp = typeof resources.hp == 'undefined' ? maxHp : Number(resources.hp || 0);
+            resources.hp = Math.min(maxHp, beforeHp + applyRecoveryEfficiency(maxHp * IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * healTicks, user, stats));
+            const recovered = resources.hp - beforeHp;
+            if (recovered > 0) lines.push('🔥 불굴 효과로 HP +' + comma(recovered) + ' 회복 (' + comma(resources.hp) + '/' + comma(maxHp) + ')');
         }
         if (regen.ticksLeft <= 0) delete state.dragonRegen;
     }
@@ -3541,6 +3542,7 @@ function refreshPetShortcuts(user) {
 }
 
 function equipMainCharacterCard(user, numberArg) {
+    const resources = paradise.getResources(user);
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return '❌ 존재하지 않는 카드 번호입니다.';
     if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
@@ -3552,8 +3554,8 @@ function equipMainCharacterCard(user, numberArg) {
     user.main_card = card;
     const removed = autoUnequipInvalidSupport(user);
     const stats = calculateUserStats(user);
-    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
-    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    resources.hp = Math.min(typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0), Number(stats.hp || 0));
+    resources.mp = Math.min(typeof resources.mp == 'undefined' ? Number(stats.mp || 0) : Number(resources.mp || 0), Number(stats.mp || 0));
     let msg = '✅ 메인 캐릭터 카드를 장착했습니다.\n- ' + formatUserCard(card);
     if (removed) msg += '\n⚠️ 메인 카드 변경으로 보조 장비 <' + removed.rarity + '> ' + removed.name + '(이)가 장착 해제되었습니다.';
     return msg;
@@ -3951,6 +3953,7 @@ function equipTitleByName(user, name) {
 }
 
 function calculateUserStats(user, _out) {
+    const resources = paradise.getResources(user);
     const stats = getBaseStat(user.main_card);
     if (user.main_card && ['전직', '각성'].includes(user.main_card.type)) {
         ['atk', 'def', 'hp', 'mp', 'pnt'].forEach(k => { if (stats[k]) stats[k] = Math.round(stats[k] * 1.02); });
@@ -4125,8 +4128,8 @@ function calculateUserStats(user, _out) {
         else if (key !== 'finalAtk') stats[key] = Number(stats[key] || 0) + value;
     }
     if (!rukimActive && getBlessingExpiresAt(user, 'rukim') > 0) {
-        if (typeof user.hp != 'undefined') user.hp = Math.min(Number(user.hp || 0), Number(stats.hp || 0));
-        if (typeof user.mp != 'undefined') user.mp = Math.min(Number(user.mp || 0), Number(stats.mp || 0));
+        if (typeof resources.hp != 'undefined') resources.hp = Math.min(Number(resources.hp || 0), Number(stats.hp || 0));
+        if (typeof resources.mp != 'undefined') resources.mp = Math.min(Number(resources.mp || 0), Number(stats.mp || 0));
     }
     stats.awakening = cardAwakening.getPassive(user.main_card);
     if (stats.awakening) {
@@ -4138,7 +4141,7 @@ function calculateUserStats(user, _out) {
     let awakeningReduction = Number(slotEffects.hpDamageReduction || 0) - Number(stats.takenDamage || 0);
     if (stats.awakening && stats.awakening.effect === 'reductionAttack') {
         awakeningReduction += getActiveFieldDamageReduction(user) + 1 - getActiveFieldDamageMultiplier(user) + Number(user.field && user.field.passiveDamageReduction || 0);
-        const hpRatio = Number(user.hp ?? stats.hp) / Math.max(1, Number(stats.hp || 1));
+        const hpRatio = Number(resources.hp ?? stats.hp) / Math.max(1, Number(stats.hp || 1));
         if (hpRatio <= .50) awakeningReduction += Number(stats.bloodFlowReduction || 0) * (hpRatio <= .30 ? 2 : 1);
         const target = user.field && (user.field.worldBoss ? getWorldBossState(user.field.name) : user.field.elite);
         const targetDef = user.field && user.field.worldBoss ? findWorldBossByName(user.field.name) : user.field && findDungeonByName(user.field.name);
@@ -4962,13 +4965,14 @@ function getThornsReflect(user, stats) {
 }
 
 function getManaResonanceBonus(user, stats) {
+    const resources = paradise.getResources(user);
     const equipped = findEquipWithPassiveId(user, 4);
     if (!equipped) return 0;
     const passive = getEquipmentPassives()[4];
     if (!passive) return 0;
     const maxMp = Number(stats && stats.mp || 0);
     if (maxMp <= 0) return 0;
-    const currentMp = typeof user.mp === 'undefined' ? maxMp : Number(user.mp || 0);
+    const currentMp = typeof resources.mp === 'undefined' ? maxMp : Number(resources.mp || 0);
     const threshold = Number(passive.format && passive.format[0] && passive.format[0].base || 0.75);
     const bonus = Number(passive.format && passive.format[1] && passive.format[1].base || 0.05);
     return currentMp / maxMp >= threshold ? bonus * paradise.equipmentMultiplier(user, equipped.name) : 0;
@@ -5002,8 +5006,9 @@ function getEquippedPassiveIds(user) {
 }
 
 function tryImmortalArmorRegen(user, maxHp, lines) {
+    const resources = paradise.getResources(user);
     if (!user.field || isBlackCurtainHealingBlocked(user)) return false;
-    const curHp = Number(user.hp || 0);
+    const curHp = Number(resources.hp || 0);
     if (curHp <= 0 || curHp > Number(maxHp || 0) * IMMORTAL_DRAGON_ARMOR_TRIGGER_HP_RATIO) return false;
     const data = findEquipWithPassiveId(user, 3);
     if (!data) return false;
@@ -5021,35 +5026,39 @@ function tryImmortalArmorRegen(user, maxHp, lines) {
 }
 
 function applySkillRecovery(user, maxHp, extra, lines) {
+    const resources = paradise.getResources(user);
     if (!extra || Number(extra.skillRecoveryChance || 0) <= 0 || Number(extra.skillRecoveryAmount || 0) <= 0) return;
     if (Math.random() >= Number(extra.skillRecoveryChance || 0)) return;
-    const beforeHp = typeof user.hp == 'undefined' ? Number(maxHp || 0) : Number(user.hp || 0);
-    user.hp = Math.min(Number(maxHp || 0), beforeHp + applyRecoveryEfficiency(extra.skillRecoveryAmount, user));
-    const recovered = user.hp - beforeHp;
+    const beforeHp = typeof resources.hp == 'undefined' ? Number(maxHp || 0) : Number(resources.hp || 0);
+    resources.hp = Math.min(Number(maxHp || 0), beforeHp + applyRecoveryEfficiency(extra.skillRecoveryAmount, user));
+    const recovered = resources.hp - beforeHp;
     if (recovered > 0) lines.push('- HP +' + comma(recovered) + ' 회복');
 }
 
 function applyDamageTakenSlotRecovery(user, maxHp, fieldDamage, slotEffects, stats, lines) {
+    const resources = paradise.getResources(user);
     if (Number(fieldDamage || 0) <= 0 || Number(slotEffects && slotEffects.killRecoveryChance || 0) <= 0) return;
     if (Math.random() >= Number(slotEffects.killRecoveryChance || 0)) return;
-    const beforeHp = typeof user.hp == 'undefined' ? Number(maxHp || 0) : Number(user.hp || 0);
+    const beforeHp = typeof resources.hp == 'undefined' ? Number(maxHp || 0) : Number(resources.hp || 0);
     const recovery = applyRecoveryEfficiency(Number(fieldDamage || 0) * 0.2, user, stats);
-    user.hp = Math.min(Number(maxHp || 0), beforeHp + recovery);
-    const recovered = user.hp - beforeHp;
+    resources.hp = Math.min(Number(maxHp || 0), beforeHp + recovery);
+    const recovered = resources.hp - beforeHp;
     if (recovered > 0) lines.push('- 피해 회복: HP +' + comma(recovered) + ' (' + Math.round(Number(slotEffects.killRecoveryChance || 0) * 1000) / 10 + '% 확률)');
 }
 
 function applyFlatSkillRecovery(user, maxHp, amount, stats, lines) {
-    const beforeHp = typeof user.hp == 'undefined' ? Number(maxHp || 0) : Number(user.hp || 0);
-    user.hp = Math.min(Number(maxHp || 0), beforeHp + applyRecoveryEfficiency(amount, user, stats));
-    const recovered = user.hp - beforeHp;
+    const resources = paradise.getResources(user);
+    const beforeHp = typeof resources.hp == 'undefined' ? Number(maxHp || 0) : Number(resources.hp || 0);
+    resources.hp = Math.min(Number(maxHp || 0), beforeHp + applyRecoveryEfficiency(amount, user, stats));
+    const recovered = resources.hp - beforeHp;
     if (recovered > 0) lines.push('- HP +' + comma(recovered) + ' 회복');
 }
 
 function applySkillMpRecovery(user, maxMp, amount, stats, lines) {
-    const beforeMp = typeof user.mp == 'undefined' ? Number(maxMp || 0) : Number(user.mp || 0);
-    user.mp = Math.min(Number(maxMp || 0), beforeMp + applyRecoveryEfficiency(amount, user, stats));
-    const recovered = user.mp - beforeMp;
+    const resources = paradise.getResources(user);
+    const beforeMp = typeof resources.mp == 'undefined' ? Number(maxMp || 0) : Number(resources.mp || 0);
+    resources.mp = Math.min(Number(maxMp || 0), beforeMp + applyRecoveryEfficiency(amount, user, stats));
+    const recovered = resources.mp - beforeMp;
     if (recovered > 0) lines.push('- MP +' + comma(recovered));
 }
 
@@ -5165,6 +5174,7 @@ function getLevelExpMultiplier(userLevel, requireLevel) {
 const STAT_POINT_PER_STAT_LIMIT = 100;
 
 function investStatPoint(user, statArg, countArg) {
+    const resources = paradise.getResources(user);
     normalizeStatPointData(user);
     const option = STAT_POINT_OPTIONS[String(statArg || '').trim()];
     if (!option) return '❌ /RPGenius 스탯포인트 [공격력|체력|MP|방어력|방어 관통력] <숫자>';
@@ -5180,8 +5190,8 @@ function investStatPoint(user, statArg, countArg) {
     const flatValue = option.flat * count;
     const plusValue = option.plus * count;
     const stats = calculateUserStats(user);
-    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
-    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    resources.hp = Math.min(typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0), Number(stats.hp || 0));
+    resources.mp = Math.min(typeof resources.mp == 'undefined' ? Number(stats.mp || 0) : Number(resources.mp || 0), Number(stats.mp || 0));
     if (plusValue > 0) return '✅ ' + option.label + '에 스탯포인트 ' + comma(count) + '을 투자해 ' + option.label + '이 ' + comma(flatValue) + ', ' + option.plusLabel + '이 +' + (Math.round(plusValue * 1000) / 10) + '% 증가했습니다.';
     return '✅ ' + option.label + '에 스탯포인트를 ' + comma(count) + ' 투자해 ' + option.label + '이 ' + comma(flatValue) + ' 증가했습니다.';
 }
@@ -6841,6 +6851,7 @@ function getIlionWeaponStage(user, name) {
 }
 
 function activateFieldTcg(user, extra) {
+    const resources = paradise.getResources(user);
     if (!user.field) return;
     const state = getEquipmentCombatState(user);
     const equipment = getTranscendEquipmentSnapshot(user, { includeAllActive: true });
@@ -6853,7 +6864,7 @@ function activateFieldTcg(user, extra) {
         entries: equipment.entries, setCount: equipment.setCounts['TCG의 유산'] || 0,
         cooldowns: user.field.skillCooldowns || (user.field.skillCooldowns = {}),
         disabled: extra.summonAttack || extra.dotAttack || extra.disableEquipmentBonusDamage || (target.type === 'hell' && target.phase === 'pillar'),
-        heal: amount => { if (Number(user.hp || 0) > 0 && !isBlackCurtainHealingBlocked(user)) user.hp = Math.min(stats.hp, Number(user.hp || 0) + amount); },
+        heal: amount => { if (Number(resources.hp || 0) > 0 && !isBlackCurtainHealingBlocked(user)) resources.hp = Math.min(stats.hp, Number(resources.hp || 0) + amount); },
         shield: (amount, until, name) => { if (!stats.disableShield) grantFieldShield(user, 'equipment:' + name, { amount: Math.round(amount * (1 + Number(stats.shieldEfficiency || 0))), expired_at: until }); },
         gold: amount => { user.gold = Number(user.gold || 0) + amount; },
         element: element => getElementDamageMultiplier(element, stats, defender),
@@ -6870,6 +6881,7 @@ function activateFieldTcg(user, extra) {
 }
 
 function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, skill) {
+    const resources = paradise.getResources(user);
     const stats = calculateUserStats(user);
     const state = getEquipmentCombatState(user);
     const tcgBefore = tcgEquipment.capture(state);
@@ -6968,7 +6980,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
     }
     if (actionType == 'skill' && skill && skill.name == '끝판왕' && stageOf('Lv1 초보')) {
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('Lv1 초보', 1.30, .40);
-        const hpRatio = Number(user.hp || 0) / Math.max(1, Number(stats.hp || 1));
+        const hpRatio = Number(resources.hp || 0) / Math.max(1, Number(stats.hp || 1));
         if (hpRatio <= .30) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stepValue('Lv1 초보', .40, .15);
         markEquipment('Lv1 초보');
     }
@@ -7032,7 +7044,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         }
     }
 
-    const currentHpRatio = Number(user.hp || 0) / Math.max(1, Number(stats.hp || 1));
+    const currentHpRatio = Number(resources.hp || 0) / Math.max(1, Number(stats.hp || 1));
     if (stageOf('진사이') && currentHpRatio <= .20) { extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stepValue('진사이', .30, .05); markEquipment('진사이'); }
     if (currentHpRatio <= .50) {
         extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(stats.bloodyShoesExtraDamage || 0) + Number(stats.vladimirExtraDamage || 0);
@@ -7080,8 +7092,8 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         markEquipment('과소평가');
     }
 
-    const hpRatio = Number(user.hp || 0) / Math.max(1, Number(stats.hp || 1));
-    const mpRatio = Number(user.mp || 0) / Math.max(1, Number(stats.mp || 1));
+    const hpRatio = Number(resources.hp || 0) / Math.max(1, Number(stats.hp || 1));
+    const mpRatio = Number(resources.mp || 0) / Math.max(1, Number(stats.mp || 1));
     if (getEquippedPassiveIds(user).has(4) && mpRatio >= .75) markEquipment('마력 감응');
     if (stageOf('마나 증폭 장치')) {
         if (mpRatio > .20) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.manaAmplifierFinalAtk || (.10 + .06 * Math.max(0, stageOf('마나 증폭 장치') - 1))) * paradise.equipmentMultiplier(user, '마나 증폭 장치') / paradise.equipmentMultiplier(user, '마나 증폭 장치', 'static');
@@ -7097,8 +7109,8 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         if (!state.settlementRecoveryAt) state.settlementRecoveryAt = Number(user.field.enteredAt || Date.now()) + intervalMs;
         if (Date.now() >= Number(state.settlementRecoveryAt || 0)) {
             const ticks = Math.floor((Date.now() - Number(state.settlementRecoveryAt)) / intervalMs) + 1;
-            if (hpRatio < mpRatio && !isBlackCurtainHealingBlocked(user)) user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .01 * ticks * (1 + Number(stats.recoveryEfficiency || 0)))));
-            else if (mpRatio < hpRatio) user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * .01 * ticks)));
+            if (hpRatio < mpRatio && !isBlackCurtainHealingBlocked(user)) resources.hp = Math.min(Number(stats.hp || 0), Number(resources.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .01 * ticks * (1 + Number(stats.recoveryEfficiency || 0)))));
+            else if (mpRatio < hpRatio) resources.mp = Math.min(Number(stats.mp || 0), Number(resources.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * .01 * ticks)));
             state.settlementRecoveryAt += ticks * intervalMs;
             if (hpRatio !== mpRatio) tcgEquipment.record(state, '포상 정산 반지');
             markEquipment('포상 정산 반지');
@@ -7145,9 +7157,9 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
             const readyKey = buffKey + 'ReadyAt';
             if (Date.now() >= Number(state[readyKey] || 0)) {
                 const cost = Math.max(1, Math.round(Number(stats.mp || 0) * costRate));
-                const currentMp = typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0);
+                const currentMp = typeof resources.mp == 'undefined' ? Number(stats.mp || 0) : Number(resources.mp || 0);
                 if (currentMp >= cost) {
-                    user.mp = currentMp - cost;
+                    resources.mp = currentMp - cost;
                     state[buffKey] = { value, expiredAt: Date.now() + equipmentDurationMs(60) };
                     state[readyKey] = Date.now() + equipmentCooldownMs(60);
                     markEquipment(name);
@@ -7162,9 +7174,9 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         }
 
         if (stageOf('핏빛 모자') && Date.now() >= Number(state.bloodHatReadyAt || 0)) {
-            const before = typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0);
+            const before = typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0);
             const cost = Math.max(1, Math.floor(before * .03));
-            user.hp = Math.max(1, before - cost);
+            resources.hp = Math.max(1, before - cost);
             state.bloodHatBuff = { value: stepValue('핏빛 모자', .18, .04) * (1 + Number(stats.attackBuffEfficiency || 0)), expiredAt: Date.now() + equipmentDurationMs(15) };
             state.bloodHatReadyAt = Date.now() + equipmentCooldownMs(15);
             markHpCostPassive();
@@ -7197,7 +7209,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
             picked.forEach(choice => {
                 if (choice == 'extra') addUnit(unit, 'extraDamageBonus', stepValue('메가카운트 추첨기', .15, .05));
                 if (choice == 'final') addUnit(unit, 'finalDamageBonus', stepValue('메가카운트 추첨기', .15, .05));
-                if (choice == 'mp') user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * stepValue('메가카운트 추첨기', .005, .005) / paradise.equipmentMultiplier(user, '메가카운트 추첨기') * paradise.equipmentMultiplier(user, '메가카운트 추첨기', 'recovery'))));
+                if (choice == 'mp') resources.mp = Math.min(Number(stats.mp || 0), Number(resources.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * stepValue('메가카운트 추첨기', .005, .005) / paradise.equipmentMultiplier(user, '메가카운트 추첨기') * paradise.equipmentMultiplier(user, '메가카운트 추첨기', 'recovery'))));
                 if (choice == 'gold') { user.gold = Number(user.gold || 0) + 500; triggerEquipmentGoldEffect(); }
             });
             appendNotice('메가카운트: ' + picked.join(', '));
@@ -7258,7 +7270,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
             if (stageOf('리턴즈파겜')) markEquipment('리턴즈파겜');
             else if (stageOf('판테온 레거시')) markEquipment('판테온 레거시');
         }
-        if (Number(stats.manaBurnAttackRecovery || 0) > 0) { user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * Number(stats.manaBurnAttackRecovery)))); markSet('마나번'); markTriggeredCombatEffect(extra, 'combat', 'MP 회복'); }
+        if (Number(stats.manaBurnAttackRecovery || 0) > 0) { resources.mp = Math.min(Number(stats.mp || 0), Number(resources.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * Number(stats.manaBurnAttackRecovery)))); markSet('마나번'); markTriggeredCombatEffect(extra, 'combat', 'MP 회복'); }
     }
     extra.perAttackUnitExtras = perAttackUnitExtras;
 
@@ -7288,7 +7300,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
                 if (stacks > 0) markEquipment('왓 타임 이즈 잇 나우');
             } else state.dropoutStacks = Math.min(4, stacks + 1);
         }
-        if (stageOf('진사이') && Math.random() < .05 && !isBlackCurtainHealingBlocked(user)) { user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.round(200 * (1 + Number(stats.recoveryEfficiency || 0)))); markEquipment('진사이'); markTriggeredCombatEffect(extra, 'combat', 'HP 회복'); tcgEquipment.record(state, '진사이'); }
+        if (stageOf('진사이') && Math.random() < .05 && !isBlackCurtainHealingBlocked(user)) { resources.hp = Math.min(Number(stats.hp || 0), Number(resources.hp || 0) + Math.round(200 * (1 + Number(stats.recoveryEfficiency || 0)))); markEquipment('진사이'); markTriggeredCombatEffect(extra, 'combat', 'HP 회복'); tcgEquipment.record(state, '진사이'); }
         if (stageOf('잿불 모자') && Date.now() >= Number(state.burnReadyAt || 0)) {
             const duration = 8 + Number(stats.burnDurationFlat || 0) + (getEquippedNamed(user, '행운의 복주머니') ? 3 : 0);
             const tickDamage = Math.max(1, Math.round(Number(stats.atk || 0) * stepValue('잿불 모자', .30, .05) * (1 + Number(stats.dotDamage || 0) + Number(stats.burnDamage || 0) + (getEquippedSetCount(user, '잿불의 장송곡') >= 4 ? .35 : 0))));
@@ -7307,7 +7319,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         if (allCooling) {
             extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('쿨다운 목걸이', .12, .03);
             rawDamage = Math.round(rawDamage * (1 + stepValue('쿨다운 목걸이', .35, .10)));
-            if (!isBlackCurtainHealingBlocked(user)) user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .001 * attackUnitCount * (1 + Number(stats.recoveryEfficiency || 0)) * paradise.equipmentMultiplier(user, '쿨다운 목걸이', 'recovery'))));
+            if (!isBlackCurtainHealingBlocked(user)) resources.hp = Math.min(Number(stats.hp || 0), Number(resources.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .001 * attackUnitCount * (1 + Number(stats.recoveryEfficiency || 0)) * paradise.equipmentMultiplier(user, '쿨다운 목걸이', 'recovery'))));
             markEquipment('쿨다운 목걸이');
             markTriggeredCombatEffect(extra, 'combat', 'HP 회복');
         }
@@ -7326,6 +7338,7 @@ function getEquipmentAttackOrderPreview(user) {
 }
 
 function applyCurrentSkillHitEquipment(user, skill, extra) {
+    const resources = paradise.getResources(user);
     if (!skill || !getEquippedNamed(user, '해류를 거스르는 신발')) return;
     const state = getEquipmentCombatState(user);
     const now = Date.now();
@@ -7337,9 +7350,9 @@ function applyCurrentSkillHitEquipment(user, skill, extra) {
     user.field.skillCooldowns[skill.name] = Math.max(now, cooldownEnd - reduction);
     const stats = calculateUserStats(user);
     const recoveryRate = .03 * passiveMultiplier;
-    if (!isBlackCurtainHealingBlocked(user)) user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * recoveryRate)));
+    if (!isBlackCurtainHealingBlocked(user)) resources.mp = Math.min(Number(stats.mp || 0), Number(resources.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * recoveryRate)));
     if (extra) {
-        extra.mpAfter = user.mp;
+        extra.mpAfter = resources.mp;
         extra.notice = (extra.notice ? extra.notice + ' / ' : '') + '해류를 거스르는 신발: 쿨타임 ' + (reduction / 1000).toFixed(1) + '초 감소' + (isBlackCurtainHealingBlocked(user) ? '' : ', MP ' + Number((recoveryRate * 100).toFixed(2)) + '% 회복');
         markTriggeredCombatEffect(extra, 'equipment', '해류를 거스르는 신발');
         markTriggeredCombatEffect(extra, 'combat', '쿨타임 감소');
@@ -7353,8 +7366,9 @@ function applyCurrentSkillHitEquipment(user, skill, extra) {
 }
 
 function applyFieldDamageAction(user, context, rawDamage, extra, actionType, skill) {
+    const resources = paradise.getResources(user);
     extra = extra || {};
-    if (user.field?.paradise) { extra.paradiseHpBefore = Number(user.hp); extra.paradiseMpBefore = Number(user.mp); }
+    if (user.field?.paradise) { extra.paradiseHpBefore = Number(resources.hp); extra.paradiseMpBefore = Number(resources.mp); }
     if (actionType === 'skill') extra.isSkill = true;
     if (actionType === 'basic') extra.isBasic = true;
     extra.awakeningAttackKind = actionType === 'skill' && isUltimateSkillForUser(user, skill) ? 'ultimate' : actionType;
@@ -7415,6 +7429,7 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
 
 // 일반 필드의 카드/스킬/장비 계산을 그대로 쓰고, 처치·보상·사망만 회랑 규칙으로 처리한다.
 function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines, at = Date.now()) {
+    const resources = paradise.getResources(user);
     const run = user.paradise, enemy = run.enemy, field = user.field;
     received = Math.round(received * paradise.incomingMultiplier(user, received));
     if (field.iktaeBot && field.iktaeBot.hp > 0 && at < Number(field.iktaeBot.expired_at || 0)) {
@@ -7426,9 +7441,9 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     received = consumeNextDamageReduction(user, received);
     if (isAwakeningInvincible(user.name, stats, at)) received = 0;
     received = applyFieldShieldAbsorption(user, received, lines);
-    const beforeHp = Number(user.hp);
-    user.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - received), at), stats.hp);
-    const lostHp = Math.max(0, beforeHp - user.hp);
+    const beforeHp = Number(resources.hp);
+    resources.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - received), at), stats.hp);
+    const lostHp = Math.max(0, beforeHp - resources.hp);
     run.battle.comeback += lostHp / Math.max(1, stats.hp);
     paradise.onDamageTaken(user, lostHp);
     lines.push('❗ 받은 피해 ' + comma(lostHp));
@@ -7446,6 +7461,7 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
 }
 
 function advanceParadiseMirror(user, at = Date.now()) {
+    const resources = paradise.getResources(user);
     const run = user.paradise;
     if (!paradise.active(user) || run.phase !== 'combat' || !run.enemy?.mirror) return false;
     const enemy = run.enemy, stats = calculateUserStats(user), slots = calculateCardSlotEffects(user), lines = [];
@@ -7455,7 +7471,7 @@ function advanceParadiseMirror(user, at = Date.now()) {
     Object.assign(enemy, { hp: result.hp, maxHp: result.maxHp, mp: result.mp, maxMp: result.maxMp });
     if (user.field.elite) user.field.elite.hp = enemy.hp;
     run.combatLog = [...result.messages, ...lines, ...(run.combatLog || [])].slice(0, 18);
-    const defeated = user.hp <= 0, cleared = enemy.hp <= 0 && !defeated;
+    const defeated = resources.hp <= 0, cleared = enemy.hp <= 0 && !defeated;
     if (defeated) paradise.finish(user, 'defeated');
     else if (cleared) paradise.victory(user);
     result.events.forEach((event, index) => {
@@ -7475,6 +7491,7 @@ function advanceParadiseMirror(user, at = Date.now()) {
 }
 
 function buildParadiseHuntResult(user, rawDamage, extra) {
+    const resources = paradise.getResources(user);
     const run = user.paradise;
     if (!paradise.active(user) || run.phase !== 'combat') return '❌ 낙원 화면에서 다음 선택을 완료해주세요.';
     const enemy = run.enemy, field = user.field;
@@ -7498,7 +7515,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         const result = require('./pvp').corridorMirrorHit(enemy.mirror, user, hit.finalDamage, extra);
         hit.finalDamage = result.damage; enemy.hp = result.hp;
         if (result.dodged) { hit.criticalCount = 0; hit.hitCount = 0; }
-        if (result.reflectedDamage) user.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, user.hp, Math.max(0, user.hp - result.reflectedDamage), Date.now()), stats.hp);
+        if (result.reflectedDamage) resources.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, resources.hp, Math.max(0, resources.hp - result.reflectedDamage), Date.now()), stats.hp);
     }
     paradise.afterAttack(user, extra, hit);
     applyNmmStackGain(user, extra, hit); applyTenthAtkCounter(user, extra, hit);
@@ -7528,11 +7545,11 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         }
     }
     if (run.effects.noHealing) {
-        user.hp = Math.min(user.hp, Number(extra.paradiseHpBefore ?? user.hp));
-        user.mp = Math.min(user.mp, Number(extra.paradiseMpBefore ?? user.mp));
+        resources.hp = Math.min(resources.hp, Number(extra.paradiseHpBefore ?? resources.hp));
+        resources.mp = Math.min(resources.mp, Number(extra.paradiseMpBefore ?? resources.mp));
     }
     run.combatLog = [...lines, ...(run.combatLog || [])].slice(0, 18);
-    const defeated = user.hp <= 0;
+    const defeated = resources.hp <= 0;
     if (defeated) { paradise.finish(user, 'defeated'); lines.push(run.mode === 'hell' ? '지옥 탐험이 끝났습니다. 마지막 클리어 층의 보상 상자를 확인해주세요.' : '천상의 회랑 탐험이 끝났습니다. 종료 보상은 낙원에서 수령할 수 있습니다.'); }
     else if (enemy.hp <= 0) { paradise.victory(user); lines.push('전투 승리!'); }
     else if (manual) setNextFieldActionAt(user);
@@ -7656,6 +7673,7 @@ async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionTy
 }
 
 function useSkillInField(user, skillName, channel) {
+    const resources = paradise.getResources(user);
     if (user.field?.paradise && user.paradise?.phase !== 'combat') return '❌ 낙원 화면에서 다음 선택을 완료해주세요.';
     if (user && user.name) storeFieldActionEffectIds(user.name, []);
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
@@ -7671,11 +7689,11 @@ function useSkillInField(user, skillName, channel) {
         return useWorldBossChosenSkill(user, skillName);
     }
     if (user.field.paradise) {
-        const beforeHp = Number(user.hp);
+        const beforeHp = Number(resources.hp);
         const result = executeMainCardSkillInField(user, skillName);
         if (paradise.active(user) && user.paradise.effects.noHealing) {
-            user.hp = Math.min(user.hp, beforeHp);
-            if (user.field.paradiseMpCeiling != null) user.mp = Math.min(user.mp, user.field.paradiseMpCeiling);
+            resources.hp = Math.min(resources.hp, beforeHp);
+            if (user.field.paradiseMpCeiling != null) resources.mp = Math.min(resources.mp, user.field.paradiseMpCeiling);
         }
         return result;
     }
@@ -7683,6 +7701,7 @@ function useSkillInField(user, skillName, channel) {
 }
 
 function executeSelfDestructInField(user) {
+    const resources = paradise.getResources(user);
     if (!getEquippedNamed(user, '카카오의 계략')) return '❌ 사용할 수 없는 스킬입니다.';
     const now = Date.now();
     if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
@@ -7696,7 +7715,7 @@ function executeSelfDestructInField(user) {
     const syntheticSkill = { name: '자폭', mp_cost: 0, cooltime: 0 };
     const equipmentSkill = prepareTranscendSkillEffects(user, syntheticSkill, stats);
     user.field.equipmentState = equipmentSkill.state;
-    if (typeof equipmentSkill.hpAfter != 'undefined') user.hp = Math.max(1, Number(equipmentSkill.hpAfter));
+    if (typeof equipmentSkill.hpAfter != 'undefined') resources.hp = Math.max(1, Number(equipmentSkill.hpAfter));
     if (equipmentSkill.selfShield) grantFieldShield(user, 'equipment:심해의 갑옷', equipmentSkill.selfShield);
     const stage = getTranscendStage(getEquippedNamed(user, '카카오의 계략').ref.equip, getEquippedNamed(user, '카카오의 계략').data);
     const summonCount = Number(botActive) + Number(sunataActive);
@@ -7712,7 +7731,7 @@ function executeSelfDestructInField(user) {
     clearFieldSunata(user.name);
     const gunryeokCleared = !!getGunryeokState(user);
     if (gunryeokCleared) delete user.field.gunryeok;
-    const extra = Object.assign({}, equipmentSkill.extra || {}, { mpCost: 0, mpAfter: typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), maxMp: Number(stats.mp || 0), notice: '자폭: 소환수 ' + summonCount + '기 파괴' + (gunryeokCleared ? ' / 건력 상태 해제' : '') });
+    const extra = Object.assign({}, equipmentSkill.extra || {}, { mpCost: 0, mpAfter: typeof resources.mp == 'undefined' ? Number(stats.mp || 0) : Number(resources.mp || 0), maxMp: Number(stats.mp || 0), notice: '자폭: 소환수 ' + summonCount + '기 파괴' + (gunryeokCleared ? ' / 건력 상태 해제' : '') });
     markTriggeredCombatEffect(extra, 'equipment', '카카오의 계략');
     markTriggeredCombatEffect(extra, 'combat', '소환 해제');
     if (Number(equipmentSkill.shadowDamageRate || 0) > 0) extra.shadowDamageRate = Number(equipmentSkill.shadowDamageRate);
@@ -7742,6 +7761,7 @@ function getSkillCooldownRate(stats) {
 }
 
 function prepareTranscendSkillEffects(user, skill, stats) {
+    const resources = paradise.getResources(user);
     const state = JSON.parse(JSON.stringify(getEquipmentCombatState(user)));
     const tcgBefore = tcgEquipment.capture(state);
     const now = Date.now();
@@ -7751,7 +7771,7 @@ function prepareTranscendSkillEffects(user, skill, stats) {
     const result = { mpCostMul: 1, extra: {}, cooldownFlatReduction: 0, notices: [], state };
     const markEquipment = name => { markTriggeredCombatEffect(result.extra, 'equipment', name); tcgEquipment.recordInstant(state, name); };
     const markSet = name => markTriggeredCombatEffect(result.extra, 'set', name);
-    let virtualHp = typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0);
+    let virtualHp = typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0);
     const sinceSkill = now - Number(state.lastSkillAt || user.field.enteredAt || now);
     const equipmentCooldownMs = seconds => Math.max(0, Number(seconds || 0) - Number(stats.equipmentEffectCooldownFlat || 0)) * 1000; // 스탯 기반 (applyTranscendPreAttack와 동일)
     const equipmentDurationMs = seconds => (Number(seconds || 0) + Number(stats.equipmentEffectDurationFlat || 0)) * 1000;
@@ -7913,6 +7933,7 @@ function commitFieldSkillCooldown(user, skill, stats, equipmentSkill, now) {
 }
 
 function executeMainCardSkillInField(user, skillName) {
+    const resources = paradise.getResources(user);
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
     const now = Date.now();
     if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
@@ -7937,7 +7958,7 @@ function executeMainCardSkillInField(user, skillName) {
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
     const maxMp = Number(stats.mp || 0);
-    const mp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+    const mp = typeof resources.mp == 'undefined' ? maxMp : Number(resources.mp || 0);
     const equipmentSkill = isHellPillar
         ? { mpCostMul: 1, extra: {}, cooldownFlatReduction: 0, notices: [], state: JSON.parse(JSON.stringify(getEquipmentCombatState(user))) }
         : prepareTranscendSkillEffects(user, skillData.skill, stats);
@@ -7947,11 +7968,11 @@ function executeMainCardSkillInField(user, skillName) {
         if (!randoCharacters.spendMental(stats, user.field, mpCost, now)) return '❌ 정신력이 부족합니다.';
     } else if (mp < mpCost) return '❌ MP가 부족합니다.';
     user.field.equipmentState = equipmentSkill.state;
-    if (typeof equipmentSkill.hpAfter != 'undefined') user.hp = Math.max(1, Number(equipmentSkill.hpAfter));
+    if (typeof equipmentSkill.hpAfter != 'undefined') resources.hp = Math.max(1, Number(equipmentSkill.hpAfter));
     if (equipmentSkill.selfShield) grantFieldShield(user, 'equipment:심해의 갑옷', equipmentSkill.selfShield);
-    user.mp = stats.kino ? 0 : mp - mpCost;
+    resources.mp = stats.kino ? 0 : mp - mpCost;
     if (user.field.paradise) {
-        user.field.paradiseMpCeiling = user.mp;
+        user.field.paradiseMpCeiling = resources.mp;
         paradise.onSkillUsed(user, stats.kino ? 0 : mpCost, skillData.skill.name);
     }
     if (stats.kino) Object.assign(stats, calculateUserStats(user));
@@ -7964,7 +7985,7 @@ function executeMainCardSkillInField(user, skillName) {
     extra.mpCost = mpCost;
     extra.resourceLabel = stats.kino ? '정신력' : 'MP';
     extra.skillName = skillData.skill.name;
-    extra.mpAfter = stats.kino ? Math.floor(user.field.kino.value) : user.mp;
+    extra.mpAfter = stats.kino ? Math.floor(user.field.kino.value) : resources.mp;
     extra.maxMp = stats.kino ? stats.mental : maxMp;
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
     extra.receivedDamageMul = getActiveFieldDamageMultiplier(user);
@@ -8010,7 +8031,7 @@ function executeMainCardSkillInField(user, skillName) {
         if (damage > 0 || Number(user.field.ilion.balanceHits || 0) > 0) return applyFieldDamageAction(user, context, damage, extra, 'skill', skillData.skill);
         storeFieldActionEffectIds(user.name, ['skill:헤즈업']);
         if (isWorldBoss) setWorldBossNextActionAt(user); else setNextFieldActionAt(user);
-        return '🃏 ' + drawn.text + '\n- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')';
+        return '🃏 ' + drawn.text + '\n- MP ' + comma(mpCost) + ' 소모 (' + comma(resources.mp) + '/' + comma(maxMp) + ')';
     }
     if (skillData.skill.name === '느억맘' && getIlionWeaponStage(user, '어머니의 마음') > 0) {
         const stage = getIlionWeaponStage(user, '어머니의 마음');
@@ -8067,7 +8088,7 @@ function executeMainCardSkillInField(user, skillName) {
         const durationMs = Math.round(getSkillValue(skillData.skill, 0, star) * 1000);
         user.field.sivalon = { expired_at: now + durationMs };
         user.field.sivalonCharge = 0;
-        const lines = ['🌀 시벌론! ' + (durationMs / 1000).toFixed(1) + '초간 일반 공격 쿨타임이 0.5초가 됩니다.\n- 상태 중 일반 공격은 충전에 포함되지 않습니다.\n- 즉시 일반 공격을 사용할 수 있습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const lines = ['🌀 시벌론! ' + (durationMs / 1000).toFixed(1) + '초간 일반 공격 쿨타임이 0.5초가 됩니다.\n- 상태 중 일반 공격은 충전에 포함되지 않습니다.\n- 즉시 일반 공격을 사용할 수 있습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(resources.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         setFieldNextActionAt(user, now); // 편의성: 사용 즉시 평타 가능 (행동 쿨타임 초기화)
         return lines.join('\n');
@@ -8079,19 +8100,19 @@ function executeMainCardSkillInField(user, skillName) {
         else setNextFieldActionAt(user);
         if (gunryeokActive) {
             delete user.field.gunryeok;
-            return ['🔓 건력 상태를 해제했습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'].join('\n');
+            return ['🔓 건력 상태를 해제했습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(resources.mp) + '/' + comma(maxMp) + ')'].join('\n');
         }
         const dmgReduce = getSkillValue(skillData.skill, 0, star);
         const atkBuff = getSkillValue(skillData.skill, 1, star);
         user.field.gunryeok = { expired_at: now + 60000, sealRate: 0.7, dmgReduce: dmgReduce, atkBuff: atkBuff };
         const sealedMax = Number(calculateUserStats(user).hp || 0);
-        const curHp = typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0);
-        user.hp = Math.min(curHp, sealedMax);
+        const curHp = typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0);
+        resources.hp = Math.min(curHp, sealedMax);
         const lines = ['💪 건력! 60초간 \'건력\' 상태에 진입합니다.',
             '- 최대 HP 70% 봉인 (실질 최대 HP ' + comma(sealedMax) + ')',
             '- 받는 피해 감소 +' + (Math.round(dmgReduce * 1000) / 10) + '% / 공격력 +' + (Math.round(atkBuff * 1000) / 10) + '%',
             '- 상태 중 스킬 사용 시 해제됩니다.',
-            '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+            '- MP ' + comma(mpCost) + ' 소모 (' + comma(resources.mp) + '/' + comma(maxMp) + ')'];
         return lines.join('\n');
     }
     if (skillData.skill.name == '불사조') {
@@ -8123,7 +8144,7 @@ function executeMainCardSkillInField(user, skillName) {
         const summonDurationBonus = 1 + Number(stats.summonDuration || 0);
         const durationMs = Math.round(20000 * summonDurationBonus);
         user.field.iktaeBot = { hp: botHp, atkMul: atkMul * cardAwakening.summonMultiplier(stats), expired_at: Date.now() + durationMs };
-        const lines = ['✨ 익테봇을 소환했습니다!\n- 익테봇 체력: ' + comma(botHp) + '\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const lines = ['✨ 익테봇을 소환했습니다!\n- 익테봇 체력: ' + comma(botHp) + '\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(resources.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setNextFieldActionAt(user);
@@ -8191,7 +8212,7 @@ function executeMainCardSkillInField(user, skillName) {
         const buffMul = getSkillValue(skillData.skill, 1, star);
         const durationMs = Math.round(45000 * (1 + Number(stats.summonDuration || 0)));
         user.field.sunata = { atkMul: atkMul * cardAwakening.summonMultiplier(stats), buff: buffMul, expired_at: Date.now() + durationMs };
-        const lines = ['🎵 수나타를 소환했습니다!\n- 5초마다 공격력의 ' + (Math.round(atkMul * 1000) / 10) + '% 자동 공격\n- 소환 동안 본인 공격력 +' + (Math.round(buffMul * 1000) / 10) + '%\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const lines = ['🎵 수나타를 소환했습니다!\n- 5초마다 공격력의 ' + (Math.round(atkMul * 1000) / 10) + '% 자동 공격\n- 소환 동안 본인 공격력 +' + (Math.round(buffMul * 1000) / 10) + '%\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(resources.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setNextFieldActionAt(user);
@@ -8205,7 +8226,7 @@ function executeMainCardSkillInField(user, skillName) {
         const dotMul = 1 + Number(stats.dotDamage || 0) + (emoticon ? .40 + .15 * emoticonStep : 0);
         const dotDmg = Math.max(1, Math.round(Number(stats.atk || 0) * getSkillValue(skillData.skill, 1, star) * dotMul));
         user.field.mark = { defReduce: defDown, dot: dotDmg, expired_at: Date.now() + 10000 };
-        const lines = ['✍️ 유서새김! 대상에게 표식을 새겼습니다.\n- 10초간 방어력 ' + (Math.round(defDown * 1000) / 10) + '% 감소\n- 2초마다 지속 피해 ' + comma(dotDmg), '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const lines = ['✍️ 유서새김! 대상에게 표식을 새겼습니다.\n- 10초간 방어력 ' + (Math.round(defDown * 1000) / 10) + '% 감소\n- 2초마다 지속 피해 ' + comma(dotDmg), '- MP ' + comma(mpCost) + ' 소모 (' + comma(resources.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setNextFieldActionAt(user);
@@ -8224,13 +8245,13 @@ function executeMainCardSkillInField(user, skillName) {
             buffs.pntBuff = { value: pnt, expired_at: Date.now() + 10000 };
         }
         buffs.nextFinalDamageBonus = { value: fdmg };
-        const curHp = typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0);
+        const curHp = typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0);
         const hpCost = Math.floor(curHp * 0.1);
-        user.hp = Math.max(1, curHp - hpCost);
+        resources.hp = Math.max(1, curHp - hpCost);
         const effectLine = bloodOath
             ? '- 10초간 적 받는 최종 피해 +' + (12 + 4 * (getTranscendStage(bloodOath.ref.equip, bloodOath.data) - 1)) + '%, 방어력 감소'
             : '- 10초간 방어 관통력 +' + comma(pnt);
-        const lines = ['🔎 범인은 이 안에!\n' + effectLine + '\n- 다음 공격 시 최종 피해 +' + (Math.round(fdmg * 1000) / 10) + '%\n- HP ' + comma(hpCost) + ' 소모', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const lines = ['🔎 범인은 이 안에!\n' + effectLine + '\n- 다음 공격 시 최종 피해 +' + (Math.round(fdmg * 1000) / 10) + '%\n- HP ' + comma(hpCost) + ' 소모', '- MP ' + comma(mpCost) + ' 소모 (' + comma(resources.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setNextFieldActionAt(user);
@@ -9790,6 +9811,7 @@ function getEffectiveFishingNetLimit(user) {
 }
 
 function applyPetRegen(user, stats, lines) {
+    const resources = paradise.getResources(user);
     if (!user.field) return;
     if (paradise.active(user) && user.paradise.effects.noHealing) return;
     const specials = getActivePetSpecials(user);
@@ -9800,19 +9822,19 @@ function applyPetRegen(user, stats, lines) {
     if (elapsedSec <= 0) return;
     const maxHp = Number(stats.hp || 0);
     const maxMp = Number(stats.mp || 0);
-    const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
-    const beforeMp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+    const beforeHp = typeof resources.hp == 'undefined' ? maxHp : Number(resources.hp || 0);
+    const beforeMp = typeof resources.mp == 'undefined' ? maxMp : Number(resources.mp || 0);
     const hpHeal = (specials.hpRegenRate > 0 && beforeHp < maxHp) ? Math.floor(maxHp * specials.hpRegenRate * elapsedSec) : 0;
     const mpHeal = (specials.mpRegenRate > 0 && beforeMp < maxMp) ? Math.floor(maxMp * specials.mpRegenRate * elapsedSec) : 0;
     if (hpHeal <= 0 && mpHeal <= 0) return;
     user.field.petRegenAt = now;
     if (hpHeal > 0 && !isBlackCurtainHealingBlocked(user)) {
-        user.hp = Math.min(maxHp, beforeHp + hpHeal);
-        if (lines) lines.push('🐾 펫 회복: HP +' + comma(user.hp - beforeHp));
+        resources.hp = Math.min(maxHp, beforeHp + hpHeal);
+        if (lines) lines.push('🐾 펫 회복: HP +' + comma(resources.hp - beforeHp));
     }
     if (mpHeal > 0) {
-        user.mp = Math.min(maxMp, beforeMp + mpHeal);
-        if (lines) lines.push('🐾 펫 회복: MP +' + comma(user.mp - beforeMp));
+        resources.mp = Math.min(maxMp, beforeMp + mpHeal);
+        if (lines) lines.push('🐾 펫 회복: MP +' + comma(resources.mp - beforeMp));
     }
 }
 
@@ -9895,6 +9917,7 @@ function equipPetByNumber(user, numberArg) {
 }
 
 function unequipPetByNumber(user, numberArg) {
+    const resources = paradise.getResources(user);
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return '❌ 펫 번호를 올바르게 입력해주세요.';
     const all = getAllUserPets(user);
@@ -9909,8 +9932,8 @@ function unequipPetByNumber(user, numberArg) {
     user.equipments.pet.splice(idx, 1);
     user.inventory.pet.push(clonePetInstance(selected.pet));
     const stats = calculateUserStats(user);
-    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
-    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    resources.hp = Math.min(typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0), Number(stats.hp || 0));
+    resources.mp = Math.min(typeof resources.mp == 'undefined' ? Number(stats.mp || 0) : Number(resources.mp || 0), Number(stats.mp || 0));
     return '✅ 펫을 해제했습니다.\n<' + (data ? data.rarity : '?') + '> ' + (data ? data.name : '알 수 없는 펫');
 }
 
@@ -10996,11 +11019,12 @@ function autoUnequipInvalidSupport(user) {
 
 // 장비 변경으로 최대 체력/마나가 줄어 현재 수치보다 작아지면 현재 수치를 최대치로 맞춘다. (해제와 동일)
 function clampHpToMaxStat(user) {
+    const resources = paradise.getResources(user);
     const stats = calculateUserStats(user);
     const maxHp = Number(stats.hp || 0);
     const maxMp = Number(stats.mp || 0);
-    if (typeof user.hp != 'undefined' && Number(user.hp || 0) > maxHp) user.hp = maxHp;
-    if (typeof user.mp != 'undefined' && Number(user.mp || 0) > maxMp) user.mp = maxMp;
+    if (typeof resources.hp != 'undefined' && Number(resources.hp || 0) > maxHp) resources.hp = maxHp;
+    if (typeof resources.mp != 'undefined' && Number(resources.mp || 0) > maxMp) resources.mp = maxMp;
 }
 
 function equipItemByNumber(user, numberArg) {
@@ -11107,6 +11131,7 @@ function equipItemByNumber(user, numberArg) {
 }
 
 function unequipSupport(user) {
+    const resources = paradise.getResources(user);
     if (!user.equipments || !user.equipments.support || typeof user.equipments.support.id == 'undefined') return '❌ 장착 중인 보조 장비가 없습니다.';
     const sup = user.equipments.support;
     const data = getEquipmentData('support', sup.id);
@@ -11120,12 +11145,13 @@ function unequipSupport(user) {
     user.inventory.equipment.push(entry);
     user.equipments.support = null;
     const stats = calculateUserStats(user);
-    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
-    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    resources.hp = Math.min(typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0), Number(stats.hp || 0));
+    resources.mp = Math.min(typeof resources.mp == 'undefined' ? Number(stats.mp || 0) : Number(resources.mp || 0), Number(stats.mp || 0));
     return '✅ 보조 장비를 해제했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, sup) + (Number(sup.level || 0) > 0 ? ' +' + sup.level : '');
 }
 
 function unequipAccessoryByNumber(user, numberArg) {
+    const resources = paradise.getResources(user);
     const number = Number(numberArg);
     const maxSlot = Number(user.maxAccessory || 3);
     if (!Number.isInteger(number) || number < 1) return '❌ 장신구 번호를 올바르게 입력해주세요.';
@@ -11141,12 +11167,13 @@ function unequipAccessoryByNumber(user, numberArg) {
     user.inventory.equipment.push(entry);
     delete user.equipments.accessory[slotKey];
     const stats = calculateUserStats(user);
-    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
-    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    resources.hp = Math.min(typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0), Number(stats.hp || 0));
+    resources.mp = Math.min(typeof resources.mp == 'undefined' ? Number(stats.mp || 0) : Number(resources.mp || 0), Number(stats.mp || 0));
     return '✅ 장신구를 해제했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, equipped) + (Number(equipped.level || 0) > 0 ? ' +' + equipped.level : '');
 }
 
 function unequipEquipmentByNumber(user, numberArg) {
+    const resources = paradise.getResources(user);
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return '❌ 장비 번호를 올바르게 입력해주세요.';
     const selected = getAllUserEquipments(user)[number - 1];
@@ -11161,8 +11188,8 @@ function unequipEquipmentByNumber(user, numberArg) {
     if (EQUIPMENT_SINGLE_SLOTS.includes(type)) user.equipments[type] = null;
     else if (type == 'accessory') delete user.equipments.accessory[selected.slotKey];
     const stats = calculateUserStats(user);
-    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
-    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    resources.hp = Math.min(typeof resources.hp == 'undefined' ? Number(stats.hp || 0) : Number(resources.hp || 0), Number(stats.hp || 0));
+    resources.mp = Math.min(typeof resources.mp == 'undefined' ? Number(stats.mp || 0) : Number(resources.mp || 0), Number(stats.mp || 0));
     return '✅ ' + getEquipmentTypeLabel(type) + ' 장비를 해제했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, selected.equip) + (Number(selected.equip.level || 0) > 0 ? ' +' + selected.equip.level : '');
 }
 
@@ -12057,6 +12084,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
 }
 
 function runEquipmentUpgrade(user) {
+    const resources = paradise.getResources(user);
     const pending = user.pendingAction;
     if (!pending || pending.type != '장비강화') return '❌ 진행 중인 장비 강화가 없습니다.';
     const selected = getEquipmentByNumber(user, pending.number);
@@ -12119,8 +12147,8 @@ function runEquipmentUpgrade(user) {
         if (!didProtect) {
             removeSelectedEquipment(user, selected);
             const stats = calculateUserStats(user);
-            user.hp = Math.min(Number(user.hp || 0), Number(stats.hp || 0));
-            user.mp = Math.min(Number(user.mp || 0), Number(stats.mp || 0));
+            resources.hp = Math.min(Number(resources.hp || 0), Number(stats.hp || 0));
+            resources.mp = Math.min(Number(resources.mp || 0), Number(stats.mp || 0));
         }
     }
     user.pendingAction = null;
@@ -12436,38 +12464,39 @@ async function useCoupon(user, codeArg) {
 }
 
 function applyUseFunc(user, func, useCount, resultLines) {
+    const resources = paradise.getResources(user);
     const stats = calculateUserStats(user);
     const potionMul = 1 + Number(stats.potion || 0);
     if (func.type == '체력회복') {
         const maxHp = Number(stats.hp || 0);
-        const before = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+        const before = typeof resources.hp == 'undefined' ? maxHp : Number(resources.hp || 0);
         const amount = applyRecoveryEfficiency(Number(func.amount || 0) * potionMul, user, stats) * useCount;
-        user.hp = Math.min(maxHp, before + amount);
-        resultLines.push('- HP +' + comma(user.hp - before) + ' (' + comma(user.hp) + '/' + comma(maxHp) + ')');
+        resources.hp = Math.min(maxHp, before + amount);
+        resultLines.push('- HP +' + comma(resources.hp - before) + ' (' + comma(resources.hp) + '/' + comma(maxHp) + ')');
         return;
     }
     if (func.type == '마나회복') {
         const maxMp = Number(stats.mp || 0);
-        const before = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+        const before = typeof resources.mp == 'undefined' ? maxMp : Number(resources.mp || 0);
         const amount = applyRecoveryEfficiency(Number(func.amount || 0) * potionMul, user, stats) * useCount;
-        user.mp = Math.min(maxMp, before + amount);
-        resultLines.push('- MP +' + comma(user.mp - before) + ' (' + comma(user.mp) + '/' + comma(maxMp) + ')');
+        resources.mp = Math.min(maxMp, before + amount);
+        resultLines.push('- MP +' + comma(resources.mp - before) + ' (' + comma(resources.mp) + '/' + comma(maxMp) + ')');
         return;
     }
     if (func.type == '체력회복%') {
         const maxHp = Number(stats.hp || 0);
-        const before = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+        const before = typeof resources.hp == 'undefined' ? maxHp : Number(resources.hp || 0);
         const amount = applyRecoveryEfficiency(maxHp * Number(func.amount || 0) * potionMul, user, stats) * useCount;
-        user.hp = Math.min(maxHp, before + amount);
-        resultLines.push('- HP +' + comma(user.hp - before) + ' (' + comma(user.hp) + '/' + comma(maxHp) + ')');
+        resources.hp = Math.min(maxHp, before + amount);
+        resultLines.push('- HP +' + comma(resources.hp - before) + ' (' + comma(resources.hp) + '/' + comma(maxHp) + ')');
         return;
     }
     if (func.type == '마나회복%') {
         const maxMp = Number(stats.mp || 0);
-        const before = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+        const before = typeof resources.mp == 'undefined' ? maxMp : Number(resources.mp || 0);
         const amount = applyRecoveryEfficiency(maxMp * Number(func.amount || 0) * potionMul, user, stats) * useCount;
-        user.mp = Math.min(maxMp, before + amount);
-        resultLines.push('- MP +' + comma(user.mp - before) + ' (' + comma(user.mp) + '/' + comma(maxMp) + ')');
+        resources.mp = Math.min(maxMp, before + amount);
+        resultLines.push('- MP +' + comma(resources.mp - before) + ' (' + comma(resources.mp) + '/' + comma(maxMp) + ')');
         return;
     }
     if (func.type == '경험치획득') {
@@ -12538,6 +12567,7 @@ async function useSongpyeon(user, countArg) {
 }
 
 async function useItem(user, itemName, countArg, options = {}) {
+    const resources = paradise.getResources(user);
     const items = getDataCache('Item', []);
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
@@ -12744,8 +12774,8 @@ async function useItem(user, itemName, countArg, options = {}) {
             });
             user.statPoint = Number(user.statPoint || 0) + refunded;
             const recalcStats = calculateUserStats(user);
-            user.hp = Math.min(typeof user.hp == 'undefined' ? Number(recalcStats.hp || 0) : Number(user.hp || 0), Number(recalcStats.hp || 0));
-            user.mp = Math.min(typeof user.mp == 'undefined' ? Number(recalcStats.mp || 0) : Number(user.mp || 0), Number(recalcStats.mp || 0));
+            resources.hp = Math.min(typeof resources.hp == 'undefined' ? Number(recalcStats.hp || 0) : Number(resources.hp || 0), Number(recalcStats.hp || 0));
+            resources.mp = Math.min(typeof resources.mp == 'undefined' ? Number(recalcStats.mp || 0) : Number(resources.mp || 0), Number(recalcStats.mp || 0));
             lines.push('- 스탯포인트를 초기화했습니다.');
             lines.push('- 잔여 스탯포인트: ' + comma(user.statPoint));
         }

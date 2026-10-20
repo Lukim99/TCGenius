@@ -6,6 +6,8 @@
 
 2026-10-20 S3 이전: 이미지 21개와 음원 8개를 `s3://eefl-image/tcgenius/assets/ui/낙원/`에 등록했다. 기존 `asset_store.js`가 부팅 시 `DB/RPGenius/ui/낙원/`으로 동기화하며, 앱에서는 인증된 `/rpg-ui?file=낙원/…` 경로로 제공한다. Git에 바이너리 사본을 중복 보관하지 않는다. `scripts/paradise_assets.json`에 파일 목록과 SHA-256을 기록했고 `scripts/migrate_paradise_assets_to_s3.js --apply`는 동일 파일을 건너뛰고 내용이 다른 기존 파일의 덮어쓰기를 거부한다.
 
+입장권·증표·지옥 열쇠 3종은 관리자 이미지 자산의 `itemImage/<아이템 type>/<아이템 이름>.png`를 우선 사용한다. S3 경로는 `tcgenius/assets/itemImage/…`이며 기존 업로드 경로가 S3와 서버 사본을 함께 갱신한다. 해당 아이템 이미지가 없을 때만 기존 `ui/낙원/*.webp`를 사용한다. 낙원 입장 화면·열쇠 선택·인벤토리·보상에 같은 해석 규칙을 적용하고, 파일 수정 시각을 URL의 `v`에 포함해 WebGL 이미지 캐시를 갱신한다. 운영 확인 당시 입장권 PNG가 S3에 있었지만 종전 이름별 강제 UI 연결 때문에 무시되고 있었다. 원본 이미지를 덮어쓰거나 운영 아이템 데이터를 수정하지 않고 연결을 수정했다.
+
 사용자가 마지막으로 첨부한 `codex-clipboard-a5600aec-2542-4dc0-a352-4a4795ad964b.png`를 손실 없이 WebP로 변환한 `paradise.webp`는 사냥 메뉴의 낙원 이미지와 입구 배경에만 사용한다. 천상 선택 패널·회랑 전투·탐험은 기존 `corridor.webp`, 지옥은 기존 `hell.webp`를 유지한다. 29개 파일을 S3에서 다시 읽어 SHA-256과 MIME 형식을 확인했고, 회랑·음원 및 이전 URL 연결 테스트 52개가 통과했다.
 
 `DB/RPGenius/ui/낙원/judge-boss.webp`: 내장 imagegen으로 기존 `judge.webp`의 검은 갑옷 심판자를 전투용 투명 전신으로 분리했다. 이벤트 배경은 보존했다. 원본 PNG를 높이 1100px, WebP 품질 90으로 변환했으며 알파를 유지했다.

@@ -2074,6 +2074,7 @@ function getHFieldCharacterSprite(mainCard) {
 }
 
 function buildHFieldState(user) {
+    const resources = require('./paradise').getResources(user);
     const dungeon = rpgenius.getHellDungeon();
     const stats = rpgenius.calculateUserStats(user);
     const maxHp = Number(stats.hp || 0);
@@ -2089,7 +2090,7 @@ function buildHFieldState(user) {
         ? Number(user.field.pillarHp || targetMaxHp)
         : inField ? Number(user.field.elite && user.field.elite.hp || bossMaxHp) : bossMaxHp;
     const level = Number(user.level || 1);
-    const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    const hp = typeof resources.hp == 'undefined' ? maxHp : Number(resources.hp || 0);
     let entryError = null;
     if (fieldName && !inField) entryError = '현재 ' + fieldName + ' 필드에 입장 중입니다. 먼저 해당 필드에서 퇴장해주세요.';
     else if (level < Number(dungeon.requireLevel || 1)) entryError = 'Lv.' + Number(dungeon.requireLevel || 1) + ' 이상부터 입장할 수 있습니다.';
@@ -2111,7 +2112,7 @@ function buildHFieldState(user) {
             level,
             hp,
             maxHp,
-            mp: typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0),
+            mp: typeof resources.mp == 'undefined' ? maxMp : Number(resources.mp || 0),
             maxMp,
             atk: Number(stats.atk || 0),
             def: Number(stats.def || 0),
@@ -5854,9 +5855,16 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
-    if (item.name === '천상의 회랑 입장권') return '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fticket.webp';
-    const paradiseRewardIcons = { '천상의 증표': 'heaven-token', '지옥 열쇠': 'hell-key', '화려한 지옥 열쇠': 'hell-key-ornate', '찬란한 지옥 열쇠': 'hell-key-radiant' };
-    if (paradiseRewardIcons[item.name]) return '/rpg-ui?file=%EB%82%99%EC%9B%90%2F' + paradiseRewardIcons[item.name] + '.webp';
+    const paradiseRewardIcons = { '천상의 회랑 입장권': 'ticket', '천상의 증표': 'heaven-token', '지옥 열쇠': 'hell-key', '화려한 지옥 열쇠': 'hell-key-ornate', '찬란한 지옥 열쇠': 'hell-key-radiant' };
+    if (paradiseRewardIcons[item.name]) {
+        // 관리자 아이템 이미지를 우선하고, 아직 등록되지 않은 아이템만 기존 낙원 에셋을 사용한다.
+        const file = item.name + '.png', itemUrl = getItemImageUrl(String(item.type), file);
+        const fallback = '낙원/' + paradiseRewardIcons[item.name] + '.webp';
+        const imagePath = itemUrl ? path.join(ITEM_IMAGE_PATH, String(item.type), file) : path.join(RPG_UI_PATH, fallback);
+        const url = itemUrl || '/rpg-ui?file=' + encodeURIComponent(fallback);
+        const version = fs.existsSync(imagePath) ? fs.statSync(imagePath).mtimeMs : 0;
+        return url + '&v=' + version;
+    }
     if (item.name === '곡괭이 상자 열쇠') return '/static/assets/point-mine/key.png';
     if (item.name === '윷') return '/item-image?dir=%EC%9D%B4%EB%B2%A4%ED%8A%B8&file=%EC%9C%B7.png';
     if (item.name === '송편') return getItemImageUrl('이벤트', '송편.png');

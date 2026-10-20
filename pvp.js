@@ -2463,27 +2463,29 @@ function corridorMirrorReflection(side, damage, t = Date.now()) {
     return side.hp;
 }
 function corridorMirrorHit(side, user, damage, extra) {
+    const resources = require('./paradise').getResources(user);
     const t = Date.now(); expireSide(side, t);
     // 방어/보호막/피해 반사 등은 기존 PVP 방어 파이프라인으로 처리한다. 공격은 솔로 엔진이 이미 계산했다.
-    const actor = makeSide(user, { stats: { hp: Number(user.hp), mp: 0, atk: 0 }, slotEffects: {}, skillIndexes: [], equipment: { entries: [], setCounts: {} }, passiveIds: [], elementChain: {} }, null);
-    actor.hp = actor.maxHp = Number(user.hp); actor.enteredAt = t;
+    const actor = makeSide(user, { stats: { hp: Number(resources.hp), mp: 0, atk: 0 }, slotEffects: {}, skillIndexes: [], equipment: { entries: [], setCounts: {} }, passiveIds: [], elementChain: {} }, null);
+    actor.hp = actor.maxHp = Number(resources.hp); actor.enteredAt = t;
     const result = dealDamage(actor, side, damage, { precalculatedDamage: true, disableEquipmentBonusDamage: true, summonAttack: !!extra.summonAttack, dotAttack: !!extra.dotAttack }, t);
-    return { ...result, hp: side.hp, reflectedDamage: Math.max(0, Number(user.hp) - actor.hp) };
+    return { ...result, hp: side.hp, reflectedDamage: Math.max(0, Number(resources.hp) - actor.hp) };
 }
 function corridorMirrorTurn(side, user, stats, hp, receiveDamage, t = Date.now()) {
+    const resources = require('./paradise').getResources(user);
     const before = JSON.stringify(side);
     side.corridorMirror = true;
     // 이전 저장 형식의 0 타이머를 실제 전투 시작 시각으로 옮긴다.
     if (!side.nextActionAt) side.nextActionAt = side.enteredAt || t;
     const target = makeSide(user, buildSideSnapshot(user, equippedDeck(user)), null);
     target.snapshot.stats = structuredClone(stats);
-    const beforeHp = Number(user.hp);
-    target.maxHp = stats.hp; target.hp = beforeHp; target.maxMp = stats.mp; target.mp = Number(user.mp);
+    const beforeHp = Number(resources.hp);
+    target.maxHp = stats.hp; target.hp = beforeHp; target.maxMp = stats.mp; target.mp = Number(resources.mp);
     // 플레이어의 보호막·가시·회랑 부활은 필드 엔진이 타격마다 처리한다.
     target.snapshot.passiveIds = [];
     if (receiveDamage) target.corridorReceiveDamage = (damage, count, at) => {
         const received = receiveDamage(damage, count, at);
-        target.hp = Number(user.hp); target.mp = Number(user.mp);
+        target.hp = Number(resources.hp); target.mp = Number(resources.mp);
         return received;
     };
     target.enteredAt = t;

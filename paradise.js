@@ -12,6 +12,12 @@ const active = user => user?.paradise?.status === 'active' && user.field?.paradi
 const has = (run, id) => run.relics.includes(id);
 const log = (run, text) => { run.history.unshift({ floor: run.floor, text }); run.history.length = Math.min(60, run.history.length); };
 
+function getResources(user) {
+    if (!active(user)) return user;
+    // 구형 진행 중 탐험은 현재 저장된 수치부터 분리한다. 바깥 HP·MP는 변경하지 않는다.
+    return user.paradise.resources ||= { hp: user.hp, mp: user.mp };
+}
+
 function weeklyInfo(user, date = new Date()) {
     const week = rpg().getKoreanWeekKey(date), stored = user.paradiseWeekly;
     const kst = new Date(date.getTime() + 9 * 3600000);
@@ -81,14 +87,15 @@ function sumEffects(run) {
     return effects;
 }
 function applyStats(user, stats) {
+    const resources = getResources(user);
     if (!active(user)) return;
     const run = user.paradise, effects = sumEffects(run);
     const hpGrowth = effects.victoryHpGrowth ? Number(run.hpGrowth || 0) : 0;
     for (const key of ['hp', 'mp', 'def']) stats[key] = Math.max(key === 'mp' ? 0 : 1, Math.round(Number(stats[key] || 0) * Math.max(.05, 1 + Number(effects[key] || 0) + (key === 'hp' ? hpGrowth : 0))));
-    const missingHp = 1 - clamp(Number(user.hp ?? stats.hp) / stats.hp, 0, 1);
+    const missingHp = 1 - clamp(Number(resources.hp ?? stats.hp) / stats.hp, 0, 1);
     const attackGrowth = effects.victoryAtkGrowth ? Number(run.attackGrowth || 0) : 0;
     stats.atk = Math.max(1, Math.round(Number(stats.atk || 0) * Math.max(.05, 1 + Number(effects.atk || 0) + Number(run.compass || 0) + attackGrowth + (effects.risk ? missingHp * .50 : 0) + (effects.calmMind && run.distortion <= 24 ? .20 : 0))));
-    stats.finalDamage = Number(stats.finalDamage || 0) + Number(effects.final || 0) + (effects.lastStand && Number(user.hp ?? stats.hp) <= stats.hp * .30 ? .40 : 0) + (effects.eclipse && run.distortion >= 50 ? .30 : 0);
+    stats.finalDamage = Number(stats.finalDamage || 0) + Number(effects.final || 0) + (effects.lastStand && Number(resources.hp ?? stats.hp) <= stats.hp * .30 ? .40 : 0) + (effects.eclipse && run.distortion >= 50 ? .30 : 0);
     stats.takenDamage = Number(stats.takenDamage || 0) + Number(effects.taken || 0) + (missingHp >= .65 ? Number(effects.lowHpGuard || 0) : 0) - (effects.eclipse && run.distortion < 50 ? .10 : 0);
     stats.maxCmb = Number(stats.maxCmb || 0) + Number(effects.maxCmb || 0);
     stats.critMul = Number(stats.critMul || 0) + Number(run.focus || 0) + missingHp * Number(effects.woundedCrit || 0);
@@ -98,15 +105,17 @@ function applyStats(user, stats) {
     stats.mpReduce = Math.max(-1, stats.mpReduce);
 }
 function heal(user, hp = 0, mp = 0) {
+    const resources = getResources(user);
     if (user.paradise.effects.noHealing) return;
     const stats = rpg().calculateUserStats(user);
-    user.hp = Math.min(stats.hp, Number(user.hp) + Math.round(stats.hp * hp));
-    user.mp = Math.min(stats.mp, Number(user.mp) + Math.round(stats.mp * mp));
+    resources.hp = Math.min(stats.hp, Number(resources.hp) + Math.round(stats.hp * hp));
+    resources.mp = Math.min(stats.mp, Number(resources.mp) + Math.round(stats.mp * mp));
 }
 function clampResources(user) {
+    const resources = getResources(user);
     const stats = rpg().calculateUserStats(user);
-    user.hp = clamp(Number(user.hp), 1, stats.hp);
-    user.mp = clamp(Number(user.mp), 0, stats.mp);
+    resources.hp = clamp(Number(resources.hp), 1, stats.hp);
+    resources.mp = clamp(Number(resources.mp), 0, stats.mp);
 }
 function addEffect(user, effects, copyable = true) {
     const run = user.paradise;
@@ -297,13 +306,14 @@ function enter(user, random = Math.random) {
     if (id < 0 || rpg().getInventoryItemCount(user, id) < 1) return { error: TICKET + ' 1장이 필요합니다.' };
     const stats = rpg().calculateUserStats(user);
     rpg().removeInventoryItem(user, id, 1);
-    user.hp = stats.hp; user.mp = stats.mp;
     user.paradise = { id: crypto.randomUUID(), revision: 0, status: 'active', phase: 'combat', floor: 1, clearedFloor: 0, distortion: 0, effects: {}, relics: [], temporary: [], equipmentPermanent: {}, history: [], acquired: {}, contracts: [], battlesWon: 0, elitesWon: 0, rewardUnits: 0, eliteUnits: 0, startedAt: Date.now(), baseRewards: structuredClone(config.baseRewards), receipt: null };
+    user.paradise.resources = { hp: stats.hp, mp: stats.mp };
     user.paradise.milestoneRewards = structuredClone(config.milestoneRewards || []);
     startCombat(user, 'normal', null, random);
     return { message: '입장권 1장을 사용했습니다. 천상의 회랑에 입장합니다.' };
 }
 function chooseAugment(user, id, random = Math.random) {
+    const resources = getResources(user);
     const run = user.paradise;
     if (run.phase !== 'augment' || !run.choices.includes(id) || obtainedAugment(run, id)) return { error: '현재 제시된 강화 중 하나를 선택해주세요.' };
     const choice = AUGMENTS.find(a => a.id === id);
@@ -325,7 +335,7 @@ function chooseAugment(user, id, random = Math.random) {
         case 'pilgrim': heal(user, .15, 0); break;
         case 'clarity': run.distortion = Math.max(0, run.distortion - 10); break;
         case 'rest': heal(user, .30, .30); break;
-        case 'oneHp': user.hp = 1; break;
+        case 'oneHp': resources.hp = 1; break;
         case 'relicCard':
         case 'relicExchange': {
             const relic = pick(ordinaryRelics(run), random);
@@ -365,7 +375,7 @@ function chooseAugment(user, id, random = Math.random) {
     const acquire = choice.acquire;
     if (acquire) {
         if (acquire.temporary) run.temporary.push({ id, name: choice.name, ...structuredClone(acquire.temporary) });
-        if (acquire.hpCost) user.hp = Math.max(1, Math.floor(user.hp * (1 - acquire.hpCost)));
+        if (acquire.hpCost) resources.hp = Math.max(1, Math.floor(resources.hp * (1 - acquire.hpCost)));
         if (acquire.heal) heal(user, ...acquire.heal);
         if (acquire.distortion) run.distortion = clamp(run.distortion + acquire.distortion, 0, 100);
         if (acquire.forceElite) run.forceElite = true;
@@ -416,6 +426,7 @@ function eventChoices(user) {
     return (entries[event.id] || []).map(([id, name, desc]) => ({ id, name, desc }));
 }
 function chooseEvent(user, id, input = {}, random = Math.random) {
+    const resources = getResources(user);
     const run = user.paradise, event = run.event;
     if (run.phase !== 'event' || !event || !eventChoices(user).some(c => c.id === id)) return { error: '현재 이벤트의 선택지를 골라주세요.' };
     const selected = eventChoices(user).find(c => c.id === id);
@@ -436,7 +447,7 @@ function chooseEvent(user, id, input = {}, random = Math.random) {
                 const won = random() < (id === 'safe' ? .70 : .30) + chance;
                 outcomePositive = won;
                 if (won) { move(user, id === 'safe' ? 10 : 50); addEffect(user, { atk: id === 'safe' ? .10 : .30 }); }
-                else if (id === 'safe') user.hp = Math.max(1, Math.floor(user.hp * .9));
+                else if (id === 'safe') resources.hp = Math.max(1, Math.floor(resources.hp * .9));
                 else addEffect(user, { atk: -.15 }, false);
                 message = won ? `도박 성공!\n${id === 'safe' ? '+10층 · 공격력 +10%' : '+50층 · 공격력 +30%'}` : `도박 실패\n${id === 'safe' ? '현재 HP -10%' : '공격력 -15%'}`;
             }
@@ -485,7 +496,7 @@ function chooseEvent(user, id, input = {}, random = Math.random) {
             break;
         case 'collapse':
             run.distortion = 50;
-            if (id === 'prevent') user.hp = Math.max(1, Math.floor(user.hp * .50));
+            if (id === 'prevent') resources.hp = Math.max(1, Math.floor(resources.hp * .50));
             else if (id === 'accept') run.temporary.push({ id: 'collapse', name: '붕괴 수락 · 적 공격력·보상 2배', battles: 3 });
             else { move(user, 50); battle('rift', 1, 'rift'); }
             break;
@@ -498,6 +509,7 @@ function chooseEvent(user, id, input = {}, random = Math.random) {
     return { message, reveal: !fighting && ['casino', 'chests'].includes(event.id) ? { motif: event.id === 'casino' ? 'gambler' : 'contract', positive: outcomePositive, text: message } : null };
 }
 function answerPuzzle(user, answer, random = Math.random) {
+    const resources = getResources(user);
     const run = user.paradise;
     if (run.phase !== 'puzzle') return { error: '진행 중인 퍼즐이 없습니다.' };
     const expired = Date.now() >= run.event.deadline;
@@ -507,7 +519,7 @@ function answerPuzzle(user, answer, random = Math.random) {
     let message;
     if (skipped && !expired) { move(user, 5); message = '퍼즐을 건너뛰었습니다. +5층'; }
     else if (checked.correct) { const attack = random() < .5; addEffect(user, attack ? { atk: .10 } : { final: .08 }); move(user, 10); run.distortion = Math.max(0, run.distortion - 10); message = '봉인 해제!\n' + (attack ? '공격력 +10%' : '최종 피해 +8%') + '\n+10층 · 뒤틀림 -10'; }
-    else { user.hp = Math.max(1, Math.floor(user.hp * .85)); message = expired ? '시간 초과 · 현재 HP -15%' : '오답 · 현재 HP -15%'; }
+    else { resources.hp = Math.max(1, Math.floor(resources.hp * .85)); message = expired ? '시간 초과 · 현재 HP -15%' : '오답 · 현재 HP -15%'; }
     log(run, message); run.lastOutcome = message; offerAugments(user, random);
     return { message, reveal: { motif: 'clarity', positive: checked.correct, text: message } };
 }
@@ -574,6 +586,7 @@ function modifyHit(user, extra, hit) {
     if (run.effects.overkillParcel && battle.attackCount === 1 && run.overkillDamage) { add(Math.min(run.overkillDamage, run.enemy.maxHp * .30), '남은 일격의 행선지'); run.overkillDamage = 0; }
 }
 function onSkillUsed(user, spent, skillName) {
+    const resources = getResources(user);
     if (!active(user)) return;
     const run = user.paradise, effects = sumEffects(run);
     run.battle.skillsUsed = Number(run.battle.skillsUsed || 0) + 1;
@@ -581,7 +594,7 @@ function onSkillUsed(user, spent, skillName) {
     for (const quest of run.quests || []) if (quest.status === 'active' && quest.condition === 'basicOnly') questResult(run, quest, false);
     if (effects.spellWeave) run.battle.spellWeaveReady = true;
     if (effects.skillGuard) run.battle.skillGuardReady = true;
-    if (!run.effects.noHealing && effects.manaCycle) user.mp = Math.min(rpg().calculateUserStats(user).mp, user.mp + Math.floor(spent * .20));
+    if (!run.effects.noHealing && effects.manaCycle) resources.mp = Math.min(rpg().calculateUserStats(user).mp, resources.mp + Math.floor(spent * .20));
     if (effects.skillHeal) heal(user, effects.skillHeal);
     if (effects.paperWard && spent > 0) {
         const stats = rpg().calculateUserStats(user);
@@ -603,6 +616,7 @@ function cooldownMultiplier(user) {
     return multiplier;
 }
 function attackMultiplier(user, extra) {
+    const resources = getResources(user);
     const run = user.paradise, effects = sumEffects(run), battle = run.battle;
     let multiplier = 1;
     const manual = !extra.summonAttack && !extra.dotAttack && !extra.isBotAutoAttack;
@@ -615,8 +629,8 @@ function attackMultiplier(user, extra) {
     if (effects.highMana || effects.lowMana) {
         const maxMp = rpg().calculateUserStats(user).mp;
         if (maxMp > 0) {
-            if (effects.highMana && user.mp >= maxMp * .80) multiplier *= 1 + effects.highMana;
-            if (effects.lowMana && user.mp <= maxMp * .25) multiplier *= 1 + effects.lowMana;
+            if (effects.highMana && resources.mp >= maxMp * .80) multiplier *= 1 + effects.highMana;
+            if (effects.lowMana && resources.mp <= maxMp * .25) multiplier *= 1 + effects.lowMana;
         }
     }
     if (manual) {
@@ -633,7 +647,7 @@ function attackMultiplier(user, extra) {
             if (effects.quietBlade && !battle.skillsUsed) multiplier *= 1 + effects.quietBlade;
             if (effects.spellWeave && battle.spellWeaveReady) { multiplier *= 1 + effects.spellWeave; battle.spellWeaveReady = false; }
             if (effects.swordCharge) battle.basicCharges = Math.min(3, Number(battle.basicCharges || 0) + 1);
-            if (effects.basicHpCost) user.hp = Math.max(1, user.hp - Math.round(rpg().calculateUserStats(user).hp * effects.basicHpCost));
+            if (effects.basicHpCost) resources.hp = Math.max(1, resources.hp - Math.round(rpg().calculateUserStats(user).hp * effects.basicHpCost));
         } else {
             if (effects.openingSpell && !battle.openingSpellUsed) { multiplier *= 1 + effects.openingSpell; battle.openingSpellUsed = true; }
             if (effects.swordCharge && battle.basicCharges >= 3) { multiplier *= 1 + effects.swordCharge; battle.basicCharges = 0; }
@@ -681,11 +695,12 @@ function incomingMultiplier(user, received) {
     return multiplier;
 }
 function onDamageTaken(user, lostHp) {
+    const resources = getResources(user);
     if (!active(user) || lostHp <= 0) return;
     const run = user.paradise, effects = sumEffects(run);
     run.battle.hasTakenHpDamage = true;
     if (effects.revengeVault) run.battle.revengeDamage = Math.min(rpg().calculateUserStats(user).hp * 2, Number(run.battle.revengeDamage || 0) + lostHp);
-    if (effects.reserveHeal && !run.battle.reserveHealUsed && user.hp > 0 && user.hp <= rpg().calculateUserStats(user).hp * .25) {
+    if (effects.reserveHeal && !run.battle.reserveHealUsed && resources.hp > 0 && resources.hp <= rpg().calculateUserStats(user).hp * .25) {
         run.battle.reserveHealUsed = true; heal(user, effects.reserveHeal);
         log(run, run.effects.noHealing ? '안주머니의 비상약 · 회복 봉쇄' : '안주머니의 비상약 · HP 30% 회복');
     }
@@ -761,9 +776,6 @@ function finish(user, outcome = 'retired') {
     for (const quest of run.quests || []) if (quest.status === 'active') quest.status = 'failed';
     run.rewardBonus = Number(run.effects.reward || 0) + Number(run.ring || 0) + (has(run, 'judgment') ? .50 : 0) + (has(run, 'riftHeart') ? .75 : 0) + run.contracts.reduce((sum, c) => sum + Number(c.bonus || 0), 0);
     user.field = null;
-    if (outcome === 'defeated') user.hp = 1;
-    const stats = rpg().calculateUserStats(user);
-    user.hp = clamp(Number(user.hp), 1, stats.hp); user.mp = clamp(Number(user.mp), 0, stats.mp);
     log(run, outcome === 'cleared' ? '999층 완주 · 천상의 끝' : outcome === 'defeated' ? '탐험 종료 · 전투 불능' : '귀환 · 종료 보상 정산');
 }
 function previewRewards(run) {
@@ -820,10 +832,11 @@ function claimedRewards(run) {
     ];
 }
 function view(user) {
+    const resources = getResources(user);
     const run = user.paradise, config = rpg().getDataCache('Paradise', null), stats = rpg().calculateUserStats(user);
     const ticketId = rpg().getDataCache('Item', []).findIndex(i => i?.name === TICKET);
     const result = { serverTime: Date.now(), weekly: weeklyInfo(user), enabled: !validateConfig(config) && config.enabled, ticket: { name: TICKET, count: ticketId < 0 ? 0 : rpg().getInventoryItemCount(user, ticketId), iconUrl: '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fticket.webp' }, revision: Number(run?.revision || 0), runId: run?.id || null,
-        player: { name: user.name, hp: Number(user.hp ?? stats.hp), maxHp: stats.hp, mp: Number(user.mp ?? stats.mp), maxMp: stats.mp, atk: stats.atk, def: stats.def, combatPower: rpg().calculateCombatPower(user).total },
+        player: { name: user.name, hp: Number(resources.hp ?? stats.hp), maxHp: stats.hp, mp: Number(resources.mp ?? stats.mp), maxMp: stats.mp, atk: stats.atk, def: stats.def, combatPower: rpg().calculateCombatPower(user).total },
         baseRewards: config?.baseRewards || [], entryBlocked: user.field && !user.field.paradise ? '다른 전투를 먼저 마쳐주세요.' : null, run: null };
     if (!run) return require('./paradise_hell').decorateView(result, user);
     const { mirror, ...enemy } = run.enemy || {};
@@ -842,4 +855,4 @@ function view(user) {
     }
     return require('./paradise_hell').decorateView(result, user);
 }
-module.exports = { TICKET, MAX_FLOOR, CP_ANCHORS, AUGMENTS, RELICS, EVENTS, active, validateConfig, recommendedPower, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, view, weeklyInfo, recordFloor, buildWeeklyRanking };
+module.exports = { TICKET, MAX_FLOOR, CP_ANCHORS, AUGMENTS, RELICS, EVENTS, active, getResources, validateConfig, recommendedPower, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, view, weeklyInfo, recordFloor, buildWeeklyRanking };

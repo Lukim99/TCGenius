@@ -40,8 +40,8 @@ function enter(user, keyName, random = Math.random) {
     if (!key || id < 0 || rpg().getInventoryItemCount(user, id) < 1) return { error: '보유한 지옥 열쇠를 선택해주세요.' };
     const stats = rpg().calculateUserStats(user);
     rpg().removeInventoryItem(user, id, 1);
-    user.hp = stats.hp; user.mp = stats.mp;
     user.paradise = { id: crypto.randomUUID(), revision: 0, mode: 'hell', status: 'active', phase: 'combat', floor: 1, highestFloor: 1, clearedFloor: 0,
+        resources: { hp: stats.hp, mp: stats.mp },
         effects: {}, relics: [], temporary: [], equipmentPermanent: {}, history: [], acquired: {}, contracts: [], choices: [], distortion: 0,
         battlesWon: 0, elitesWon: 0, rewardUnits: 0, eliteUnits: 0, startedAt: Date.now(), baseRewards: [], milestoneRewards: [],
         key: key.name, dropsRemaining: key.drops, bonusChests: 0, richChests: 0, rocketJump: false, altarUsed: false, altarResult: null,
@@ -140,7 +140,6 @@ function finish(user, outcome = 'retired', random = Math.random) {
     }
     rpg().clearFieldRuntimeTimers(user.name);
     user.field = null;
-    if (outcome === 'defeated') user.hp = 1;
     run.status = 'ended'; run.outcome = outcome; run.endedAt = Date.now(); run.enemy = null; run.event = null; run.choices = [];
     run.chests = chests; run.opensRemaining = chests.length ? 1 : 0;
     run.claimed = !chests.length; run.phase = chests.length ? 'chests' : 'ended';

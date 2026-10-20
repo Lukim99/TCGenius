@@ -50,7 +50,7 @@ function equipped(id, stage = 1) {
     const gear = { id: index, level: 0, transcendStage: stage };
     user.equipments[slot] = slot === 'accessory' ? { 0: gear } : gear;
     corridor.startCombat(user, 'normal', null, () => .99);
-    const stats = rpg.calculateUserStats(user); user.hp = stats.hp; user.mp = stats.mp;
+    const stats = rpg.calculateUserStats(user); corridor.getResources(user).hp = stats.hp; corridor.getResources(user).mp = stats.mp;
     return user;
 }
 
@@ -167,7 +167,7 @@ test('발동형 장비 증강은 조건에 맞는 실제 피해·추첨·중첩 
             if (boosted) assert.ok(!choose(user, id).error);
             const stats = rpg.calculateUserStats(user), state = user.field.equipmentState;
             user.paradise.enemy.hp = user.paradise.enemy.maxHp * .2;
-            user.hp = Math.floor(stats.hp * .1); user.mp = stats.mp;
+            corridor.getResources(user).hp = Math.floor(stats.hp * .1); corridor.getResources(user).mp = stats.mp;
             user.field.enteredAt = Date.now() - 11000;
             state.trueBeomUntil = Date.now() + 10000;
             if (id !== 'bamboo') delete state.trueBeomUntil;
@@ -218,11 +218,11 @@ test('해류 신발 증강은 실제 스킬의 남은 쿨타임·회복을 강�
         user.paradise.effects.noHealing = blocked ? 1 : 0;
         user.paradise.enemy.hp = user.paradise.enemy.maxHp = 1e12; user.paradise.enemy.atk = 0;
         const skill = rpg.getMainCardSkills(user)[0].skill, stats = rpg.calculateUserStats(user);
-        user.mp = Math.floor(stats.mp * .5);
-        const beforeMp = user.mp, at = Date.now(), multiplier = boosted ? 1.5 : 1;
+        corridor.getResources(user).mp = Math.floor(stats.mp * .5);
+        const beforeMp = corridor.getResources(user).mp, at = Date.now(), multiplier = boosted ? 1.5 : 1;
         const message = await rpg.useSkillInField(user, skill.name);
         assert.ok(!message.startsWith('❌'), message);
-        assert.equal(user.mp, beforeMp - skill.mp_cost + (blocked ? 0 : Math.round(stats.mp * .03 * multiplier)));
+        assert.equal(corridor.getResources(user).mp, beforeMp - skill.mp_cost + (blocked ? 0 : Math.round(stats.mp * .03 * multiplier)));
         const reduction = Math.min(5000 * multiplier, skill.cooltime * .08 * multiplier);
         assert.ok(Math.abs(user.field.skillCooldowns[skill.name] - at - (skill.cooltime - reduction)) < 200);
     }
@@ -270,7 +270,7 @@ test('계약은 승리 조건·기한을 판정하고 보상 계약과 유물을
     for (const id of ['basicContract', 'criticalContract', 'spellContract', 'duelistContract', 'eliteBounty', 'checkpoint', 'relicParcel', 'deathHandshake']) {
         const user = fresh(); choose(user, id);
         const quest = user.paradise.quests[0];
-        if (id === 'deathHandshake') { assert.equal(user.hp, 1); assert.equal(user.paradise.enemy.kind, 'elite'); }
+        if (id === 'deathHandshake') { assert.equal(corridor.getResources(user).hp, 1); assert.equal(user.paradise.enemy.kind, 'elite'); }
         for (let i = 0; i < quest.battles; i++) {
             if (i) corridor.nextEncounter(user, () => .99);
             if (id === 'eliteBounty') assert.equal(user.paradise.enemy.kind, 'elite');
@@ -441,21 +441,21 @@ test('장기전·단기전·노스킬 전략은 전투가 바뀌면 초기화된
 test('새 회복 효과는 적중·치명타 수·회복 봉쇄를 따르며 피의 비용은 죽이지 않는다', () => {
     const user = fresh(), stats = rpg.calculateUserStats(user);
     user.paradise.effects = { basicMp: .04, criticalMp: .01, basicHpCost: .02, skillHeal: .03 };
-    user.mp = 0; user.hp = Math.floor(stats.hp * .50);
+    corridor.getResources(user).mp = 0; corridor.getResources(user).hp = Math.floor(stats.hp * .50);
     corridor.afterAttack(user, { isBasic: true }, { finalDamage: 0, criticalCount: 0 });
-    assert.equal(user.mp, 0);
+    assert.equal(corridor.getResources(user).mp, 0);
     corridor.afterAttack(user, { isBasic: true }, { finalDamage: 100, criticalCount: 9 });
-    assert.equal(user.mp, Math.round(stats.mp * .09));
-    const hp = user.hp;
+    assert.equal(corridor.getResources(user).mp, Math.round(stats.mp * .09));
+    const hp = corridor.getResources(user).hp;
     corridor.onSkillUsed(user, 10);
-    assert.equal(user.hp, hp + Math.round(stats.hp * .03));
+    assert.equal(corridor.getResources(user).hp, hp + Math.round(stats.hp * .03));
     user.paradise.effects.noHealing = 1;
-    const before = { hp: user.hp, mp: user.mp };
+    const before = { hp: corridor.getResources(user).hp, mp: corridor.getResources(user).mp };
     corridor.afterAttack(user, { isBasic: true }, { finalDamage: 100, criticalCount: 9 });
     corridor.onSkillUsed(user, 10);
-    assert.deepEqual({ hp: user.hp, mp: user.mp }, before);
-    user.hp = 1; corridor.attackMultiplier(user, { isBasic: true });
-    assert.equal(user.hp, 1);
+    assert.deepEqual({ hp: corridor.getResources(user).hp, mp: corridor.getResources(user).mp }, before);
+    corridor.getResources(user).hp = 1; corridor.attackMultiplier(user, { isBasic: true });
+    assert.equal(corridor.getResources(user).hp, 1);
 });
 
 test('피격 방어 횟수·보호 예약·비상약은 전투 상태에 기록되고 사망을 회복시키지 않는다', () => {
@@ -468,16 +468,16 @@ test('피격 방어 횟수·보호 예약·비상약은 전투 상태에 기록�
     close(corridor.incomingMultiplier(user, 100), .50 * .75 * .75);
     close(corridor.incomingMultiplier(user, 100), .50);
     close(corridor.incomingMultiplier(user, 100), 1);
-    user.hp = Math.floor(stats.hp * .20);
-    const low = user.hp;
+    corridor.getResources(user).hp = Math.floor(stats.hp * .20);
+    const low = corridor.getResources(user).hp;
     corridor.onDamageTaken(user, 100);
-    assert.equal(user.hp, low + Math.round(stats.hp * .30));
+    assert.equal(corridor.getResources(user).hp, low + Math.round(stats.hp * .30));
     close(corridor.attackMultiplier(user, { isBasic: true }), 1);
-    user.hp = low; corridor.onDamageTaken(user, 100);
-    assert.equal(user.hp, low);
+    corridor.getResources(user).hp = low; corridor.onDamageTaken(user, 100);
+    assert.equal(corridor.getResources(user).hp, low);
     corridor.startCombat(user, 'normal', null, () => .99);
-    user.hp = 0; corridor.onDamageTaken(user, 100);
-    assert.equal(user.hp, 0);
+    corridor.getResources(user).hp = 0; corridor.onDamageTaken(user, 100);
+    assert.equal(corridor.getResources(user).hp, 0);
 });
 
 test('빌린 힘은 정확한 승리 수 뒤에 만료되고 약속한 대가와 보상은 한 번만 적용된다', () => {
@@ -499,10 +499,10 @@ test('빌린 힘은 정확한 승리 수 뒤에 만료되고 약속한 대가와
 test('승리 성장에는 상한이 있고 회복·뒤틀림 감소가 실제 승리에만 적용된다', () => {
     const user = fresh(), initial = rpg.calculateUserStats(user);
     user.paradise.effects = { victoryAtkGrowth: .03, victoryHpGrowth: .02, victoryHp: .02, victoryMp: .08, victoryDistortion: -3 };
-    user.hp = 1; user.mp = 0; user.paradise.distortion = 50;
+    corridor.getResources(user).hp = 1; corridor.getResources(user).mp = 0; user.paradise.distortion = 50;
     corridor.victory(user, () => .99);
     assert.equal(user.paradise.distortion, 47);
-    assert.ok(user.hp > 1 && user.mp > 0);
+    assert.ok(corridor.getResources(user).hp > 1 && corridor.getResources(user).mp > 0);
     for (let n = 1; n < 15; n++) { corridor.startCombat(user, 'normal', null, () => .99); corridor.victory(user, () => .99); }
     close(user.paradise.attackGrowth, .30); close(user.paradise.hpGrowth, .20);
     assert.equal(rpg.calculateUserStats(user).atk, Math.round(initial.atk * 1.30));
@@ -531,10 +531,10 @@ test('MP 소모·쿨타임 증강은 실제 스킬 경로에 반영되고 종료
     const user = fresh();
     choose(user, 'magicDiscount'); choose(user, 'quickChant');
     user.paradise.enemy.hp = user.paradise.enemy.maxHp = 1e12; user.paradise.enemy.atk = 0;
-    const skill = rpg.getMainCardSkills(user)[0].skill, beforeMp = user.mp, at = Date.now();
+    const skill = rpg.getMainCardSkills(user)[0].skill, beforeMp = corridor.getResources(user).mp, at = Date.now();
     const message = await rpg.useSkillInField(user, skill.name);
     assert.ok(!message.startsWith('❌'), message);
-    assert.equal(user.mp, beforeMp - Math.round(skill.mp_cost * .75));
+    assert.equal(corridor.getResources(user).mp, beforeMp - Math.round(skill.mp_cost * .75));
     assert.ok(user.field.skillCooldowns[skill.name] - at <= skill.cooltime * .75 + 100);
     corridor.finish(user);
     assert.equal(corridor.cooldownMultiplier(user), 1);

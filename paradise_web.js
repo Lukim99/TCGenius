@@ -6,10 +6,12 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
     const weeklyRewards = require('./paradise_rewards');
     weeklyRewards.startWeeklyRewards();
     const advanceCombat = async user => {
+        const resourcesAdded = corridor.active(user) && !user.paradise.resources;
+        if (resourcesAdded) { corridor.getResources(user); user.paradise.revision++; }
         const chestLimitChanged = hell.normalizeChestSelection(user);
         const rebalanced = corridor.rebalanceEnemy(user);
         const advanced = rpgenius.advanceParadiseMirror(user);
-        if (!chestLimitChanged && !rebalanced && !advanced) return;
+        if (!resourcesAdded && !chestLimitChanged && !rebalanced && !advanced) return;
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
         await rpgenius.commitProtectedUserChange(user, keys);
     };
@@ -23,6 +25,9 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
     const revealView = (reveal, user) => reveal?.kind === 'rewards' ? { ...reveal, items: reveal.items.map(reward => rewardView(reward, user)) } : reveal || null;
     const state = user => {
         const view = corridor.view(user);
+        const items = rpgenius.getDataCache('Item', []);
+        view.ticket.iconUrl = getItemIconUrl(items.find(item => item?.name === view.ticket.name));
+        for (const key of view.hell.keys) key.iconUrl = getItemIconUrl(items.find(item => item?.name === key.name));
         view.player.card = serializeCard(user.main_card, user);
         view.player.sprite = getCharacterSprite(view.player.card);
         if (view.run?.enemy) view.run.enemy.sprite = view.run.enemy.kind === 'mirror' ? view.player.sprite : getMonsterSprite(view.run.enemy);
