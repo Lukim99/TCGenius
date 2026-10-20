@@ -6,9 +6,10 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
     const weeklyRewards = require('./paradise_rewards');
     weeklyRewards.startWeeklyRewards();
     const advanceCombat = async user => {
+        const chestLimitChanged = hell.normalizeChestSelection(user);
         const rebalanced = corridor.rebalanceEnemy(user);
         const advanced = rpgenius.advanceParadiseMirror(user);
-        if (!rebalanced && !advanced) return;
+        if (!chestLimitChanged && !rebalanced && !advanced) return;
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
         await rpgenius.commitProtectedUserChange(user, keys);
     };

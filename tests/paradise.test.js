@@ -204,7 +204,8 @@ test('지옥 11의 배수에는 제단만 나오고 40/20/20/20 구간 및 추�
         if (expected === 'drop') { assert.equal(user.paradise.phase, 'descent'); assert.equal(user.paradise.dropsRemaining, 1); }
         else {
             assert.equal(user.paradise.phase, 'chests');
-            assert.equal(user.paradise.opensRemaining, expected === 'rocket' ? 1 : 2);
+            assert.equal(user.paradise.opensRemaining, 1);
+            assert.equal(user.paradise.chests.length, expected === 'rocket' ? 3 : 4);
             if (expected === 'rich') assert.equal(user.paradise.chests.at(-1).rich, true);
         }
     }
@@ -246,33 +247,65 @@ test('지옥 보상표 11구간·9종의 실제 아이템과 카드 등급/수�
     }
 });
 
-test('제단 추가 상자는 후보와 개봉 횟수를 함께 늘리고 풍요는 강화석만 3배, 재접속·재전송에도 한 번씩 지급한다', async t => {
+test('제단 추가 상자는 후보만 늘리고 1개만 개봉하며 풍요 보상은 재접속·재전송에도 한 번 지급한다', async t => {
     const row = require('../paradise_hell_content').INITIAL_CONFIG.rewards.find(row => row.id === 'fragment');
     const env = setupHell(t, [row]), user = await env.user(); env.hell.enter(user, env.hell.KEYS[0].name, () => .99);
     Object.assign(user.paradise, { clearedFloor: 30, bonusChests: 1, richChests: 1 }); env.hell.finish(user, 'cleared', () => .99); await user.save();
     let state = (await request('/api/paradise')).data;
-    assert.equal(state.run.chests.length, 5); assert.equal(state.run.opensRemaining, 3); assert.ok(state.run.chests.every(chest => !Object.hasOwn(chest, 'loot')));
+    assert.equal(state.run.chests.length, 5); assert.equal(state.run.opensRemaining, 1); assert.ok(state.run.chests.every(chest => !Object.hasOwn(chest, 'loot')));
     assert.equal(state.run.chests[4].rich, true); assert.equal(state.run.chests[4].stones, 120);
-    const firstId = state.run.chests[0].id;
-    for (const i of [0,1,4]) {
-        const body = { ...bodyFor(state), chest: state.run.chests[i].id };
-        const results = await Promise.all([request('/api/paradise/chest', body), request('/api/paradise/chest', body)]);
-        assert.ok(results.every(r => r.status === 200), JSON.stringify(results)); state = (await request('/api/paradise')).data;
-        assert.equal(results[0].data.reveal.kind, 'rewards');
-        assert.deepEqual(results[0].data.reveal, results[1].data.reveal);
-        const stones = results[0].data.reveal.items.find(item => item.name === '상급 강화석');
-        assert.equal(stones.count, i === 4 ? 120 : 40);
-        assert.ok(Object.hasOwn(stones, 'iconUrl')); // 로컬 격리 테스트에는 운영 아이템 이미지가 없다.
-        assert.ok(!results[0].data.reveal.items.some(item => Object.hasOwn(item, 'card')));
-    }
-    assert.equal(state.run.opensRemaining, 0); assert.equal(state.run.claimed, true);
-    assert.equal((await request('/api/paradise/chest', { ...bodyFor(state), chest: firstId })).status, 400);
+    const body = { ...bodyFor(state), chest: state.run.chests[4].id };
+    const results = await Promise.all([request('/api/paradise/chest', body), request('/api/paradise/chest', body)]);
+    assert.ok(results.every(r => r.status === 200), JSON.stringify(results)); state = (await request('/api/paradise')).data;
+    assert.equal(results[0].data.reveal.kind, 'rewards');
+    assert.deepEqual(results[0].data.reveal, results[1].data.reveal);
+    const stones = results[0].data.reveal.items.find(item => item.name === '상급 강화석');
+    assert.equal(stones.count, 120);
+    assert.ok(Object.hasOwn(stones, 'iconUrl')); // 로컬 격리 테스트에는 운영 아이템 이미지가 없다.
+    assert.ok(!results[0].data.reveal.items.some(item => Object.hasOwn(item, 'card')));
+    assert.equal(state.run.opensRemaining, 0); assert.equal(state.run.claimed, true); assert.equal(state.run.phase, 'ended');
+    assert.equal(state.run.chests.filter(chest => chest.opened).length, 1);
+    for (const chest of state.run.chests) assert.equal((await request('/api/paradise/chest', { ...bodyFor(state), chest: chest.id })).status, 400);
     const saved = await rpg.getRPGUserByName(account.name);
-    assert.equal(rpg.getInventoryItemCount(saved, env.items.findIndex(item => item.name === '상급 강화석')), 200);
-    assert.equal(rpg.getInventoryItemCount(saved, env.items.findIndex(item => item.name === '초월 조각')), 45);
+    assert.equal(rpg.getInventoryItemCount(saved, env.items.findIndex(item => item.name === '상급 강화석')), 120);
+    assert.equal(rpg.getInventoryItemCount(saved, env.items.findIndex(item => item.name === '초월 조각')), 15);
     for (const [roll, rich] of [[.099,true],[.1,false]]) {
         const u = await env.user(); env.hell.enter(u, env.hell.KEYS[0].name, () => .99); u.paradise.clearedFloor = 1;
         env.hell.finish(u, 'cleared', () => roll); assert.equal(u.paradise.chests[0].rich, rich);
+    }
+});
+
+test('이전 규칙의 지옥 보상도 후보를 보존하며 1회 개봉으로 제한하고 이미 개봉했다면 추가 지급 없이 종료한다', async t => {
+    const row = require('../paradise_hell_content').INITIAL_CONFIG.rewards.find(row => row.id === 'fragment');
+    const env = setupHell(t, [row]);
+    for (const alreadyOpened of [false, true]) {
+        const user = await env.user(); env.hell.enter(user, env.hell.KEYS[0].name, () => .99);
+        Object.assign(user.paradise, { clearedFloor: 30, bonusChests: 1, richChests: 1 }); env.hell.finish(user, 'cleared', () => .99);
+        if (alreadyOpened) env.hell.openChest(user, user.paradise.chests[0].id);
+        Object.assign(user.paradise, { phase: 'chests', claimed: false, opensRemaining: alreadyOpened ? 2 : 3 });
+        await user.save();
+        const candidates = structuredClone(user.paradise.chests), inventory = structuredClone(user.inventory);
+        if (alreadyOpened) {
+            assert.ok(env.hell.openChest(user, user.paradise.chests[1].id).error);
+            const stale = await request('/api/paradise/chest', { ...bodyFor(corridor.view(user)), chest: candidates[1].id });
+            assert.equal(stale.status, 409);
+        }
+        const state = (await request('/api/paradise')).data, saved = await rpg.getRPGUserByName(account.name);
+        assert.deepEqual(saved.paradise.chests, candidates);
+        assert.deepEqual(saved.inventory, inventory);
+        assert.equal(state.run.opensRemaining, alreadyOpened ? 0 : 1);
+        assert.equal(state.run.phase, alreadyOpened ? 'ended' : 'chests');
+        assert.equal(state.run.claimed, alreadyOpened);
+        assert.equal(persisted.get(account.id).paradise.opensRemaining, alreadyOpened ? 0 : 1);
+        const secondRead = (await request('/api/paradise')).data;
+        assert.equal(secondRead.revision, state.revision);
+        const result = await request('/api/paradise/chest', { ...bodyFor(state), chest: candidates[1].id });
+        assert.equal(result.status, alreadyOpened ? 400 : 200);
+        assert.equal(result.data.state.run.phase, 'ended');
+        if (alreadyOpened) {
+            const entered = await request('/api/paradise/enter', { ...bodyFor(result.data.state), mode: 'hell', key: env.hell.KEYS[0].name });
+            assert.equal(entered.status, 200, JSON.stringify(entered.data));
+        }
     }
 });
 

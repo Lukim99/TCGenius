@@ -335,7 +335,7 @@
             hitButton(w / 2 + 98, by, 44, 44, '다음 보상', () => changePage(1), { glyph: '›', size: 22, disabled: !ready || reveal.page === pages - 1 });
             text(ctx, `${reveal.page + 1} / ${pages}`, w / 2, top - 3, 12, '#a8b4c3', 'center', 600);
         }
-        hitButton(w / 2 - 88, by, 176, 44, state.run?.phase === 'chests' ? '계속 개봉' : '확인', () => { rewardReveal = null; sound('tap'); }, { primary: true, size: 16, disabled: !ready });
+        hitButton(w / 2 - 88, by, 176, 44, '확인', () => { rewardReveal = null; sound('tap'); }, { primary: true, size: 16, disabled: !ready });
     }
     function sceneBackground(w, h, t) {
         if (state?.run?.mode === 'hell' || state && !state.run && overlay === 'hell') return hellBackground(w, h, t);
@@ -500,7 +500,7 @@
         panel(ctx, (w - rw) / 2, ry, rw, rh, { alpha: .8 }); text(ctx, '정산 보상', (w - rw) / 2 + 18, ry + 20, 13, '#a7b2b8', 'left', 600);
         if (rewards.length) rewards.slice(0, rows).forEach((reward, i) => text(ctx, reward, (w - rw) / 2 + 18, ry + 46 + i * 26, 15, '#f0d99e', 'left', 600, rw - 36));
         else text(ctx, '지급할 보상이 없습니다.', (w - rw) / 2 + 18, ry + 46, 15, '#b8c0c3');
-        hitButton(w / 2 - 130, h - 108, 260, 50, run.claimed ? '다시 회랑으로' : '종료 보상 수령', () => { if (run.claimed) { state.run = null; activeScene = 'lobby'; sceneKey = ''; } else mutate('claim'); }, { primary: true, size: 16 });
+        hitButton(w / 2 - 130, h - 108, 260, 50, run.claimed ? '낙원으로 돌아가기' : '종료 보상 수령', () => { if (run.claimed) { state.run = null; activeScene = 'lobby'; sceneKey = ''; } else mutate('claim'); }, { primary: true, size: 16 });
     }
     // 지옥: 픽셀 배경은 최근접 필터로 선명하게, 낙하 중에는 선택 방향으로 밀리며 깊이 확대된다.
     function hellBackground(w, h, t) {
@@ -624,7 +624,7 @@
     }
     function chestScene(w, h, t) {
         const run = state.run, list = (run.chests || []).filter(c => !c.opened), n = list.length, mobile = w < 700, open = chestPick ? (reduced ? 1 : clamp((t - chestPick.started) / 520, 0, 1)) : 0, opens = run.opensRemaining ?? 1;
-        const head = `지하 ${run.clearedFloor || 0}층 보상 · ${opens}회 개봉 가능`;
+        const head = `지하 ${run.clearedFloor || 0}층 보상 · 상자 1개 선택`;
         const pick = chest => { if (busy || pending || chestPick || opens <= 0) return; chestPick = { id: chest.id, started: performance.now() }; sound('chest'); setTimeout(() => mutate('chest', { chest: chest.id }), reduced ? 0 : 560); };
         const label = chest => `${chest.name} · ${chest.description}`;
         if (mobile) {

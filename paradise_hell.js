@@ -143,12 +143,23 @@ function finish(user, outcome = 'retired', random = Math.random) {
     user.field = null;
     if (outcome === 'defeated') user.hp = 1;
     run.status = 'ended'; run.outcome = outcome; run.endedAt = Date.now(); run.enemy = null; run.event = null; run.choices = [];
-    run.chests = chests; run.opensRemaining = chests.length ? 1 + run.bonusChests + run.richChests : 0;
+    run.chests = chests; run.opensRemaining = chests.length ? 1 : 0;
     run.claimed = !chests.length; run.phase = chests.length ? 'chests' : 'ended';
+}
+function normalizeChestSelection(user) {
+    const run = user.paradise;
+    if (run?.mode !== 'hell' || run.phase !== 'chests') return false;
+    // 이전 규칙으로 저장된 후보는 보존하고, 이미 개봉한 탐험은 추가 지급 없이 마친다.
+    const opened = run.chests.some(chest => chest.opened), remaining = opened ? 0 : 1;
+    if (!opened && run.opensRemaining === remaining) return false;
+    run.opensRemaining = remaining;
+    if (opened) { run.claimed = true; run.claimedAt ||= Date.now(); run.phase = 'ended'; }
+    run.revision++;
+    return true;
 }
 function openChest(user, id) {
     const run = user.paradise;
-    if (run?.mode !== 'hell' || run.phase !== 'chests' || run.opensRemaining <= 0) return { error: '선택할 보상 상자가 없습니다.' };
+    if (run?.mode !== 'hell' || run.phase !== 'chests' || run.claimed || run.opensRemaining <= 0 || run.chests.some(chest => chest.opened)) return { error: '선택할 보상 상자가 없습니다.' };
     const chest = run.chests.find(chest => chest.id === id);
     if (!chest || chest.opened) return { error: '아직 열지 않은 상자를 선택해주세요.' };
     const cards = chest.loot.filter(entry => entry.kind === 'card');
@@ -161,8 +172,8 @@ function openChest(user, id) {
         const existing = run.rewardSummary.find(row => row.kind === entry.kind && (entry.kind === 'item' ? row.id === entry.id : JSON.stringify(row.card) === JSON.stringify(entry.card)));
         if (existing) existing.count += entry.count; else run.rewardSummary.push(structuredClone(entry));
     }
-    chest.opened = true; run.opensRemaining--;
-    if (!run.opensRemaining) { run.claimed = true; run.claimedAt = Date.now(); run.phase = 'ended'; }
+    chest.opened = true; run.opensRemaining = 0;
+    run.claimed = true; run.claimedAt = Date.now(); run.phase = 'ended';
     return { message: chest.name + ' 개봉', reveal: { kind: 'rewards', title: chest.name, rich: chest.rich, items: structuredClone(chest.loot) } };
 }
 function decorateView(view, user) {
@@ -176,4 +187,4 @@ function decorateView(view, user) {
     view.run.chests = (run.chests || []).map(({ loot, ...chest }) => chest);
     return view;
 }
-module.exports = { KEYS, recommendedPower, tierOf, validateConfig, enter, descend, altar, continueAltar, victory, finish, openChest, decorateView };
+module.exports = { KEYS, recommendedPower, tierOf, validateConfig, enter, descend, altar, continueAltar, victory, finish, normalizeChestSelection, openChest, decorateView };
