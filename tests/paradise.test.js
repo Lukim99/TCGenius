@@ -1601,14 +1601,17 @@ test('천상 장비는 0~25강 표의 고정 능력치·비용·확률을 적용
     const chances = [100,95,90,85,80,75,70,65,60,55,50,45,40,35,30,30,28,26,24,22,20,18,16,14,12];
     assert.ok(p.mutate(user, 'enhance', { slot: 'weapon' }).error);
     for (const slot of ['weapon','armor']) {
+        assert.equal(p.view(user)[slot].atk + p.view(user)[slot].def + p.view(user)[slot].hp, 0);
         assert.equal(p.mutate(user, 'unlockEquipment', { slot }).error, undefined);
         assert.ok(p.mutate(user, 'unlockEquipment', { slot }).error);
         for (let level = 0; level <= 25; level++) {
             const gear = p.view(user)[slot];
-            assert.equal(gear.level, level); assert.equal(gear[slot === 'weapon' ? 'atk' : 'def'], values[level]);
-            if (slot === 'armor') assert.equal(gear.hp, values[level] * 20);
+            assert.equal(gear.level, level); assert.equal(gear[slot === 'weapon' ? 'atk' : 'def'], values[level] * (slot === 'weapon' ? 10 : 3));
+            if (slot === 'armor') assert.equal(gear.hp, values[level] * 60);
             if (level === 25) { assert.equal(gear.next, null); assert.ok(p.mutate(user, 'enhance', { slot }).error); break; }
             assert.equal(gear.next.cost, Math.round(costs[level] * (slot === 'weapon' ? 1 : .8))); assert.equal(gear.next.chance, chances[level]);
+            assert.equal(gear.next[slot === 'weapon' ? 'atk' : 'def'], values[level + 1] * (slot === 'weapon' ? 10 : 3));
+            if (slot === 'armor') assert.equal(gear.next.hp, values[level + 1] * 60);
             assert.equal(p.mutate(user, 'enhance', { slot }, () => 0).error, undefined);
         }
     }
@@ -1673,11 +1676,25 @@ test('영구 천상 장비는 천상 안에서만 적용하고 입장 전 HP·MP
     user.paradiseProgression.weapon = user.paradiseProgression.armor = 25;
     user.hp = 13; user.mp = 7; const outside = rpg.calculateUserStats(user);
     corridor.enter(user, () => .99); const inside = rpg.calculateUserStats(user);
-    assert.equal(inside.atk, outside.atk + 155); assert.equal(inside.def, outside.def + 155); assert.equal(inside.hp, outside.hp + 3100);
+    assert.equal(inside.atk, outside.atk + 1550); assert.equal(inside.def, outside.def + 465); assert.equal(inside.hp, outside.hp + 9300);
     assert.deepEqual(corridor.getResources(user), { hp: inside.hp, mp: inside.mp });
     assert.ok(p.mutate(user, 'rerollTrait', {}).error);
     const copy = { ...outside }; p.applyStats({ mode: 'hell', celestial: p.snapshot(user) }, copy); assert.deepEqual(copy, outside);
     corridor.finish(user, 'defeated'); assert.deepEqual(rpg.calculateUserStats(user), outside); assert.equal(user.hp, 13); assert.equal(user.mp, 7);
+});
+
+test('주요 능력치 샘플의 천상 +25 증가 비율은 전체 층 곡선에서 100층 차이보다 작다', () => {
+    const progression = require('../paradise_progression');
+    const samples = [{ atk: 10101, def: 4919, hp: 25037 }, { atk: 6666, def: 6824, hp: 34334 }, { atk: 16351, def: 7626, hp: 35916 }];
+    for (const base of samples) {
+        const enhanced = { ...base };
+        progression.applyStats({ celestial: { weapon: 25, armor: 25, traits: [] } }, enhanced);
+        // 장비가 전혀 없는 상태 대비 공격·방어 전투력 중 더 큰 증가 비율로 검증한다.
+        const ratio = Math.max(enhanced.atk / base.atk, Math.sqrt(enhanced.hp * (100 + enhanced.def) / (base.hp * (100 + base.def))));
+        for (let floor = 1; floor <= 899; floor++) {
+            assert.ok(corridor.recommendedPower(floor) * ratio < corridor.recommendedPower(floor + 100), `${base.atk} 공격력 / ${floor}층`);
+        }
+    }
 });
 
 test('시작 유물은 지정 등급으로 지급하고 시작 증강은 같은 등급 3개·개별 새로고침·일시정지를 지원한다', async t => {

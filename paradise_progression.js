@@ -34,9 +34,10 @@ function pay(user, count) {
     rpg().removeInventoryItem(user, id, count); return true;
 }
 function gear(slot, level) {
-    const unlocked = level != null, value = unlocked ? VALUES[level] : 0;
-    const stats = n => ({ atk: slot === 'weapon' ? VALUES[n] : 0, def: slot === 'armor' ? VALUES[n] : 0, hp: slot === 'armor' ? VALUES[n] * 20 : 0 });
-    return { unlocked, level: level ?? 0, atk: slot === 'weapon' ? value : 0, def: slot === 'armor' ? value : 0, hp: slot === 'armor' ? value * 20 : 0,
+    const unlocked = level != null;
+    // 기존 강화 곡선을 유지하며 무기는 10배, 방어구는 3배의 고정 능력치를 부여한다.
+    const stats = n => ({ atk: slot === 'weapon' ? VALUES[n] * 10 : 0, def: slot === 'armor' ? VALUES[n] * 3 : 0, hp: slot === 'armor' ? VALUES[n] * 60 : 0 });
+    return { unlocked, level: level ?? 0, ...(unlocked ? stats(level) : { atk: 0, def: 0, hp: 0 }),
         iconUrl: icon(slot), unlockCost: 50,
         next: unlocked && level < 25 ? { level: level + 1, cost: Math.round(COSTS[level + 1] * (slot === 'armor' ? .8 : 1)), chance: CHANCES[level + 1], ...stats(level + 1) } : null };
 }
