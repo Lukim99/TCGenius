@@ -1068,6 +1068,56 @@ test('퍼즐 정답·오답·무시·서버 시간 초과, 정답 비공개를 �
         else assert.ok(corridor.getResources(user).hp >= beforeHp);
     }
 });
+test('균열의 거래상은 네 선택지를 제공하고 뒤틀림의 대가로 탐험 능력치만 강화한다', async () => {
+    for (const choice of ['power', 'vigor', 'pierce']) {
+        const user = await reset(); const outside = { hp: user.hp, mp: user.mp };
+        corridor.enter(user, () => .99); forceEvent(user, 'riftTrader');
+        const before = rpg.calculateUserStats(user), resources = structuredClone(corridor.getResources(user));
+        const choices = corridor.view(user).run.event.choices;
+        assert.deepEqual(choices.map(c => c.id), ['power', 'vigor', 'pierce', 'skip']);
+        const result = corridor.chooseEvent(user, choice, {}, () => .99);
+        assert.equal(result.error, undefined); assert.ok(result.reveal);
+        assert.equal(user.paradise.phase, 'augment'); assert.equal(user.paradise.floor, 1);
+        assert.equal(user.paradise.distortion, choice === 'pierce' ? 25 : 20);
+        const after = rpg.calculateUserStats(user);
+        if (choice === 'power') assert.equal(after.atk, Math.round(before.atk * 1.25));
+        if (choice === 'vigor') {
+            assert.equal(after.hp, Math.round(before.hp * 1.25));
+            assert.equal(after.def, Math.round(before.def * 1.25));
+        }
+        if (choice === 'pierce') {
+            assert.equal(after.pnt, before.pnt + 300);
+            assert.equal(after.pntPercent, Number(before.pntPercent || 0) + .10);
+            const hit = stats => rpg.getDamageAfterReducedDefense(1000, 10000, stats.pnt, Number(stats.pntPercent || 0));
+            assert.ok(hit(after) > hit(before), '관통은 실제 적 방어력 계산에 반영된다');
+        }
+        assert.deepEqual(corridor.getResources(user), resources);
+        assert.deepEqual({ hp: user.hp, mp: user.mp }, outside);
+        const effects = structuredClone(user.paradise.effects);
+        assert.ok(corridor.chooseEvent(user, choice).error); assert.deepEqual(user.paradise.effects, effects);
+        corridor.startCombat(user, 'normal', null, () => .99);
+        assert.equal(rpg.calculateUserStats(user).pnt, after.pnt);
+        corridor.finish(user, 'defeated');
+        const ended = rpg.calculateUserStats(user);
+        for (const key of ['atk', 'def', 'hp', 'pnt', 'pntPercent']) assert.equal(ended[key], before[key], key);
+    }
+});
+test('균열의 거래상은 무작위 이벤트에 등장하며 도망은 거래 비용을 내지 않는다', async () => {
+    const user = await reset(); corridor.enter(user, () => .99);
+    const rolls = [.10, .99]; corridor.nextEncounter(user, () => rolls.shift() ?? .99);
+    assert.equal(user.paradise.event.id, 'riftTrader');
+    const before = structuredClone(user.paradise.effects);
+    assert.ok(corridor.chooseEvent(user, 'unknown').error); assert.deepEqual(user.paradise.effects, before);
+    const result = corridor.chooseEvent(user, 'skip', {}, () => .99);
+    assert.equal(result.reveal, null); assert.equal(user.paradise.distortion, 0);
+    assert.equal(user.paradise.floor, 6); assert.equal(user.paradise.phase, 'augment');
+    assert.deepEqual(user.paradise.effects, before);
+    forceEvent(user, 'riftTrader'); user.paradise.distortion = 90;
+    corridor.chooseEvent(user, 'pierce', {}, () => .99);
+    assert.equal(user.paradise.distortion, 100);
+    corridor.nextEncounter(user, () => .99);
+    assert.equal(user.paradise.event.id, 'collapse');
+});
 test('대장장이는 장착 가능한 수치형 패시브만 제시하고 원본 장비 정의를 변경하지 않는다', async () => {
     const user = await reset(); corridor.enter(user, () => .99);
     assert.deepEqual(corridor.equipmentOptions(user), []);

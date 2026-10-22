@@ -386,5 +386,9 @@
   {
     "file": "audio/purchase-v1.mp3",
     "sha256": "a774da552f04598bd8c56a34961e4b0d4c6c28987342bdb18f3331ce554872a3"
+  },
+  {
+    "file": "riftTrader.webp",
+    "sha256": "91c80d774d81b2a26cc3c54870a47d89a22997173c2a160ee7a58f338edb51ed"
   }
 ]

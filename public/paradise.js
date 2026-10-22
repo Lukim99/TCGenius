@@ -466,13 +466,14 @@
     }
     function sceneBackground(w, h, t) {
         if (state?.run?.mode === 'hell' || state && !state.run && overlay === 'hell') return hellBackground(w, h, t);
-        const scene = activeScene, event = ['casino', 'forge', 'mirror', 'chests', 'judge', 'well', 'puzzle'].includes(scene);
+        const scene = activeScene, event = ['casino', 'forge', 'mirror', 'chests', 'judge', 'well', 'puzzle', 'riftTrader'].includes(scene);
         const bg = renderer.image(asset(event ? scene : scene === 'lobby' ? 'paradise' : 'corridor')), dim = scene === 'augment' || scene === 'relic' || overlay ? .5 : scene === 'lobby' ? .6 : scene === 'route' ? .62 : scene === 'ended' ? .55 : scene === 'combat' ? .9 : 1;
         const drift = reduced ? 0 : Math.sin(t / 11000) * 8;
         renderer.cover(bg, -12 + drift, -8, w + 24, h + 16, [dim, dim, dim, 1]);
-        const particleColor = scene === 'forge' ? [1, .45, .10] : scene === 'well' || scene === 'collapse' ? [1, .12, .18] : scene === 'casino' || scene === 'chests' ? [1, .77, .29] : [.44, .83, .83];
+        const particleColor = scene === 'riftTrader' ? [.66, .48, .87] : scene === 'forge' ? [1, .45, .10] : scene === 'well' || scene === 'collapse' ? [1, .12, .18] : scene === 'casino' || scene === 'chests' ? [1, .77, .29] : [.44, .83, .83];
         if (!reduced) for (let i = 0; i < 22; i++) { const speed = scene === 'forge' ? .045 : .008, x = ((i * 271 + Math.sin(t / 2300 + i) * 35) % (w + 60)) - 30, y = h - ((t * speed + i * 71) % (h + 40)), radius = i % 4 === 0 ? 8 : 4; renderer.quad(renderer.glow, x, y, radius, radius, [...particleColor, scene === 'forge' ? .5 : .22]); }
         if (scene === 'mirror') renderer.quad(renderer.glow, w * (.25 + .5 * ((t / 6500) % 1)), h * .15, w * .07, h * .7, [.7, .9, 1, .14]);
+        if (scene === 'riftTrader') renderer.quad(renderer.glow, w * .46, h * .05, w * .08, h * .56, [.66, .48, .87, reduced ? .12 : .12 + Math.sin(t / 640) * .035]);
         if (scene === 'well' || scene === 'puzzle') for (let i = 0; i < 3; i++) { const r = 70 + ((t / 35 + i * 50) % 160); renderer.quad(renderer.glow, w / 2 - r, h * .43 - r / 3, r * 2, r / 1.5, [...particleColor, .05]); }
         if (scene === 'chests') [[.27, [1, .18, .20]], [.50, [.17, .53, 1]], [.73, [1, .74, .2]]].forEach(([x, color]) => renderer.quad(renderer.glow, w * x - 70, h * .18, 140, h * .5, [...color, .2]));
         if (scene === 'judge' || scene === 'collapse') renderer.quad(renderer.glow, w * .48, -h * .1, w * .04, h * .9, scene === 'collapse' ? [1, .1, .15, .3] : [1, .85, .5, .2]);
@@ -633,9 +634,9 @@
     function eventScene(w, h, t) {
         const e = state.run.event, mobile = w < 700, boxW = mobile ? w - 32 : Math.min(1100, w - Math.max(64, w * .16)), boxX = (w - boxW) / 2, bottom = h - 68;
         const n = e.choices.length, cols = mobile ? 1 : n, gap = mobile ? 8 : 16, cw = (boxW - gap * (cols - 1)) / cols, descSize = mobile && h<740 ? 13 : 14, lh = descSize * 1.5;
-        const descriptions=e.choices.map(choice=>choice.desc.split('\n').flatMap(part=>wrap(ctx,part,cw-40,descSize,20).map(row=>({row,tone:/실패|대신|바칩니다|저주|받는 피해/.test(part)?'#e6a2a6':/[+]|회복|얻습니다/.test(part)?'#e7d29d':'#d1d7dc'}))));
+        const descriptions=e.choices.map(choice=>choice.desc.split('\n').flatMap(part=>wrap(ctx,part,cw-40,descSize,20).map(row=>({row,tone:e.id === 'riftTrader' && /뒤틀림/.test(part)?'#be9fe6':/실패|대신|바칩니다|저주|받는 피해/.test(part)?'#e6a2a6':/[+]|회복|얻습니다/.test(part)?'#e7d29d':'#d1d7dc'}))));
         const names=e.choices.map(choice=>wrap(ctx,choice.name,cw-40-(choice.powerWarning?52:0),mobile?17:18,3,700));
-        const measured = e.choices.map((choice,i) => 28 + names[i].length*23 + descriptions[i].length*lh + 12);
+        const measured = e.choices.map((choice,i) => (mobile && e.id === 'riftTrader' ? 20 : 28) + names[i].length*23 + descriptions[i].length*lh + 12);
         const heights = mobile ? measured : measured.map(() => Math.max(...measured)), total = mobile ? heights.reduce((a, b) => a + b, 0) + gap * (n - 1) : heights[0], top = bottom - total;
         const titleSize = mobile ? 24 : 30, storySize = mobile ? 14 : 16, slh = storySize * 1.55, quoteSize = mobile ? 15 : 17;
         let story = wrap(ctx, e.story, boxW, storySize, mobile ? 3 : 2), quote = !!e.quote;
@@ -647,7 +648,7 @@
         if (quote) text(ctx, '“' + e.quote + '”', boxX, y + story.length * slh + 10, quoteSize, '#ecd9a8', 'left', 600, boxW);
         let cy = top;
         e.choices.forEach((choice, i) => {
-            const x = boxX + (mobile ? 0 : i * (cw + gap)), ch = heights[i], yy = mobile ? cy : top, tint = choice.id === 'red' ? '#d0626a' : choice.id === 'blue' ? '#6f9fd6' : '#d9b56a', hovered = inside(x, yy, cw, ch);
+            const x = boxX + (mobile ? 0 : i * (cw + gap)), ch = heights[i], yy = mobile ? cy : top, tint = e.id === 'riftTrader' ? ({ power: '#c8703f', vigor: '#6e9a82', pierce: '#8faec4', skip: '#878b92' }[choice.id]) : choice.id === 'red' ? '#d0626a' : choice.id === 'blue' ? '#6f9fd6' : '#d9b56a', hovered = inside(x, yy, cw, ch);
             panel(ctx, x, yy, cw, ch, { alpha: hovered ? .94 : .88, edge: hovered?tint+'cc':'#ffffff14', r: 2 }); rr(ctx, x + 1, yy + 12, 2, ch - 24, 0); ctx.fillStyle = tint; ctx.fill();
             names[i].forEach((row,j)=>text(ctx,row,x+20,yy+24+j*23,mobile?17:18,'#f6edd8','left',700));
             descriptions[i].forEach(({row,tone},j)=>text(ctx,row,x+20,yy+28+names[i].length*23+j*lh,descSize,tone,'left',500));

@@ -148,7 +148,7 @@ function applyStats(user, stats) {
     stats.takenDamage = Number(stats.takenDamage || 0) + Number(effects.taken || 0) + (missingHp >= .65 ? Number(effects.lowHpGuard || 0) : 0) - (effects.eclipse && run.distortion < 50 ? .10 : 0);
     stats.maxCmb = Number(stats.maxCmb || 0) + Number(effects.maxCmb || 0);
     stats.critMul = Number(stats.critMul || 0) + Number(run.focus || 0) + missingHp * Number(effects.woundedCrit || 0);
-    for (const key of ['crit', 'critMul', 'cmb', 'critDef', 'avd', 'mpReduce', 'eliteDmg', 'bossDmg', 'damageBonus', 'extraDamage']) stats[key] = Number(stats[key] || 0) + Number(effects[key] || 0);
+    for (const key of ['crit', 'critMul', 'cmb', 'critDef', 'avd', 'mpReduce', 'eliteDmg', 'bossDmg', 'damageBonus', 'extraDamage', 'pnt', 'pntPercent']) stats[key] = Number(stats[key] || 0) + Number(effects[key] || 0);
     for (const key of ['crit', 'cmb', 'critDef', 'avd']) stats[key] = Math.max(0, stats[key]);
     stats.critMul = Math.max(1, stats.critMul);
     stats.mpReduce = Math.max(-1, stats.mpReduce);
@@ -651,6 +651,7 @@ function eventChoices(user) {
         chests: [['red', '붉은 상자', '공격력을 키울 기회.\n공격 관련 강화가 나올 확률이 높습니다.'], ['blue', '푸른 상자', '몸을 지키고 회복할 기회.\n방어·회복 강화가 나올 확률이 높습니다.'], ['gold', '황금 상자', '진귀한 보물이 잠들어 있을지도 모릅니다.\n하지만 강한 저주가 따라올 수 있습니다.']],
         judge: [['three', '세 번의 시련', '일반 몬스터 3마리와 연속으로 싸웁니다.\n모두 이기면 공격력 +15%.'], ['elite', '정예의 시련', '엘리트 몬스터 한 마리와 싸웁니다.\n이기면 공격력 +25%.'], ['boss', '심판자에게 도전한다', '매우 강력한 심판자와 싸웁니다.\n승리하면 심판자의 성흔을 얻습니다.\n' + RELICS.find(r => r.id === 'judgment').desc + '\n8성 전직 카드 계약도 얻습니다.']],
         well: [['blood', '피를 바친다', '최대 HP를 20% 바칩니다.\n공격력이 30% 늘고 뒤틀림이 10 쌓입니다.'], ['drink', '우물의 물을 마신다', 'HP와 MP를 모두 회복합니다.\n대신 다음 2번의 전투에서 받는 피해 +20%.'], ['destroy', '우물을 파괴한다', '일반 몬스터 2마리와 연속으로 싸웁니다.\n모두 이기면 최대 HP +10%.']],
+        riftTrader: [['power', '파괴의 힘을 받는다', '공격력이 25% 증가합니다.\n대신 뒤틀림이 20 쌓입니다.'], ['vigor', '불굴의 육신을 받는다', '최대 HP와 방어력이 각각 25% 증가합니다.\n대신 뒤틀림이 20 쌓입니다.'], ['pierce', '꿰뚫는 눈을 받는다', '방어 관통력이 300 증가합니다.\n적의 방어력을 10% 추가로 무시합니다.\n대신 뒤틀림이 25 쌓입니다.'], ['skip', '도망친다', '거래하지 않고 5층을 올라갑니다.']],
         collapse: [['prevent', '붕괴를 막는다', '현재 HP의 절반을 바칩니다.\n뒤틀림이 50으로 내려갑니다.'], ['accept', '붕괴를 받아들인다', '다음 3번의 전투에서 적의 공격력이 2배가 됩니다.\n모두 승리하면 종료 보상이 30% 증가합니다.\n뒤틀림은 50으로 내려갑니다.'], ['rift', '균열 속으로 뛰어든다', '50층을 올라 특수 보스와 싸웁니다.\n승리하면 균열의 심장 유물과\n9성 전직 카드 계약을 얻습니다.']]
     };
     return (entries[event.id] || []).map(([id, name, desc]) => ({ id, name, desc }));
@@ -724,6 +725,14 @@ function chooseEvent(user, id, input = {}, random = Math.random) {
             else if (id === 'drink') { heal(user, 1, 1); run.temporary.push({ id: 'well', name: '붉은 물의 대가', effects: { taken: .20 }, battles: 2 }); }
             else battle('normal', 2, 'well');
             break;
+        case 'riftTrader':
+            if (id === 'skip') move(user, 5);
+            else {
+                addEffect(user, id === 'power' ? { atk: .25 } : id === 'vigor' ? { hp: .25, def: .25 } : { pnt: 300, pntPercent: .10 });
+                run.distortion = clamp(run.distortion + (id === 'pierce' ? 25 : 20), 0, 100);
+                message = selected.name + '\n' + selected.desc + '\n이번 탐험 동안 유지됩니다.';
+            }
+            break;
         case 'collapse':
             run.distortion = 50;
             if (id === 'prevent') resources.hp = Math.max(1, Math.floor(resources.hp * .50));
@@ -737,7 +746,7 @@ function chooseEvent(user, id, input = {}, random = Math.random) {
         if (event.id === 'collapse') nextEncounter(user, random);
         else if (!routeMechanics.eventComplete(user, random)) { recordFloor(user); if (!offerRelics(user, random)) offerAugments(user, random); }
     }
-    return { message, reveal: !fighting && ['casino', 'chests'].includes(event.id) ? { motif: event.id === 'casino' ? 'gambler' : 'contract', positive: outcomePositive, text: message } : null };
+    return { message, reveal: !fighting && (['casino', 'chests'].includes(event.id) || event.id === 'riftTrader' && id !== 'skip') ? { motif: event.id === 'casino' ? 'gambler' : 'contract', positive: outcomePositive, text: message } : null };
 }
 function answerPuzzle(user, answer, random = Math.random) {
     const resources = getResources(user);

@@ -196,6 +196,7 @@ const EVENTS = {
     chests: { title: '세 개의 상자', story: '당신 앞에 세 개의 상자가 놓여 있습니다. 각각 다른 문양이 새겨져 있습니다.', quote: '한 번 열린 운명은 되돌릴 수 없다.' },
     judge: { title: '회랑의 심판자', story: '검은 갑옷을 입은 심판자가 길을 막습니다. 검 끝에서 무거운 심판의 빛이 흘러나옵니다.', quote: '네 힘을 증명해 보아라.' },
     well: { title: '피로 물든 우물', story: '오래된 우물에서 붉은 물이 흘러나옵니다. 우물 속에서 목소리가 들려옵니다.', quote: '네 생명을 바친다면 더 큰 힘을 주겠다.' },
+    riftTrader: { title: '균열의 거래상', story: '균열 속 상인이 이번 탐험에 쓸 힘을 제안합니다. 대가는 회랑에 쌓이는 뒤틀림입니다.', quote: '네가 강해질수록, 이곳은 조금 더 일그러질 거야.' },
     collapse: { title: '회랑이 붕괴하기 시작합니다!', story: '천상이 갈라지고 발밑의 별들이 추락합니다. 뒤틀린 회랑이 마지막 선택을 요구합니다.', quote: '돌아갈 것인가, 균열 너머로 나아갈 것인가.' }
 };
 const EQUIPMENT_NAMES = AUGMENTS.filter(a => a.equipment).map(a => a.equipment);
