@@ -254,5 +254,133 @@
   {
     "file": "celestial-abilities.webp",
     "sha256": "c7ef42f9f1358fb92975ebe888d11cc0cbd4280ec903de1984e02b9ca7aa610e"
+  },
+  {
+    "file": "relic-bluntWhetstone.webp",
+    "sha256": "cb5ee54c33265f2fcb0117c9fdc2fa8a98ec3e19c3874b3e38e9fd8ac134f13a"
+  },
+  {
+    "file": "relic-tinBuckle.webp",
+    "sha256": "abbe5dc233b12ffb72756bce82830f914d5e7490cf9747aef5f942333b1636de"
+  },
+  {
+    "file": "relic-chippedFang.webp",
+    "sha256": "1efbc31713398fe4cf30a470704ad1fa85571d9468256224e2ab448cebe1bc40"
+  },
+  {
+    "file": "relic-quiltPatch.webp",
+    "sha256": "bf243dfdff9ad79fc4ea8e756173114cbf517243102ce37358fa4b31a65e4bb6"
+  },
+  {
+    "file": "relic-knottedCord.webp",
+    "sha256": "b1de24122a8748fcbe05a3d332c039e8afba47d61ca3848d55e38d6c8af2dca0"
+  },
+  {
+    "file": "relic-wornSandal.webp",
+    "sha256": "7ba6bde4a18f238bf56f3f6462220d8bcff1eb982b10fed558c1a202397e093d"
+  },
+  {
+    "file": "relic-emptyWaterskin.webp",
+    "sha256": "93d654dd0e5c2a98b0abb8f7f56d6ccda76618bd37757c270d6fb0a8c9ed431a"
+  },
+  {
+    "file": "relic-rustyNeedle.webp",
+    "sha256": "c1dc702bd8ac3ab72798e9272a0560f8e2839c01d463463a33ab49d4c41cef8a"
+  },
+  {
+    "file": "relic-bentSpoon.webp",
+    "sha256": "255dac191d9ee6f2329c49185f1658c74d960ad0671e901eb949f8a6c37d25d6"
+  },
+  {
+    "file": "relic-crackedMonocle.webp",
+    "sha256": "7cfa0d684920db1b7668b430375e8447a131404fa91d59f6f1beb785bc7eb25e"
+  },
+  {
+    "file": "relic-paperTalisman.webp",
+    "sha256": "6ebdb3d2f097c95845369e416f8ca43b01735a140e9f1e30ea48a12e64334fbc"
+  },
+  {
+    "file": "relic-copperThimble.webp",
+    "sha256": "80c46ce8102140b6664bbbeee4280db3f617d27d082ea0aa6149b5d65da9d209"
+  },
+  {
+    "file": "relic-dryBiscuit.webp",
+    "sha256": "9b62a3f84026ba33bd5e1e158007a3b5449986b70b012d5baeb3eb6809657bbd"
+  },
+  {
+    "file": "relic-blueChalk.webp",
+    "sha256": "eb24c0820645a58d15aa055266a1e16175da11af8bd493c2bc02ac50519d1ab4"
+  },
+  {
+    "file": "relic-dullArrow.webp",
+    "sha256": "daf27ceb7fa8e27c665052464562e8aee9ac0d42d572af60c0d7362385931328"
+  },
+  {
+    "file": "relic-practiceSword.webp",
+    "sha256": "53ac3a15fecde93d72220b10efe0f446174e5931b3c733b19c170a4f94bcb29c"
+  },
+  {
+    "file": "relic-linenRibbon.webp",
+    "sha256": "85ceb539c87c29135f62f6b57671232014b8f04d0e89afcc22435f83ba788048"
+  },
+  {
+    "file": "relic-sootInk.webp",
+    "sha256": "306e32e4feb9721c809164af0a80cb222a348989bca385b278c3a824271ae3c8"
+  },
+  {
+    "file": "relic-crackedBell.webp",
+    "sha256": "79771878e4e86fe975e036138bf3a9d679e262c469857142643873b8e4420126"
+  },
+  {
+    "file": "relic-emptyInkwell.webp",
+    "sha256": "3ef85fb94b4a86d73add100a2f674156dcbe6bfb06abb02c1a4df2f279c158f8"
+  },
+  {
+    "file": "relic-pebbledMarble.webp",
+    "sha256": "8ec41c0ab9c76fc08595a9f998df2751f34b94e7ffc90f9616d4646990adab87"
+  },
+  {
+    "file": "relic-looseGear.webp",
+    "sha256": "bf0000218e42ae8ce7c22c20805ab44a44cd71f266f679dbc299b0ece411a33c"
+  },
+  {
+    "file": "relic-corkStopper.webp",
+    "sha256": "8b98f19de9cbbdf9f2aca911c493eed698b8ac11cb88bbadb6624151040e09d8"
+  },
+  {
+    "file": "relic-woodenButton.webp",
+    "sha256": "bacd859416b9f8df5659f26546d300f15b555a21735dcfbdbed6651e6ebc50ae"
+  },
+  {
+    "file": "relic-frayedBookmark.webp",
+    "sha256": "4c05f448491bc50e1e658f71f2c968dd4f6e9236bbf7b3fa83459d21279d650a"
+  },
+  {
+    "file": "relic-chippedToken.webp",
+    "sha256": "687437a5e53cde872862a79d30b5d85495e50f9c972428bcef1ecfd95030b280"
+  },
+  {
+    "file": "relic-brassReceipt.webp",
+    "sha256": "9f4bfc3af02d314ebfb01c740d357bc43e63e6ae95bd12fc6e1569a64fcf79d2"
+  },
+  {
+    "file": "relic-ashScarf.webp",
+    "sha256": "a7590648db610d52b81ab6eb90785a803a4c7cd267866f2006d437710bdbe020"
+  },
+  {
+    "file": "relic-hunterWhistle.webp",
+    "sha256": "ff9e82292e812bfffc18754ffa7f96c7fe1529136927734d5d3f94bf5f290d72"
+  },
+  {
+    "file": "relic-smallSandbag.webp",
+    "sha256": "b50a0478845e0391a7eaca42d2c08534dc7b44dc6d2bc849c7b7d06ce6b08339"
+  },
+  {
+    "file": "relic-chalkDie.webp",
+    "sha256": "c8a688fb8cd93a4c8473fc291bb23edb66844e7b6bc706e7c0cec3879350112b"
+  },
+  {
+    "file": "relic-fadedPostcard.webp",
+    "sha256": "8822f418fca67826d1e6cf377ef21f0a71c190f2ff882411cac799380e294a05"
   }
 ]

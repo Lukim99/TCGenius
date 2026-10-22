@@ -13,6 +13,10 @@
     const glowTint = { silver: [.75, .86, .92], gold: [1, .8, .45], prismatic: [.75, .62, 1], cursed: [1, .36, .42] };
     const tier = { silver: '실버 증강', gold: '골드 증강', prismatic: '프리즘 증강', cursed: '저주 증강' };
     const POWER_WARNING = '위험!';
+    const relicInk = { normal: '#c9d4da', advanced: '#f0c66a', special: '#cf9dff' }, relicGlow = { normal: [.72, .82, .88], advanced: [1, .78, .4], special: [.78, .58, 1] }, relicMetal = { normal: 'silver', advanced: 'gold', special: 'prismatic' };
+    const routeLook = { normal: { metal: 'silver', ink: '#c9d7de', glow: [.6, .8, .92], sigil: 'blade' }, elite: { metal: 'cursed', ink: '#ee8f95', glow: [1, .34, .32], sigil: 'devil' }, event: { metal: 'prismatic', ink: '#c9a8f4', glow: [.7, .56, 1], sigil: 'mystery' } };
+    // 층 이동 연출: 어둡게(OUT) → 유지(HOLD) → 목적지로 밝게(IN). 전체 1.25초 안쪽.
+    const FADE_OUT = 260, FADE_HOLD = 140, FADE_IN = 520, FADE_END = 1250;
     let state = null, ranking = null, busy = false, pending = null, offset = 0, message = '', messageUntil = 0, fontsReady = false;
     let overlay = null, overlayPage = 0, inventoryTab = 'relics', focused = 1, hover = -1, pointer = { x: 0, y: 0 }, selection = null;
     let sceneKey = '', sceneAt = performance.now(), regions = [], regionKey = '', puzzleKey = '', activeScene = 'lobby', expiredPuzzle = '';
@@ -20,12 +24,13 @@
     let battleUntil = 0, heldBattle = null, keyboardCard = -1, inputMode = 'pointer';
     const hoverLevels = [0, 0, 0]; let hoverTime = performance.now();
     let hellKey = null, fall = null, landing = null, lastDropKey = '', chestPick = null, chestPage = 0;
-    let lobbyScroll = 0, lobbyHeight = 0, dismissedRun = null;
+    let lobbyScroll = 0, lobbyHeight = 0, transition = null;
     let outcomeReveal = null, rewardReveal = null, heavenEntry = null, noticeDetail = '';
     const now = () => Date.now() + offset;
     const rand = n => { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); };
     const ctx = hudCanvas.getContext('2d');
-    function announce(text, visible = true) { live.textContent = String(text || ''); message = visible ? live.textContent : ''; messageUntil = performance.now() + (innerWidth < 700 ? 2800 : 4500); }
+    function displayText(value) { return String(value).replace(/\s*·\s*/g, ', '); }
+    function announce(text, visible = true) { live.textContent = displayText(text || ''); message = visible ? live.textContent : ''; messageUntil = performance.now() + (innerWidth < 700 ? 2800 : 4500); }
     function sound(kind) { audio.play(kind); }
 
     // 기존 필드와 같은 WebGL 장면 + 캔버스 HUD 구조. 증강 카드는 화면 크기 그대로의 텍스처로 올려 글자가 축소되지 않게 한다.
@@ -84,10 +89,10 @@
         const kx = image.width / s, ky = image.height / s; x0 = Math.max(0, x0 - 2); y0 = Math.max(0, y0 - 2); x1 = Math.min(s, x1 + 3); y1 = Math.min(s, y1 + 3);
         return entry.trim = [x0 * kx, y0 * ky, (x1 - x0) * kx, (y1 - y0) * ky];
     }
-    function text(c, value, x, y, size = 14, color = '#ece8de', align = 'left', weight = 500, maxWidth, shadow = true) { c.font = `${weight} ${size}px ${FONT}`; c.textAlign = align; c.textBaseline = 'middle'; c.fillStyle = color; c.shadowColor = 'rgba(0,0,0,.55)'; c.shadowBlur = shadow ? 4 : 0; if (maxWidth) c.fillText(String(value), x, y, maxWidth); else c.fillText(String(value), x, y); c.shadowBlur = 0; }
+    function text(c, value, x, y, size = 14, color = '#ece8de', align = 'left', weight = 500, maxWidth, shadow = true) { c.font = `${weight} ${size}px ${FONT}`; c.textAlign = align; c.textBaseline = 'middle'; c.fillStyle = color; c.shadowColor = 'rgba(0,0,0,.55)'; c.shadowBlur = shadow ? 4 : 0; if (maxWidth) c.fillText(displayText(value), x, y, maxWidth); else c.fillText(displayText(value), x, y); c.shadowBlur = 0; }
     function wrap(c, value, width, fontSize = 14, maxLines = 10, weight = 500) {
         c.font = `${weight} ${fontSize}px ${FONT}`; const rows = [];
-        for (const paragraph of String(value || '').split('\n')) { let line = ''; for (const word of paragraph.split(/\s+/)) { const next = line ? line + ' ' + word : word; if (c.measureText(next).width <= width) { line = next; continue; } if (line) rows.push(line); line = ''; for (const char of word) { if (line && c.measureText(line + char).width > width) { rows.push(line); line = ''; } line += char; } } if (line) rows.push(line); }
+        for (const paragraph of displayText(value || '').split('\n')) { let line = ''; for (const word of paragraph.split(/\s+/)) { const next = line ? line + ' ' + word : word; if (c.measureText(next).width <= width) { line = next; continue; } if (line) rows.push(line); line = ''; for (const char of word) { if (line && c.measureText(line + char).width > width) { rows.push(line); line = ''; } line += char; } } if (line) rows.push(line); }
         if (rows.length > maxLines) { let last = rows[maxLines - 1]; while (last && c.measureText(last + '…').width > width) last = last.slice(0, -1); rows[maxLines - 1] = last + '…'; }
         return rows.slice(0, maxLines);
     }
@@ -95,7 +100,17 @@
     function line(c, x, y, xx, yy, color = '#ffffff22', width = 1) { c.beginPath(); c.moveTo(x, y); c.lineTo(xx, yy); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
     function panel(c, x, y, w, h, { alpha = .82, edge, r = 12 } = {}) { rr(c, x, y, w, h, r); c.fillStyle = `rgba(11,16,22,${alpha})`; c.fill(); let stroke = edge; if (!stroke) { stroke = c.createLinearGradient(0, y, 0, y + h); stroke.addColorStop(0, 'rgba(255,255,255,.18)'); stroke.addColorStop(1, 'rgba(255,255,255,.05)'); } c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
     function metal(c, rarity, x, y, w, h) { const list = metals[rarity] || metals.gold, g = c.createLinearGradient(x, y, x + w, y + h); list.forEach((color, i) => g.addColorStop(i / (list.length - 1), color)); return g; }
-    function warnLabel(warn) { return warn ? ` · ${POWER_WARNING}` : ''; }
+    function warnLabel(warn) { return warn ? `, ${POWER_WARNING}` : ''; }
+    // 유물 등급 표식: 작은 보석 + 등급명. 이름과 이어 붙이지 않고 따로 놓는다.
+    function tierMark(c, relic, x, y, align = 'left') {
+        const ink = relicInk[relic.rarity] || relicInk.normal, label = relic.rarityLabel || '', h = 20;
+        c.font = `700 12px ${FONT}`; const bw = c.measureText(label).width + 30, bx = align === 'right' ? x - bw : align === 'center' ? x - bw / 2 : x;
+        chamfer(c, bx, y - h / 2, bw, h, 5); c.fillStyle = 'rgba(8,11,16,.84)'; c.fill(); c.strokeStyle = ink + '66'; c.lineWidth = 1; c.stroke();
+        const gx = bx + 11, gem = c.createLinearGradient(gx, y - 5, gx, y + 5); gem.addColorStop(0, '#ffffff'); gem.addColorStop(.45, ink); gem.addColorStop(1, ink + '77');
+        path(c, [[gx, y - 5.5], [gx + 4.5, y], [gx, y + 5.5], [gx - 4.5, y]]); c.fillStyle = gem; c.fill();
+        text(c, label, bx + 21, y + .5, 12, ink, 'left', 700, undefined, false);
+        return bw;
+    }
     function drawWarning(c, x, y, w, h) {
         chamfer(c, x, y, w, h, 6); c.fillStyle = 'rgba(224,63,74,.12)'; c.fill(); c.strokeStyle = 'rgba(239,85,96,.5)'; c.lineWidth = 1; c.stroke();
         text(c, POWER_WARNING, x + w / 2, y + h / 2, 14, '#ff777f', 'center', 700, w - 20);
@@ -141,7 +156,7 @@
         let y = top + artH + 10 + nameSize * .6;
         names.forEach((name, i) => text(c, name, cx, y + i * nameSize * 1.22, nameSize, '#f5efe2', 'center', 700));
         y += (names.length - 1) * nameSize * 1.22 + nameSize * .6 + 12; line(c, cx - 14, y, cx + 14, y, color + 'bb', 2); y += 18;
-        const tag = choice.equipment ? '장착 장비 전용' : choice.dangerous ? '위험 계약 · 뒤틀림 +10' : '', footTop = h - 2 - 50, warnTop = footTop - (warn ? 44 : 0);
+        const tag = choice.equipment ? '장착 장비 전용' : choice.dangerous ? '위험 계약, 뒤틀림 +10' : '', footTop = h - 2 - 50, warnTop = footTop - (warn ? 44 : 0);
         const maxLines = Math.max(2, Math.floor((warnTop - 6 - y) / lh));
         paragraph(c, choice.desc, cx, y + bodySize * .5, tw, bodySize, '#d6dce0', lh, maxLines, 'center');
         if (warn) drawWarning(c, pad - 6, warnTop, w - (pad - 6) * 2, 32);
@@ -155,13 +170,30 @@
     }
 
     async function fetchState() {
-        if (busy || pending || heavenEntry || document.hidden || performance.now()<battleUntil) return;
+        if (busy || pending || heavenEntry || transition?.next || document.hidden || performance.now()<battleUntil) return;
         try { const response = await fetch('/api/paradise', { cache: 'no-store' }); if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (!response.ok) throw new Error(result.error); accept(result); } catch (error) { announce(error.message); }
     }
     async function fetchRanking() { try { const response = await fetch('/api/paradise/ranking', { cache: 'no-store' }); if (response.ok) ranking = await response.json(); else announce('주간 랭킹을 불러오지 못했습니다.'); } catch (_) { announce('주간 랭킹 연결을 확인해주세요.'); } }
+    // 천상의 다음 조우(전투, 이벤트, 갈림길)가 바뀔 때만 층 이동 연출을 건다. 같은 응답의 재조회는 키가 같아 다시 재생되지 않는다.
+    function encounter(run) {
+        if (!run || run.mode === 'hell' || run.status !== 'active') return null;
+        return run.phase === 'combat' ? `c${run.enemy?.id}@${run.floor}` : ['event', 'puzzle'].includes(run.phase) ? `e${run.event?.id}@${run.floor}` : run.phase === 'route' ? `r${run.floor}` : '';
+    }
     function accept(next) {
+        if (transition?.next) { const queued = transition.next; transition.next = null; apply(queued); }
+        const from = encounter(state?.run), to = encounter(next.run);
+        if (!heavenEntry && from != null && to && to !== from && state.run.id === next.run.id) {
+            transition = { at: performance.now(), floor: next.run.floor !== state.run.floor ? next.run.floor : null, cue: next.run.phase === 'combat' ? '전투 시작' : '', next: null };
+            // 전투 중이 아니면 이전 장면 위로 먼저 어두워진 뒤 상태를 바꾼다. 전투였다면 처치 연출(battleUntil)이 끝날 무렵 어두워진다.
+            if (!reduced && state.run.phase !== 'combat') { transition.next = next; return; }
+            apply(next);
+            transition.at = Math.max(performance.now(), battleUntil - (reduced ? 0 : FADE_OUT));
+            return;
+        }
+        apply(next);
+    }
+    function apply(next) {
         battle.prepare(next.player?.card);
-        if (next.run?.id === dismissedRun && next.run.status === 'ended' && !next.run.canClaim) next.run = null;
         const run = next.run;
         const previous=battleState(state), upcoming=battleState(next), events=run?.combatEvents||[];
         const latest=previous&&events.filter(e=>e.enemyId===previous.target.id).at(-1);
@@ -171,8 +203,8 @@
             const duration=battle.update(heldBattle,events,next.runId);
             if(duration)battleUntil=performance.now()+duration;
         } else if(upcoming) battle.update(upcoming,events,next.runId);
-        const key = JSON.stringify([run?.id, run?.phase, run?.event?.id, run?.enemy?.id, run?.offerId || run?.choices?.map(c => c.id), run?.altarUsed, run?.chests?.map(c => c.id + (c.opened ? '!' : ''))]);
-        if (key !== sceneKey) { sceneKey = key; sceneAt = Math.max(performance.now(),battleUntil); selection = null; focused = 1; hover = -1; keyboardCard = -1; hoverLevels.fill(0); fall = null; chestPick = null; chestPage = 0; renderer.clearCards(); if (run?.phase === 'augment') setTimeout(()=>{if(state?.run?.phase==='augment')sound('reveal');},Math.max(0,battleUntil-performance.now())); if (run?.altarUsed && run.phase === 'altar') sound('reveal'); }
+        const key = JSON.stringify([run?.id, run?.phase, run?.event?.id, run?.enemy?.id, run?.offerId || run?.choices?.map(c => c.id), run?.altarUsed, run?.chests?.map(c => c.id + (c.opened ? '!' : '')), run?.routes?.map(r => r.id), run?.relicChoices?.map(r => r.id), run?.relicPicksRemaining]);
+        if (key !== sceneKey) { sceneKey = key; sceneAt = Math.max(performance.now(),battleUntil, transition ? transition.at + (reduced ? 0 : FADE_OUT + FADE_HOLD) : 0); selection = null; focused = 1; hover = -1; keyboardCard = -1; hoverLevels.fill(0); fall = null; chestPick = null; chestPage = 0; renderer.clearCards(); if (run?.phase === 'augment') setTimeout(()=>{if(state?.run?.phase==='augment')sound('reveal');},Math.max(0,battleUntil-performance.now())); if (run?.altarUsed && run.phase === 'altar') sound('reveal'); }
         // 낙하 결과는 서버 응답 뒤에만 착지 연출로 보여준다.
         const drop = run?.mode === 'hell' ? run.lastDrop : null, dropKey = drop ? [run.id, drop.from, drop.to].join() : '';
         if (drop && state && dropKey !== lastDropKey) { landing = { drop, at: performance.now() }; sound('land'); fall = null; }
@@ -192,7 +224,7 @@
         syncPuzzle(); regionKey = '';
     }
     async function mutate(action, input = {}, retry = false) {
-        if (busy || heavenEntry || pending && !retry) return; busy = true; regionKey = '';
+        if (busy || heavenEntry || transition?.next || pending && !retry) return; busy = true; regionKey = '';
         if (!retry) { outcomeReveal = null; pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: action.startsWith('progression/') ? state.progression.revision : state.revision, runId: state.runId } }; }
         try {
             const response = await fetch('/api/paradise/' + pending.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending.body) });
@@ -204,17 +236,20 @@
                 sound('reveal');
             } else if (result.reveal) {
                 outcomeReveal = {...result.reveal, at:performance.now()}; announce(result.message, false); sound(result.reveal.positive ? 'reveal' : 'land');
-            } else if (!['attack', 'skill'].includes(action)) announce(result.message, !['enter', 'retire', 'claim', 'reroll'].includes(action));
+            } else if (!['attack', 'skill'].includes(action)) announce(result.message, !['enter', 'retire', 'claim', 'reroll', 'dismiss', 'route', 'relic'].includes(action));
+            if (!result.error && action === 'dismiss') { overlay = null; outcomeReveal = null; lobbyScroll = 0; chestPage = 0; syncPuzzle(); }
             if (!result.error && action.startsWith('progression/')) { sound(result.state.progression.lastResult?.success ? 'reveal' : 'land'); }
             if (!result.error && action === 'reroll') { renderer.clearCards(); sound('reveal'); }
             if (!result.error && action === 'enter' && state.run?.mode !== 'hell') {
                 heavenEntry = { at: performance.now(), ticket: state.ticket.iconUrl };
                 renderer.image(state.ticket.iconUrl); sound('reveal');
             }
-            if (['augment', 'event', 'retire', 'claim'].includes(action)) fetchRanking();
+            if (['augment', 'event', 'retire', 'claim', 'dismiss'].includes(action)) fetchRanking();
         } catch (error) { announce(error.message || '연결이 끊겼습니다. 같은 요청으로 재시도해주세요.'); selection = null; fall = null; chestPick = null; }
         finally { busy = false; regionKey = ''; }
     }
+    function pickRoute(route, index) { if (!route || busy || pending || selection || transition) return; selection = { index, started: performance.now() }; sound('select'); setTimeout(() => mutate('route', { choice: route.id }), reduced ? 0 : 380); }
+    function pickRelic(relic, index) { if (!relic || busy || pending || selection || transition) return; selection = { index, started: performance.now() }; sound('select'); setTimeout(() => mutate('relic', { choice: relic.id }), reduced ? 0 : 420); }
     function choose(choice, index) { if (!choice || busy || pending || selection) return; selection = { index, started: performance.now() }; sound('select'); setTimeout(() => mutate('augment', { choice: choice.id }), reduced ? 0 : 430); }
 
     function syncPuzzle() {
@@ -228,7 +263,7 @@
     puzzleForm.onsubmit = event => { event.preventDefault(); submitPuzzle(); };
     function submitPuzzle() { mutate('puzzle', { answer: [...puzzleForm.querySelectorAll('input')].map(input => input.value).join('') }); }
 
-    function register(x, y, w, h, label, fn, disabled = false) { regions.push({ x, y, w, h, label, fn, disabled: disabled || busy || !!pending }); }
+    function register(x, y, w, h, label, fn, disabled = false) { regions.push({ x, y, w, h, label: displayText(label), fn, disabled: disabled || busy || !!pending }); }
     function inside(x, y, w, h) { return pointer.x >= x && pointer.x <= x + w && pointer.y >= y && pointer.y <= y + h; }
     function hitButton(x, y, w, h, label, fn, options = {}) {
         const hovered = !options.disabled && inside(x, y, w, h);
@@ -284,7 +319,7 @@
                 register(14, h - 62, 48, 48, '가방 열기', () => { overlay = 'inventory'; overlayPage = 0; });
                 if (!mobile) relicStrip(w);
             }
-            if (hell || run.canReturn) hitButton(w - (mobile ? 96 : 112), h - 52, mobile ? 80 : 96, 36, hell ? '탐험 포기' : '귀환', () => { overlay = 'retire'; });
+            if (hell || run.canReturn && !['route', 'relic'].includes(run.phase)) hitButton(w - (mobile ? 96 : 112), h - 52, mobile ? 80 : 96, 36, hell ? '탐험 포기' : '귀환', () => { overlay = 'retire'; });
         }
         if (message && t < messageUntil && !overlay) {
             if (mobile) { compactNotice(message, w, h, t, messageUntil, '#e4cb8f', 2, () => { message = ''; }); return; }
@@ -301,18 +336,26 @@
         let tooltip = null;
         relics.forEach((relic, i) => {
             const x = 16 + i * step, hovered = inside(x, y, step, size);
+            const ink = relicInk[relic.rarity] || relicInk.normal;
             ctx.save(); ctx.globalAlpha = relic.spent ? .35 : 1;
-            ctx.shadowColor = { normal: '#bfcbd2', advanced: '#f0c66a', special: '#cf9dff' }[relic.rarity]; ctx.shadowBlur = hovered ? 12 : 2;
+            ctx.shadowColor = ink; ctx.shadowBlur = hovered ? 12 : 2;
             iconAt(relic.iconUrl, x + 2, y, size); ctx.restore();
-            register(x, y, step, size, `${relic.rarityLabel} · ${relic.name} · ${relic.desc}${relic.spent ? ' · 사용 완료' : ''}`, () => { inventoryTab = 'relics'; overlay = 'inventory'; overlayPage = 0; });
+            // 아이콘 아래 등급 보석. 일반은 은빛, 상급은 호박색, 특급은 보랏빛.
+            const gx = x + 2 + size / 2, gy = y + size + 4;
+            ctx.save(); ctx.globalAlpha = relic.spent ? .35 : hovered ? 1 : .8; path(ctx, [[gx, gy - 3], [gx + 2.6, gy], [gx, gy + 3], [gx - 2.6, gy]]); ctx.fillStyle = ink; ctx.fill(); ctx.restore();
+            register(x, y, step, size, `${relic.name}, ${relic.rarityLabel}, ${relic.desc}${relic.spent ? ', 사용 완료' : ''}`, () => { inventoryTab = 'relics'; overlay = 'inventory'; overlayPage = 0; });
             if (hovered && !overlay) tooltip = { relic, x };
         });
         if (tooltip) {
-            const width = 286, x = Math.min(w - width - 16, tooltip.x), top = y + size + 10, relic = tooltip.relic;
-            const rows = wrap(ctx, relic.desc, width - 28, 13, 8);
-            panel(ctx, x, top, width, 46 + rows.length * 20, { alpha: .97, edge: '#bfa76b88', r: 3 });
-            text(ctx, relic.rarityLabel + ' · ' + relic.name + (relic.spent ? ' · 사용 완료' : ''), x + 14, top + 23, 15, '#edd59a', 'left', 700);
-            rows.forEach((row, i) => text(ctx, row, x + 14, top + 48 + i * 20, 13, '#dce1e1', 'left', 500));
+            const width = 300, x = Math.min(w - width - 16, tooltip.x), top = y + size + 14, relic = tooltip.relic, ink = relicInk[relic.rarity] || relicInk.normal;
+            const rows = wrap(ctx, relic.desc, width - 32, 13, 8), height = 62 + rows.length * 20 + (relic.spent ? 20 : 0);
+            panel(ctx, x, top, width, height, { alpha: .97, edge: ink + '55', r: 3 });
+            line(ctx, x + 16, top + 1, x + 76, top + 1, ink, 1.5);
+            ctx.font = `700 12px ${FONT}`; const badge = ctx.measureText(relic.rarityLabel || '').width + 30;
+            text(ctx, relic.name, x + 16, top + 25, 15, '#f3ead6', 'left', 700, width - badge - 44);
+            tierMark(ctx, relic, x + width - 14, top + 25, 'right');
+            rows.forEach((row, i) => text(ctx, row, x + 16, top + 54 + i * 20, 13, '#dce1e1', 'left', 500));
+            if (relic.spent) text(ctx, '사용 완료', x + 16, top + 54 + rows.length * 20, 12, '#97a3a8', 'left', 600);
         }
     }
     function compactNotice(value, w, h, t, until, color, maxLines, dismiss) {
@@ -421,7 +464,7 @@
     function sceneBackground(w, h, t) {
         if (state?.run?.mode === 'hell' || state && !state.run && overlay === 'hell') return hellBackground(w, h, t);
         const scene = activeScene, event = ['casino', 'forge', 'mirror', 'chests', 'judge', 'well', 'puzzle'].includes(scene);
-        const bg = renderer.image(asset(event ? scene : scene === 'lobby' ? 'paradise' : 'corridor')), dim = scene === 'augment' || overlay ? .5 : scene === 'lobby' ? .6 : scene === 'combat' ? .9 : 1;
+        const bg = renderer.image(asset(event ? scene : scene === 'lobby' ? 'paradise' : 'corridor')), dim = scene === 'augment' || scene === 'relic' || overlay ? .5 : scene === 'lobby' ? .6 : scene === 'route' ? .62 : scene === 'ended' ? .55 : scene === 'combat' ? .9 : 1;
         const drift = reduced ? 0 : Math.sin(t / 11000) * 8;
         renderer.cover(bg, -12 + drift, -8, w + 24, h + 16, [dim, dim, dim, 1]);
         const particleColor = scene === 'forge' ? [1, .45, .10] : scene === 'well' || scene === 'collapse' ? [1, .12, .18] : scene === 'casino' || scene === 'chests' ? [1, .77, .29] : [.44, .83, .83];
@@ -442,7 +485,8 @@
             openRanking: () => { overlay = 'ranking'; overlayPage = 0; fetchRanking(); }, close: () => { overlay = null; }
         };
     }
-    function returnToLobby() { dismissedRun = state.run?.id; state.run = null; activeScene = 'lobby'; sceneKey = ''; lobbyScroll = 0; fetchRanking(); }
+    // 서버가 종료 탐험을 정리한 뒤에만 로비로 바뀐다(성공 처리는 mutate에서 오버레이와 스크롤 초기화).
+    function returnToLobby() { sound('tap'); mutate('dismiss'); }
     function lobby(w, h, t) {
         lobbyScroll = clamp(lobbyScroll,0,Math.max(0,lobbyHeight-h));
         ctx.save(); ctx.beginPath(); ctx.rect(0,68,w,h-68); ctx.clip();
@@ -533,7 +577,7 @@
             const amount=hoverLevels[card.i], brightness=mobile?1:hover<0?1:card.i===hover?1+.06*amount:.92;
             renderer.quad(renderer.card(card.choice, geo.cardW, geo.cardH), card.x, card.y, card.w, card.h, [brightness, brightness, brightness, card.alpha]);
             if(amount>.01&&!mobile){ctx.save();ctx.globalAlpha=amount*.55;chamfer(ctx,card.x+1,card.y+1,card.w-2,card.h-2,12);ctx.strokeStyle=colors[card.choice.rarity]||colors.gold;ctx.lineWidth=2;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=14;ctx.stroke();ctx.restore();}
-            register(Math.max(0, card.slotX), card.slotY, Math.min(w, card.slotX + card.slotW) - Math.max(0, card.slotX), card.slotH, `${tier[card.choice.rarity] || '증강'} ${card.choice.name} · ${card.choice.desc} · ${card.choice.starting ? '시작 증강' : `${card.choice.floors > 0 ? '+' : ''}${card.choice.floors}층`}${warnLabel(card.choice.powerWarning)}`, () => mobile && focused !== card.i ? (focused = card.i, sound('tap')) : choose(card.choice, card.i), !!selection || t-sceneAt<460);
+            register(Math.max(0, card.slotX), card.slotY, Math.min(w, card.slotX + card.slotW) - Math.max(0, card.slotX), card.slotH, `${tier[card.choice.rarity] || '증강'} ${card.choice.name}, ${card.choice.desc}, ${card.choice.starting ? '시작 증강' : `${card.choice.floors > 0 ? '+' : ''}${card.choice.floors}층`}${warnLabel(card.choice.powerWarning)}`, () => mobile && focused !== card.i ? (focused = card.i, sound('tap')) : choose(card.choice, card.i), !!selection || t-sceneAt<460);
             if (!mobile) hitButton(card.slotX + card.slotW / 2 - 48, geo.y + geo.cardH + 12, 96, 36, `${card.choice.name} 새로고침`, () => mutate('reroll', { choice: card.choice.id }), { glyph: card.choice.canReroll ? '↻  1' : '↻  0', size: 18, disabled: !card.choice.canReroll || !!selection || t-sceneAt<460 });
         }
         if (mobile) {
@@ -584,7 +628,7 @@
             names[i].forEach((row,j)=>text(ctx,row,x+20,yy+24+j*23,mobile?17:18,'#f6edd8','left',700));
             descriptions[i].forEach(({row,tone},j)=>text(ctx,row,x+20,yy+28+names[i].length*23+j*lh,descSize,tone,'left',500));
             if (choice.powerWarning) text(ctx,POWER_WARNING,x+cw-18,yy+24,14,'#ff777f','right',700);
-            register(x, yy, cw, ch, choice.name + ' · ' + choice.desc + warnLabel(choice.powerWarning), () => { sound('tap'); mutate('event', { choice: choice.id }); });
+            register(x, yy, cw, ch, choice.name + ', ' + choice.desc + warnLabel(choice.powerWarning), () => { sound('tap'); mutate('event', { choice: choice.id }); });
             cy += ch + gap;
         });
     }
@@ -602,27 +646,201 @@
         for (const rows of clues) { rows.forEach((row, i) => text(ctx, row, x + 20, y + i * clueSize * 1.5, clueSize, '#f0e0b6', 'left', 600)); y += rows.length * clueSize * 1.5 + 4; }
         puzzleForm.style.top = Math.min(h - 240, py + contentH + 46) + 'px'; puzzleForm.hidden = overlay != null;
         const bw = mobile ? (w - 44) / 2 : 200, by = h - (mobile ? 116 : 112);
-        hitButton(w / 2 - bw - 6, by, bw, 46, '정답 제출', submitPuzzle, { primary: true, size: 15 }); hitButton(w / 2 + 6, by, bw, 46, '건너뛰기 · +5층', () => mutate('puzzle', { skip: true }), { size: 15 });
+        hitButton(w / 2 - bw - 6, by, bw, 46, '정답 제출', submitPuzzle, { primary: true, size: 15 }); hitButton(w / 2 + 6, by, bw, 46, '건너뛰고 +5층', () => mutate('puzzle', { skip: true }), { size: 15 });
         if (!seconds && !busy && !pending && expiredPuzzle !== e.puzzle.id) { expiredPuzzle = e.puzzle.id; mutate('puzzle', { answer: '' }); }
     }
-    function ended(w, h) {
-        const run = state.run, mobile = w < 700, y0 = h * .14 + (mobile ? 28 : 0);
-        text(ctx, run.outcome === 'cleared' ? '회랑 정복' : run.outcome === 'defeated' ? '전투 패배' : run.outcome === 'timedOut' ? '시간 종료 · 자동 귀환' : '탐험 종료', w / 2, y0, mobile ? 20 : 24, '#ece0c4', 'center', 700);
-        text(ctx, run.highestFloor || run.clearedFloor || run.floor, w / 2, y0 + 66, mobile ? 56 : 72, '#f2d58a', 'center', 800); text(ctx, '도달층', w / 2, y0 + 112, 13, '#b8bfc2', 'center', 600);
-        const stats = [['클리어', run.clearedFloor + '층'], ['승리', run.battlesWon + '회'], ['정예 처치', run.elitesWon + '회']], sw = Math.min(140, (w - 56) / 3), sy = y0 + 140;
-        stats.forEach(([label, value], i) => { const x = w / 2 - sw / 2 + (i - 1) * (sw + 12); panel(ctx, x, sy, sw, 64, { alpha: .78 }); text(ctx, value, x + sw / 2, sy + 25, 18, '#f5ecd6', 'center', 700, sw - 12); text(ctx, label, x + sw / 2, sy + 47, 12, '#9fabb1', 'center', 500); });
-        const rewards = run.claimed ? (run.rewardSummary || []).map(r => `${r.name} ×${fmt(r.count)}`) : run.canClaim ? [...run.rewards.map(r => `${r.name || r.type} ×${fmt(r.count)}`), ...run.contracts.filter(c => c.star && run.outcome !== 'defeated').map(c => c.name + ' 확정')] : [];
-        const rw = Math.min(w - 32, 480), ry = sy + 84, rows = Math.max(1, Math.min(rewards.length, Math.floor((h - 140 - ry - 44) / 26))), rh = 44 + rows * 26;
-        panel(ctx, (w - rw) / 2, ry, rw, rh, { alpha: .8 }); text(ctx, '정산 보상', (w - rw) / 2 + 18, ry + 20, 13, '#a7b2b8', 'left', 600);
-        if (rewards.length) rewards.slice(0, rows).forEach((reward, i) => text(ctx, reward, (w - rw) / 2 + 18, ry + 46 + i * 26, 15, '#f0d99e', 'left', 600, rw - 36));
-        else text(ctx, run.outcome === 'defeated' ? '패배하여 탐험 보상과 계약 보상을 잃었습니다.' : run.canReturn ? '귀환하여 보상을 정산해주세요.' : '지급할 보상이 없습니다.', (w - rw) / 2 + 18, ry + 46, mobile ? 13 : 15, '#b8c0c3', 'left', 500, rw - 36);
-        const label = run.canReturn ? '귀환하고 정산' : run.canClaim ? '종료 보상 수령' : '낙원으로 돌아가기';
-        if (run.timeoutClaimError) paragraph(ctx, run.timeoutClaimError, (w - rw) / 2 + 12, Math.min(ry + rh + 22, h - 172), rw - 24, 12, '#edb27c', 18, 3);
-        hitButton(w / 2 - 130, h - 108, 260, 50, label, () => {
+    // 천상 결과 의식: 최고 도달층 메달리온을 중심에 두고, 결과별 빛과 금속으로 톤을 나눈다.
+    function ended(w, h, t) {
+        const run = state.run, mobile = w < 700, defeated = run.outcome === 'defeated', summit = run.completed || run.outcome === 'cleared';
+        const tone = defeated ? { ink: '#e8949a', glow: [1, .32, .36], metal: 'cursed' } : run.outcome === 'timedOut' ? { ink: '#9fd8d0', glow: [.5, .86, .84], metal: 'silver' }
+            : summit || run.outcome === 'cleared' ? { ink: '#f0d18a', glow: [1, .78, .42], metal: 'gold' } : { ink: '#c9d7de', glow: [.7, .84, .92], metal: 'silver' };
+        const title = summit ? '999층 정복' : { cleared: '회랑 정복', defeated: '전투 패배', timedOut: '시간 종료' }[run.outcome] || '탐험 종료';
+        const floor = run.highestFloor ?? run.clearedFloor ?? 0, starred = run.contracts.filter(c => c.star);
+        const items = run.claimed ? (run.rewardSummary || []) : run.canClaim || run.canReturn
+            ? [...(run.rewards || []).map(r => ({ name: r.name || r.type, count: r.count, iconUrl: r.iconUrl, kind: r.type === '골드' ? 'gold' : 'item' })), ...(defeated ? [] : starred.map(c => ({ name: c.name, contract: true })))] : [];
+        const tiles = [...items, ...(defeated && !run.claimed ? starred.map(c => ({ name: c.name, contract: true, lost: true })) : [])];
+        const heading = run.claimed ? '획득 보상' : defeated ? (items.length ? '마지막 은총' : tiles.length ? '잃은 계약' : '') : tiles.length ? '정산 보상' : '';
+        const empty = defeated ? '탐험 보상을 잃었습니다' : '지급할 보상이 없습니다';
+        const intro = reduced ? 1 : clamp((t - sceneAt) / 900, 0, 1), ease = 1 - Math.pow(1 - intro, 3);
+        const veil = ctx.createLinearGradient(0, 0, 0, h); veil.addColorStop(0, 'rgba(3,5,9,.2)'); veil.addColorStop(.5, 'rgba(3,5,9,.45)'); veil.addColorStop(1, 'rgba(3,5,9,.82)'); ctx.fillStyle = veil; ctx.fillRect(0, 0, w, h);
+        // 세로 배분: 제목 / 메달리온 / 기록 / 보상 / (복구 안내) / 행동 버튼. 낮은 화면에서는 메달리온이 먼저 줄어든다.
+        const by = h - (mobile ? 76 : 96), noteW = Math.min(w - 48, 520), note = run.timeoutClaimError ? wrap(ctx, run.timeoutClaimError, noteW, 12, 3) : [];
+        const bottom = by - 14 - (note.length ? note.length * 17 + 8 : 0), top = mobile ? 74 : 86;
+        const D = clamp(Math.min(bottom - top - 40 - 52 - 112, w * .5), 72, mobile ? 168 : 214), R = D / 2 * (.94 + .06 * ease);
+        const titleY = top + 12, cx = w / 2, cy = top + 40 + D / 2, statsY = cy + D / 2 + 30, ry = statsY + 34;
+        // 제목: 양옆 금속선
+        ctx.save(); ctx.globalAlpha = ease;
+        const ts = mobile ? 19 : 23; text(ctx, title, cx, titleY, ts, '#f4ead2', 'center', 700); const tw = ctx.measureText(title).width / 2 + 16;
+        line(ctx, cx - tw - 46, titleY, cx - tw, titleY, tone.ink + '88', 1); line(ctx, cx + tw, titleY, cx + tw + 46, titleY, tone.ink + '88', 1);
+        ctx.restore();
+        // 메달리온
+        renderer.quad(renderer.glow, cx - R * 2.3, cy - R * 2.3, R * 4.6, R * 4.6, [...tone.glow, (defeated ? .12 : .2) * ease * (reduced ? 1 : 1 + .12 * Math.sin(t / 1500))]);
+        ctx.save(); ctx.globalAlpha = ease;
+        const disc = ctx.createRadialGradient(cx, cy - R * .35, 0, cx, cy, R); disc.addColorStop(0, tone.ink + '2e'); disc.addColorStop(.7, 'rgba(10,14,20,.92)'); disc.addColorStop(1, 'rgba(5,8,12,.97)');
+        ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = disc; ctx.fill(); ctx.strokeStyle = metal(ctx, tone.metal, cx - R, cy - R, R * 2, R * 2); ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx, cy, R - 7, 0, Math.PI * 2); ctx.strokeStyle = tone.ink + '30'; ctx.lineWidth = 1; ctx.stroke();
+        const spin = reduced ? 0 : t / 60000;
+        for (let i = 0; i < 40; i++) { const a = spin + i * Math.PI / 20, major = i % 10 === 0, r0 = R - 10, r1 = r0 - (major ? 7 : 3); line(ctx, cx + Math.cos(a) * r0, cy + Math.sin(a) * r0, cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, tone.ink + (major ? 'aa' : '3a'), 1); }
+        for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 - Math.PI / 2, px = cx + Math.cos(a) * R, py = cy + Math.sin(a) * R, s = k ? 4.5 : 7; path(ctx, [[px, py - s], [px + s * .75, py], [px, py + s], [px - s * .75, py]]); ctx.fillStyle = metal(ctx, tone.metal, px - s, py - s, s * 2, s * 2); ctx.fill(); ctx.strokeStyle = '#0b0f14'; ctx.lineWidth = 1; ctx.stroke(); }
+        if (defeated) { path(ctx, [[cx + R * .16, cy - R + 3], [cx + R * .04, cy - R * .72], [cx + R * .14, cy - R * .6], [cx - R * .02, cy - R * .38]], false); ctx.strokeStyle = tone.ink + '99'; ctx.lineWidth = 1.5; ctx.stroke(); }
+        const ns = clamp(R * .6, 30, 84); text(ctx, floor, cx, cy - ns * .1, ns, defeated ? '#f1d9d6' : '#fff1cf', 'center', 800, R * 1.6);
+        text(ctx, '최고 도달층', cx, cy + ns * .52, clamp(R * .11, 11, 14), tone.ink, 'center', 600);
+        // 기록: 판 없이 숫자와 가는 구분선만
+        const stats = [[run.clearedFloor + '층', '클리어'], [run.battlesWon + '회', '승리'], [run.elitesWon + '회', '정예 처치']], sw = Math.min(124, (w - 40) / 3);
+        stats.forEach(([value, label], i) => { const x = cx + (i - 1) * sw; text(ctx, value, x, statsY - 7, mobile ? 16 : 18, '#f2eadb', 'center', 700, sw - 10); text(ctx, label, x, statsY + 14, 12, '#99a5ab', 'center', 500); if (i) line(ctx, x - sw / 2, statsY - 14, x - sw / 2, statsY + 18, 'rgba(255,255,255,.12)'); });
+        ctx.restore();
+        // 보상: 아이콘이 놓인 한 줄(들). 넘치면 머리줄 양 끝의 화살표로 넘긴다.
+        const tileW = mobile ? 92 : 112, tileH = 96, rw = Math.min(w - 24, 760), cols = Math.max(1, Math.floor(rw / tileW)), rowsFit = Math.max(1, Math.floor((bottom - ry - 22) / (tileH + 6)));
+        const per = cols * rowsFit, pages = Math.max(1, Math.ceil(tiles.length / per)); chestPage = clamp(chestPage, 0, pages - 1);
+        const page = tiles.slice(chestPage * per, (chestPage + 1) * per);
+        if (heading) {
+            text(ctx, heading, cx, ry, 12, defeated ? tone.ink : '#cbb886', 'center', 700); const hw = ctx.measureText(heading).width / 2 + 12;
+            line(ctx, cx - hw - 70, ry, cx - hw, ry, 'rgba(255,255,255,.12)'); line(ctx, cx + hw, ry, cx + hw + 70, ry, 'rgba(255,255,255,.12)');
+            if (pages > 1) { hitButton(cx - hw - 116, ry - 16, 32, 32, '이전 보상', () => chestPage--, { glyph: '‹', size: 18, disabled: chestPage <= 0 }); hitButton(cx + hw + 84, ry - 16, 32, 32, '다음 보상', () => chestPage++, { glyph: '›', size: 18, disabled: chestPage >= pages - 1 }); }
+        } else text(ctx, empty, cx, ry + 8, mobile ? 14 : 15, defeated ? tone.ink : '#b8c0c3', 'center', 600, w - 40);
+        page.forEach((item, i) => {
+            const row = Math.floor(i / cols), inRow = Math.min(cols, page.length - row * cols), x = cx + (i % cols - (inRow - 1) / 2) * tileW, y = ry + 22 + row * (tileH + 6);
+            const a = reduced ? 1 : clamp((t - sceneAt - 450 - i * 70) / 320, 0, 1);
+            ctx.save(); ctx.globalAlpha = a * (item.lost ? .5 : 1);
+            const ink = item.lost ? '#a8a2a2' : item.contract ? '#a9dccb' : item.kind === 'card' ? (item.cardType === '각성' ? '#d4b7ff' : '#8edaff') : '#edce85';
+            const icy = y + 24; ctx.beginPath(); ctx.arc(x, icy, 23, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,.035)'; ctx.fill(); ctx.strokeStyle = ink + '40'; ctx.lineWidth = 1; ctx.stroke();
+            if (!iconAt(item.iconUrl, x - 18, icy - 18, 36)) sigil(ctx, item.contract || item.kind === 'card' ? 'contract' : 'clarity', x, icy, 26, ink);
+            const names = wrap(ctx, item.name, tileW - 12, 12, 2, 600);
+            names.forEach((name, j) => text(ctx, name, x, y + 60 + j * 15, 12, '#e9e3d6', 'center', 600));
+            if (item.lost) { const lw = Math.min(tileW - 16, ctx.measureText(names[0] || '').width) / 2; line(ctx, x - lw, y + 60, x + lw, y + 60, tone.ink, 1.2); }
+            text(ctx, item.contract ? (item.lost ? '상실' : '확정') : `×${fmt(item.count)}`, x, y + 66 + names.length * 15, 13, ink, 'center', 700);
+            ctx.restore();
+        });
+        if (note.length) note.forEach((row, i) => text(ctx, row, cx, bottom + 8 + i * 17, 12, '#edb27c', 'center', 500));
+        const label = run.canReturn ? '귀환하고 정산' : run.canClaim ? '보상 수령' : '낙원으로 돌아가기', bw = Math.min(280, w - 48);
+        hitButton(cx - bw / 2, by, bw, 50, label, () => {
             if (run.canReturn) mutate('retire');
             else if (run.canClaim) mutate('claim');
-            else { returnToLobby(); }
+            else returnToLobby();
         }, { primary: true, size: 16 });
+    }
+    // 갈림길: 아치 관문 안쪽으로 겹겹이 물러나는 회랑과 소실점의 빛. 종류는 금속, 빛, 문장으로 구분한다.
+    function gateway(c, x, y, w, h, look, t, lit, seed) {
+        const cx = x + w / 2, spring = y + w / 2, vx = cx, vy = y + h * .44, [r, g, b] = look.glow.map(v => Math.round(v * 255));
+        const arch = () => { c.beginPath(); c.moveTo(x, y + h); c.lineTo(x, spring); c.arc(cx, spring, w / 2, Math.PI, 0); c.lineTo(x + w, y + h); c.closePath(); };
+        arch(); const depth = c.createLinearGradient(0, y, 0, y + h); depth.addColorStop(0, 'rgba(9,11,17,.94)'); depth.addColorStop(1, 'rgba(3,4,8,.97)'); c.fillStyle = depth; c.fill();
+        c.save(); arch(); c.clip();
+        const far = c.createRadialGradient(vx, vy, 0, vx, vy, w * .6); far.addColorStop(0, `rgba(${r},${g},${b},${lit ? .6 : .38})`); far.addColorStop(.45, `rgba(${r},${g},${b},.1)`); far.addColorStop(1, `rgba(${r},${g},${b},0)`); c.fillStyle = far; c.fillRect(x, y, w, h);
+        for (let n = 1; n <= 5; n++) { const k = Math.pow(.74, n); c.save(); c.translate(vx, vy); c.scale(k, k); c.translate(-vx, -vy); arch(); c.restore(); c.strokeStyle = `rgba(${r},${g},${b},${.32 - n * .045})`; c.lineWidth = 1; c.stroke(); }
+        for (let i = 1; i <= 7; i++) { const f = 1 - Math.pow(.7, i), yy = y + h + (vy - (y + h)) * f, half = w / 2 * (1 - f); line(c, vx - half, yy, vx + half, yy, `rgba(${r},${g},${b},${.2 * (1 - f)})`, 1); }
+        line(c, x, y + h, vx, vy, `rgba(${r},${g},${b},.14)`); line(c, x + w, y + h, vx, vy, `rgba(${r},${g},${b},.14)`);
+        if (!reduced) for (let i = 0; i < 7; i++) { const f = (t / 5200 + rand(i + seed * 13)) % 1, mx = vx + (rand(i + 3 + seed) - .5) * w * .8 * (1 - f * .6), my = vy + h * .4 - f * h * .55; c.fillStyle = `rgba(${r},${g},${b},${.5 * Math.sin(f * Math.PI)})`; c.fillRect(mx, my, 2, 2); }
+        c.save(); c.shadowColor = look.ink; c.shadowBlur = lit ? 18 : 8; sigil(c, look.sigil, vx, vy - w * .02, w * (look.sigil === 'mystery' ? .26 : .3), look.ink + (lit ? 'ff' : 'cc')); c.restore();
+        c.restore();
+        arch(); c.strokeStyle = metal(c, look.metal, x, y, w, h); c.lineWidth = lit ? 3 : 2; c.stroke();
+        c.save(); c.translate(cx, spring); c.scale((w / 2 - 7) / (w / 2), (w / 2 - 7) / (w / 2)); c.translate(-cx, -spring); arch(); c.restore(); c.strokeStyle = look.ink + '30'; c.lineWidth = 1; c.stroke();
+        // 쐐기돌. 정예는 가시 셋, 미지는 떠도는 별, 일반은 단정한 마름모.
+        const ky = y; c.fillStyle = metal(c, look.metal, cx - 10, ky - 10, 20, 20);
+        if (look.sigil === 'devil') { path(c, [[cx - 13, ky + 4], [cx - 9, ky - 12], [cx - 4, ky + 2], [cx, ky - 17], [cx + 4, ky + 2], [cx + 9, ky - 12], [cx + 13, ky + 4]]); c.fill(); }
+        else { path(c, [[cx, ky - 10], [cx + 8, ky], [cx, ky + 10], [cx - 8, ky]]); c.fill(); }
+        c.strokeStyle = '#0b0f14'; c.lineWidth = 1; c.stroke();
+        if (look.sigil === 'mystery') for (let i = 0; i < 3; i++) { const a = (reduced ? 0 : t / 2400) + i * Math.PI * 2 / 3; c.beginPath(); c.arc(cx + Math.cos(a) * 18, ky + Math.sin(a) * 6, 1.8, 0, Math.PI * 2); c.fillStyle = look.ink; c.fill(); }
+        line(c, x - 10, y + h, x + w + 10, y + h, metal(c, look.metal, x, y + h, w, 2), 2);
+    }
+    function routeScene(w, h, t) {
+        const routes = (state.run.routes || []).slice(0, 2), mobile = w < 700, gap = mobile ? 14 : 84, gw = mobile ? (w - 32 - gap) / 2 : Math.min(290, (w - 220) / 2);
+        const labelH = mobile ? 88 : 104, top = mobile ? 124 : Math.max(132, h * .18), gh = clamp(Math.min(gw * 1.6, h - top - labelH - (mobile ? 36 : 52)), 120, 460);
+        text(ctx, '길을 선택하세요', w / 2, top - (mobile ? 30 : 40), mobile ? 17 : 20, '#efe3c6', 'center', 700);
+        const p = selection ? (reduced ? 1 : clamp((t - selection.started) / 380, 0, 1)) : 0;
+        routes.forEach((route, i) => {
+            const look = routeLook[route.kind] || routeLook.normal, x = w / 2 + (i ? gap / 2 : -gap / 2 - gw), picked = selection?.index === i;
+            const intro = reduced ? 1 : clamp((t - sceneAt - i * 110) / 520, 0, 1), e = 1 - Math.pow(1 - intro, 3), lit = picked || !selection && inside(x, top, gw, gh + labelH);
+            renderer.quad(renderer.glow, x - gw * .35, top - gh * .12, gw * 1.7, gh * 1.3, [...look.glow, (lit ? .22 : .1) * e * (1 + (picked ? p : 0))]);
+            ctx.save(); ctx.globalAlpha = e * (selection && !picked ? 1 - p * .85 : 1);
+            const yy = top + (1 - e) * 18, zoom = picked ? 1 + p * .05 : 1;
+            ctx.translate(x + gw / 2, yy + gh); ctx.scale(zoom, zoom); ctx.translate(-(x + gw / 2), -(yy + gh));
+            gateway(ctx, x, yy, gw, gh, look, t, lit, i);
+            if (route.powerWarning) drawWarning(ctx, x + gw / 2 - 38, yy + gh - 42, 76, 28);
+            ctx.restore(); ctx.save(); ctx.globalAlpha = e * (selection && !picked ? 1 - p * .85 : 1);
+            const ly = yy + gh + 26, ds = mobile ? 13 : 14;
+            text(ctx, route.title, x + gw / 2, ly, mobile ? 17 : 20, lit ? '#fff4dc' : '#f0e7d4', 'center', 700, gw);
+            wrap(ctx, route.description, gw - 8, ds, 2).forEach((row, j) => text(ctx, row, x + gw / 2, ly + 25 + j * ds * 1.45, ds, '#c3ccd0', 'center', 500));
+            ctx.restore();
+            register(x, top, gw, gh + labelH, `${i + 1}번 길, ${route.title}, ${route.description}${warnLabel(route.powerWarning)}`, () => pickRoute(route, i), !!selection || intro < .9);
+        });
+        if (p) { ctx.fillStyle = `rgba(2,4,7,${p * .5})`; ctx.fillRect(0, 0, w, h); }
+    }
+    // 유물 발견: 받침대 위에 떠 있는 유물 셋. 등급색 빛기둥과 가는 모서리 틀.
+    function pedestal(relic, cx, base, s, t, lit, i, picked, p) {
+        const ink = relicInk[relic.rarity] || relicInk.normal, tint = relicGlow[relic.rarity] || relicGlow.normal, bob = reduced ? 0 : Math.sin(t / 950 + i * 1.9) * s * .05, iy = base - s * 1.2 + bob - (picked ? p * s * .25 : 0);
+        renderer.quad(renderer.glow, cx - s * .42, iy - s * 1.3, s * .84, base - iy + s * 1.4, [...tint, lit ? .16 : .08]);
+        renderer.quad(renderer.glow, cx - s, iy - s, s * 2, s * 2, [...tint, (lit ? .3 : .16) * (1 + (picked ? p * 1.5 : 0))]);
+        ctx.beginPath(); ctx.ellipse(cx, base + 4, s * .3 * (1 - bob / s), s * .07, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
+        path(ctx, [[cx - s * .5, base], [cx + s * .5, base], [cx + s * .36, base + s * .44], [cx - s * .36, base + s * .44]]);
+        const stone = ctx.createLinearGradient(0, base, 0, base + s * .44); stone.addColorStop(0, '#1d242d'); stone.addColorStop(1, '#0a0e13'); ctx.fillStyle = stone; ctx.fill(); ctx.strokeStyle = ink + '30'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(cx, base, s * .62, s * .15, 0, 0, Math.PI * 2); const plate = ctx.createLinearGradient(0, base - s * .15, 0, base + s * .15); plate.addColorStop(0, '#2a323c'); plate.addColorStop(1, '#10151b'); ctx.fillStyle = plate; ctx.fill(); ctx.strokeStyle = metal(ctx, relicMetal[relic.rarity] || 'silver', cx - s * .62, base - s * .15, s * 1.24, s * .3); ctx.lineWidth = lit ? 2 : 1.4; ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(cx, base, s * .44, s * .1, 0, 0, Math.PI * 2); ctx.strokeStyle = ink + (lit ? '88' : '44'); ctx.lineWidth = 1; ctx.stroke();
+        const f = s * .66, k = s * .16; ctx.strokeStyle = ink + (lit ? 'dd' : '77'); ctx.lineWidth = 1.2;
+        for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const ox = cx + sx * f, oy = iy + sy * f; path(ctx, [[ox, oy - sy * k], [ox, oy], [ox - sx * k, oy]], false); ctx.stroke(); }
+        ctx.save(); ctx.shadowColor = ink; ctx.shadowBlur = lit ? 20 : 9; if (!iconAt(relic.iconUrl, cx - s / 2, iy - s / 2, s)) sigil(ctx, '', cx, iy, s * .7, ink); ctx.restore();
+    }
+    function relicScene(w, h, t) {
+        const run = state.run, list = (run.relicChoices || []).slice(0, 3), n = list.length, mobile = w < 700, picks = run.relicPicksRemaining || 0;
+        const titleY = mobile ? 90 : Math.max(112, h * .15), p = selection ? (reduced ? 1 : clamp((t - selection.started) / 420, 0, 1)) : 0;
+        text(ctx, '유물 하나를 고르세요', w / 2, titleY, mobile ? 18 : 22, '#f3e8cf', 'center', 700);
+        if (picks > 1) text(ctx, `남은 선택 ${picks}회`, w / 2, titleY + 26, 13, '#aeb8bd', 'center', 600);
+        focused = clamp(focused, 0, Math.max(0, n - 1));
+        const cw = mobile ? (w - 16) / 3 : Math.min(270, (w - 160) / 3), s = mobile ? Math.min(cw * .5, 64, h * .1) : Math.min(cw * .46, h * .16, 118);
+        const base = titleY + (picks > 1 ? 54 : 34) + s * 1.86;
+        list.forEach((relic, i) => {
+            const cx = w / 2 + (i - (n - 1) / 2) * cw, picked = selection?.index === i, intro = reduced ? 1 : clamp((t - sceneAt - i * 120) / 560, 0, 1), e = 1 - Math.pow(1 - intro, 3);
+            const hot = mobile ? i === focused : !selection && inside(cx - cw / 2, base - s * 2, cw, h - 70 - base + s * 2);
+            ctx.save(); ctx.globalAlpha = e * (selection && !picked ? 1 - p * .8 : mobile && i !== focused ? .55 : 1);
+            pedestal(relic, cx, base + (1 - e) * 16, s, t, hot || picked, i, picked, p);
+            if (!mobile) {
+                const ink = relicInk[relic.rarity] || relicInk.normal, ny = base + s * .44 + 30;
+                text(ctx, relic.name, cx, ny, 18, '#f6eedb', 'center', 700, cw - 16);
+                tierMark(ctx, relic, cx, ny + 28, 'center');
+                const lines = Math.max(1, Math.min(5, Math.floor((h - 76 - (ny + 54)) / 21)));
+                paragraph(ctx, relic.desc, cx, ny + 58, cw - 24, 14, '#cfd6d9', 21, lines, 'center');
+                if (hot) line(ctx, cx - 18, ny - 20, cx + 18, ny - 20, ink, 1.5);
+            }
+            ctx.restore();
+            const top = base - s * 2, bottomY = mobile ? base + s * .5 : h - 70;
+            register(cx - cw / 2, top, cw, bottomY - top, `${i + 1}번 유물, ${relic.name}, ${relic.rarityLabel}, ${relic.desc}`, () => mobile && focused !== i ? (focused = i, sound('tap')) : pickRelic(relic, i), !!selection || intro < .9);
+        });
+        if (mobile && n) {
+            const relic = list[focused], ny = base + s * .44 + 34, by = h - 116;
+            text(ctx, relic.name, w / 2, ny, 18, '#f6eedb', 'center', 700, w - 40);
+            tierMark(ctx, relic, w / 2, ny + 28, 'center');
+            paragraph(ctx, relic.desc, w / 2, ny + 58, w - 48, 14, '#cfd6d9', 21, Math.max(1, Math.floor((by - 14 - ny - 58) / 21)), 'center');
+            hitButton(w / 2 - 110, by, 220, 48, '이 유물 선택', () => pickRelic(relic, focused), { primary: true, size: 16, disabled: !!selection });
+        }
+        if (p) { ctx.fillStyle = `rgba(255,236,196,${Math.sin(p * Math.PI) * .08})`; ctx.fillRect(0, 0, w, h); }
+    }
+    // 층 이동 막: 어두워졌다가 목적지로 밝아지고, 전투라면 짧은 신호. 연출 중 장면 입력은 막는다.
+    function transitionFx(w, h, t) {
+        if (!transition) return false;
+        if (transition.next && t - transition.at >= FADE_OUT) { const queued = transition.next; transition.next = null; apply(queued); }
+        const age = t - transition.at, end = reduced ? 600 : FADE_END;
+        if (age >= end) { transition = null; return false; }
+        if (age < 0) return true;
+        const mobile = w < 700;
+        if (!reduced) {
+            const d = age < FADE_OUT ? age / FADE_OUT : age < FADE_OUT + FADE_HOLD ? 1 : 1 - clamp((age - FADE_OUT - FADE_HOLD) / FADE_IN, 0, 1), dark = d * d * (3 - 2 * d);
+            ctx.fillStyle = `rgba(2,4,7,${dark})`; ctx.fillRect(0, 0, w, h);
+            if (transition.floor && !transition.next) {
+                const a = dark * clamp((age - FADE_OUT + 60) / 160, 0, 1); ctx.save(); ctx.globalAlpha = a;
+                text(ctx, `${transition.floor}층`, w / 2, h * .44, mobile ? 34 : 46, '#ecdcb6', 'center', 300); const fw = ctx.measureText(`${transition.floor}층`).width / 2 + 18;
+                line(ctx, w / 2 - fw - 40, h * .44, w / 2 - fw, h * .44, '#ecdcb655'); line(ctx, w / 2 + fw, h * .44, w / 2 + fw + 40, h * .44, '#ecdcb655'); ctx.restore();
+            }
+        }
+        if (transition.cue && !transition.next) {
+            const start = reduced ? 0 : FADE_OUT + FADE_HOLD + 220, a = reduced ? 1 : Math.min(clamp((age - start) / 180, 0, 1), clamp((end - age) / 240, 0, 1));
+            if (a > 0) {
+                const y = h * (mobile ? .3 : .27), spread = reduced ? 1 : 1 - Math.pow(1 - clamp((age - start) / 320, 0, 1), 3), half = (mobile ? 90 : 140) * spread;
+                ctx.save(); ctx.globalAlpha = a;
+                const band = ctx.createLinearGradient(w / 2 - half - 60, 0, w / 2 + half + 60, 0); band.addColorStop(0, 'rgba(3,5,8,0)'); band.addColorStop(.5, 'rgba(3,5,8,.55)'); band.addColorStop(1, 'rgba(3,5,8,0)'); ctx.fillStyle = band; ctx.fillRect(w / 2 - half - 60, y - 26, half * 2 + 120, 52);
+                line(ctx, w / 2 - half, y - 22, w / 2 + half, y - 22, '#e8c27299', 1); line(ctx, w / 2 - half, y + 22, w / 2 + half, y + 22, '#e8c27299', 1);
+                text(ctx, transition.cue, w / 2, y, mobile ? 22 : 28, '#fbeccb', 'center', 800); ctx.restore();
+            }
+        }
+        return true;
     }
     // 지옥: 픽셀 배경은 최근접 필터로 선명하게, 낙하 중에는 선택 방향으로 밀리며 깊이 확대된다.
     function hellBackground(w, h, t) {
@@ -746,9 +964,9 @@
     }
     function chestScene(w, h, t) {
         const run = state.run, list = (run.chests || []).filter(c => !c.opened), n = list.length, mobile = w < 700, open = chestPick ? (reduced ? 1 : clamp((t - chestPick.started) / 520, 0, 1)) : 0, opens = run.opensRemaining ?? 1;
-        const head = `지하 ${run.clearedFloor || 0}층 보상 · 상자 1개 선택`;
+        const head = `지하 ${run.clearedFloor || 0}층 보상 상자를 하나 고르세요`;
         const pick = chest => { if (busy || pending || chestPick || opens <= 0) return; chestPick = { id: chest.id, started: performance.now() }; sound('chest'); setTimeout(() => mutate('chest', { chest: chest.id }), reduced ? 0 : 560); };
-        const label = chest => `${chest.name} · ${chest.description}`;
+        const label = chest => `${chest.name}, ${chest.description}`;
         if (mobile) {
             const cw = Math.min(w - 84, 300), ch = Math.min(h - 318, 440), y = 128; chestPage = clamp(chestPage, 0, Math.max(0, n - 1));
             text(ctx, head, w / 2, 114, 16, '#ffd2a8', 'center', 700, w - 32);
@@ -765,7 +983,7 @@
         const cw = Math.min(300, (w - 220) / 3), ch = Math.min(h - 280, 470), y = Math.max(150, (h - ch) / 2), pages = Math.max(1, Math.ceil(n / 3)); chestPage = clamp(chestPage, 0, pages - 1);
         const shown = list.slice(chestPage * 3, chestPage * 3 + 3), total = shown.length * cw + (shown.length - 1) * 28, x0 = (w - total) / 2;
         text(ctx, head, w / 2, y - 36, 20, '#ffd2a8', 'center', 700, w - 48);
-        const recent = run.rewardSummary?.length ? run.rewardSummary.map(r => `${r.name} ×${fmt(r.count)}`).join(' · ') : '';
+        const recent = run.rewardSummary?.length ? run.rewardSummary.map(r => `${r.name} ×${fmt(r.count)}`).join(', ') : '';
         if (recent && y + ch + 58 < h - 64) text(ctx, `획득 ${recent}`, w / 2, y + ch + 58, 14, '#d8c2ac', 'center', 600, Math.min(w - 260, 900));
         shown.forEach((chest, j) => {
             const x = x0 + j * (cw + 28), intro = reduced ? 1 : clamp((t - sceneAt - j * 120) / 500, 0, 1), e = 1 - Math.pow(1 - intro, 3), picked = chestPick?.id === chest.id, hovered = !chestPick && inside(x, y, cw, ch), yy = y + (1 - e) * 50 - (hovered && !reduced ? 6 : 0);
@@ -817,20 +1035,20 @@
                 hitButton(x + bw - 84, y + bh - 52, 64, 36, '다음', () => overlayPage++, { disabled: overlayPage >= pages - 1, size: 13 });
             }
         } else if (overlay === 'ranking') {
-            text(ctx, '매주 월요일 00:00 (한국 시간) 초기화', x + 24, y + 84, 13, '#a3b0b5'); text(ctx, `나의 최고 ${state.weekly.bestFloor || 0}층 · ${ranking?.me?.rank ? ranking.me.rank + '위' : '순위 없음'}`, x + 24, y + 110, 16, '#f0d58e', 'left', 700);
+            text(ctx, '매주 월요일 00:00 (한국 시간) 초기화', x + 24, y + 84, 13, '#a3b0b5'); text(ctx, `나의 최고 ${state.weekly.bestFloor || 0}층`, x + 24, y + 110, 16, '#f0d58e', 'left', 700); text(ctx, ranking?.me?.rank ? ranking.me.rank + '위' : '순위 없음', x + 40 + ctx.measureText(`나의 최고 ${state.weekly.bestFloor || 0}층`).width, y + 110, 15, '#c9d2d4', 'left', 600);
             const rows = ranking?.rows || [], count = Math.max(3, Math.floor((bh - 250) / 36)), pages = Math.max(1, Math.ceil(rows.length / count)); overlayPage = clamp(overlayPage, 0, pages - 1);
             text(ctx, '순위', x + 24, y + 146, 12, '#8a979c', 'left', 600); text(ctx, '이름', x + 78, y + 146, 12, '#8a979c', 'left', 600); text(ctx, '최고 도달층', x + bw - 24, y + 146, 12, '#8a979c', 'right', 600);
             rows.slice(overlayPage * count, (overlayPage + 1) * count).forEach((row, i) => { const yy = y + 178 + i * 36, mine = row.name === state.player.name; if (mine) { rr(ctx, x + 14, yy - 16, bw - 28, 32, 8); ctx.fillStyle = 'rgba(240,213,142,.1)'; ctx.fill(); } text(ctx, row.rank, x + 28, yy, 16, row.rank <= 3 ? '#f0d58e' : '#9aa7ac', 'left', 700); text(ctx, row.name, x + 78, yy, 15, mine ? '#f6e7bd' : '#d5dcdd', 'left', mine ? 600 : 500, bw - 190); text(ctx, row.floor + '층', x + bw - 24, yy, 15, '#ecd8a4', 'right', 700); });
             if (!rows.length) text(ctx, ranking ? '이번 주 기록이 없습니다.' : '불러오는 중…', w / 2, y + bh * .5, 14, '#a3b0b5', 'center');
-            text(ctx, '같은 층은 먼저 도달한 순서 · 상위 100명', w / 2, y + bh - 74, 12, '#8a979c', 'center');
+            text(ctx, '같은 층은 먼저 도달한 순서, 상위 100명', w / 2, y + bh - 74, 12, '#8a979c', 'center');
             hitButton(x + 20, y + bh - 52, 64, 36, '이전', () => overlayPage--, { disabled: overlayPage <= 0, size: 13 }); hitButton(x + bw - 84, y + bh - 52, 64, 36, '다음', () => overlayPage++, { disabled: overlayPage >= pages - 1, size: 13 }); hitButton(w / 2 - 44, y + bh - 52, 88, 36, '새로고침', fetchRanking, { size: 13 });
         } else if (overlay === 'inventory') {
             const run = state.run, groups = {
-                relics: [...run.relics].sort((a,b) => ({special:0,advanced:1,normal:2}[a.rarity])-({special:0,advanced:1,normal:2}[b.rarity])).map(r => ({ ...r, ink: {normal:'#c5d0d6',advanced:'#f0c66a',special:'#cf9dff'}[r.rarity], name: r.rarityLabel + ' · ' + r.name + (r.spent ? ' · 소모됨' : '') })),
+                relics: [...run.relics].sort((a,b) => ({special:0,advanced:1,normal:2}[a.rarity])-({special:0,advanced:1,normal:2}[b.rarity])).map(r => ({ ...r, relic: true })),
                 augments: [...run.effects.map(a => ({ ...a, desc: a.desc + (run.temporary.find(buff => buff.name === a.name) ? '\n' + run.temporary.find(buff => buff.name === a.name).battles + '회 전투 남음' : '') })),
                     ...run.temporary.filter(buff => !run.effects.some(a => a.name === buff.name)).map(buff => ({ name: buff.name, desc: buff.battles + '회 전투 남음' }))],
                 contracts: [...run.contracts.map(a => ({ name: a.name, desc: '귀환 시 정산됩니다.', ink: '#a9dccb' })), ...(run.quests || []).map(q => ({
-                    name: q.name, desc: (run.effects.find(a => a.name === q.name)?.desc || '') + '\n' + (q.status === 'completed' ? '달성 완료' : q.status === 'failed' ? '달성 실패' : `${q.remaining}회 전투 남음 · ${q.progress}/${q.target}`),
+                    name: q.name, desc: (run.effects.find(a => a.name === q.name)?.desc || '') + '\n' + (q.status === 'completed' ? '달성 완료' : q.status === 'failed' ? '달성 실패' : `${q.progress}/${q.target}, ${q.remaining}회 전투 남음`),
                     ink: q.status === 'failed' ? '#b18d92' : q.status === 'completed' ? '#a9dccb' : '#f0dca8'
                 }))]
             };
@@ -847,8 +1065,12 @@
             let yy = y + 139;
             for (const { item, icon, width, lines, height } of pagesOfRows[overlayPage]) {
                 const tx = x + 24 + (icon ? 76 : 0);
-                if (icon) iconAt(item.iconUrl, x + 22, yy - 5, 60);
-                text(ctx, item.name, tx, yy, 15, item.ink || colors[item.rarity] || '#f0dca8', 'left', 700, width);
+                if (icon) { ctx.save(); ctx.globalAlpha = item.spent ? .4 : 1; ctx.shadowColor = relicInk[item.rarity] || relicInk.normal; ctx.shadowBlur = 8; iconAt(item.iconUrl, x + 22, yy - 5, 60); ctx.restore(); }
+                if (item.relic) {
+                    text(ctx, item.name, tx, yy, 15, item.spent ? '#aeb6ba' : '#f3ead6', 'left', 700, width - 150);
+                    const nx = tx + Math.min(ctx.measureText(item.name).width, width - 150) + 12, bw = tierMark(ctx, item, nx, yy);
+                    if (item.spent) text(ctx, '소모됨', nx + bw + 10, yy, 12, '#97a3a8', 'left', 600);
+                } else text(ctx, item.name, tx, yy, 15, item.ink || colors[item.rarity] || '#f0dca8', 'left', 700, width);
                 lines.forEach((value, i) => text(ctx, value, tx, yy + 25 + i * 20, 14, '#c3cdd0'));
                 line(ctx, x + 24, yy + height - 24, x + bw - 24, yy + height - 24, 'rgba(255,255,255,.07)');
                 yy += height;
@@ -864,11 +1086,11 @@
                 ctx.save(); ctx.globalAlpha = owned ? 1 : .4; if (!iconAt(key.iconUrl, xx + 14, yy + 14, s)) sigil(ctx, '', xx + 14 + s / 2, yy + rh / 2, s * .8, '#f0a070');
                 text(ctx, key.name, xx + s + 28, yy + rh / 2 - 11, mobile ? 16 : 17, '#f6e6d8', 'left', 700, ww - s - 130); text(ctx, `낙하 ${key.drops}회`, xx + s + 28, yy + rh / 2 + 13, 14, '#f0a878', 'left', 700);
                 text(ctx, `보유 ${fmt(key.count)}`, xx + ww - 16, yy + rh / 2, 15, owned ? '#ffd2a8' : '#8f8682', 'right', 700); ctx.restore();
-                register(xx, yy, ww, rh, `${key.name} · 낙하 ${key.drops}회 · 보유 ${key.count}개${picked ? ' · 선택됨' : ''}`, () => { hellKey = key.name; sound('tap'); }, !owned);
+                register(xx, yy, ww, rh, `${key.name}, 낙하 ${key.drops}회, 보유 ${key.count}개${picked ? ', 선택됨' : ''}`, () => { hellKey = key.name; sound('tap'); }, !owned);
             });
             const chosen = keys.find(k => k.name === hellKey && k.count > 0);
-            paragraph(ctx, '패배·포기 시 마지막 돌파 층 기준 상자 · 열쇠 미반환', w / 2, y + bh - 94, bw - 48, 14, '#c9b8aa', 20, 2, 'center');
-            hitButton(w / 2 - 130, y + bh - 72, 260, 50, chosen ? '열쇠 1개 사용 · 입장' : '열쇠 선택', () => { overlay = null; mutate('enter', { mode: 'hell', key: chosen.name }); }, { primary: true, size: 15, disabled: !chosen || !state.hell?.enabled });
+            paragraph(ctx, '패배하거나 포기하면 마지막 돌파 층 기준으로 상자를 열고, 열쇠는 반환되지 않습니다.', w / 2, y + bh - 94, bw - 48, 14, '#c9b8aa', 20, 2, 'center');
+            hitButton(w / 2 - 130, y + bh - 72, 260, 50, chosen ? '열쇠 1개 사용하여 입장' : '열쇠 선택', () => { overlay = null; mutate('enter', { mode: 'hell', key: chosen.name }); }, { primary: true, size: 15, disabled: !chosen || !state.hell?.enabled });
         } else if (overlay === 'retire' && hell) {
             paragraph(ctx, '지옥 탐험이 종료됩니다.\n마지막으로 돌파한 층 기준으로 상자를 엽니다. 돌파한 층이 없으면 보상이 없습니다.\n사용한 열쇠는 반환되지 않습니다.', x + 24, y + 96, bw - 48, 16, '#dde3e3', 26, 6);
             hitButton(w / 2 - 120, y + bh - 128, 240, 48, '탐험 포기', () => { overlay = null; mutate('retire'); }, { primary: true, size: 15 }); hitButton(w / 2 - 120, y + bh - 68, 240, 44, '계속 탐험', () => { overlay = null; });
@@ -903,14 +1125,15 @@
             const run = state.run, hell = run?.mode === 'hell';
             // 패배·포기 후에도 status='ended'인 채로 상자 선택이 이어지므로 phase를 먼저 본다.
             if(inCombat)combat(w,h,t); else if (hell && run.phase === 'chests') chestScene(w, h, t); else if (hell && (run.status === 'ended' || run.phase === 'ended')) hellEnded(w, h, t); else if (hell && run.phase === 'descent') descentScene(w, h, t); else if (hell && run.phase === 'altar') altarScene(w, h, t);
-            else if (!state.run) lobby(w, h, t); else if (state.run.phase === 'augment') augments(w, h, t); else if (state.run.phase === 'combat') combat(w, h, t); else if (state.run.phase === 'event') eventScene(w, h, t); else if (state.run.phase === 'puzzle') puzzleScene(w, h); else ended(w, h);
+            else if (!state.run) lobby(w, h, t); else if (state.run.phase === 'augment') augments(w, h, t); else if (state.run.phase === 'combat') combat(w, h, t); else if (state.run.phase === 'event') eventScene(w, h, t); else if (state.run.phase === 'puzzle') puzzleScene(w, h); else if (state.run.phase === 'route') routeScene(w, h, t); else if (state.run.phase === 'relic') relicScene(w, h, t); else ended(w, h, t);
             // 연출 중에는 장면 행동을 받지 않는다.
             if (hell || fall || landing) { if (landing) regions.forEach(r => { r.disabled = true; }); dropFx(w, h, t); }
+            if (transitionFx(w, h, t)) regions.forEach(r => { r.disabled = true; });
             gameHud(w, h, t);
             revealOutcome(w,h,t);
             if (overlay) { puzzleForm.hidden = true; drawOverlay(w, h); }
             if (rewardReveal) revealRewards(w, h, t);
-            if (pending && !busy) { hitButton(w / 2 - 140, h / 2 - 24, 280, 48, '저장 확인 · 같은 요청 재시도', () => mutate(pending.action, {}, true), { primary: true }); const r = regions[regions.length - 1]; r.disabled = false; }
+            if (pending && !busy) { hitButton(w / 2 - 140, h / 2 - 24, 280, 48, '저장 확인 후 같은 요청 재시도', () => mutate(pending.action, {}, true), { primary: true }); const r = regions[regions.length - 1]; r.disabled = false; }
         }
         syncRegions(); requestAnimationFrame(frame);
     }
@@ -924,9 +1147,12 @@
     addEventListener('pointerdown',()=>{inputMode='pointer';audio.unlock();});
     document.addEventListener('pointerleave',()=>{pointer={x:-1000,y:-1000};});
     let touchX = 0; addEventListener('touchstart', event => { touchX = event.changedTouches[0].clientX; }, { passive: true }); addEventListener('touchend', event => { if(rewardReveal)return; if (state?.run?.phase === 'augment' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !selection) focused = clamp(focused + (event.changedTouches[0].clientX < touchX ? 1 : -1), 0, Math.max(0,state.run.choices.length-1)); else if (state?.run?.phase === 'chests' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !chestPick) chestPage += event.changedTouches[0].clientX < touchX ? 1 : -1; }, { passive: true });
-    addEventListener('keydown', event => { inputMode='keyboard';audio.unlock();if (event.target instanceof HTMLInputElement || busy || pending || heavenEntry || performance.now()<battleUntil) return;
+    addEventListener('keydown', event => { inputMode='keyboard';audio.unlock();if (event.target instanceof HTMLInputElement || busy || pending || heavenEntry || transition || performance.now()<battleUntil) return;
         if(rewardReveal){if(event.key==='Escape'){event.preventDefault();rewardReveal=null;}return;}
-        if (event.key === 'Escape') { overlay = null; syncPuzzle(); } if (state?.run?.phase === 'augment' && /^[123]$/.test(event.key)) { const i = Number(event.key) - 1; if (innerWidth < 700) focused = i; else choose(state.run.choices[i], i); } if(state?.run?.phase==='combat'&&!overlay)battle.key(event);
+        if (event.key === 'Escape') { overlay = null; syncPuzzle(); } if (state?.run?.phase === 'augment' && /^[123]$/.test(event.key)) { const i = Number(event.key) - 1; if (innerWidth < 700) focused = i; else choose(state.run.choices[i], i); }
+        if (!overlay && state?.run?.phase === 'route' && /^[12]$/.test(event.key)) { const i = Number(event.key) - 1; pickRoute(state.run.routes?.[i], i); }
+        if (!overlay && state?.run?.phase === 'relic' && /^[123]$/.test(event.key)) { const i = Number(event.key) - 1; focused = i; pickRelic(state.run.relicChoices?.[i], i); }
+        if(state?.run?.phase==='combat'&&!overlay)battle.key(event);
         const side = { ArrowLeft: -1, ArrowRight: 1 }[event.key]; if (!side || overlay || state?.run?.mode !== 'hell') return;
         if (state.run.phase === 'descent') descend(side < 0 ? 'left' : 'right'); else if (state.run.phase === 'chests' && !chestPick) chestPage += side; });
     document.addEventListener('visibilitychange', () => { audio.visibility();if(!document.hidden)fetchState();else{battle.reset();battleUntil=0;} });

@@ -80,7 +80,7 @@
         }
         const label = hell ? (!s.hell?.enabled ? '준비 중' : keyCount ? '열쇠 선택' : '열쇠 없음') : !s.enabled ? '준비 중' : tickets < 1 ? '입장권 없음' : '입장';
         btn(bx, by, bw, bh, label, null, { primary: true, noHit: true, hot: hov, disabled: off, size: mobile ? 15 : 16, ...(can && !hell ? { cost: 1, icon: s.ticket?.iconUrl } : {}) });
-        hit(x, y, w, h, hell ? '지옥 · 열쇠 선택' : '천상 입장', hell ? () => A.openHell() : () => A.enterHeaven(), off);
+        hit(x, y, w, h, hell ? '지옥, 열쇠 선택' : '천상 입장', hell ? () => A.openHell() : () => A.enterHeaven(), off);
     }
 
     // ── 천상 장비 받침대
@@ -166,7 +166,7 @@
         row(me?.rank, me?.name || o.state.player?.name, me?.floor ? `${A.fmt(me.floor)}층` : '기록 없음', my + 3, true);
     }
     function weekly(o, x, y, cw, mobile) {
-        const r = o.ranking, bw = mobile ? 100 : 120, info = [r?.total ? `${A.fmt(r.total)}명 참여` : '', kst(r?.resetsAt || o.state.weekly?.resetsAt)].filter(Boolean).join(' · ');
+        const r = o.ranking, bw = mobile ? 100 : 120, info = [r?.total ? `${A.fmt(r.total)}명 참여` : '', kst(r?.resetsAt || o.state.weekly?.resetsAt)].filter(Boolean).join(', ');
         const iw = mobile ? 0 : measure(info, 12, 500) + 16; heading(x, y + 22, cw - bw - iw - 16, '주간 랭킹');
         if (!mobile) A.text(C, info, x + cw - bw - 16, y + 22, 12, DIM, 'right', 500);
         btn(x + cw - bw, y, bw, 44, '전체 순위', () => A.openRanking(), { size: 14 });
@@ -211,7 +211,7 @@
             for (let i = 0; i < 16; i++) { const ang = i * Math.PI / 8 + (i * 7 % 5) * .08, d = is * (.2 + k * (.7 + (i % 3) * .1)); C.beginPath(); C.arc(cx + Math.cos(ang) * d, scy + Math.sin(ang) * d, 2.6 * (1 - k) + .4, 0, Math.PI * 2); C.fillStyle = `rgba(255,240,200,${1 - k})`; C.fill(); }
             A.chamfer(C, px, py, pw, ph, 9); C.fillStyle = `rgba(255,245,220,${Math.pow(1 - k, 3) * .3})`; C.fill();
         } else if (live) for (let i = 0; i < 12; i++) { const fx = cx + (i - 5.5) * is * .07, fy = scy + k * is * (.5 + (i * 5 % 7) * .06); C.fillStyle = `rgba(160,190,205,${(1 - k) * .8})`; C.fillRect(fx, fy, 3, 7); }
-        if (a && age < 2800) { const msg = a.message || (a.success ? `강화 성공 · +${a.level}` : '강화 실패 · 단계 유지'), bw = Math.min(pw - 40, measure(msg, 15) + 40), al = Math.min(1, (2800 - age) / 400);
+        if (a && age < 2800) { const msg = a.message || (a.success ? `강화 성공, +${a.level}` : '강화 실패, 단계 유지'), bw = Math.min(pw - 40, measure(msg, 15) + 40), al = Math.min(1, (2800 - age) / 400);
             C.globalAlpha = al; A.chamfer(C, cx - bw / 2, py + ph - 126, bw, 34, 7); C.fillStyle = 'rgba(8,12,16,.88)'; C.fill(); C.strokeStyle = a.success ? 'rgba(242,213,143,.7)' : 'rgba(166,190,205,.5)'; C.lineWidth = 1; C.stroke();
             A.text(C, msg, cx, py + ph - 109, 15, a.success ? GOLD : '#c3d3db', 'center', 700, bw - 20); C.globalAlpha = 1; }
         let y = sy + is + 34;
@@ -224,7 +224,7 @@
             if (n) { A.text(C, '→', cx + 66, ry, 13, DIM, 'center', 600); A.text(C, A.fmt(n[s] || 0), px + pw - 32, ry, 15, GOLD, 'right', 800); }
         });
         y += (list.length || 3) * 30 + 22;
-        if (n && n.chance != null) { const pct = Math.round(n.chance * 10) / 10; A.text(C, `성공 확률 ${pct}%`, cx, y, 16, GOLD, 'center', 700); A.text(C, '실패 시 단계 유지 · 최대 +25', cx, y + 22, 12, DIM, 'center', 500); }
+        if (n && n.chance != null) { const pct = Math.round(n.chance * 10) / 10; A.text(C, `성공 확률 ${pct}%`, cx, y, 16, GOLD, 'center', 700); A.text(C, '실패 시 단계 유지, 최대 +25', cx, y + 22, 12, DIM, 'center', 500); }
         else if (!g.unlocked) A.text(C, '최대 +25', cx, y, 12, DIM, 'center', 500);
         const by = py + ph - 68, bw = pw - 32;
         if (!g.unlocked && g.unlockCost != null) btn(px + 16, by, bw, 52, '해금', () => A.mutate('unlockEquipment', { slot }), { primary: true, cost: g.unlockCost, disabled: off || p.tokens < g.unlockCost, size: 16 });

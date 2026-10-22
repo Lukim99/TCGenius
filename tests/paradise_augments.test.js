@@ -36,7 +36,10 @@ function fresh() {
 }
 function choose(user, id, random = () => .99) {
     user.paradise.phase = 'augment'; user.paradise.choices = [id];
-    return corridor.chooseAugment(user, id, random);
+    const result = corridor.chooseAugment(user, id, random);
+    // 효과 단위 테스트는 증강 후 일반 전투를 시작한다. 갈림길 API는 paradise.test에서 검증한다.
+    if (user.paradise.phase === 'route') corridor.startCombat(user, 'normal', null, random);
+    return result;
 }
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} !== ${expected}`);
 test('악마의 거래는 공격력 대신 추가 피해 66.6%를 적용하고 구형 획득에도 같은 효과를 낸다', t => {
@@ -69,7 +72,7 @@ test('복제된 축복은 제거되며 저장된 선택지에만 남아 있어�
     assert.deepEqual(corridor.view(user).run.choices, []);
     assert.ok(corridor.chooseAugment(user, 'duplicate').error);
     assert.ok(!corridor.continueExploration(user, () => .99).error);
-    assert.equal(user.paradise.phase, 'combat');
+    assert.equal(user.paradise.phase, 'route');
 });
 
 test('결투 계약은 공격력 25%, 사신 계약은 완전 회복과 9성 각성 계약을 한 번 지급한다', () => {
@@ -317,7 +320,7 @@ test('새 메커니즘 증강 30개는 조건을 만족할 때 선택할 수 있
     for (let i = 0; i < 1000; i++) {
         corridor.offerAugments(user, random);
         const rarities = user.paradise.choices.map(id => corridor.AUGMENTS.find(a => a.id === id).rarity);
-        assert.ok(new Set(rarities).size > 1, '세 선택지가 같은 등급으로 몰리지 않음');
+        assert.equal(new Set(rarities).size, 1, '세 선택지가 같은 등급으로 제시됨');
         for (const rarity of rarities) counts[rarity] = (counts[rarity] || 0) + 1;
     }
     assert.ok(counts.silver > 800 && counts.prismatic > 400 && counts.gold < 1500, JSON.stringify(counts));
@@ -365,7 +368,7 @@ test('잭팟·계약 도박은 확정 결과를 공개하고 유물 교환은 �
     for (const [rolls, star, type] of [[[.99, .99, .99], 9, '각성'], [[0, 0, 0], 8, '전직'], [[0, 0, .99], 7, '일반'], [[0, .3, .99], 0, null]]) {
         const user = fresh(); let index = 0;
         const result = choose(user, 'sevenBells', () => rolls[index++] ?? .99);
-        assert.ok(result.reveal.positive); assert.match(result.reveal.text, /\d · \d · \d/);
+        assert.ok(result.reveal.positive); assert.match(result.reveal.text, /\d, \d, \d/);
         if (star) assert.deepEqual(user.paradise.contracts[0], { star, type, name: `${star}성 ${type} 카드` });
         else assert.equal(user.paradise.relics.length, 2);
     }

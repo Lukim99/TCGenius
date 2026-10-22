@@ -539,7 +539,7 @@ test('신규 유물은 등급별 효과를 적용하고 특수 유물은 일반 
     const user = fresh();
     for (let i = 0; i < 50; i++) corridor.grantRelic(user, null, () => .99);
     assert.ok(user.paradise.relics.every(id => !corridor.RELICS.find(r => r.id === id).special));
-    assert.equal(corridor.RELICS.length, 30);
+    assert.equal(corridor.RELICS.length, 62);
     assert.deepEqual(new Set(corridor.RELICS.map(r => r.rarityLabel)), new Set(['일반', '고급', '특수']));
     user.paradise.relics = ['guardianClasp', 'hunterBadge', 'emberSeed', 'alchemistFlask', 'duelGlove', 'oracleLens'];
     battle(user); const stats = rpg.calculateUserStats(user);

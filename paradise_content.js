@@ -74,7 +74,7 @@ const AUGMENTS = [
         ['shieldClan', '강릉함씨 32대손', 8, '보호막이 있을 때 공격력 증가량', 2],
         ['rottenWater', '썩어버린 물', 8, '썩은물 중첩의 스킬 공격력 증가량', 2],
         ['fortunePouch', '행운의 복주머니', 6, '골드 획득 효과 발동 후 추가 피해 증가량', 2],
-        ['settlementRing', '포상 정산 반지', 10, 'HP·MP 비율 차이로 얻는 공격력·최종 피해 증가량', 2],
+        ['settlementRing', '포상 정산 반지', 10, 'HP와 MP 비율 차이로 얻는 공격력·최종 피해 증가량', 2],
         ['manaAmplifier', '마나 증폭 장치', 10, 'MP 조건에 따른 공격력·추가 피해 증가량', 2],
         ['gungtaek', '궁택토', 8, '패시브의 스킬 피해 증가량', 2, true],
         ['quattro', '콰트로 1악장', 15, '패시브의 추가 피해·치명타 피해 증가량', 1.5, true],
@@ -132,7 +132,7 @@ const RELICS = [
     ['hourglass', '뒤집힌 모래시계', '다음 전투에서 적의 공격력이 45% 감소합니다. 해당 전투에서 승리하면 소멸합니다.'],
     ['sheath', '잊혀진 검집', '장착한 무기의 수치형 패시브 효과가 45% 증가합니다.'],
     ['necklace', '저주받은 목걸이', '받는 피해가 10% 증가하는 대신 엘리트를 처치하여 얻는 보상이 3배로 증가합니다.'],
-    ['judgment', '심판자의 성흔', '최종 피해가 54% 증가하고 탐험 종료 보상이 90% 증가합니다.'],
+    ['judgment', '심판자의 성흔', '최종 피해가 35% 증가하고 탐험 종료 보상이 50% 증가합니다.'],
     ['riftHeart', '균열의 심장', '공격력이 68% 증가하고 받는 피해가 22% 감소합니다. 탐험 종료 보상이 112% 증가합니다.'],
     ['meditationCenser', '명상 향로', '획득 후 전투에서 2회 승리할 때마다 최대 HP와 MP의 27%를 회복합니다.'],
     ['starlightSpool', '별빛 실타래', '매 전투에서 처음 스킬을 사용하면 최대 HP의 22%만큼 보호막을 15초간 생성합니다.'],
@@ -149,11 +149,43 @@ const RELICS = [
     ['duelGlove', '결투가의 장갑', 'HP에 피해를 받으면 다음 직접 공격의 피해가 1.9배로 증가합니다. 강화된 공격은 한 번만 저장합니다.'],
     ['oracleLens', '예언자의 수정안', '매 전투의 첫 궁극기는 쿨타임이 65% 감소하며 다음 피격을 한 번 무효화합니다.'],
     ['moonSeal', '월야의 인장', '매 전투의 첫 궁극기를 사용하면 다음 직접 공격의 피해가 135% 증가하고 최대 HP의 45%만큼 보호막을 20초간 생성합니다.'],
-    ['abyssDiadem', '파멸의 면류관', '최종 피해가 54% 증가합니다. 매 전투에서 한 번, 치명적인 피해를 받으면 남은 MP를 모두 소모하고 최대 HP의 45%로 생존합니다.']
-].map(([id, name, desc]) => {
+    ['abyssDiadem', '파멸의 면류관', '최종 피해가 54% 증가합니다. 매 전투에서 한 번, 치명적인 피해를 받으면 남은 MP를 모두 소모하고 최대 HP의 45%로 생존합니다.'],
+    ['bluntWhetstone', '닳아버린 숫돌', '공격력이 3% 증가합니다.', { atk: .03 }],
+    ['tinBuckle', '찌그러진 버클', '방어력이 5% 증가합니다.', { def: .05 }],
+    ['quiltPatch', '누빈 천 조각', '최대 HP가 3% 증가합니다.', { hp: .03 }],
+    ['emptyWaterskin', '빈 물주머니', '최대 MP가 5% 증가합니다.', { mp: .05 }],
+    ['crackedMonocle', '금 간 외알안경', '치명타 확률이 1%p 증가합니다.', { crit: .01 }],
+    ['chippedFang', '이 빠진 송곳니', '치명타 피해량이 5% 증가합니다.', { critMul: .05 }],
+    ['knottedCord', '매듭 세 개', '연격 확률이 1%p 증가합니다.', { cmb: .01 }],
+    ['wornSandal', '해진 짚신', '회피 확률이 1%p 증가합니다.', { avd: .01 }],
+    ['rustyNeedle', '녹슨 바늘', '추가 피해가 2% 증가합니다.', { extraDamage: .02 }],
+    ['paperTalisman', '접힌 부적', '받는 피해가 2% 감소합니다.', { taken: -.02 }],
+    ['bentSpoon', '휘어진 숟가락', '전투에서 승리할 때마다 최대 HP의 1%를 회복합니다.', { victoryHp: .01 }],
+    ['copperThimble', '구리 골무', '전투에서 승리할 때마다 최대 MP의 2%를 회복합니다.', { victoryMp: .02 }],
+    ['dryBiscuit', '딱딱한 비상식량', '엘리트를 처치할 때마다 최대 HP의 3%를 회복합니다.', { eliteHp: .03 }],
+    ['blueChalk', '짧은 푸른 분필', '엘리트를 처치할 때마다 최대 MP의 4%를 회복합니다.', { eliteMp: .04 }],
+    ['practiceSword', '훈련용 목검', '일반 공격 피해가 4% 증가합니다.', { basicDamage: .04 }],
+    ['sootInk', '그을린 잉크병', '직접 사용하는 스킬의 피해가 4% 증가합니다.', { skillDamage: .04 }],
+    ['pebbledMarble', '돌멩이 구슬', 'HP가 35% 이하인 적에게 입히는 피해가 4% 증가합니다.', { woundedEnemy: .04 }],
+    ['dullArrow', '무뎌진 화살촉', 'HP가 80% 이상인 적에게 입히는 피해가 4% 증가합니다.', { healthyEnemy: .04 }],
+    ['linenRibbon', '바랜 리본', '이번 전투에서 HP에 피해를 받기 전까지 입히는 피해가 3% 증가합니다.', { untouched: .03 }],
+    ['emptyInkwell', '마른 잉크통', 'MP가 25% 이하일 때 입히는 피해가 5% 증가합니다.', { lowMana: .05 }],
+    ['corkStopper', '작은 코르크', 'MP가 80% 이상일 때 입히는 피해가 3% 증가합니다.', { highMana: .03 }],
+    ['crackedBell', '갈라진 손종', '일반 공격과 스킬을 번갈아 사용하면 해당 직접 공격의 피해가 4% 증가합니다.', { alternating: .04 }],
+    ['looseGear', '헐거운 톱니', '직접 공격을 3회 할 때마다 세 번째 공격의 피해가 6% 증가합니다.', { thirdStrike: .06 }],
+    ['woodenButton', '나무 단추', '매 전투에서 처음 받는 두 번의 피해가 5% 감소합니다.', { arrivalGuard: .05 }],
+    ['ashScarf', '재 묻은 목도리', 'HP가 35% 이하일 때 받는 피해가 4% 감소합니다.', { lowHpGuard: -.04 }],
+    ['frayedBookmark', '해진 책갈피', '스킬의 MP 소모량이 2% 감소합니다.', { mpReduce: .02 }],
+    ['brassReceipt', '빛바랜 영수증', '탐험 종료 보상이 2%p 증가합니다.', { reward: .02 }],
+    ['chippedToken', '이 빠진 돌패', '보스에게 입히는 피해가 3% 증가합니다.', { bossDmg: .03 }],
+    ['hunterWhistle', '나무 호루라기', '엘리트에게 입히는 피해가 3% 증가합니다.', { eliteDmg: .03 }],
+    ['smallSandbag', '작은 모래주머니', '일반 공격을 사용하면 다음 피격의 피해가 4% 감소합니다. 한 번만 저장합니다.', { basicGuard: .04 }],
+    ['chalkDie', '분필 주사위', '직접 공격의 치명타 적중마다 최대 MP의 0.5%를 회복합니다. 한 번의 공격으로 최대 5%까지 회복합니다.', { criticalMp: .005 }],
+    ['fadedPostcard', '바랜 엽서', '스킬을 사용하면 다음 피격의 피해가 4% 감소합니다. 한 번만 저장합니다.', { skillGuard: .04 }]
+].map(([id, name, desc, effect]) => {
     const special = ['judgment', 'riftHeart', 'moonSeal', 'abyssDiadem'].includes(id);
     const rarity = special ? 'special' : ['ring', 'feather', 'redContract', 'sheath', 'necklace', 'echoBell', 'tuningFork', 'runeQuill', 'alchemistFlask', 'duelGlove', 'oracleLens'].includes(id) ? 'advanced' : 'normal';
-    return { id, name, desc, special, rarity, rarityLabel: { normal: '일반', advanced: '고급', special: '특수' }[rarity], iconUrl: '/rpg-ui?file=' + encodeURIComponent('낙원/relic-' + id + '.webp') };
+    return { id, name, desc, special, rarity, ...(effect ? { effect } : {}), rarityLabel: { normal: '일반', advanced: '고급', special: '특수' }[rarity], iconUrl: '/rpg-ui?file=' + encodeURIComponent('낙원/relic-' + id + '.webp') };
 });
 
 const EVENTS = {

@@ -12,8 +12,9 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         if (resourcesAdded) { corridor.getResources(user); user.paradise.revision++; }
         const chestLimitChanged = hell.normalizeChestSelection(user);
         const rebalanced = corridor.rebalanceEnemy(user);
+        const offerNormalized = corridor.normalizeAugmentOffer(user);
         const advanced = rpgenius.advanceParadiseCombat(user);
-        if (!timeAdvanced && !resourcesAdded && !chestLimitChanged && !rebalanced && !advanced) return;
+        if (!timeAdvanced && !resourcesAdded && !chestLimitChanged && !rebalanced && !offerNormalized && !advanced) return;
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
         await rpgenius.commitProtectedUserChange(user, keys);
     };
@@ -59,6 +60,10 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             }
         }
         if (view.run?.rewardSummary) view.run.rewardSummary = view.run.rewardSummary.map(reward => rewardView(reward, user));
+        if (view.run?.mode !== 'hell' && view.run?.rewards) for (const reward of view.run.rewards) {
+            reward.iconUrl = reward.type === '아이템' ? getItemIconUrl(items.find(item => item?.name === reward.name))
+                : reward.type === '골드' ? '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('골드.png') : null;
+        }
         if (view.run) for (const choice of view.run.choices) {
             if (choice.character != null) choice.iconUrl = view.player.sprite;
             if (choice.equipment) {
@@ -117,7 +122,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             }
         });
     }
-    for (const action of ['enter', 'augment', 'reroll', 'event', 'puzzle', 'attack', 'skill', 'retire', 'claim', 'descend', 'altar', 'continue', 'chest']) {
+    for (const action of ['enter', 'augment', 'reroll', 'route', 'relic', 'event', 'puzzle', 'attack', 'skill', 'retire', 'claim', 'dismiss', 'descend', 'altar', 'continue', 'chest']) {
         server.post('/api/paradise/' + action, requireUser, async (req, res) => {
             const body = req.body || {};
             if (!/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId || '') || !Number.isSafeInteger(body.revision) || body.revision < 0 || body.runId != null && typeof body.runId !== 'string') return res.status(400).json({ error: '낙원 화면을 새로 열어주세요.' });
@@ -134,7 +139,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                         return { ok: true, message: receipt.message, reveal: revealView(receipt.reveal, user), state: state(user) };
                     }
                     if (Number(user.paradise?.revision || 0) !== body.revision || (user.paradise?.id || null) !== (body.runId || null)) return { error: '다른 화면에서 탐험이 진행되었습니다. 현재 상태를 다시 불러왔습니다.', state: state(user), stale: true };
-                    if (!['enter', 'claim', 'chest'].includes(action) && !corridor.active(user) && !(action === 'retire' && corridor.view(user).run?.canReturn)) return { error: '진행 중인 낙원 탐험이 없습니다.', state: state(user) };
+                    if (!['enter', 'claim', 'chest', 'dismiss'].includes(action) && !corridor.active(user) && !(action === 'retire' && corridor.view(user).run?.canReturn)) return { error: '진행 중인 낙원 탐험이 없습니다.', state: state(user) };
                     let result;
                     if (action === 'enter') result = body.mode === 'hell' ? hell.enter(user, body.key) : body.mode && body.mode !== 'heaven' ? { error: '알 수 없는 낙원 입장입니다.' } : corridor.enter(user);
                     else if (action === 'descend') result = hell.descend(user, body.side);
@@ -143,9 +148,12 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     else if (action === 'chest') result = hell.openChest(user, body.chest);
                     else if (action === 'augment') result = corridor.chooseAugment(user, body.choice);
                     else if (action === 'reroll') result = corridor.rerollAugment(user, body.choice);
+                    else if (action === 'route') result = corridor.chooseRoute(user, body.choice);
+                    else if (action === 'relic') result = corridor.chooseRelic(user, body.choice);
                     else if (action === 'event') result = corridor.chooseEvent(user, body.choice);
                     else if (action === 'puzzle') result = corridor.answerPuzzle(user, body.skip === true ? null : body.answer);
                     else if (action === 'claim') result = corridor.claim(user);
+                    else if (action === 'dismiss') result = corridor.dismiss(user);
                     else if (action === 'retire') result = corridor.finish(user);
                     else {
                         if (user.paradise.phase !== 'combat') return { error: '전투 중에만 공격할 수 있습니다.', state: state(user) };
