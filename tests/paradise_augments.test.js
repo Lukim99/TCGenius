@@ -139,7 +139,7 @@ test('복제된 축복은 제거되며 저장된 선택지에만 남아 있어�
     assert.equal(user.paradise.phase, 'route');
 });
 
-test('결투 계약은 공격력 25%, 새 사신 계약은 완전 회복과 8성 각성 계약을 지급하고 수락한 계약은 보존한다', () => {
+test('결투 계약은 공격력 25%, 새 사신 계약은 완전 회복과 9성 각성 계약을 지급하고 수락한 계약은 보존한다', () => {
     for (const legacy of [false, true]) {
         const duel = fresh(); choose(duel, 'duelistContract');
         if (legacy) duel.paradise.quests[0].reward = { star: 7, type: '일반' };
@@ -151,18 +151,34 @@ test('결투 계약은 공격력 25%, 새 사신 계약은 완전 회복과 8성
         corridor.startCombat(duel, 'normal', null, () => .99); corridor.victory(duel, () => .99);
         close(duel.paradise.effects.atk, .25);
         const death = fresh(); choose(death, 'deathHandshake');
-        if (legacy) death.paradise.quests[0].reward = { star: 9, type: '각성', heal: true };
+        if (legacy) death.paradise.quests[0].reward = { star: 8, type: '각성', heal: true };
         corridor.getResources(death).mp = 0;
         corridor.victory(death, () => .99);
         const stats = rpg.calculateUserStats(death);
         assert.deepEqual(corridor.getResources(death), { hp: stats.hp, mp: stats.mp });
-        const star = legacy ? 9 : 8;
+        const star = legacy ? 8 : 9;
         assert.deepEqual(death.paradise.contracts, [{ star, type: '각성', name: `${star}성 각성 카드` }]);
     }
     const blocked = fresh(); choose(blocked, 'devil'); choose(blocked, 'deathHandshake');
     corridor.getResources(blocked).mp = 0; corridor.victory(blocked, () => .99);
     assert.deepEqual(corridor.getResources(blocked), { hp: 1, mp: 0 });
-    assert.equal(blocked.paradise.contracts[0].star, 8);
+    assert.equal(blocked.paradise.contracts[0].star, 9);
+});
+
+test('신비한 계약과 헌 유물 보상은 지정된 일반 카드 등급을 지급하고 장난신의 확률은 유지한다', () => {
+    for (const [id, star] of [['contract', 7], ['backpackExchange', 6]]) {
+        const user = fresh(); user.paradise.relics = ['crown'];
+        assert.equal(choose(user, id).error, undefined);
+        assert.deepEqual(user.paradise.contracts, [{ star, type: '일반', name: `${star}성 일반 카드` }]);
+        assert.match(corridor.AUGMENTS.find(a => a.id === id).desc, new RegExp(`${star}성 일반`));
+        if (id === 'backpackExchange') assert.ok(!user.paradise.relics.includes('crown'));
+    }
+    for (const [roll, card] of [[.7499, false], [.75, true]]) {
+        const user = fresh(), result = choose(user, 'tricksterGift', () => roll);
+        assert.equal(result.error, undefined);
+        if (card) assert.deepEqual(user.paradise.contracts, [{ star: 7, type: '각성', name: '7성 각성 카드' }]);
+        else { assert.equal(user.paradise.contracts.length, 0); assert.equal(user.paradise.relics.length, 3); }
+    }
 });
 const equipmentAdditions = corridor.AUGMENTS.filter(a => a.equipment).slice(22);
 const adventure = require('../paradise_augments_adventure');

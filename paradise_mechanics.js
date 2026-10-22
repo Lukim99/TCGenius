@@ -129,11 +129,11 @@ function onVictory(user) {
     }
     if (has(user, 'ultimateWager') && s.ultimateAt && Date.now() - s.ultimateAt <= 10000) rewardBonus(user, 'ultimateWager', .05, .25);
     if (has(user, 'secondReceipt') && user.paradise.battle.hasTakenHpDamage && (s.normalSkills || []).length >= 2
-        && Number(e.receiptPrizes || 0) < 1 && count(e, 'receiptWins') % 5 === 0) {
+        && Number(e.receiptPrizes || 0) < 2 && count(e, 'receiptWins') % 5 === 0) {
         count(e, 'receiptPrizes'); cardContract(user, '두 번째 영수증', 7, '각성');
     }
-    if (has(user, 'lastTicket') && hp <= stats.hp * .20 && Number(e.lastTickets || 0) < 1 && count(e, 'lastTicketWins') % 3 === 0) {
-        count(e, 'lastTickets'); cardContract(user, '마지막 티켓', 6);
+    if (has(user, 'lastTicket') && hp <= stats.hp * .20 && Number(e.lastTickets || 0) < 2) {
+        count(e, 'lastTickets'); cardContract(user, '마지막 티켓', 7);
     }
 }
 
@@ -214,7 +214,7 @@ function onSkill(user, name, stats, extra) {
     if (has(user, 'ultimateDividend') && count(expedition(user), 'ultimateUses') % 5 === 0) {
         const e = expedition(user);
         e.ultimatePrizes ??= user.paradise.contracts.filter(c => c.name?.startsWith('대단원의 배당')).length;
-        if (Number(e.ultimatePrizes || 0) < 3) { count(e, 'ultimatePrizes'); cardContract(user, '대단원의 배당', 6); }
+        if (Number(e.ultimatePrizes || 0) < 3) { count(e, 'ultimatePrizes'); cardContract(user, '대단원의 배당', 7); }
         corridor().heal(user, .20, .20);
     }
     if (has(user, 'ultimateHourglass')) {
@@ -381,9 +381,9 @@ function afterHit(user, stats, extra, hit) {
         if (has(user, 'plaguePact') && n === 12) rewardBonus(user, 'plaguePact', .03, .30);
         if (run.enemy.hp <= 0) {
             if (has(user, 'contagiousAsh')) e.carriedAsh = hit.finalDamage * .40;
-            if (has(user, 'funeralInterest') && count(e, 'dotKills') % 5 === 0) {
+            if (has(user, 'funeralInterest') && count(e, 'dotKills') % 3 === 0) {
                 e.funeralPrizes ??= run.contracts.filter(c => c.name?.startsWith('장례 보험금')).length;
-                if (e.funeralPrizes < 2) { count(e, 'funeralPrizes'); cardContract(user, '장례 보험금', 5); }
+                if (e.funeralPrizes < 2) { count(e, 'funeralPrizes'); cardContract(user, '장례 보험금', 8); }
             }
         }
         return;

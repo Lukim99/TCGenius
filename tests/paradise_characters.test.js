@@ -232,7 +232,7 @@ test('켄시: 연격의 치명타를 각각 집계하고 남은 치명타를 다
     assert.equal(user.paradise.battle.characters.chorusReady, true);
 });
 
-test('제우스: 백억이요 처치 5회마다 5성 계약을 최대 2장 얻고 첫 궁극기는 대박이 된다', async t => {
+test('제우스: 백억이요 처치 3회마다 7성 계약을 최대 2장 얻고 첫 궁극기는 대박이 된다', async t => {
     t.mock.method(Math, 'random', () => .99);
     const user = fresh(7, 'jackpotSavings', 'riggedJackpot');
     const result = await skill(user, '초특급한탕');
@@ -242,10 +242,10 @@ test('제우스: 백억이요 처치 5회마다 5성 계약을 최대 2장 얻�
         user.paradise.enemy.hp = 1;
         corridor.getResources(user).mp = rpg.calculateUserStats(user).mp;
         await skill(user, '백억이요');
-        assert.equal(user.paradise.contracts.filter(c => c.name.startsWith('한탕 적금')).length, Math.min(2, Math.floor((i + 1) / 5)));
+        assert.equal(user.paradise.contracts.filter(c => c.name.startsWith('한탕 적금')).length, Math.min(2, Math.floor((i + 1) / 3)));
         if (i < 14) { corridor.startCombat(user, 'normal', null, () => .99); dummy(user); }
     }
-    assert.equal(user.paradise.contracts.filter(c => c.star === 5 && c.type === '일반').length, 2);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 7 && c.type === '일반').length, 2);
 });
 
 test('제우스: 강제 대박은 교촌 주머니의 실패 효과와 겹치지 않고 시전 실패로 소모되지 않는다', async t => {

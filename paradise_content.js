@@ -30,7 +30,7 @@ const AUGMENTS = [
     a('gambler', '회랑의 도박사', 15, '50% 확률로 공격력이 30% 증가하고, 나머지 50% 확률로 공격력이 20% 감소합니다.', {}, { special: 'gambler' }),
     a('cursedTreasure', '저주받은 보물', 20, '탐험 종료 보상이 30% 증가합니다. 다음 엘리트 몬스터의 공격력이 50% 증가합니다.', { reward: .30 }, { special: 'cursedTreasure', dangerous: true, rarity: 'cursed' }),
     a('greed', '탐욕의 인장', 10, '앞으로 3회 전투에서 모두 승리하면 탐험 종료 보상이 20% 증가합니다.', {}, { special: 'greed' }),
-    a('contract', '신비한 계약', 3, '탐험을 종료할 때 5성 일반 카드 1장을 획득합니다.', {}, { cardContract: true, special: 'contract', rarity: 'prismatic' }),
+    a('contract', '신비한 계약', 3, '탐험을 종료할 때 7성 일반 카드 1장을 획득합니다.', {}, { cardContract: true, special: 'contract', rarity: 'prismatic' }),
     ...[
         ['staff', '쿠루미의 힘이 깃든 지팡이', 5, '장비 패시브 효과', 2],
         ['manaHat', '마나번 햇', 8, '공격력 증가 효과', 2],

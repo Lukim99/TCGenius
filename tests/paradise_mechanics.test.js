@@ -324,10 +324,10 @@ test('지속 피해 처치의 잿더미와 카드 계약은 다음 전투·탐�
     for (let i = 0; i < 15; i++) {
         user.paradise.enemy.hp = 1; dot(user, 100);
         assert.ok(user.paradise.mechanics.carriedAsh > 0);
-        assert.equal(user.paradise.contracts.filter(c => c.name.startsWith('장례 보험금')).length, Math.min(2, Math.floor((i + 1) / 5)));
+        assert.equal(user.paradise.contracts.filter(c => c.name.startsWith('장례 보험금')).length, Math.min(2, Math.floor((i + 1) / 3)));
         battle(user); assert.ok(s(user).dots.ash);
     }
-    assert.equal(user.paradise.contracts.filter(c => c.star === 5 && c.type === '일반').length, 2);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 8 && c.type === '일반').length, 2);
 });
 
 test('실패한 연격을 저축하고 다음 최대 연격에 마지막 확정 치명타·출혈·파열을 적용한다', t => {
@@ -414,7 +414,7 @@ test('전직과 스펙터 궁극기에 서곡·커튼콜·배당·공백·수확
         resources(user).mp = rpg.calculateUserStats(user).mp;
         await skill(user, '빅뱅');
     }
-    assert.equal(user.paradise.contracts.filter(c => c.star === 6).length, 1);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 7).length, 1);
 });
 
 test('대단원의 배당은 재접속·다음 전투·계약 상실 후에도 탐험당 3장까지만 지급하고 회복은 계속한다', async t => {
@@ -430,7 +430,7 @@ test('대단원의 배당은 재접속·다음 전투·계약 상실 후에도 �
         if (i === 15) user.paradise.contracts.pop();
     }
     assert.equal(user.paradise.mechanics.ultimatePrizes, 3);
-    assert.ok(user.paradise.contracts.every(c => c.star === 6));
+    assert.ok(user.paradise.contracts.every(c => c.star === 7));
     assert.match(corridor.AUGMENTS.find(a => a.id === 'ultimateDividend').desc, /최대 3장/);
     // 패치 전 지급분도 한도에 포함하되 이미 획득한 8성 카드의 등급은 보존한다.
     user.paradise.contracts = Array.from({ length: 3 }, () => ({ star: 8, type: '일반', name: '대단원의 배당 · 8성 일반 카드' }));
@@ -707,14 +707,16 @@ test('자비·영수증·마지막 티켓은 직접 공격과 승리 조건을 �
     for (let i = 0; i < 4; i++) hit(user);
     dot(user); assert.equal(resources(user).hp, 1);
     hit(user); assert.ok(resources(user).hp > 1); assert.equal(s(user).guard, true);
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 12; i++) {
         battle(user); resources(user).mp = rpg.calculateUserStats(user).mp;
         await skill(user, '자인'); await skill(user, '도화선 점화');
         if (i > 0) user.paradise.battle.hasTakenHpDamage = true;
         resources(user).hp = 1; corridor.victory(user, () => .99);
+        assert.equal(user.paradise.contracts.filter(c => c.name.startsWith('두 번째 영수증')).length, Math.min(2, Math.floor(i / 5)));
+        assert.equal(user.paradise.contracts.filter(c => c.name.startsWith('마지막 티켓')).length, Math.min(2, i + 1));
     }
-    assert.equal(user.paradise.contracts.filter(c => c.star === 7 && c.type === '각성').length, 1);
-    assert.equal(user.paradise.contracts.filter(c => c.star === 6 && c.type === '일반').length, 1);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 7 && c.type === '각성').length, 2);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 7 && c.type === '일반').length, 2);
 });
 
 test('찰나의 소매치기는 피격 후 1.5초 이내에만 적 주기를 늦추며 공격마다 한 번 발동한다', async t => {

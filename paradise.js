@@ -13,7 +13,7 @@ const progression = require('./paradise_progression');
 const routeMechanics = require('./paradise_routes');
 const cardContracts = require('./paradise_contracts');
 const timeLimit = run => TIME_LIMIT_MS + (progression.has(run, 'extraTime') ? 5 * 60 * 1000 : 0);
-const timerPaused = run => ['augment', 'route', 'event', 'ended'].includes(run.phase);
+const timerPaused = run => ['augment', 'relic', 'route', 'event', 'ended'].includes(run.phase);
 const CP_ANCHORS = [[1, 10000], [10, 100000], [100, 1000000], [200, 5000000], [300, 10000000], [400, 30000000], [500, 60000000], [600, 100000000], [700, 300000000], [800, 400000000], [900, 500000000], [999, 1000000000]];
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const pick = (list, random = Math.random) => list[Math.min(list.length - 1, Math.floor(random() * list.length))];
@@ -594,7 +594,7 @@ function chooseAugment(user, id, random = Math.random) {
         case 'gambler': { const won = random() < .5; addEffect(user, { atk: won ? .30 : -.20 }); message = '회랑의 도박사, ' + (won ? '성공!\n공격력 +30%' : '실패\n공격력 -20%'); break; }
         case 'cursedTreasure': run.nextEliteAttack = true; break;
         case 'greed': run.temporary.push({ id, name: choice.name, battles: 3, rewardAfter: .20 }); break;
-        case 'contract': run.contracts.push({ star: 5, type: '일반', name: '5성 일반 카드' }); break;
+        case 'contract': run.contracts.push({ star: 7, type: '일반', name: '7성 일반 카드' }); break;
         case 'breath': heal(user, 0, .20); break;
         case 'pilgrim': heal(user, .15, 0); break;
         case 'clarity': run.distortion = Math.max(0, run.distortion - 10); break;
@@ -603,7 +603,7 @@ function chooseAugment(user, id, random = Math.random) {
         case 'relicCard':
         case 'relicExchange': {
             const relic = pick(ordinaryRelics(run), random);
-            const reward = grantAdventureReward(user, choice.special === 'relicCard' ? { star: 5, type: '일반' } : { relics: 2 }, random);
+            const reward = grantAdventureReward(user, choice.special === 'relicCard' ? { star: 6, type: '일반' } : { relics: 2 }, random);
             run.relics = run.relics.filter(id => id !== relic);
             clampResources(user);
             message = RELICS.find(r => r.id === relic).name + ' 반납\n' + reward;
@@ -630,7 +630,7 @@ function chooseAugment(user, id, random = Math.random) {
         }
         case 'tricksterGift':
         case 'museumNight': {
-            const reward = choice.special === 'museumNight' || random() < .75 ? { relics: 3 } : { star: 6, type: '각성' };
+            const reward = choice.special === 'museumNight' || random() < .75 ? { relics: 3 } : { star: 7, type: '각성' };
             message = grantAdventureReward(user, reward, random);
             if (choice.special === 'museumNight') { run.nextEliteHp = true; message += '\n다음 엘리트 HP +50%'; }
             reveal = { motif: 'contract', positive: true, text: message }; break;

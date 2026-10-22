@@ -1062,6 +1062,7 @@ test('계약 진행과 잭팟 결과는 재접속·중복 요청에도 한 번�
     assert.equal(completed.status, 200);
     assert.match(completed.data.reveal.text, /검 한 자루의 약속, 계약 달성/);
     assert.equal(completed.data.state.run.contracts.length, 2);
+    assert.equal(completed.data.state.run.contracts.at(-1).star, 6);
     const retry = await request('/api/paradise/attack', attackBody);
     assert.deepEqual(retry.data.reveal, completed.data.reveal); assert.equal(retry.data.state.run.contracts.length, 2);
     assert.equal((await request('/api/paradise')).data.run.quests[0].status, 'completed');
@@ -1741,9 +1742,9 @@ test('20분은 전투와 퍼즐에서 흐르고 증강, 길, 이벤트 선택과
     assert.deepEqual(corridor.view(user).run.timer, { remainingMs: 1130000, paused: true });
 });
 
-test('저장된 길과 이벤트 선택의 시계를 한 번 멈추고 전투 진입 시 다시 진행한다', async t => {
+test('저장된 길, 이벤트, 유물 선택의 시계를 한 번 멈추고 전투 진입 시 다시 진행한다', async t => {
     let now = Date.now(); t.mock.method(Date, 'now', () => now);
-    for (const phase of ['route', 'event']) {
+    for (const phase of ['route', 'event', 'relic']) {
         const user = await reset(); corridor.enter(user, () => .99);
         user.paradise.phase = phase; now += 1000;
         assert.equal(corridor.advanceTime(user), true);
@@ -2251,7 +2252,8 @@ test('강제 엘리트, 지정 이벤트, 붕괴, 999층은 갈림길을 생략�
     }
 });
 
-test('모든 층의 엘리트 유물은 60% 확률로 한 번만 세 후보 중 선택하고 중복 요청을 처리한다', async () => {
+test('모든 층의 엘리트 유물은 60% 확률로 세 후보를 제공하며 선택 중 시간 정지와 중복 요청을 처리한다', async t => {
+    let now = Date.now(); t.mock.method(Date, 'now', () => now);
     let user = await reset(); corridor.enter(user); user.paradise.floor = 1; corridor.startCombat(user, 'elite'); corridor.victory(user, () => .5999);
     assert.equal(user.paradise.phase, 'relic'); assert.equal(user.paradise.relics.length, 0);
     user = await reset(); corridor.enter(user); user.paradise.floor = 100; corridor.startCombat(user, 'elite'); corridor.victory(user, () => .60);
@@ -2262,7 +2264,12 @@ test('모든 층의 엘리트 유물은 60% 확률로 한 번만 세 후보 중 
     assert.equal(state.run.phase, 'relic'); assert.equal(state.run.relicPicksRemaining, 1); assert.equal(state.run.canReturn, false);
     assert.equal(state.run.relicChoices.length, 3); assert.equal(new Set(state.run.relicChoices.map(r => r.id)).size, 3);
     assert.ok(state.run.relicChoices.every(r => !r.special && r.id !== 'necklace'));
-    assert.equal(state.run.timer.paused, false);
+    assert.equal(state.run.timer.paused, true);
+    const remaining = state.run.timer.remainingMs;
+    now += 3600000;
+    const restored = (await request('/api/paradise')).data;
+    assert.deepEqual(restored.run.timer, { remainingMs: remaining, paused: true });
+    assert.deepEqual(restored.run.relicChoices, state.run.relicChoices);
     const picks = [];
     for (let i = 0; i < 1; i++) {
         assert.deepEqual((await request('/api/paradise')).data.run.relicChoices, state.run.relicChoices);
@@ -2271,6 +2278,7 @@ test('모든 층의 엘리트 유물은 60% 확률로 한 번만 세 후보 중 
         assert.ok(!picks.includes(choice)); picks.push(choice);
         const selected = await request('/api/paradise/relic', body);
         assert.equal(selected.status, 200); state = selected.data.state;
+        assert.deepEqual(state.run.timer, { remainingMs: remaining, paused: true });
         const retry = await request('/api/paradise/relic', body);
         assert.deepEqual(retry.data.state.run.relics, state.run.relics);
         assert.equal(state.run.relicPicksRemaining, 0);
