@@ -559,3 +559,38 @@ test('신규 유물은 등급별 효과를 적용하고 특수 유물은 일반 
     assert.equal(corridor.survive(user, 0, stats.hp), Math.round(stats.hp * .45));
     assert.equal(resources(user).mp, 0); assert.equal(corridor.survive(user, 0, stats.hp), 0);
 });
+
+
+test('독의 만기일은 새로 부여한 화상을 거두지 않고 기존 화상만 정산한다', async t => {
+    let now = Date.now(); t.mock.method(Date, 'now', () => now); t.mock.method(Math, 'random', () => .99);
+    const user = fresh('venomDetonator');
+    user.equipments.hat = { id: data.Equipment.hat.findIndex(e => e.name === '잿불 모자'), level: 0, transcendStage: 1 };
+    await skill(user, '자인');
+    const burn = user.field.equipmentState.burn;
+    assert.ok(burn && burn.nextTickAt > now, '첫 스킬이 부여한 화상을 유지해야 한다');
+    assert.ok(!user.paradise.combatEvents.at(-1).hits.some(h => h.label === '독의 만기일'));
+    now += 2000; assert.ok(mechanics.dots(user).some(d => d.key === 'burn'));
+    const oldTotal = mechanics.dots(user).reduce((sum, d) => sum + d.damage * d.ticks, 0);
+    await skill(user, '자인');
+    assert.equal(user.field.equipmentState.burn, undefined);
+    const fixed = user.paradise.combatEvents.at(-1).hits.find(h => h.label === '독의 만기일');
+    assert.equal(fixed.damage, Math.round(oldTotal * .5)); assert.equal(fixed.fixed, true);
+    now += 6000;
+    await skill(user, '자인');
+    assert.ok(user.field.equipmentState.burn, '내부 쿨타임 후 새 화상이 다시 발생해야 한다');
+    const previous = user.field.equipmentState.burn;
+    now += 6000; await skill(user, '자인');
+    assert.ok(user.field.equipmentState.burn && user.field.equipmentState.burn !== previous, '같은 공격에서 갱신한 화상은 남겨야 한다');
+    assert.ok(user.paradise.combatEvents.at(-1).hits.some(h => h.label === '독의 만기일'));
+});
+
+test('독의 만기일은 다른 증강이나 스킬이 이미 소비한 지속 피해를 중복 정산하지 않는다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    for (const other of ['bottledAgony', 'skillRupture']) {
+        const user = fresh('venomDetonator', other);
+        mechanics.addDot(user, 'test', '지속 피해', 100, 4);
+        await skill(user, other === 'skillRupture' ? '응혈 폭발' : '자인');
+        assert.ok(!user.paradise.combatEvents.at(-1).hits.some(h => h.label === '독의 만기일'), other);
+        assert.equal(mechanics.dots(user).length, 0);
+    }
+});

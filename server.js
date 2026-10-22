@@ -2185,7 +2185,7 @@ function getHFieldRewards(user, before) {
 function parseFieldOutgoingHits(message) {
     return String(message || '').split(/\r?\n/).reduce((hits, line) => {
         if (!line.includes('⚔️') || !line.includes('피해를 입혔습니다')) return hits;
-        const numbers = line.slice(0, line.indexOf('피해를 입혔습니다')).match(/[\d,]+/g);
+        const numbers = line.slice(0, line.indexOf('피해를 입혔습니다')).split('·')[0].match(/[\d,]+/g);
         const damage = numbers && numbers.length ? Number(numbers[numbers.length - 1].replace(/,/g, '')) : 0;
         const labelMatch = line.match(/·\s*(.+?)\s+피해를 입혔습니다/);
         if (damage > 0) hits.push({ damage, critical: line.includes('치명타'), destiny: line.includes('운명'), label: labelMatch ? labelMatch[1].trim() : null });
@@ -2195,8 +2195,10 @@ function parseFieldOutgoingHits(message) {
 
 function parseFieldIncomingHits(message) {
     return String(message || '').split(/\r?\n/).reduce((hits, line) => {
+        const absorbed = line.match(/보호막이 ([\d,]+) 피해를 흡수/);
+        if (absorbed) { hits.push({ damage: Number(absorbed[1].replace(/,/g, '')), type: 'absorbed' }); return hits; }
         if (!line.includes('❗') || !line.includes('피해를 입었습니다')) return hits;
-        const numbers = line.slice(0, line.indexOf('피해를 입었습니다')).match(/[\d,]+/g);
+        const numbers = line.slice(0, line.indexOf('피해를 입었습니다')).split('·')[0].match(/[\d,]+/g);
         const damage = numbers && numbers.length ? Number(numbers[numbers.length - 1].replace(/,/g, '')) : 0;
         const labelMatch = line.match(/·\s*(.+?)\s+피해를 입었습니다/);
         if (damage > 0) hits.push({ damage, critical: line.includes('치명타'), destiny: line.includes('운명'), label: labelMatch ? labelMatch[1].trim() : null });
@@ -2226,6 +2228,7 @@ function mapFieldTickEvent(event) {
     const ilionDraw = source == '무한홀덤덱';
     return combatEffects.annotateEvent(Object.assign({}, event, {
         action: ilionDraw ? 'skill' : 'tick',
+        dot: /화상|겁화|유서새김|카스 살포|지속 피해/.test(source) && !/폭발/.test(source),
         skillName: ilionDraw ? '헤즈업' : undefined,
         triggeredEffectIds: ilionDraw ? ['equipment:무한홀덤덱'] : undefined,
         effectTarget: ilionDraw ? (damage > 0 ? 'both' : 'actor') : undefined,
@@ -3054,7 +3057,7 @@ function drainWorldBossEvents(userName, bossName) {
             if (event.action == 'boss') return combatEffects.annotateEvent(Object.assign({ receivedEffectElement: '암' }, event));
             const tick = mapFieldTickEvent(event);
             tick.receivedHits = parseFieldIncomingHits(event.message);
-            tick.received = tick.receivedHits.reduce((sum, hit) => sum + hit.damage, 0);
+            tick.received = tick.receivedHits.filter(hit => hit.type !== 'absorbed').reduce((sum, hit) => sum + hit.damage, 0);
             tick.bossRetaliation = tick.received > 0;
             tick.receivedEffectElement = '암';
             return combatEffects.annotateEvent(tick);
@@ -3068,7 +3071,7 @@ function buildWorldBossActionResult(user, before, message, action, skillName) {
     const receivedHits = parseFieldIncomingHits(message);
     const damage = hits.reduce((sum, hit) => sum + Number(hit.damage || 0), 0)
         || Math.max(0, Number(before.bossHp || 0) - Number(endedBoss ? endedBoss.hp : before.bossHp));
-    const received = receivedHits.reduce((sum, hit) => sum + Number(hit.damage || 0), 0);
+    const received = receivedHits.filter(hit => hit.type !== 'absorbed').reduce((sum, hit) => sum + Number(hit.damage || 0), 0);
     return {
         ok: !String(message).startsWith('❌'), message: String(message), state,
         event: combatEffects.annotateEvent({

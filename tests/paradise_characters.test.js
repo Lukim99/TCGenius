@@ -392,18 +392,23 @@ test('워뇨띠: 세 번째 전환은 럭키비키가 되며 기본·즐리·쉐
     assert.match(text, /럭키비키/);
 });
 
-test('키노: 아이돌 할래?의 추가 정신력 회복과 0 정신력 긴급 컴백은 전투당 한 번만 발동한다', async t => {
+test('키노: 앙코르 요청은 일반 공격 3회로 쿨타임을 초기화하고 다음 스킬을 한 번 강화한다', async t => {
     t.mock.method(Math, 'random', () => .99);
+    const freeze = Date.now(); t.mock.method(Date, 'now', () => freeze);
     const user = fresh(16, 'stageHeat', 'emergencyComeback');
     await skill(user, '아이돌 할래?');
     assert.ok(user.field.kino.value >= 80 && user.field.kino.value < 81);
-    user.field.kino.value = 40; user.field.kino.at = Date.now();
-    const freeze = Date.now(); t.mock.method(Date, 'now', () => freeze);
+    const first = lastHit(user).damage;
+    await basic(user); await basic(user);
+    assert.ok(user.field.skillCooldowns['아이돌 할래?'] > freeze);
+    await basic(user);
+    assert.equal(user.field.skillCooldowns['아이돌 할래?'], freeze);
+    assert.equal(user.paradise.battle.characters.kinoEncoreReady, true);
+    user.field.kino.value = 100;
+    await skill(user, '아이돌 할래?', false);
+    assert.equal(lastHit(user).damage, first * 2);
+    assert.equal(user.paradise.battle.characters.kinoEncoreReady, false);
+    user.field.kino.value = 100;
     await skill(user, '아이돌 할래?');
-    assert.equal(user.field.kino.value, 100);
-    assert.equal(user.field.kino.exhausted, false);
-    user.field.kino.value = 40;
-    await skill(user, '아이돌 할래?');
-    assert.equal(user.field.kino.value, 20);
-    assert.equal(user.field.kino.exhausted, true);
+    assert.equal(lastHit(user).damage, first);
 });

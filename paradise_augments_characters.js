@@ -37,7 +37,7 @@ const AUGMENTS = [
     a('guaranteedLucky', 15, '확정 럭키비키', 10, 'gold', 'skill', '모드 전환을 3회 사용할 때마다 럭키비키 모드로 전환합니다.'),
     a('maskCycle', 15, '가면의 순환', 5, 'silver', 'recovery', '기본·즐리·쉐비 모드에서 각각 일반 공격을 적중시키면 최대 HP와 MP의 25%를 회복합니다. 전투마다 한 번 발동합니다.'),
     a('stageHeat', 16, '무대의 열기', 5, 'silver', 'recovery', '아이돌 할래?를 적중시키면 정신력을 추가로 15 회복합니다.'),
-    a('emergencyComeback', 16, '긴급 컴백', 15, 'prismatic', 'recovery', '스킬 사용으로 정신력이 0이 되면 즉시 정신력을 모두 회복합니다. 전투마다 한 번 발동합니다.')
+    a('emergencyComeback', 16, '앙코르 요청', 15, 'prismatic', 'skill', '아이돌 할래?를 적중시킨 뒤 일반 공격을 3회 적중시키면 해당 스킬의 쿨타임을 초기화하고 다음 아이돌 할래?의 피해량이 2배로 증가합니다.')
 ];
 const BY_ID = new Map(AUGMENTS.map(augment => [augment.id, augment]));
 const corridor = () => require('./paradise');
@@ -87,13 +87,6 @@ function onSkill(user, skill, stats, extra) {
         delete user.field.mark;
         notice(extra, '마지막 문장 · 다음 일반 공격에 유서의 피해를 추가합니다.');
     }
-    if (has(user, 'emergencyComeback') && !s.comebackUsed && user.field.kino?.value === 0 && !user.paradise.effects.noHealing) {
-        s.comebackUsed = true;
-        require('./rando_characters').recoverMental(stats, user.field, stats.mental, Date.now());
-        Object.assign(stats, rpg().calculateUserStats(user));
-        extra.mpAfter = Math.floor(user.field.kino.value);
-        notice(extra, '긴급 컴백 · 정신력 전부 회복');
-    }
 }
 function afterCooldown(user, name) {
     if (name === '나인 멘스 모리스' && has(user, 'perfectNine') && state(user).nmmSpent === 9 && !state(user).nineUsed) {
@@ -117,8 +110,14 @@ function prepareAttack(user, stats, extra) {
     if (extra.skillName === 'KICK BACK' && has(user, 'lastChorus') && s.chorusReady) { s.chorusReady = false; extra.forceCritical = true; notice(extra, '마지막 후렴 · 확정 치명타'); }
 }
 function modifyHit(user, extra, hit) {
-    if (!active(user) || !direct(extra) || !extra.isBasic || hit.finalDamage <= 0) return;
+    if (!active(user) || !direct(extra) || hit.finalDamage <= 0) return;
     const s = state(user);
+    if (extra.skillName === '아이돌 할래?' && has(user, 'emergencyComeback') && s.kinoEncoreReady) {
+        s.kinoEncoreReady = false; hit.finalDamage *= 2;
+        for (const detail of hit.hitDetails || []) { detail.damage *= 2; if (detail.fixedDamage) detail.fixedDamage *= 2; }
+        notice(extra, '앙코르 요청 · 아이돌 할래? 피해 2배');
+    }
+    if (!extra.isBasic) return;
     const add = (amount, label) => {
         amount = Math.round(amount);
         if (amount <= 0) return;
@@ -135,6 +134,9 @@ function afterHit(user, stats, extra, hit) {
     if (!active(user) || !direct(extra) || hit.finalDamage <= 0) return;
     const s = state(user), now = Date.now(), name = extra.skillName;
     if (extra.isBasic) {
+        if (has(user, 'emergencyComeback') && s.kinoEncoreHits != null && ++s.kinoEncoreHits >= 3) {
+            delete s.kinoEncoreHits; s.kinoEncoreReady = true; reduceCooldown(user, '아이돌 할래?'); notice(extra, '앙코르 요청 · 아이돌 할래? 재사용');
+        }
         if (has(user, 'zainRefrain') && s.zainReady) { s.zainReady = false; reduceCooldown(user, '자인'); notice(extra, '자인 리프레인 · 자인 재사용'); }
         if (has(user, 'endlessFrenzy') && user.field.sivalon?.expired_at > now && (s.frenzyExtension || 0) < 5000) { user.field.sivalon.expired_at += 500; s.frenzyExtension = (s.frenzyExtension || 0) + 500; }
         if (has(user, 'glenCheers') && s.glenReady) { s.glenReady = false; corridor().heal(user, .10); }
@@ -170,7 +172,10 @@ function afterHit(user, stats, extra, hit) {
             notice(extra, text);
         }
     }
-    if (name === '아이돌 할래?' && has(user, 'stageHeat') && !user.paradise.effects.noHealing) require('./rando_characters').recoverMental(stats, user.field, 15, now);
+    if (name === '아이돌 할래?') {
+        if (has(user, 'emergencyComeback')) s.kinoEncoreHits = 0;
+        if (has(user, 'stageHeat') && !user.paradise.effects.noHealing) require('./rando_characters').recoverMental(stats, user.field, 15, now);
+    }
 }
 function onDamage(user, stats, absorbed, received) {
     if (!active(user)) return;

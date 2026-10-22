@@ -1063,6 +1063,10 @@ function view(user) {
         baseRewards: config?.baseRewards || [], entryBlocked: user.field && !user.field.paradise ? '다른 전투를 먼저 마쳐주세요.' : null, run: null };
     if (!run) return require('./paradise_hell').decorateView(result, user);
     const { mirror, ...enemy } = run.enemy || {};
+    if (mirror) {
+        enemy.shieldLayers = require('./combat_shields').active(mirror, Date.now()).map(({ amount, expiresAt }) => ({ amount, expiresAt }));
+        enemy.shield = enemy.shieldLayers.reduce((sum, layer) => sum + layer.amount, 0);
+    }
     result.run = { id: run.id, status: run.status, phase: run.phase, completed: !!run.completed, canReturn: canReturn(user), canClaim: run.status === 'ended' && !run.claimed && rewardEligible(run), floor: run.floor, clearedFloor: run.clearedFloor, distortion: run.distortion, outcome: run.outcome || null, claimed: !!run.claimed, battlesWon: run.battlesWon, elitesWon: run.elitesWon, enemy: run.phase === 'combat' ? enemy : null,
         choices: run.phase === 'augment' ? run.choices.filter(id => !obtainedAugment(run, id)).map(id => AUGMENTS.find(a => a.id === id)).filter(Boolean).map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous }) => ({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous })) : [],
         event: run.event ? { id: run.event.id, ...EVENTS[run.event.id], equipment: run.event.equipment || null, choices: run.phase === 'event' ? eventChoices(user) : [], ...(run.phase === 'puzzle' ? { puzzle: run.event.puzzle.publicPuzzle, deadline: run.event.deadline } : {}) } : null,

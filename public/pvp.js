@@ -586,12 +586,12 @@
                 const p=(time-pop.start)/950;
                 if(p<0)return true;
                 if(p>=1)return false;
-                const ease=1-Math.pow(1-clamp(p,0,1),3),x=w*sideX(pop.side,narrow),y=h*pop.y-ease*62,
-                    alpha=clamp(Math.min(p*8,(1-p)*3.4),0,1),scale=.7+Math.sin(Math.min(1,p)*Math.PI)*.36;
+                const ease=1-Math.pow(1-clamp(p,0,1),3),x=w*sideX(pop.side,narrow),y=h*pop.y-(pop.dot?(reducedMotion?p*18:Math.sin(p*Math.PI)*30+p*10):ease*62),
+                    alpha=clamp(Math.min(p*8,(1-p)*3.4),0,1),scale=pop.dot?(reducedMotion?1:.9+Math.sin(p*Math.PI)*.1):.7+Math.sin(Math.min(1,p)*Math.PI)*.36;
                 this.ctx.save();this.ctx.globalAlpha=alpha;this.ctx.translate(x,y);this.ctx.scale(scale,scale);
                 if(pop.label)this.text(pop.label,0,-26,narrow?10:12,900,'center','#ffb0a8');
                 this.text(pop.text,0,0,narrow?pop.size*.76:pop.size,900,'center',pop.color);
-                if(pop.sub)this.text(pop.sub,0,25,narrow?9:11,800,'center','#efe4cd');
+                if(pop.sub)this.text(pop.sub,0,pop.dot?17:25,pop.dot?(narrow?8:9):(narrow?9:11),800,'center','#efe4cd');
                 this.ctx.restore();
                 return true;
             });
@@ -760,10 +760,10 @@
                 }
                 hud.addPop({
                     side: target,
-                    text: shieldAbsorb ? '흡수 ' + number(hit.damage) : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
-                    color: shieldAbsorb ? '#b8d8ff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : '#ffd88a',
-                    size: shieldAbsorb || summonAbsorb ? 22 : 24,
-                    sub: hit.label || (index === 0 ? event.skillName || (action === 'dot' ? '지속 피해' : '소환수') : '')
+                    dot: action === 'dot', text: shieldAbsorb ? '(-' + number(hit.damage) + ')' : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
+                    color: shieldAbsorb || effectCatalog.damageStyle(event,hit).fixed ? '#ffffff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : '#ffd88a',
+                    size: action === 'dot' ? 23 : shieldAbsorb || summonAbsorb ? 22 : 24,
+                    sub: shieldAbsorb ? '' : hit.label || (index === 0 ? event.skillName || (action === 'dot' ? '지속 피해' : '소환수') : '')
                 });
                 if (!shieldAbsorb && !summonAbsorb) { hud.impact(false); audio.hit(); }
             }, index * 95));
@@ -784,9 +784,9 @@
                     else renderer.strike(target, Object.assign({}, event, { criticalCount: hitCritical ? 1 : 0 }),presentationHit,actor);
                 }
                 hud.addPop({
-                    side: target, text: shieldAbsorb ? '흡수 ' + number(hit.damage) : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
-                    color: shieldAbsorb ? '#b8d8ff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : hitCritical ? '#ff5d4d' : '#ffe06e',
-                    size: shieldAbsorb || summonAbsorb ? 24 : target === 'me' ? 28 : hitCritical ? 46 : 34, label: hitCritical ? '치명타' : '', sub: hit.label || (index === 0 ? event.skillName || '' : '')
+                    side: target, text: shieldAbsorb ? '(-' + number(hit.damage) + ')' : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
+                    color: shieldAbsorb || effectCatalog.damageStyle(event,hit).fixed ? '#ffffff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : hitCritical ? '#ff5d4d' : '#ffe06e',
+                    size: shieldAbsorb || summonAbsorb ? 24 : target === 'me' ? 28 : hitCritical ? 46 : 34, label: hitCritical && !shieldAbsorb ? '치명타' : '', sub: shieldAbsorb ? '' : hit.label || (index === 0 ? event.skillName || '' : '')
                 });
                 if (!shieldAbsorb && !summonAbsorb) {
                     audio.hit();

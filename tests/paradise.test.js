@@ -1144,7 +1144,8 @@ test('거울의 독립 타격도 플레이어 보호막·회랑 부활과 최종
     rpg.advanceParadiseMirror(user);
     assert.equal(corridor.getResources(user).hp, hp);
     assert.equal(user.paradise.combatEvents.at(-1).received, 0);
-    assert.equal(user.paradise.combatEvents.at(-1).receivedHits.reduce((n, hit) => n + hit.damage, 0), 0);
+    assert.equal(user.paradise.combatEvents.at(-1).receivedHits.filter(hit => hit.type !== 'absorbed').reduce((n, hit) => n + hit.damage, 0), 0);
+    assert.ok(user.paradise.combatEvents.at(-1).receivedHits.some(hit => hit.type === 'absorbed' && hit.damage > 0));
     user.field.shield = null; user.field.shieldLayers = []; corridor.getResources(user).hp = 1; user.paradise.effects.unyielding = 1;
     mirror.nextActionAt = Date.now();
     rpg.advanceParadiseMirror(user);
@@ -1780,4 +1781,61 @@ test('줄별 재설정 API는 다른 능력을 유지하고 같은 요청을 반
     const second = await request(route,{requestId:crypto.randomUUID(),revision:1,index:1});
     assert.equal(second.status,200); assert.equal(second.data.state.progression.tokens,49800);
     assert.deepEqual(second.data.state.progression.traits.lines.map(l => l.id), ['deathInsurance','tokenBounty']);
+});
+
+
+test('거울과 플레이어의 보호막은 흡수량을 타격 사건으로 보내고 HP 피해와 분리한다', async t => {
+    let now = Date.now(); t.mock.method(Date, 'now', () => now); t.mock.method(Math, 'random', () => .99);
+    const shields = require('../combat_shields'), user = await reset(); corridor.enter(user);
+    Object.assign(user.paradise.enemy, { atk: 100, crit: 0, cmb: 0, maxCmb: 0 });
+    shields.grant(user.field, { source: 'test', amount: 1e8, expiresAt: now + 60000 });
+    now += 4000; rpg.advanceParadiseCombat(user, now);
+    const incoming = user.paradise.combatEvents.at(-1);
+    assert.equal(incoming.received, 0); assert.ok(incoming.receivedHits.some(h => h.type === 'absorbed' && h.damage > 0));
+    corridor.startCombat(user, 'mirror');
+    const mirror = user.paradise.enemy.mirror;
+    mirror.snapshot.stats.avd = 0;
+    shields.grant(mirror, { source: 'mirror-test', amount: 1e9, expiresAt: now + 50000 });
+    const hp = mirror.hp;
+    rpg.buildHuntResult(user, {}, 100, { isBasic: true, comboHitCount: 1 });
+    const outgoing = user.paradise.combatEvents.at(-1);
+    assert.equal(outgoing.damage, 0); assert.equal(mirror.hp, hp);
+    const absorbed = outgoing.hits.filter(h => h.type === 'absorbed').reduce((n,h) => n + h.damage, 0);
+    assert.ok(absorbed > 0);
+    const enemy = corridor.view(user).run.enemy;
+    assert.equal(enemy.shield, 1e9 - absorbed);
+    assert.equal(require('../public/combat-effects').shieldAmount(enemy, now + 50000), 0);
+    mirror.shieldLayers = []; mirror.shield = null;
+    shields.grant(mirror, { source: 'mirror-test', amount: 1, expiresAt: now + 50000 });
+    rpg.buildHuntResult(user, {}, 100, { isBasic: true, comboHitCount: 1 });
+    const partial = user.paradise.combatEvents.at(-1);
+    assert.equal(partial.hits.find(h => h.type === 'absorbed').damage, 1);
+    assert.ok(partial.damage > 0);
+    assert.equal(partial.hits.filter(h => h.type !== 'absorbed').reduce((n,h) => n + h.damage, 0), partial.damage);
+    assert.equal(corridor.view(user).run.enemy.shield, 0);
+});
+
+test('전투 숫자는 보호막·고정 피해·지속 피해를 구별하고 소환 공격은 지속 피해로 취급하지 않는다', () => {
+    const { damageStyle } = require('../public/combat-effects');
+    assert.deepEqual(damageStyle({action:'basic'}, {type:'absorbed'}), {shield:true,fixed:false,dot:false});
+    for (const hit of [{fixed:true},{label:'스킬 고정 피해'},{label:'000 추가 피해'}]) assert.equal(damageStyle({},hit).fixed,true);
+    assert.equal(damageStyle({dot:true},{}).dot,true); assert.equal(damageStyle({action:'dot'},{}).dot,true);
+    assert.equal(damageStyle({action:'summon'},{}).dot,false); assert.equal(damageStyle({action:'tick',dot:false},{}).dot,false);
+});
+
+test('일반 WebGL API도 보호막 흡수량과 숫자가 포함된 고정 피해 및 화상 사건을 전달한다', async t => {
+    const user = await reset();
+    user.field = { name: '부타게임[H]', phase: 'elite', elite: { hp: 1e9 }, skillCooldowns: {}, equipmentState: {} };
+    await user.save();
+    t.mock.method(rpg, 'useBasicAttackInField', async () => '⚔️ 1,234 · 000 추가 피해 피해를 입혔습니다.\n🛡️ 보호막이 567 피해를 흡수했습니다.');
+    const result = await request('/api/hfield/attack', {});
+    assert.equal(result.status, 200); assert.equal(result.data.ok, true);
+    assert.equal(result.data.event.hits[0].damage, 1234);
+    assert.equal(require('../public/combat-effects').damageStyle(result.data.event, result.data.event.hits[0]).fixed, true);
+    assert.equal(result.data.event.receivedHits[0].type, 'absorbed');
+    assert.equal(result.data.event.receivedHits[0].damage, 567); assert.equal(result.data.event.received, 0);
+    t.mock.method(rpg, 'drainFieldTickEvents', () => ['화상', '화상 폭발', '익테봇'].map(source => ({ fieldName: user.field.name, damage: 50, source })));
+    const state = await request('/api/hfield');
+    assert.equal(state.status, 200);
+    assert.deepEqual(state.data.events.map(event => event.dot), [true, false, false]);
 });

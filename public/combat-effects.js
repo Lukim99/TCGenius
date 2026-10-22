@@ -312,8 +312,16 @@
         return player.shieldLayers.reduce((sum, layer) => sum + (!layer.expiresAt || layer.expiresAt > now ? Math.max(0, Number(layer.amount || 0)) : 0), 0);
     }
 
+    // 피해 숫자의 의미는 필드와 PVP에서 동일하게 표시한다. 레이드 HUD는 별도로 유지한다.
+    function damageStyle(event, hit) {
+        const shield = hit.type === 'absorbed';
+        const fixed = !!hit.fixed || hit.type === 'fixed' || labelEffects(hit.label).includes(id('combat', '고정 피해'));
+        const dot = event.dot === true || event.action === 'dot';
+        return { shield, fixed, dot };
+    }
+
     return {
-        DIRS, SKILL_TARGETS, id, unique, sourceEffects, labelEffects, skillEffects, skillTarget, shieldAmount,
+        DIRS, SKILL_TARGETS, id, unique, sourceEffects, labelEffects, skillEffects, skillTarget, shieldAmount, damageStyle,
         effectIdsFor, presentationEffectIds,
         eventEffectIds, hitEffectIds, annotateEvent, parseEffectId,
         fileName, assetPath, assetUrl, motionProfile, drawCardDeck, drawAttackOrder

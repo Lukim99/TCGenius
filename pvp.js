@@ -1009,6 +1009,7 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
             critical: !!(component && (component.isCritical || component.critical)),
             destiny: !!(component && (component.isDestinyDamage || component.destiny)),
             type: component && component.type || 'hit',
+            fixed: !!component.fixed,
             label: component && component.label || null,
             hitIndex: component && component.hitIndex != null ? Number(component.hitIndex) : null,
             isComboHit: !!(component && component.isComboHit),
@@ -1070,6 +1071,7 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
             remaining -= component.damage;
         });
     }
+    if (defender.corridorReceiveDamage && extra.shieldAbsorbed > 0) components.push({ damage: extra.shieldAbsorbed, type: 'absorbed', label: '보호막 흡수' });
     if (isDirectAttack && defender.hp > 0 && defender.hp / Math.max(1, defender.maxHp) < .05 && equipmentStage(attacker, '징수의 총')) {
         const beforeExecute = defender.hp;
         if (defender.corridorReceiveDamage) defender.corridorReceiveDamage(beforeExecute, 1, t);

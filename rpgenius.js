@@ -4827,9 +4827,9 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         }
         hitDamage = transformedTotal;
         const componentMeta = { hitIndex: i, isCritical: criticalResult.isCritical, isDestinyDamage, isTenthAtk, isComboHit: isComboExtraHit, isComboLastCrit: forceComboLastCrit, isAbyssExtraHit };
-        damageComponents.push(Object.assign({ damage: Math.max(0, baseComponentDamage), type: 'hit', label: isAbyssExtraHit ? '심연 추가 공격' : null }, componentMeta));
+        damageComponents.push(Object.assign({ damage: Math.max(0, baseComponentDamage), type: 'hit', fixed: isFixedCriticalDamage, label: isAbyssExtraHit ? '심연 추가 공격' : isFixedCriticalDamage ? '고정 피해' : null }, componentMeta));
         transformedEarly.forEach(component => {
-            if (component.damage > 0) damageComponents.push(Object.assign({}, componentMeta, { damage: component.damage, type: 'additional', label: component.label, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboLastCrit: false }));
+            if (component.damage > 0) damageComponents.push(Object.assign({}, componentMeta, { damage: component.damage, type: 'additional', fixed: true, label: component.label, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboLastCrit: false }));
         });
         const addDamageComponent = (damage, type, label) => {
             const value = Math.max(0, Math.round(Number(damage || 0)));
@@ -4920,7 +4920,7 @@ function formatHitDetailLines(hitResult, prefix, suffix) {
 }
 
 function hasSeparateDamageComponents(hitResult) {
-    return !!(hitResult && Array.isArray(hitResult.damageComponents) && hitResult.damageComponents.length > 1);
+    return !!(hitResult && Array.isArray(hitResult.damageComponents) && (hitResult.damageComponents.length > 1 || hitResult.damageComponents.some(component => component.fixed)));
 }
 
 function getSkillValue(skill, index, star) {
@@ -7475,6 +7475,7 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     const beforeShield = received;
     const shieldBefore = Number(getFieldShield(user)?.amount || 0);
     received = applyFieldShieldAbsorption(user, received, lines);
+    extra.shieldAbsorbed = beforeShield - received;
     paradiseCharacters.onDamage(user, stats, beforeShield - received, received);
     const beforeHp = Number(resources.hp);
     resources.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - received), at), stats.hp);
@@ -7512,13 +7513,14 @@ function advanceParadiseCombat(user, at = Date.now()) {
         const stats = calculateUserStats(user), slots = calculateCardSlotEffects(user), lines = [];
         const avoided = Math.random() < Number(stats.avd || 0);
         const hit = avoided ? null : calculateMonsterAttackHitResult(enemy, stats, slots, {});
-        const received = receiveParadiseDamage(user, hit?.finalDamage || 0, hit?.hitCount || 0, stats, slots, lines, time);
+        const incomingExtra = {};
+        const received = receiveParadiseDamage(user, hit?.finalDamage || 0, hit?.hitCount || 0, stats, slots, lines, time, incomingExtra);
         if (avoided) lines.unshift('💨 공격을 회피했습니다.');
         const defeated = resources.hp <= 0, cleared = enemy.hp <= 0 && !defeated;
         run.combatSequence = Number(run.combatSequence || 0) + 1;
         run.combatEvents = [...(run.combatEvents || []), combatEffects.annotateEvent({
             id: run.id + ':' + run.combatSequence, at: time, enemyId: enemy.id, actor: 'enemy', action: 'basic',
-            hits: [], damage: 0, received, receivedHits: avoided ? [{ avoided: true, damage: 0 }] : [{ damage: received, critical: !!hit?.criticalCount }],
+            hits: [], damage: 0, received, receivedHits: avoided ? [{ avoided: true, damage: 0 }] : [{ damage: received, critical: !!hit?.criticalCount }, ...(incomingExtra.shieldAbsorbed > 0 ? [{ damage: incomingExtra.shieldAbsorbed, type: 'absorbed' }] : [])],
             targetHp: enemy.hp, defeated, cleared
         })].slice(-12);
         run.combatLog = [...lines, ...(run.combatLog || [])].slice(0, 18);
@@ -7546,10 +7548,11 @@ function advanceParadiseMirror(user, at = Date.now()) {
     result.events.forEach((event, index) => {
         run.combatSequence = Number(run.combatSequence || 0) + 1;
         const last = index === result.events.length - 1, incoming = event.actor === 'opp';
-        const hits = (event.hits || []).filter(hit => !['absorbed', 'summonAbsorbed'].includes(hit.type));
+        const hits = event.hits || [];
         run.combatEvents = [...(run.combatEvents || []), combatEffects.annotateEvent({
             ...event, id: run.id + ':' + run.combatSequence, enemyId: enemy.id,
             actor: incoming ? 'enemy' : 'player',
+            dot: event.action === 'dot',
             action: event.action === 'attack' ? 'basic' : event.action === 'skill' ? 'skill' : 'tick',
             hits: incoming ? [] : hits, damage: incoming ? 0 : event.damage,
             receivedHits: incoming ? hits : [], received: incoming ? event.damage : 0,
@@ -7580,13 +7583,15 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     const hit = calculateAttackHitResult(raw, Math.max(0, Number(targetStats.def || 0) - Number(stats.atkDefReduce || 0)), Number(extra.pnt ?? stats.pnt ?? 0) + Number(extra.pntBonus || 0), stats, slots, attackExtra, getCombatStats(targetStats));
     const multiplier = paradise.attackMultiplier(user, extra);
     hit.finalDamage = Math.max(0, Math.round(hit.finalDamage * multiplier));
-    if (multiplier !== 1) for (const detail of hit.hitDetails || []) detail.damage = Math.round(Number(detail.damage || 0) * multiplier);
+    if (multiplier !== 1) for (const detail of hit.hitDetails || []) { detail.damage = Math.round(Number(detail.damage || 0) * multiplier); if (detail.fixedDamage) detail.fixedDamage = Math.round(detail.fixedDamage * multiplier); }
     paradise.modifyHit(user, extra, hit);
     paradiseCharacters.modifyHit(user, extra, hit);
     paradiseMechanics.modifyHit(user, stats, extra, hit);
+    let mirrorAbsorbed = [];
     if (enemy.mirror) {
         enemy.mirror.hp = enemy.hp;
         const result = require('./pvp').corridorMirrorHit(enemy.mirror, user, hit.finalDamage, extra);
+        mirrorAbsorbed = (result.hits || []).filter(detail => ['absorbed', 'summonAbsorbed'].includes(detail.type));
         hit.finalDamage = result.damage; enemy.hp = result.hp;
         if (result.dodged) { hit.criticalCount = 0; hit.hitCount = 0; }
         if (result.reflectedDamage) resources.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, resources.hp, Math.max(0, resources.hp - result.reflectedDamage), Date.now()), stats.hp);
@@ -7616,8 +7621,10 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
             received = incoming ? incoming.finalDamage : 0;
             receivedHits = incoming ? Number(incoming.hitCount || 1) : 0;
             if (!incoming) lines.push('💨 공격을 회피했습니다.');
-            received = receiveParadiseDamage(user, received, receivedHits, stats, slots, lines);
+            const incomingExtra = {};
+            received = receiveParadiseDamage(user, received, receivedHits, stats, slots, lines, Date.now(), incomingExtra);
             if (received > 0) presentationHits.push({ damage: received, critical: false });
+            if (incomingExtra.shieldAbsorbed > 0) presentationHits.push({ damage: incomingExtra.shieldAbsorbed, type: 'absorbed' });
         }
     }
     if (run.effects.noHealing) {
@@ -7630,7 +7637,11 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     else if (enemy.hp <= 0) { paradise.victory(user); lines.push('전투 승리!'); }
     else if (manual) setNextFieldActionAt(user);
     // 전투 연출에는 회복과 섞인 HP 차이가 아니라 엔진이 판정한 타격을 전달한다.
-    const hits = (hit.hitDetails || []).map(detail => ({ damage: detail.damage, critical: !!detail.isCritical, destiny: !!detail.isDestinyDamage }));
+    const hits = (hit.hitDetails || []).flatMap(detail => {
+        const fixed = Math.min(detail.damage, Math.max(0, Number(detail.fixedDamage || 0)));
+        return [{ damage: detail.damage - fixed, critical: !!detail.isCritical, destiny: !!detail.isDestinyDamage, label: detail.label },
+            ...(fixed > 0 ? [{ damage: fixed, fixed: true, label: detail.label || '고정 피해' }] : [])].filter(part => part.damage > 0);
+    });
     // 거울의 회피/방어가 최종 피해를 바꾼 경우 타격별 숫자에도 같은 판정을 반영한다.
     const detailTotal = hits.reduce((sum, detail) => sum + detail.damage, 0);
     if (detailTotal && detailTotal !== hit.finalDamage) {
@@ -7638,13 +7649,15 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         hits.forEach((detail, index) => { detail.damage = index === hits.length - 1 ? remaining : Math.min(remaining, Math.round(detail.damage * hit.finalDamage / detailTotal)); remaining -= detail.damage; });
     }
     if (!hits.length && hit.finalDamage > 0) hits.push({ damage: hit.finalDamage, critical: !!hit.criticalCount });
+    hits.push(...mirrorAbsorbed);
     run.combatSequence = Number(run.combatSequence || 0) + 1;
     const event = combatEffects.annotateEvent({
         id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId: enemy.id,
         action: manual ? extra.isBasic ? 'basic' : 'skill' : 'tick', skillName: extra.skillName || null,
+        dot: !!extra.paradiseDot || !!extra.dotAttack && !extra.isBotAutoAttack,
         triggeredEffectIds: extra.triggeredEffectIds || [], effectElement: extra.attackElement || null,
         receivedEffectElement: enemy.element || null, hits, damage: hit.finalDamage,
-        receivedHits: presentationHits, received: presentationHits.reduce((sum, detail) => sum + detail.damage, 0),
+        receivedHits: presentationHits, received: presentationHits.filter(detail => detail.type !== 'absorbed').reduce((sum, detail) => sum + detail.damage, 0),
         criticalCount: hit.criticalCount || 0, targetHp: enemy.hp,
         cleared: enemy.hp <= 0 && !defeated, defeated
     });

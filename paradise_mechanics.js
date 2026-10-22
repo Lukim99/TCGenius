@@ -9,6 +9,7 @@ const state = user => user.paradise.battle.mechanics ||= {};
 const expedition = user => user.paradise.mechanics ||= {};
 const direct = extra => !extra.dotAttack && !extra.summonAttack && !extra.isBotAutoAttack;
 const isDot = extra => extra.paradiseDot === true;
+const consumedDots = new WeakSet();
 const notice = (extra, text) => { extra.notice = [extra.notice, text].filter(Boolean).join(' / '); };
 const count = (s, key, n = 1) => (s[key] = Number(s[key] || 0) + n);
 const ultimate = (user, name) => rpg().getUltimateSkills(user).some(entry => entry.skill.name === name);
@@ -56,24 +57,25 @@ function dots(user, now = Date.now()) {
     if (!active(user)) return [];
     const result = [], s = state(user);
     const add = (key, dot, damage, endKey, nextKey, interval, remove) => {
-        if (!dot || !(dot[endKey] > now)) return;
+        if (!dot || consumedDots.has(dot) || !(dot[endKey] > now)) return;
         const next = nextKey ? Number(dot[nextKey] || now + interval) : now + interval;
         const ticks = Math.max(0, Math.floor((dot[endKey] - Math.max(now, next)) / interval) + 1);
         if (ticks) result.push({ key, damage: Number(damage || 0), ticks,
-            extend: ms => { dot[endKey] += ms; }, remove });
+            get consumed() { return consumedDots.has(dot); },
+            extend: ms => { dot[endKey] += ms; }, remove: () => { consumedDots.add(dot); remove(); } });
     };
     for (const [key, dot] of Object.entries(s.dots || {}))
-        add(key, dot, dot.damage, 'until', 'nextAt', dot.interval, () => { delete s.dots[key]; });
+        add(key, dot, dot.damage, 'until', 'nextAt', dot.interval, () => { if (s.dots[key] === dot) delete s.dots[key]; });
     for (const key of ['burn', 'hellfire']) {
         const dot = user.field.equipmentState?.[key];
-        add(key, dot, dot?.tickDamage, 'expiredAt', 'nextTickAt', Number(dot?.intervalMs || 2000), () => { delete user.field.equipmentState[key]; });
+        add(key, dot, dot?.tickDamage, 'expiredAt', 'nextTickAt', Number(dot?.intervalMs || 2000), () => { if (user.field.equipmentState[key] === dot) delete user.field.equipmentState[key]; });
     }
     const mark = user.field.mark;
-    add('mark', mark, mark?.dot, 'expired_at', null, 2000, () => { delete user.field.mark; });
+    add('mark', mark, mark?.dot, 'expired_at', null, 2000, () => { if (user.field.mark === mark) delete user.field.mark; });
     const spray = user.field.kino?.dot;
     if (spray) {
         const stats = rpg().calculateUserStats(user);
-        add('spray', spray, stats.atk * spray.rate * (1 + Number(stats.dotDamage || 0)), 'until', 'nextAt', 2000, () => { delete user.field.kino.dot; });
+        add('spray', spray, stats.atk * spray.rate * (1 + Number(stats.dotDamage || 0)), 'until', 'nextAt', 2000, () => { if (user.field.kino.dot === spray) delete user.field.kino.dot; });
     }
     return result;
 }
@@ -174,6 +176,7 @@ function skillView(user) {
 }
 function onSkill(user, name, stats, extra) {
     if (!active(user)) return;
+    if (has(user, 'venomDetonator')) extra.maturingDots = dots(user);
     const s = state(user), isUltimate = ultimate(user, name);
     if (!isUltimate) s.normalSkills = [...new Set([...(s.normalSkills || []), name])];
     if (has(user, 'pilferTurn') && s.enemyActionAt && Date.now() - s.enemyActionAt <= 1500 && s.pilferedAt !== s.enemyActionAt) {
@@ -270,6 +273,8 @@ function prepareAttack(user, stats, extra) {
     const s = state(user);
     if (isDot(extra)) { extra.disableCritical = true; stats.ilionForceCritical = false; extra.dotTypes = dots(user).length; return; }
     if (!direct(extra)) return;
+    // 이번 공격이 새로 부여하는 화상은 만기 회수 대상에 포함하지 않는다.
+    if (extra.isSkill && has(user, 'venomDetonator')) extra.maturingDots ||= dots(user);
     if (s.meltReady) { extra.defReductionBonus = Number(extra.defReductionBonus || 0) + .50; s.meltReady = false; notice(extra, '갑옷을 녹이는 시간'); }
     if (s.ruptureReady) { extra.defReductionBonus = 1; s.ruptureReady = false; notice(extra, '세 번째 균열'); }
     if (extra.isBasic) {
@@ -300,12 +305,12 @@ function modifyHit(user, stats, extra, hit) {
     if (!active(user)) return;
     const s = state(user), scale = mul => {
         hit.finalDamage = Math.round(hit.finalDamage * mul);
-        for (const detail of hit.hitDetails || []) detail.damage = Math.round(detail.damage * mul);
+        for (const detail of hit.hitDetails || []) { detail.damage = Math.round(detail.damage * mul); if (detail.fixedDamage) detail.fixedDamage = Math.round(detail.fixedDamage * mul); }
     };
     const add = (amount, label) => {
         amount = Math.max(0, Math.round(amount));
         if (!amount) return;
-        hit.finalDamage += amount; (hit.hitDetails ||= []).push({ damage: amount, isCritical: false, label });
+        hit.finalDamage += amount; (hit.hitDetails ||= []).push({ damage: amount, fixedDamage: amount, isCritical: false, label });
         notice(extra, label + ' · ' + amount.toLocaleString('ko-KR') + ' 피해');
     };
     if (isDot(extra)) {
@@ -330,7 +335,11 @@ function modifyHit(user, stats, extra, hit) {
         s.bottled = true; expedition(user).bottledDamage = Math.min(stats.atk * 12, consumeDots(user) * .75);
         notice(extra, '고통의 병조림 · 다음 전투에 고통을 저장했습니다.');
     }
-    if (extra.isSkill && has(user, 'venomDetonator') && hit.finalDamage > 0) add(consumeDots(user) * .50, '독의 만기일');
+    if (extra.isSkill && has(user, 'venomDetonator') && hit.finalDamage > 0) {
+        const matured = (extra.maturingDots || []).filter(dot => !dot.consumed);
+        add(matured.reduce((sum, dot) => sum + dot.damage * dot.ticks, 0) * .50, '독의 만기일');
+        matured.forEach(dot => dot.remove());
+    }
     if (s.stolenHits > 0 && hit.finalDamage > 0) { s.stolenHits--; add(s.stolenAttack, '반쪽짜리 약탈'); }
     if (has(user, 'comboSheath') && hit.comboHitCount > 1) { add(s.sheathDamage, '미완성 검무'); s.sheathDamage = 0; }
     if (extra.isBasic) {
