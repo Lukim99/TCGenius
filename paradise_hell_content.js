@@ -3,6 +3,7 @@ const KEYS = [
     { name: '화려한 지옥 열쇠', drops: 6, icon: 'hell-key-ornate' },
     { name: '찬란한 지옥 열쇠', drops: 7, icon: 'hell-key-radiant' }
 ];
+const CHEST_WEIGHTS = { awakeningCard: 2.5, jobCard: 2.5, orb: 6, normalCard: 6, heavenTicket: 6, protection: 10, fragment: 10, invitation: 12, key: 12, goldPouch: 12, bait: 12, blackFlame: 9 };
 // 명시 등록용 최초 보상표. 실행 중에는 운영 Paradise.hell과 입장 시 저장한 표를 사용한다.
 const INITIAL_CONFIG = { enabled: true, rewards: [
     { id: 'orb', name: '보주', kind: 'orb', counts: [1,2,3,4,5,6,7,8,10,12,15] },
@@ -17,5 +18,5 @@ const INITIAL_CONFIG = { enabled: true, rewards: [
     { id: 'goldPouch', name: '황금 주머니', kind: 'item', item: '황금 주머니', counts: [20,50,80,200,450,850,1250,2000,3500,7000,10000] },
     { id: 'heavenTicket', name: '천상 입장권', kind: 'item', item: '천상의 회랑 입장권', counts: [1,2,3,4,5,6,8,10,12,15,18] },
     { id: 'blackFlame', name: '검은 불', kind: 'item', item: '검은 불', counts: [5,10,25,50,80,120,200,270,360,480,800] }
-] };
-module.exports = { KEYS, INITIAL_CONFIG };
+].map(reward => ({ ...reward, weight: CHEST_WEIGHTS[reward.id] })) };
+module.exports = { KEYS, INITIAL_CONFIG, CHEST_WEIGHTS };

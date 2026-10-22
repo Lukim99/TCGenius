@@ -13,10 +13,18 @@ function validateConfig(config) {
     for (const reward of config.rewards) {
         if (!reward || typeof reward.id !== 'string' || ids.has(reward.id) || !reward.name || !validCounts(reward.counts) || !['orb','item','card'].includes(reward.kind)) return '지옥 보상에는 고유 id, name, kind, 11개 구간의 양의 정수 counts가 필요합니다.';
         ids.add(reward.id);
+        if (reward.weight !== undefined && (typeof reward.weight !== 'number' || !Number.isFinite(reward.weight) || reward.weight < 0)) return '상자 가중치는 0 이상의 유한한 숫자여야 합니다.';
         if (reward.kind === 'item' && !(typeof reward.item === 'string' && reward.item.trim()) && !(Array.isArray(reward.items) && reward.items.length === 11 && reward.items.every(name => typeof name === 'string' && name.trim()))) return '아이템 보상에는 item 또는 11개 구간의 items 이름이 필요합니다.';
         if (reward.kind === 'card' && (!['일반','전직','각성'].includes(reward.cardType) || !validCounts(reward.stars) || reward.stars.some(star => star > 12))) return '카드 보상에는 cardType과 11개 구간의 표시 등급 stars가 필요합니다.';
     }
+    if (!config.rewards.some(reward => (reward.weight ?? 1) > 0)) return '추첨할 상자의 가중치가 하나 이상 필요합니다.';
     return null;
+}
+function rollReward(rewards, random) {
+    const pool = rewards.filter(reward => (reward.weight ?? 1) > 0);
+    let roll = random() * pool.reduce((sum, reward) => sum + (reward.weight ?? 1), 0);
+    for (const reward of pool) { roll -= reward.weight ?? 1; if (roll < 0) return reward; }
+    return pool[pool.length - 1];
 }
 function checkRewardItems(config) {
     const items = rpg().getDataCache('Item', []), names = new Set(['상급 강화석']);
@@ -127,7 +135,7 @@ function makeChest(reward, tier, rich, random) {
         }
         description = `${reward.stars[tier] === 10 ? 'Z' : reward.stars[tier] + '성'} ${reward.cardType} 카드 ${count}장`;
     } else { const name = reward.items?.[tier] || reward.item; addItem(name, count); description = name + ' ' + count + '개'; }
-    return { id: crypto.randomUUID(), category: reward.id, tier, rich, stones, name: `${rich ? '풍요로운 ' : ''}${tierName(tier)} ${reward.name} 상자`, description: description + ' · 상급 강화석 ' + stones + '개', loot, opened: false };
+    return { id: crypto.randomUUID(), category: reward.id, categoryName: reward.name, rewardText: description, tier, rich, stones, name: `${rich ? '풍요로운 ' : ''}${tierName(tier)} ${reward.name} 상자`, description: description + '\n상급 강화석 ' + stones + '개', loot, opened: false };
 }
 function finish(user, outcome = 'retired', random = Math.random) {
     const run = user.paradise;
@@ -135,10 +143,8 @@ function finish(user, outcome = 'retired', random = Math.random) {
     if (run.status === 'ended') return;
     const chests = [];
     if (run.clearedFloor > 0) {
-        let pool = [];
         for (let i = 0; i < 3 + run.bonusChests + run.richChests; i++) {
-            if (!pool.length) pool = [...run.rewardTable];
-            const reward = pick(pool, random); pool.splice(pool.indexOf(reward), 1);
+            const reward = rollReward(run.rewardTable, random);
             chests.push(makeChest(reward, tierOf(run.clearedFloor), i >= 3 + run.bonusChests || random() < .1, random));
         }
     }

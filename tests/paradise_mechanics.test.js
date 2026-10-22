@@ -52,6 +52,172 @@ async function skill(user, skillName, reset = true) {
     return text;
 }
 function grantShield(user, amount, expiresAt = Date.now() + 30000) { shields.grant(user.field, { source: 'test', caster: name, amount, expiresAt }); }
+const routes = require('../paradise_routes');
+function route(user, id, kind = 'normal') {
+    user.paradise.phase = 'route'; user.paradise.routes = [{ id: 'test-route', kind, gimmick: id }];
+    assert.equal(corridor.chooseRoute(user, 'test-route', () => .99).error, undefined);
+}
+function durableEnemy(user) { Object.assign(user.paradise.enemy, { hp: 1e9, maxHp: 1e9, atk: 0, def: 0, pnt: 0, crit: 0, cmb: 0 }); }
+
+test('재만 남는 길은 고정 피해와 소환수를 막고 불씨와 네이티브 지속 피해는 통과시킨다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('echoStrike', 'rustPendulum'); route(user, 'ashOnly'); durableEnemy(user);
+    user.paradise.effects.echoStrike = 1; s(user).rustDamage = 2000;
+    const hp = user.paradise.enemy.hp;
+    assert.equal(hit(user).damage, 0);
+    assert.equal(hit(user, { fixedDamage: 1000 }).damage, 0);
+    assert.equal(hit(user, { summonAttack: true }).damage, 0);
+    assert.equal(user.paradise.enemy.hp, hp);
+    assert.equal(routes.reflection(user, 500), 0);
+    const ticks = mechanics.takeTicks(user, Date.now() + 5100);
+    assert.equal(ticks.length, 5); assert.ok(ticks.every(tick => tick.rawDamage > 0 && tick.paradiseDot));
+    assert.ok(dot(user).damage > 0);
+    for (const key of ['burn', 'hellfire']) {
+        user.field.equipmentState[key] = { tickDamage: 10, expiredAt: Date.now() + 5000, nextTickAt: Date.now() + 2000 };
+        assert.ok(mechanics.dots(user).some(d => d.key === key));
+    }
+    corridor.victory(user, () => .99);
+    assert.equal(user.paradise.routeEncounter, undefined);
+    const choices = corridor.view(user).run.choices;
+    assert.equal(choices.length, 3); assert.ok(choices.every(a => a.category === 'dot'));
+    assert.equal(new Set(choices.map(a => a.rarity)).size, 1);
+    for (const choice of choices) {
+        const result = corridor.rerollAugment(user, choice.id, () => .99);
+        if (!result.error) assert.ok(corridor.view(user).run.choices.every(a => a.category === 'dot'));
+    }
+    corridor.chooseAugment(user, user.paradise.choices[0], () => .99);
+    assert.equal(user.paradise.augmentCategory, undefined);
+    corridor.chooseRoute(user, user.paradise.routes[0].id, () => .99); durableEnemy(user);
+    assert.ok(hit(user).damage > 0);
+    assert.equal(routes.reflection(user, 500), 500);
+});
+
+test('기믹은 공격 순서, 봉인, 연격과 치명타 판정을 실제 타격에 적용한다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    let user = fresh(); route(user, 'thirdSeal'); durableEnemy(user);
+    assert.equal(hit(user).damage, 0); assert.equal(hit(user).damage, 0); assert.ok(hit(user).damage > 250);
+    user = fresh(); route(user, 'alternatingGate'); durableEnemy(user);
+    assert.ok(hit(user).damage > 100); assert.equal(hit(user).damage, 0);
+    assert.ok(hit(user, { isBasic: false, isSkill: true }).damage > 100);
+    user = fresh(); route(user, 'criticalLock'); durableEnemy(user);
+    for (let i = 0; i < 3; i++) assert.equal(hit(user).damage, 0);
+    const critical = hit(user); assert.ok(critical.damage > 0); assert.equal(critical.criticalCount, 1);
+    assert.equal(hit(user).damage, 0); assert.equal(dot(user).damage, 0);
+    user = fresh(); route(user, 'comboToll'); durableEnemy(user);
+    const combo = hit(user); assert.equal(combo.hits.length, 3);
+    user = fresh(); route(user, 'silentArena'); durableEnemy(user);
+    const blocked = await rpg.useSkillInField(user, rpg.getMainCardSkills(user)[0].skill.name);
+    assert.match(blocked, /침묵의 검투장/); assert.ok(hit(user).damage > 150);
+    corridor.victory(user, () => .99);
+    assert.equal(routes.skillBlocked(user), null); assert.ok(corridor.view(user).run.choices.every(a => a.category === 'combo'));
+});
+
+test('유리 금고의 흡수량은 하얀 피해 사건과 체력바에 반영되며 파괴 후 한 번만 세 배가 된다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh(); route(user, 'glassVault'); durableEnemy(user);
+    shields.grant(user.paradise.enemy, { source: 'route:glassVault', caster: '', amount: 250 });
+    assert.equal(corridor.view(user).run.enemy.shield, 250);
+    const first = hit(user), absorbed = first.hits.find(detail => detail.type === 'absorbed');
+    assert.equal(first.damage, 0); assert.ok(absorbed.damage > 0);
+    assert.equal(corridor.view(user).run.enemy.shield, 250 - absorbed.damage);
+    hit(user, {}, 10000);
+    assert.equal(corridor.view(user).run.enemy.shield, 0);
+    const boosted = hit(user).damage, normal = hit(user).damage;
+    assert.ok(Math.abs(boosted - normal * 3) <= 3);
+    shields.grant(user.paradise.enemy, { source: 'route:glassVault', caster: '', amount: 250 });
+    assert.equal(routes.reflection(user, 100), 0); assert.equal(corridor.view(user).run.enemy.shield, 150);
+    assert.equal(routes.reflection(user, 200), 50); assert.equal(corridor.view(user).run.enemy.shield, 0);
+    assert.ok(Math.abs(hit(user).damage - normal * 3) <= 3);
+    corridor.victory(user, () => .99);
+    assert.equal(user.paradise.phase, 'relic'); assert.ok(corridor.view(user).run.relicChoices.every(r => r.rarity === 'normal'));
+});
+
+test('유리 성벽, 피의 연료, 마지막 불빛은 HP와 보호막을 전투 안에서만 사용한다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    let user = fresh(); route(user, 'wardDuel'); durableEnemy(user);
+    assert.equal(shields.summary(user.field, Date.now()).amount, Math.round(rpg.calculateUserStats(user).hp * .50));
+    const protectedHit = hit(user).damage;
+    shields.absorb(user.field, Infinity);
+    const unprotectedHit = hit(user).damage; assert.ok(Math.abs(protectedHit - unprotectedHit * 3) <= 3);
+    user = fresh(); route(user, 'bloodFuel'); durableEnemy(user);
+    const before = resources(user).hp; assert.ok(hit(user).damage > 150);
+    assert.equal(resources(user).hp, before - Math.floor(before * .05));
+    resources(user).hp = 1; hit(user); assert.equal(resources(user).hp, 1);
+    corridor.victory(user, () => .99); assert.ok(resources(user).hp > 1);
+    user = fresh(); route(user, 'lastLight'); durableEnemy(user);
+    const stats = rpg.calculateUserStats(user);
+    assert.ok(resources(user).hp <= stats.hp * .30);
+    assert.equal(shields.summary(user.field, Date.now()).amount, Math.round(stats.hp * .80));
+    assert.ok(hit(user).damage > 150);
+    corridor.victory(user, () => .99); assert.equal(resources(user).hp, stats.hp); assert.equal(resources(user).mp, stats.mp);
+    assert.deepEqual([user.hp, user.mp], [19, 7]);
+});
+
+test('자동 공격 횟수에 따라 역전과 후반전이 발동하며 피해를 저장해 돌려준다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    let user = fresh(); route(user, 'reversalSpear'); durableEnemy(user);
+    const base = hit(user).damage;
+    assert.equal(routes.incoming(user, 100), 150); assert.equal(routes.incoming(user, 100), 150); assert.equal(routes.incoming(user, 100), 0);
+    assert.ok(Math.abs(hit(user).damage - base * 3) <= 3); assert.equal(hit(user).damage, base);
+    user = fresh(); route(user, 'secondHalf'); durableEnemy(user);
+    const initial = hit(user).damage;
+    for (let i = 0; i < 3; i++) assert.equal(routes.incoming(user, 100), 50);
+    assert.equal(routes.incoming(user, 100), 100); assert.ok(Math.abs(hit(user).damage - initial * 2) <= 2);
+    user = fresh(); route(user, 'vengeance'); durableEnemy(user);
+    user.paradise.enemy.atk = 10;
+    user.field.nextEnemyAttackAt = Date.now() - 1;
+    rpg.advanceParadiseCombat(user);
+    assert.equal(user.paradise.routeEncounter.incoming, 1);
+    const stored = user.paradise.routeEncounter.storedHp; assert.ok(stored > 0);
+    const returned = hit(user); assert.ok(returned.hits.some(h => h.fixed && h.damage === stored * 3));
+    assert.equal(user.paradise.routeEncounter.storedHp, 0);
+});
+
+test('도화선은 나눈 피해를 중첩 보존하고 마나 샘과 시계는 실제 쿨타임을 바꾼다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    let user = fresh(); route(user, 'burningFuse'); durableEnemy(user);
+    const reduced = hit(user).damage; hit(user);
+    const ticks = mechanics.takeTicks(user, Date.now() + 3100);
+    assert.equal(ticks.length, 6); assert.ok(ticks.every(tick => tick.rawDamage > 0));
+    assert.ok(Math.abs(ticks.slice(0, 3).reduce((sum, tick) => sum + tick.rawDamage, 0) * 3 - reduced) <= 5);
+    user = fresh(); route(user, 'manaSpring'); durableEnemy(user); resources(user).mp = 0;
+    const deadline = Date.now() + 15000; user.field.skillCooldowns.test = deadline;
+    hit(user); assert.ok(resources(user).mp > 0); assert.equal(user.field.skillCooldowns.test, deadline - 2000);
+    user = fresh(); route(user, 'crookedClock'); durableEnemy(user);
+    const next = user.field.nextEnemyAttackAt;
+    for (let i = 0; i < 6; i++) hit(user);
+    assert.equal(user.field.nextEnemyAttackAt, next + 4000);
+    corridor.onSkillUsed(user, 1, '시계 검증'); assert.equal(user.field.nextEnemyAttackAt, next + 3000);
+    assert.ok(hit(user, { isBasic: false, isSkill: true }).damage > 150);
+});
+
+test('빌려 온 피날레는 스펙터 궁극기도 인식하며 첫 궁극기의 쿨타임만 없앤다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh(); user.main_card.specter = '빅뱅 스펙터';
+    route(user, 'borrowedFinale'); durableEnemy(user);
+    resources(user).mp = rpg.calculateUserStats(user).mp;
+    await skill(user, '빅뱅'); assert.ok(user.field.skillCooldowns['빅뱅'] <= Date.now());
+    assert.equal(routes.incoming(user, 100), 120);
+    resources(user).mp = rpg.calculateUserStats(user).mp;
+    await skill(user, '빅뱅'); assert.ok(user.field.skillCooldowns['빅뱅'] > Date.now());
+    corridor.victory(user, () => .99);
+    assert.ok(corridor.view(user).run.choices.every(a => a.category === 'ultimate'));
+});
+
+test('수문장의 부활은 처치 보상보다 먼저 한 번 발동하고 확률 타격은 결과를 알려준다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    let user = fresh(); route(user, 'revenant');
+    const maxHp = user.paradise.enemy.maxHp, atk = user.paradise.enemy.atk;
+    hit(user, {}, 1e12);
+    assert.equal(user.paradise.phase, 'combat'); assert.equal(user.paradise.battlesWon, 0);
+    assert.equal(user.paradise.enemy.hp, Math.round(maxHp * .40)); assert.equal(user.paradise.enemy.atk, Math.round(atk * 1.30));
+    hit(user, {}, 1e12); assert.equal(user.paradise.battlesWon, 1); assert.equal(user.paradise.phase, 'relic');
+    user = fresh(); route(user, 'coinDuel'); durableEnemy(user);
+    hit(user); assert.match(user.paradise.combatLog.join('\n'), /뒷면, 피해 25%/);
+    const high = { finalDamage: 100, hitDetails: [{ damage: 100 }] }, extra = { isBasic: true };
+    routes.modifyHit(user, rpg.calculateUserStats(user), extra, high, () => 0);
+    assert.equal(high.finalDamage, 250); assert.match(extra.notice, /앞면!/);
+});
 
 test('84개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 확인한다', () => {
     assert.equal(catalog.length, 84);

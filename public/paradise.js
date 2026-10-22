@@ -604,6 +604,25 @@
         if(!current)return;
         battle.update(current, [], state.runId, true);
         for(const r of battle.draw(t, locked)) register(r.x,r.y,r.w,r.h,r.label,r.action,locked);
+        gimmickBadge(w);
+    }
+    // 진행 중인 봉인: 우측 상단 헤더 아래 이름과 진행도만. 데스크톱은 hover 툴팁, 누르면 알림 창에서 전체 내용.
+    function gimmickBadge(w) {
+        const g = state.run?.routeGimmick; if (!g) return;
+        const ink = (sealTones[g.tone] || sealTones.amber)[0], mobile = w < 700, by = mobile ? 132 : state.run.relics.length ? 184 : 142, bh = mobile ? 22 : 26;
+        ctx.font = `700 12px ${FONT}`; const nw = ctx.measureText(g.name).width; ctx.font = `600 12px ${FONT}`; const pw = g.progress ? ctx.measureText(g.progress).width + 10 : 0;
+        const bw = Math.min(mobile ? w * .55 : 280, 40 + nw + pw), bx = w - 16 - bw, hovered = inside(bx, by, bw, bh);
+        chamfer(ctx, bx, by, bw, bh, 6); ctx.fillStyle = 'rgba(8,11,16,.8)'; ctx.fill(); ctx.strokeStyle = ink + (hovered ? 'aa' : '55'); ctx.lineWidth = 1; ctx.stroke();
+        sigil(ctx, sealSigil[g.sigil] || g.sigil, bx + 15, by + bh / 2, 15, ink);
+        if (g.progress) text(ctx, g.progress, bx + bw - 10, by + bh / 2 + .5, 12, ink, 'right', 600, undefined, false);
+        text(ctx, g.name, bx + 28, by + bh / 2 + .5, 12, '#efe6d2', 'left', 700, bw - 38 - pw, false);
+        const detail = `${g.name}\n시련: ${g.rule}\n보상: ${g.reward}${g.progress ? '\n' + g.progress : ''}`;
+        register(bx, by, bw, bh, detail.replace(/\n/g, ', '), () => { noticeDetail = detail; overlay = 'notice'; overlayPage = 0; sound('tap'); });
+        if (!hovered || mobile || overlay) return;
+        const tw = 300, tx = w - 16 - tw, ty = by + bh + 8, rule = wrap(ctx, g.rule, tw - 32, 13, 6), reward = wrap(ctx, g.reward, tw - 32, 13, 4);
+        panel(ctx, tx, ty, tw, 66 + (rule.length + reward.length) * 20, { alpha: .97, edge: ink + '55', r: 3 });
+        let y = ty + 22;
+        [['시련', rule, ink, '#dfe4e6'], ['보상', reward, '#e8c272', '#f2d89c']].forEach(([label, rows, labelInk, color]) => { text(ctx, label, tx + 16, y, 12, labelInk, 'left', 700); y += 20; rows.forEach(row => { text(ctx, row, tx + 16, y, 13, color); y += 20; }); y += 6; });
     }
     battle.onAction=(action, body)=>mutate(action, action==='skill'?{skill:body.skillName}:{});
     function eventScene(w, h, t) {
@@ -742,9 +761,36 @@
         if (look.sigil === 'mystery') for (let i = 0; i < 3; i++) { const a = (reduced ? 0 : t / 2400) + i * Math.PI * 2 / 3; c.beginPath(); c.arc(cx + Math.cos(a) * 18, ky + Math.sin(a) * 6, 1.8, 0, Math.PI * 2); c.fillStyle = look.ink; c.fill(); }
         line(c, x - 10, y + h, x + w + 10, y + h, metal(c, look.metal, x, y + h, w, 2), 2);
     }
+    // 관문 봉인: 기믹이 있는 길은 문턱에 기믹 색 인장을 찍는다. 시련은 기믹 색, 보상은 금빛. 봉인 없는 길은 조용한 금속 마름모.
+    const sealTones = { amber: ['#f0c66a', [1, .76, .36]], violet: ['#c9a2f4', [.74, .56, 1]], crimson: ['#ef7f88', [1, .32, .36]], cyan: ['#86d9df', [.45, .85, .9]] };
+    const sealSigil = { flame: 'thirst', sword: 'blade', shield: 'ironSkin', eye: 'focus', hourglass: 'rewind', coin: 'greed', dice: 'gambler', scroll: 'contract' };
+    function sealMark(c, cx, cy, R, route, look, lit, t, alpha) {
+        const g = route.gimmick, [ink, glow] = g ? sealTones[g.tone] || sealTones.amber : [look.ink, look.glow];
+        renderer.quad(renderer.glow, cx - R * 2.2, cy - R * 2.2, R * 4.4, R * 4.4, [...glow, (g ? (lit ? .3 : .18) : .07) * alpha]);
+        if (g) { const spin = reduced ? 0 : t / 40000; for (let k = 0; k < 16; k++) { const a = spin + k * Math.PI / 8, r1 = R + (k % 2 ? 5 : 9); line(c, cx + Math.cos(a) * (R + 2), cy + Math.sin(a) * (R + 2), cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, ink + (lit ? 'bb' : '66'), 1.2); } }
+        const disc = c.createRadialGradient(cx, cy - R * .4, 0, cx, cy, R); disc.addColorStop(0, ink + (g ? '50' : '24')); disc.addColorStop(.75, '#0c1118'); disc.addColorStop(1, '#06090d');
+        c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.fillStyle = disc; c.fill(); c.strokeStyle = metal(c, g ? 'gold' : look.metal, cx - R, cy - R, R * 2, R * 2); c.lineWidth = lit ? 2.5 : 2; c.stroke();
+        c.beginPath(); c.arc(cx, cy, R - 4.5, 0, Math.PI * 2); c.strokeStyle = ink + (lit ? '80' : '40'); c.lineWidth = 1; c.stroke();
+        c.save(); c.shadowColor = ink; c.shadowBlur = lit ? 14 : 6;
+        if (g) sigil(c, sealSigil[g.sigil] || g.sigil, cx, cy, R * 1.1, ink);
+        else { path(c, [[cx, cy - R * .38], [cx + R * .28, cy], [cx, cy + R * .38], [cx - R * .28, cy]]); c.fillStyle = metal(c, look.metal, cx - R * .3, cy - R * .4, R * .6, R * .8); c.fill(); }
+        c.restore();
+    }
+    // 봉인 아래 글: (길 종류) / 이름 / 시련 / 보상. 두 길 중 긴 쪽 높이에 맞춰 관문 높이를 정한다.
+    function sealPlan(route, gw, mobile) {
+        const g = route.gimmick, size = mobile ? 13 : 15, lh = Math.round(size * 1.45), nameSize = mobile ? 16 : 18;
+        const names = wrap(ctx, g ? g.name : route.title, gw, nameSize, 2, 700);
+        const parts = g ? [['시련', g.rule, (sealTones[g.tone] || sealTones.amber)[0], '#dfe4e6'], ['보상', g.reward, '#e8c272', '#f2d89c']] : [['', route.description, '', '#c3ccd0']];
+        const sections = parts.map(([label, body, ink, color]) => ({ label, ink, color, rows: wrap(ctx, body, gw - 2, size, 20) }));
+        const height = (g ? 18 : 0) + names.length * nameSize * 1.25 + 8 + sections.reduce((a, s) => a + (s.label ? 18 : 0) + s.rows.length * lh + 6, 0);
+        return { g, size, lh, nameSize, names, sections, height };
+    }
     function routeScene(w, h, t) {
         const routes = (state.run.routes || []).slice(0, 2), mobile = w < 700, gap = mobile ? 14 : 84, gw = mobile ? (w - 32 - gap) / 2 : Math.min(290, (w - 220) / 2);
-        const labelH = mobile ? 88 : 104, top = mobile ? 124 : Math.max(132, h * .18), gh = clamp(Math.min(gw * 1.6, h - top - labelH - (mobile ? 36 : 52)), 120, 460);
+        const sealed = routes.some(route => route.gimmick), R = mobile ? 20 : 24, plans = sealed ? routes.map(route => sealPlan(route, gw, mobile)) : [];
+        const labelH = sealed ? R + 14 + Math.max(...plans.map(plan => plan.height)) : mobile ? 88 : 104, top = mobile ? 124 : Math.max(132, h * .18);
+        // 봉인 화면은 관문을 낮추고, 하단 가방과 알림 자리를 비워둔다.
+        const gh = clamp(Math.min(gw * (sealed ? (mobile ? 1.45 : 1.3) : 1.6), h - top - labelH - (sealed ? (mobile ? 80 : 130) : mobile ? 36 : 52)), sealed && mobile ? 90 : 120, 460);
         text(ctx, '길을 선택하세요', w / 2, top - (mobile ? 30 : 40), mobile ? 17 : 20, '#efe3c6', 'center', 700);
         const p = selection ? (reduced ? 1 : clamp((t - selection.started) / 380, 0, 1)) : 0;
         routes.forEach((route, i) => {
@@ -755,13 +801,30 @@
             const yy = top + (1 - e) * 18, zoom = picked ? 1 + p * .05 : 1;
             ctx.translate(x + gw / 2, yy + gh); ctx.scale(zoom, zoom); ctx.translate(-(x + gw / 2), -(yy + gh));
             gateway(ctx, x, yy, gw, gh, look, t, lit, i);
-            if (route.powerWarning) drawWarning(ctx, x + gw / 2 - 38, yy + gh - 42, 76, 28);
+            if (sealed) sealMark(ctx, x + gw / 2, yy + gh, R, route, look, lit, t, ctx.globalAlpha);
+            if (route.powerWarning) drawWarning(ctx, x + gw / 2 - 38, yy + gh - 42 - (sealed ? R + 8 : 0), 76, 28);
             ctx.restore(); ctx.save(); ctx.globalAlpha = e * (selection && !picked ? 1 - p * .85 : 1);
-            const ly = yy + gh + 26, ds = mobile ? 13 : 14;
-            text(ctx, route.title, x + gw / 2, ly, mobile ? 17 : 20, lit ? '#fff4dc' : '#f0e7d4', 'center', 700, gw);
-            wrap(ctx, route.description, gw - 8, ds, 2).forEach((row, j) => text(ctx, row, x + gw / 2, ly + 25 + j * ds * 1.45, ds, '#c3ccd0', 'center', 500));
+            if (sealed) {
+                const plan = plans[i]; let ty = yy + gh + R + 14;
+                if (plan.g) { text(ctx, route.title, x + gw / 2, ty + 6, 12, look.ink, 'center', 700, gw); ty += 18; }
+                plan.names.forEach((row, j) => text(ctx, row, x + gw / 2, ty + plan.nameSize * .6 + j * plan.nameSize * 1.25, plan.nameSize, lit ? '#fff4dc' : '#f0e7d4', 'center', 700, gw));
+                ty += plan.names.length * plan.nameSize * 1.25 + 8;
+                for (const s of plan.sections) {
+                    if (s.label) {
+                        path(ctx, [[x + 4, ty + 4], [x + 8, ty + 8.5], [x + 4, ty + 13], [x, ty + 8.5]]); ctx.fillStyle = s.ink; ctx.fill();
+                        text(ctx, s.label, x + 14, ty + 9, 12, s.ink, 'left', 700); line(ctx, x + 22 + ctx.measureText(s.label).width, ty + 9, x + gw, ty + 9, s.ink + '30'); ty += 18;
+                    }
+                    s.rows.forEach((row, j) => text(ctx, row, x, ty + plan.lh / 2 + j * plan.lh, plan.size, s.color, 'left', 500));
+                    ty += s.rows.length * plan.lh + 6;
+                }
+            } else {
+                const ly = yy + gh + 26, ds = mobile ? 13 : 14;
+                text(ctx, route.title, x + gw / 2, ly, mobile ? 17 : 20, lit ? '#fff4dc' : '#f0e7d4', 'center', 700, gw);
+                wrap(ctx, route.description, gw - 8, ds, 2).forEach((row, j) => text(ctx, row, x + gw / 2, ly + 25 + j * ds * 1.45, ds, '#c3ccd0', 'center', 500));
+            }
             ctx.restore();
-            register(x, top, gw, gh + labelH, `${i + 1}번 길, ${route.title}, ${route.description}${warnLabel(route.powerWarning)}`, () => pickRoute(route, i), !!selection || intro < .9);
+            const g = route.gimmick;
+            register(x, top, gw, gh + labelH, `${i + 1}번 길, ${route.title}, ${route.description}${g ? `, 봉인 ${g.name}, 시련: ${g.rule} 보상: ${g.reward}` : ''}${warnLabel(route.powerWarning)}`, () => pickRoute(route, i), !!selection || intro < .9);
         });
         if (p) { ctx.fillStyle = `rgba(2,4,7,${p * .5})`; ctx.fillRect(0, 0, w, h); }
     }
@@ -948,25 +1011,56 @@
             c.restore();
         }
     }
+    const tierLabel = tier => tier === 0 ? '최소 단계' : tier === 10 ? '최고 단계' : tier + '단계';
+    // 구버전 상자 행은 categoryName/rewardText가 없으므로 name·description에서 복원한다.
+    function chestInfo(chest) {
+        const category = chest.categoryName || String(chest.name || '').replace(/^풍요로운\s+/, '').replace(/^(최소 단계|최고 단계|\d+단계)\s+/, '').replace(/\s*상자$/, '');
+        return { category, reward: chest.rewardText || String(chest.description || '').split(' · 상급 강화석')[0], tier: Number.isFinite(chest.tier) ? tierLabel(chest.tier) : '' };
+    }
+    function runeRing(c, cx, cy, rx, ry, rgb, a, t) {
+        c.save(); c.translate(cx, cy); c.scale(1, ry / rx); c.strokeStyle = `rgba(${rgb},${a})`; c.lineWidth = 1.4;
+        const floor = c.createRadialGradient(0, 0, 0, 0, 0, rx); floor.addColorStop(0, `rgba(${rgb},${a * .35})`); floor.addColorStop(1, `rgba(${rgb},0)`); c.fillStyle = floor; c.beginPath(); c.arc(0, 0, rx, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.beginPath(); c.arc(0, 0, rx * .72, 0, Math.PI * 2); c.stroke();
+        const spin = reduced ? 0 : t / 12000;
+        for (let i = 0; i < 16; i++) { const q = spin + i / 16 * Math.PI * 2, r2 = rx * (i % 4 ? .84 : .95); c.beginPath(); c.moveTo(Math.cos(q) * rx * .76, Math.sin(q) * rx * .76); c.lineTo(Math.cos(q) * r2, Math.sin(q) * r2); c.stroke(); }
+        c.restore();
+    }
+    function chip(c, label, cx, cy, size, rarity) {
+        c.font = `800 ${size}px ${FONT}`; const cw = c.measureText(label).width + size * 1.2, ch = size * 1.7;
+        chamfer(c, cx - cw / 2, cy - ch / 2, cw, ch, 5); c.fillStyle = metal(c, rarity, cx - cw / 2, cy - ch / 2, cw, ch); c.fill();
+        text(c, label, cx, cy + .5, size, '#2a1606', 'center', 800, undefined, false); return cw;
+    }
     function chestCard(c, chest, x, y, w, h, t, open, lit) {
-        const rich = !!chest.rich, cx = x + w / 2, tone = rich ? '255,190,90' : '255,110,60', artH = Math.round(h * .38), pad = 18, tw = w - pad * 2, outline = () => chamfer(c, x, y, w, h, 14);
-        outline(); const bg = c.createLinearGradient(0, y, 0, y + h); bg.addColorStop(0, rich ? '#2c1c0e' : '#22130f'); bg.addColorStop(1, '#0a0606'); c.fillStyle = bg; c.fill();
-        const light = c.createRadialGradient(cx, y + artH * .6, 0, cx, y + artH * .6, w * .6); light.addColorStop(0, `rgba(${tone},${lit ? .32 : .2})`); light.addColorStop(1, `rgba(${tone},0)`); c.save(); outline(); c.clip(); c.fillStyle = light; c.fillRect(x, y, w, artH + 40); c.restore();
-        drawChest(c, cx, y + artH + 6, Math.min(w * .6, artH * 1.2), rich, open, t);
-        const ns = clamp(Math.round(w * .066), 17, 20), names = wrap(c, chest.name, tw, ns, 2, 700);
-        let yy = y + artH + 26 + ns / 2; names.forEach((name, i) => text(c, name, cx, yy + i * ns * 1.25, ns, rich ? '#ffe2a6' : '#f6e6d8', 'center', 700)); yy += (names.length - 1) * ns * 1.25 + ns / 2 + 12;
-        line(c, cx - 14, yy, cx + 14, yy, `rgba(${tone},.8)`, 2); yy += 14;
-        const foot = y + h - 44, bs = w < 260 ? 14 : 15, lh = bs * 1.5;
-        paragraph(c, chest.description.split(' · 상급 강화석')[0], cx, yy + bs / 2, tw, bs, '#d8d2cc', lh, Math.max(1, Math.floor((foot - 6 - yy) / lh)), 'center');
-        c.save(); outline(); c.clip(); c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(x, foot, w, 44); c.restore(); line(c, x + 4, foot, x + w - 4, foot, `rgba(${tone},.35)`);
-        if (chest.stones) text(c, `상급 강화석 ${fmt(chest.stones)}개`, cx, foot + 22, 15, rich ? '#ffd27a' : '#d8ccc0', 'center', 600, tw);
-        outline(); c.strokeStyle = metal(c, rich ? 'gold' : 'ember', x, y, w, h); c.lineWidth = lit ? 2.5 : 1.8; c.stroke();
+        const rich = !!chest.rich, info = chestInfo(chest), cx = x + w / 2, tone = rich ? '255,204,110' : '255,120,70', pad = 16, tw = w - pad * 2, outline = () => chamfer(c, x, y, w, h, 14);
+        const foot = y + h - 42, base = y + 40 + Math.round(h * .34);
+        outline(); const bg = c.createLinearGradient(0, y, 0, y + h); bg.addColorStop(0, rich ? '#3c2810' : '#22130f'); bg.addColorStop(1, '#0a0606'); c.fillStyle = bg; c.fill();
+        c.save(); outline(); c.clip();
+        const light = c.createRadialGradient(cx, base - h * .16, 0, cx, base - h * .16, w * .7); light.addColorStop(0, `rgba(${tone},${(rich ? .34 : .18) + (lit ? .1 : 0) + open * .3})`); light.addColorStop(1, `rgba(${tone},0)`); c.fillStyle = light; c.fillRect(x, y, w, base - y + 30);
+        runeRing(c, cx, base - 4, w * .38, w * .095, tone, (lit ? .62 : .32) + open * .35, t);
+        c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(x, foot, w, 42); c.restore();
+        line(c, x + 4, foot, x + w - 4, foot, `rgba(${tone},.35)`);
+        text(c, info.tier, x + pad, y + 22, 12, rich ? '#e8c98a' : '#b9a28e', 'left', 600, tw * .5);
+        if (rich) chip(c, '풍요로운', x + w - pad - 38, y + 22, 12, 'gold');
+        drawChest(c, cx, base, Math.min(w * .58, h * .34), rich, open, t);
+        if (chest.iconUrl) { const s = 26, ix = cx + w * .26 - s / 2, iy = base - s - 2; c.beginPath(); c.arc(ix + s / 2, iy + s / 2, s * .66, 0, Math.PI * 2); c.fillStyle = 'rgba(10,5,4,.82)'; c.fill(); c.strokeStyle = `rgba(${tone},.6)`; c.lineWidth = 1; c.stroke(); iconAt(chest.iconUrl, ix, iy, s); }
+        const ns = clamp(Math.round(w * .078), 18, 24), names = wrap(c, info.category, tw, ns, 2, 800);
+        let yy = base + 18 + ns / 2; names.forEach((name, i) => text(c, name, cx, yy + i * ns * 1.2, ns, rich ? '#ffe2a0' : '#f6e6d8', 'center', 800)); yy += (names.length - 1) * ns * 1.2 + ns / 2 + 10;
+        line(c, cx - 18, yy, cx + 18, yy, `rgba(${tone},.7)`, 1.5); yy += 12;
+        const rs = clamp(Math.round(w * .056), 14, 17); paragraph(c, info.reward, cx, yy + rs / 2, tw, rs, '#fff2e2', rs * 1.35, Math.max(1, Math.min(2, Math.floor((foot - 4 - yy) / (rs * 1.35)))), 'center', 700);
+        if (chest.stones) {
+            const label = `상급 강화석 ${fmt(chest.stones)}개`, is = 20; c.font = `700 14px ${FONT}`; const lw = Math.min(c.measureText(label).width, tw - is - 48), total = is + 6 + lw + (rich ? 40 : 0); let sx = cx - total / 2;
+            if (iconAt(chest.stonesIconUrl, sx, foot + 21 - is / 2, is)) sx += is + 6; else sx += (is + 6) / 2;
+            text(c, label, sx, foot + 21, 14, rich ? '#ffd27a' : '#d8ccc0', 'left', 700, lw);
+            if (rich) chip(c, '3배', sx + lw + 24, foot + 21, 12, 'gold');
+        }
+        c.save(); if (rich) { c.shadowColor = 'rgba(255,196,90,.7)'; c.shadowBlur = lit ? 18 : 10; }
+        outline(); c.strokeStyle = metal(c, rich ? 'gold' : 'ember', x, y, w, h); c.lineWidth = rich ? (lit ? 3 : 2.2) : lit ? 2.2 : 1.5; c.stroke(); c.restore();
     }
     function chestScene(w, h, t) {
         const run = state.run, list = (run.chests || []).filter(c => !c.opened), n = list.length, mobile = w < 700, open = chestPick ? (reduced ? 1 : clamp((t - chestPick.started) / 520, 0, 1)) : 0, opens = run.opensRemaining ?? 1;
         const head = `지하 ${run.clearedFloor || 0}층 보상 상자를 하나 고르세요`;
         const pick = chest => { if (busy || pending || chestPick || opens <= 0) return; chestPick = { id: chest.id, started: performance.now() }; sound('chest'); setTimeout(() => mutate('chest', { chest: chest.id }), reduced ? 0 : 560); };
-        const label = chest => `${chest.name}, ${chest.description}`;
+        const label = chest => { const info = chestInfo(chest); return [chest.rich ? `풍요로운 ${info.category}` : info.category, info.tier, info.reward, chest.stones ? `상급 강화석 ${fmt(chest.stones)}개${chest.rich ? ' 3배' : ''}` : ''].filter(Boolean).join(', '); };
         if (mobile) {
             const cw = Math.min(w - 84, 300), ch = Math.min(h - 318, 440), y = 128; chestPage = clamp(chestPage, 0, Math.max(0, n - 1));
             text(ctx, head, w / 2, 114, 16, '#ffd2a8', 'center', 700, w - 32);
@@ -986,7 +1080,7 @@
         const recent = run.rewardSummary?.length ? run.rewardSummary.map(r => `${r.name} ×${fmt(r.count)}`).join(', ') : '';
         if (recent && y + ch + 58 < h - 64) text(ctx, `획득 ${recent}`, w / 2, y + ch + 58, 14, '#d8c2ac', 'center', 600, Math.min(w - 260, 900));
         shown.forEach((chest, j) => {
-            const x = x0 + j * (cw + 28), intro = reduced ? 1 : clamp((t - sceneAt - j * 120) / 500, 0, 1), e = 1 - Math.pow(1 - intro, 3), picked = chestPick?.id === chest.id, hovered = !chestPick && inside(x, y, cw, ch), yy = y + (1 - e) * 50 - (hovered && !reduced ? 6 : 0);
+            const x = x0 + j * (cw + 28), intro = reduced ? 1 : clamp((t - sceneAt - j * 120) / 500, 0, 1), e = 1 - Math.pow(1 - intro, 3), picked = chestPick?.id === chest.id, hovered = !chestPick && inside(x, y, cw, ch), yy = y + (1 - e) * 50 - (hovered && !reduced ? 3 : 0);
             if (hovered || picked) renderer.quad(renderer.glow, x - cw * .2, y - ch * .06, cw * 1.4, ch * 1.12, chest.rich ? [1, .78, .35, .18] : [1, .42, .16, .16]);
             ctx.save(); ctx.globalAlpha = chestPick && !picked ? Math.max(.3, 1 - open) : e; chestCard(ctx, chest, x, yy, cw, ch, t, picked ? open : 0, hovered || picked); ctx.restore();
             register(x, y, cw, ch, label(chest), () => pick(chest), !!chestPick || intro < .95);
@@ -998,23 +1092,29 @@
     }
     function iconAt(url, x, y, s) { const e = url && renderer.image(url); if (!e?.ready) return false; const [sx, sy, sw, sh] = trimmed(e), k = s / Math.max(sw, sh); ctx.drawImage(e.image, sx, sy, sw, sh, x + (s - sw * k) / 2, y + (s - sh * k) / 2, sw * k, sh * k); return true; }
     function hellEnded(w, h, t) {
-        const run = state.run, mobile = w < 700, y0 = h * .14 + (mobile ? 28 : 0), list = run.rewardSummary || [];
-        text(ctx, { cleared: '탐험 완료', defeated: '전투 패배', retired: '탐험 포기' }[run.outcome] || '탐험 종료', w / 2, y0, mobile ? 20 : 24, '#ffd9bc', 'center', 700);
-        text(ctx, `지하 ${run.clearedFloor || run.floor}층`, w / 2, y0 + 52, mobile ? 38 : 50, '#ffc27a', 'center', 800);
-        const cols = mobile ? 1 : 2, rw = Math.min(w - 32, mobile ? 480 : 640), rx = (w - rw) / 2, ry = y0 + 96, rowH = 54, perCol = Math.max(1, Math.floor((h - 132 - ry - 96) / rowH)), per = perCol * cols, pages = Math.max(1, Math.ceil(list.length / per));
+        const run = state.run, mobile = w < 700, list = run.rewardSummary || [], defeated = run.outcome === 'defeated', floor = run.clearedFloor ?? 0;
+        const tone = defeated ? '232,118,118' : '255,186,104', y0 = h * .12 + (mobile ? 28 : 0), fy = y0 + (mobile ? 50 : 62);
+        runeRing(ctx, w / 2, fy + 4, mobile ? 120 : 170, mobile ? 30 : 40, tone, .42, t);
+        text(ctx, { cleared: '탐험 완료', defeated: '전투 패배', retired: '탐험 포기', timedOut: '시간 종료' }[run.outcome] || '탐험 종료', w / 2, y0, mobile ? 18 : 22, defeated ? '#f0a8a8' : '#ffd9bc', 'center', 700);
+        text(ctx, `지하 ${fmt(floor)}층`, w / 2, fy, mobile ? 40 : 54, defeated ? '#f3b4a2' : '#ffc27a', 'center', 800);
+        text(ctx, '돌파한 층', w / 2, fy + (mobile ? 32 : 42), 13, '#b8a596', 'center', 600);
+        const ry = fy + (mobile ? 62 : 78), gap = 10, cols = mobile ? 3 : 5, rw = Math.min(w - 32, 720), tw = (rw - gap * (cols - 1)) / cols, th = mobile ? 100 : 116;
+        const fit = n => Math.max(1, Math.floor((h - 124 - ry - n + gap) / (th + gap))) * cols;
+        let per = fit(0); const pages = list.length > per ? Math.ceil(list.length / (per = fit(48))) : 1;
         chestPage = clamp(chestPage, 0, pages - 1);
-        const page = list.slice(chestPage * per, (chestPage + 1) * per), rows = Math.max(1, Math.ceil(page.length / cols)), rh = 28 + rows * rowH + (pages > 1 ? 52 : 0), cw = (rw - 24) / cols;
-        panel(ctx, rx, ry, rw, rh, { alpha: .82, edge: 'rgba(255,150,90,.3)' });
+        const page = list.slice(chestPage * per, (chestPage + 1) * per), rows = Math.max(1, Math.ceil(page.length / cols));
         page.forEach((item, i) => {
-            const ix = rx + 12 + (i % cols) * cw, iy = ry + 14 + Math.floor(i / cols) * rowH; ctx.save(); ctx.globalAlpha = reduced ? 1 : clamp((t - sceneAt - i * 70) / 300, 0, 1);
-            chamfer(ctx, ix + 6, iy + 5, 36, 36, 6); ctx.fillStyle = 'rgba(255,140,80,.08)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,160,100,.25)'; ctx.lineWidth = 1; ctx.stroke();
-            if (!iconAt(item.iconUrl, ix + 8, iy + 7, 32)) sigil(ctx, '', ix + 24, iy + 23, 24, '#f0a070');
-            const names = wrap(ctx, item.name, cw - 124, 15, 2, 600);
-            names.forEach((name, j) => text(ctx, name, ix + 52, iy + 23 + (j - (names.length - 1) / 2) * 19, 15, '#f2e6da', 'left', 600));
-            text(ctx, `×${fmt(item.count)}`, ix + cw - 12, iy + 23, 15, '#ffc27a', 'right', 700); ctx.restore();
+            const rowN = Math.min(cols, page.length - Math.floor(i / cols) * cols), ix = (w - rowN * tw - (rowN - 1) * gap) / 2 + (i % cols) * (tw + gap), iy = ry + Math.floor(i / cols) * (th + gap), is = Math.round(th * .4);
+            ctx.save(); ctx.globalAlpha = reduced ? 1 : clamp((t - sceneAt - i * 60) / 300, 0, 1);
+            chamfer(ctx, ix, iy, tw, th, 8); ctx.fillStyle = 'rgba(16,8,6,.74)'; ctx.fill(); ctx.strokeStyle = `rgba(${tone},.3)`; ctx.lineWidth = 1; ctx.stroke();
+            const g = ctx.createRadialGradient(ix + tw / 2, iy + 10 + is / 2, 0, ix + tw / 2, iy + 10 + is / 2, is); g.addColorStop(0, `rgba(${tone},.22)`); g.addColorStop(1, `rgba(${tone},0)`); ctx.fillStyle = g; ctx.fillRect(ix, iy, tw, is + 20);
+            if (!iconAt(item.iconUrl, ix + (tw - is) / 2, iy + 10, is)) sigil(ctx, '', ix + tw / 2, iy + 10 + is / 2, is * .7, '#f0a070');
+            const names = wrap(ctx, item.name, tw - 12, 12, 2, 600);
+            names.forEach((name, j) => text(ctx, name, ix + tw / 2, iy + is + 22 + j * 14, 12, '#f2e6da', 'center', 600));
+            text(ctx, `×${fmt(item.count)}`, ix + tw / 2, iy + th - 13, 15, '#ffc27a', 'center', 800, tw - 8); ctx.restore();
         });
-        if (!list.length) text(ctx, '획득한 보상이 없습니다.', w / 2, ry + 37, 15, '#b8b0aa', 'center');
-        if (pages > 1) { const py = ry + rh - 46; hitButton(rx + 12, py, 64, 36, '이전', () => chestPage--, { disabled: chestPage <= 0, size: 13 }); text(ctx, `${chestPage + 1} / ${pages}`, w / 2, py + 18, 14, '#c9bdb2', 'center', 600); hitButton(rx + rw - 76, py, 64, 36, '다음', () => chestPage++, { disabled: chestPage >= pages - 1, size: 13 }); }
+        if (!list.length) text(ctx, '획득한 보상이 없습니다.', w / 2, ry + 30, 15, '#b8b0aa', 'center');
+        if (pages > 1) { const py = ry + rows * (th + gap) + 2; hitButton(w / 2 - 96, py, 44, 36, '이전 보상', () => chestPage--, { glyph: '‹', size: 18, disabled: chestPage <= 0 }); text(ctx, `${chestPage + 1} / ${pages}`, w / 2, py + 18, 14, '#c9bdb2', 'center', 600); hitButton(w / 2 + 52, py, 44, 36, '다음 보상', () => chestPage++, { glyph: '›', size: 18, disabled: chestPage >= pages - 1 }); }
         hitButton(w / 2 - 130, h - 108, 260, 50, '낙원으로 돌아가기', () => { returnToLobby(); }, { primary: true, size: 16 });
     }
     function drawOverlay(w, h) {

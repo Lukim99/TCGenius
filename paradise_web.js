@@ -48,7 +48,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                 const card = serializeCard(user.paradise.battle.hackCard, user);
                 for (const skill of card.skills || []) if (!view.battle.skills.some(s => s.name === skill.name)) view.battle.skills.push({ ...skill, cooldownEnd: Number(user.field.skillCooldowns[skill.name] || 0), borrowed: true });
             }
-            const characters = require('./paradise_augments_characters'), blocked = characters.skillBlocked(user);
+            const characters = require('./paradise_augments_characters'), blocked = characters.skillBlocked(user) || require('./paradise_routes').skillBlocked(user);
             const mechanics = require('./paradise_mechanics'), stats = rpgenius.calculateUserStats(user);
             view.battle.skills.push(...mechanics.skillView(user));
             for (const skill of view.battle.skills) {
@@ -60,6 +60,13 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             }
         }
         if (view.run?.rewardSummary) view.run.rewardSummary = view.run.rewardSummary.map(reward => rewardView(reward, user));
+        if (view.run?.mode === 'hell') for (const chest of view.run.chests) {
+            const reward = user.paradise.rewardTable.find(row => row.id === chest.category);
+            chest.categoryName ||= reward?.name;
+            chest.rewardText ||= chest.description.split(/\n| · 상급 강화석/)[0];
+            chest.iconUrl = reward?.kind === 'item' ? getItemIconUrl(items.find(item => item?.name === (reward.items?.[chest.tier] || reward.item))) : null;
+            chest.stonesIconUrl = getItemIconUrl(items.find(item => item?.name === '상급 강화석'));
+        }
         if (view.run?.mode !== 'hell' && view.run?.rewards) for (const reward of view.run.rewards) {
             reward.iconUrl = reward.type === '아이템' ? getItemIconUrl(items.find(item => item?.name === reward.name))
                 : reward.type === '골드' ? '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('골드.png') : null;

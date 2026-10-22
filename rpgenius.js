@@ -11,6 +11,7 @@ const wisdomPuzzle = require('./wisdom_puzzle');
 const paradise = require('./paradise');
 const paradiseCharacters = require('./paradise_augments_characters');
 const paradiseMechanics = require('./paradise_mechanics');
+const paradiseRoutes = require('./paradise_routes');
 const shopCatalog = require('./shop_catalog');
 const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
 const { regularCardPackBaseChance } = require('./chuseok_event');
@@ -7462,6 +7463,7 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
 function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines, at = Date.now(), extra = {}) {
     const resources = paradise.getResources(user);
     const run = user.paradise, enemy = run.enemy, field = user.field;
+    if (!extra.dotAttack && !extra.summonAttack) received = paradiseRoutes.incoming(user, received);
     if (receivedHits > 0 && run.mode !== 'hell' && !extra.dotAttack && !extra.summonAttack) (run.battle.mechanics ||= {}).enemyActionAt = at;
     received = Math.round(received * paradise.incomingMultiplier(user, received) * (received > 0 ? paradiseMechanics.incomingMultiplier(user) : 1));
     if (field.iktaeBot && field.iktaeBot.hp > 0 && at < Number(field.iktaeBot.expired_at || 0)) {
@@ -7482,6 +7484,7 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     const lostHp = Math.max(0, beforeHp - resources.hp);
     run.battle.comeback += lostHp / Math.max(1, stats.hp);
     paradise.onDamageTaken(user, lostHp);
+    paradiseRoutes.onDamage(user, stats, lostHp);
     const mechanicNotice = {};
     paradiseMechanics.onDamage(user, stats, beforeShield - received, lostHp, shieldBefore, mechanicNotice);
     if (mechanicNotice.notice) lines.push(mechanicNotice.notice);
@@ -7489,10 +7492,14 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     if (received > 0 && receivedHits) {
         let reflected = 0;
         for (let i = 0; i < receivedHits; i++) reflected += applyDamageVariance(getThornsReflect(user, stats));
+        reflected = paradiseRoutes.reflection(user, reflected);
         if (enemy.mirror) enemy.hp = require('./pvp').corridorMirrorReflection(enemy.mirror, reflected, at);
         else enemy.hp = Math.max(0, enemy.hp - reflected);
         if (field.elite) field.elite.hp = enemy.hp;
         if (reflected) lines.push('💥 가시 반사 ' + comma(reflected));
+        const routeNotice = { summonAttack: true };
+        paradiseRoutes.afterHit(user, stats, routeNotice);
+        if (routeNotice.notice) lines.push(routeNotice.notice);
     }
     applyDamageTakenSlotRecovery(user, stats.hp, received, slots, stats, lines);
     tryImmortalArmorRegen(user, stats.hp, lines);
@@ -7579,6 +7586,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     paradise.prepareAttack(user, extra);
     paradiseCharacters.prepareAttack(user, stats, extra);
     paradiseMechanics.prepareAttack(user, stats, extra);
+    paradiseRoutes.prepareAttack(user, extra);
     const attackExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     const hit = calculateAttackHitResult(raw, Math.max(0, Number(targetStats.def || 0) - Number(stats.atkDefReduce || 0)), Number(extra.pnt ?? stats.pnt ?? 0) + Number(extra.pntBonus || 0), stats, slots, attackExtra, getCombatStats(targetStats));
     const multiplier = paradise.attackMultiplier(user, extra);
@@ -7587,6 +7595,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     paradise.modifyHit(user, extra, hit);
     paradiseCharacters.modifyHit(user, extra, hit);
     paradiseMechanics.modifyHit(user, stats, extra, hit);
+    paradiseRoutes.modifyHit(user, stats, extra, hit);
     let mirrorAbsorbed = [];
     if (enemy.mirror) {
         enemy.mirror.hp = enemy.hp;
@@ -7601,6 +7610,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     queueBlackShadow(user, extra, hit.finalDamage); recordFieldJudgmentDamage(user, attackExtra, hit.finalDamage);
     if (!enemy.mirror) enemy.hp = Math.max(0, enemy.hp - hit.finalDamage);
     if (field.elite) field.elite.hp = enemy.hp;
+    paradiseRoutes.afterHit(user, stats, extra);
     randoCharacters.onHit(stats, field, hit.hitCount, extra, enemy.hp === 0 ? 1 : 0, Date.now());
     paradiseCharacters.afterHit(user, stats, extra, hit);
     paradiseMechanics.afterHit(user, stats, extra, hit);
@@ -7650,6 +7660,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     }
     if (!hits.length && hit.finalDamage > 0) hits.push({ damage: hit.finalDamage, critical: !!hit.criticalCount });
     hits.push(...mirrorAbsorbed);
+    if (extra.routeShieldAbsorbed > 0) hits.push({ damage: extra.routeShieldAbsorbed, type: 'absorbed' });
     run.combatSequence = Number(run.combatSequence || 0) + 1;
     const event = combatEffects.annotateEvent({
         id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId: enemy.id,
@@ -7765,7 +7776,7 @@ function useSkillInField(user, skillName, channel) {
     if (paradise.isTimedOut(user)) { paradise.advanceTime(user); return '제한 시간이 종료되어 천상에서 자동 귀환했습니다.'; }
     const resources = paradise.getResources(user);
     if (user.field?.paradise && user.paradise?.phase !== 'combat') return '❌ 낙원 화면에서 다음 선택을 완료해주세요.';
-    const blockedSkill = paradiseCharacters.skillBlocked(user);
+    const blockedSkill = paradiseCharacters.skillBlocked(user) || paradiseRoutes.skillBlocked(user);
     if (blockedSkill) return '❌ ' + blockedSkill;
     if (user && user.name) storeFieldActionEffectIds(user.name, []);
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
