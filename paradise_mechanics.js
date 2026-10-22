@@ -4,6 +4,7 @@ const rpg = () => require('./rpgenius');
 const corridor = () => require('./paradise');
 const active = user => corridor().active(user) && user.paradise.mode !== 'hell' && user.paradise.phase === 'combat' && !!user.field?.paradise;
 const has = (user, id) => active(user) && !!user.paradise.acquired[id];
+const relic = (user, id) => active(user) && user.paradise.relics.includes(id);
 const state = user => user.paradise.battle.mechanics ||= {};
 const expedition = user => user.paradise.mechanics ||= {};
 const direct = extra => !extra.dotAttack && !extra.summonAttack && !extra.isBotAutoAttack;
@@ -16,8 +17,8 @@ function reduce(user, name, ms) {
     const now = Date.now(), cooldowns = user.field.skillCooldowns;
     if (cooldowns[name] > now) cooldowns[name] = Math.max(now, cooldowns[name] - ms);
 }
-function reduceLongest(user, ms, includeUltimate = false) {
-    const now = Date.now(), allowed = new Set(skillEntries(user).filter(skill => includeUltimate || !ultimate(user, skill.name)).map(skill => skill.name));
+function reduceLongest(user, ms, includeUltimate = false, except) {
+    const now = Date.now(), allowed = new Set(skillEntries(user).filter(skill => skill.name !== except && (includeUltimate || !ultimate(user, skill.name))).map(skill => skill.name));
     const entry = Object.entries(user.field.skillCooldowns).filter(([name, until]) => allowed.has(name) && until > now).sort((a, b) => b[1] - a[1])[0];
     if (entry) reduce(user, entry[0], ms);
 }
@@ -30,16 +31,17 @@ function announceReward(user, text) {
     run.rewardReveal = { motif: 'contract', positive: true, text: [run.rewardReveal?.text, text].filter(Boolean).join('\n') };
     run.history.unshift({ floor: run.floor, text });
 }
-function cardContract(user, name, star) {
-    user.paradise.contracts.push({ star, type: '일반', name: name + ' · ' + star + '성 일반 카드' });
-    announceReward(user, name + ' · ' + star + '성 일반 카드 계약을 획득했습니다.');
+function cardContract(user, name, star, type = '일반') {
+    user.paradise.contracts.push({ star, type, name: name + ' · ' + star + '성 ' + type + ' 카드' });
+    announceReward(user, name + ' · ' + star + '성 ' + type + ' 카드 계약을 획득했습니다.');
 }
-function rewardBonus(user, id, increment, limit) {
+function rewardBonus(user, id, increment, limit, extra) {
     const e = expedition(user), before = Number(e[id] || 0), added = Math.min(increment, Math.max(0, limit - before));
     if (!added) return;
-    e[id] = before + added;
+    e[id] = Math.round((before + added) * 1e9) / 1e9;
     user.paradise.effects.reward = Number(user.paradise.effects.reward || 0) + added;
-    announceReward(user, catalog.find(a => a.id === id).name + ' · 종료 보상 +' + Math.round(added * 100) + '%');
+    const text = catalog.find(a => a.id === id).name + ' · 종료 보상 +' + Math.round(added * 100) + '%p';
+    if (extra) notice(extra, text); else announceReward(user, text);
 }
 function relicPrize(user, id) {
     const e = expedition(user), s = state(user);
@@ -101,11 +103,14 @@ function takeTicks(user, now) {
     return pending;
 }
 function onBattle(user) {
-    if (!active(user) || !['glassBastion', 'wardRelay', 'contagiousAsh'].some(id => has(user, id))) return;
+    if (!active(user)) return;
     const e = expedition(user), stats = rpg().calculateUserStats(user);
     if (has(user, 'glassBastion')) shield(user, 'glassBastion', stats.hp * .20, 12);
     if (has(user, 'wardRelay') && e.carriedWard) shield(user, 'wardRelay', Math.min(e.carriedWard, stats.hp * .40), 15);
     if (has(user, 'contagiousAsh') && e.carriedAsh) addDot(user, 'ash', '옮겨 붙는 잿더미', Math.min(e.carriedAsh, stats.atk * 3), 3, 2000, true);
+    if (has(user, 'bottledAgony') && e.bottledDamage) addDot(user, 'bottledAgony', '고통의 병조림', e.bottledDamage / 4, 4, 2000, true);
+    if (relic(user, 'guardianClasp')) shield(user, 'guardianClasp', stats.hp * .30, 20);
+    delete e.bottledDamage;
     delete e.carriedWard; delete e.carriedAsh;
 }
 function onVictory(user) {
@@ -114,6 +119,20 @@ function onVictory(user) {
     if (has(user, 'wardRelay')) e.carriedWard = remaining * .50;
     if (has(user, 'bastionPact') && remaining > 0 && !user.paradise.battle.hasTakenHpDamage) rewardBonus(user, 'bastionPact', .02, .20);
     if (has(user, 'threefoldPact') && ['basic', 'skill', 'dot'].every(type => (s.damageKinds || []).includes(type))) rewardBonus(user, 'threefoldPact', .03, .30);
+    const stats = rpg().calculateUserStats(user), hp = corridor().getResources(user).hp;
+    if (has(user, 'shieldEscrow')) {
+        e.shieldDeposit = Number(e.shieldDeposit || 0) + remaining;
+        const units = Math.floor(e.shieldDeposit / stats.hp);
+        if (units) { e.shieldDeposit %= stats.hp; rewardBonus(user, 'shieldEscrow', units * .05, .25); }
+    }
+    if (has(user, 'ultimateWager') && s.ultimateAt && Date.now() - s.ultimateAt <= 10000) rewardBonus(user, 'ultimateWager', .05, .25);
+    if (has(user, 'secondReceipt') && user.paradise.battle.hasTakenHpDamage && (s.normalSkills || []).length >= 2
+        && Number(e.receiptPrizes || 0) < 2 && count(e, 'receiptWins') % 3 === 0) {
+        count(e, 'receiptPrizes'); cardContract(user, '두 번째 영수증', 8, '각성');
+    }
+    if (has(user, 'lastTicket') && hp <= stats.hp * .20 && Number(e.lastTickets || 0) < 2) {
+        count(e, 'lastTickets'); cardContract(user, '마지막 티켓', 8);
+    }
 }
 
 const SKILLS = [
@@ -122,7 +141,11 @@ const SKILLS = [
     { id: 'skillBulwark', name: '유리 방벽', ratio: .12, cooldown: 20000, element: '명' },
     { id: 'skillShadowDance', name: '그림자 연무', ratio: .10, cooldown: 16000, element: '암' },
     { id: 'skillFoldTime', name: '시간 접기', ratio: 0, cooldown: 30000, hpCost: .10 },
-    { id: 'skillDoubleDown', name: '판돈 뒤집기', ratio: 0, cooldown: 25000, hpCost: .20 }
+    { id: 'skillDoubleDown', name: '판돈 뒤집기', ratio: 0, cooldown: 25000, hpCost: .20 },
+    { id: 'skillBloodAuction', name: '생명 경매', ratio: 0, cooldown: 18000, hpCost: .15 },
+    { id: 'skillWardShatter', name: '방벽 투척', ratio: 0, cooldown: 20000 },
+    { id: 'skillThreadPull', name: '운명의 당김', ratio: .15, cooldown: 25000, element: '명' },
+    { id: 'skillBorrowedTomorrow', name: '내일 훔치기', ratio: 0, cooldown: 30000, hpCost: .10 }
 ];
 function skills(user) { return SKILLS.filter(skill => has(user, skill.id)); }
 function freeSkill(user, name) {
@@ -146,11 +169,20 @@ function skillView(user) {
         mpCost: Math.ceil((stats.kino ? stats.mental : stats.mp) * skill.ratio), resourceLabel: stats.kino ? '정신력' : 'MP',
         cooldownEnd: Number(user.field.skillCooldowns[skill.name] || 0), cooltimeText: skill.cooldown / 1000 + '초',
         descLines: [catalog.find(a => a.id === skill.id).desc], augmentSkill: true,
-        ...(skill.id === 'skillRupture' && !dots(user).length ? { disabledReason: '지속 피해 없음' } : {}) }));
+        ...(skill.id === 'skillRupture' && !dots(user).length ? { disabledReason: '지속 피해 없음' } : {}),
+        ...(skill.id === 'skillWardShatter' && shields.summary(user.field, Date.now()).amount <= 0 ? { disabledReason: '보호막 없음' } : {}) }));
 }
 function onSkill(user, name, stats, extra) {
     if (!active(user)) return;
     const s = state(user), isUltimate = ultimate(user, name);
+    if (!isUltimate) s.normalSkills = [...new Set([...(s.normalSkills || []), name])];
+    if (has(user, 'pilferTurn') && s.enemyActionAt && Date.now() - s.enemyActionAt <= 1500 && s.pilferedAt !== s.enemyActionAt) {
+        s.pilferedAt = s.enemyActionAt;
+        if (user.paradise.enemy.mirror) user.paradise.enemy.mirror.nextActionAt += 2000;
+        else user.field.nextEnemyAttackAt = Number(user.field.nextEnemyAttackAt || Date.now() + 4000) + 2000;
+        corridor().heal(user, 0, .10); notice(extra, '찰나의 소매치기 · 적의 다음 행동 +2초');
+    }
+    if (has(user, 'ultimateReservoir') && !isUltimate) s.reservoir = Number(s.reservoir || 0) + Number(extra.mpCost || 0);
     if (s.freeAny) s.freeAny = false;
     if (s.freeNormal && !isUltimate) s.freeNormal = false;
     if (s.freeNamed === name) delete s.freeNamed;
@@ -166,6 +198,10 @@ function onSkill(user, name, stats, extra) {
     }
     if (has(user, 'firstSpellMemory') && !isUltimate && !s.firstSpell) { s.firstSpell = name; s.memoryBasics = 0; }
     if (!isUltimate) return;
+    s.ultimateAt = Date.now(); count(s, 'ultimateCasts');
+    if (has(user, 'ultimateReservoir')) { shield(user, 'ultimateReservoir', Math.min(stats.hp * .60, Number(s.reservoir || 0) * 3), 20); s.reservoir = 0; }
+    if (relic(user, 'oracleLens') && !s.oracleUsed) { s.oracleUsed = true; s.oracleSkill = name; s.guard = true; }
+    if (relic(user, 'moonSeal') && !s.moonUsed) { s.moonUsed = true; s.moonStrike = true; shield(user, 'moonSeal', stats.hp * .50, 20); }
     if (has(user, 'ultimateOverture') && !s.overtureUsed) {
         s.overtureUsed = true; s.freeNormal = true;
         skillEntries(user).filter(skill => !ultimate(user, skill.name)).forEach(skill => reduce(user, skill.name, Infinity));
@@ -189,6 +225,13 @@ function afterCooldown(user, name) {
         const now = Date.now(), until = Number(user.field.skillCooldowns[name] || now);
         user.field.skillCooldowns[name] = now + Math.max(0, until - now) * .60;
     }
+    if (!active(user)) return;
+    const s = state(user), now = Date.now(), until = Number(user.field.skillCooldowns[name] || now);
+    if (has(user, 'ultimateLoan') && ultimate(user, name)) {
+        if (s.ultimateCasts === 1) user.field.skillCooldowns[name] = now;
+        else if (s.ultimateCasts === 2) user.field.skillCooldowns[name] = now + Math.max(0, until - now) * 2;
+    }
+    if (s.oracleSkill === name) { user.field.skillCooldowns[name] = now + Math.max(0, user.field.skillCooldowns[name] - now) * .30; delete s.oracleSkill; }
 }
 function activeSkill(user, skill, stats, extra) {
     const s = state(user);
@@ -203,6 +246,23 @@ function activeSkill(user, skill, stats, extra) {
         case 'skillDoubleDown':
             if (Math.random() < .50) { notice(extra, '판돈 뒤집기 · 대박! 공격력 600% 피해'); return stats.atk * 6; }
             shield(user, 'skillDoubleDown', stats.hp * .20, 8); notice(extra, '판돈 뒤집기 · 실패 · 보호막 획득'); return stats.atk * .50;
+        case 'skillBloodAuction':
+            if (!user.paradise.effects.noHealing) {
+                if (stats.kino) require('./rando_characters').recoverMental(stats, user.field, stats.mental * .25, Date.now());
+                else corridor().heal(user, 0, .25);
+            }
+            return stats.atk * 3;
+        case 'skillWardShatter': {
+            const amount = shields.summary(user.field, Date.now()).amount;
+            shields.expire(user.field, Date.now()); shields.absorb(user.field, amount);
+            extra.oneTimeTrueDmg = Math.min(stats.hp * 2, amount * 2); s.guard = true;
+            return 0;
+        }
+        case 'skillThreadPull': s.threadPull = true; s.freeNormal = true; return stats.atk;
+        case 'skillBorrowedTomorrow':
+            reduceLongest(user, Infinity, false, skill.name); s.guard = true;
+            user.paradise.distortion = Math.min(100, user.paradise.distortion + 5);
+            extra.disableEquipmentBonusDamage = true; notice(extra, '내일 훔치기 · 스킬 초기화 · 뒤틀림 +5'); return 0;
     }
 }
 function prepareAttack(user, stats, extra) {
@@ -213,6 +273,11 @@ function prepareAttack(user, stats, extra) {
     if (s.meltReady) { extra.defReductionBonus = Number(extra.defReductionBonus || 0) + .50; s.meltReady = false; notice(extra, '갑옷을 녹이는 시간'); }
     if (s.ruptureReady) { extra.defReductionBonus = 1; s.ruptureReady = false; notice(extra, '세 번째 균열'); }
     if (extra.isBasic) {
+        if (has(user, 'comboStaircase') && !extra.hitCount) extra.comboHitCount = Math.max(Number(extra.comboHitCount || 1), (count(s, 'stairStep') - 1) % 3 + 1);
+        if (s.threadPull && !extra.hitCount) { extra.comboHitCount = 2 + Math.max(0, Number(stats.maxCmb || 0)); s.threadPull = false; }
+        if (relic(user, 'hunterBadge') && !s.hunterUsed && !extra.hitCount) {
+            s.hunterUsed = true; extra.comboHitCount = Math.max(3, Number(extra.comboHitCount || 1)); stats.comboLastCrit = true;
+        }
         if (s.encoreReady && has(user, 'comboEncore') && !extra.hitCount) { extra.comboHitCount = Math.max(2, Number(extra.comboHitCount || 1)); s.encoreReady = false; }
         if (s.meterReady && has(user, 'comboMeter') && !extra.hitCount) {
             extra.comboHitCount = 2 + Math.max(0, Math.floor(Number(stats.maxCmb || 0)));
@@ -258,10 +323,18 @@ function modifyHit(user, stats, extra, hit) {
     if (!direct(extra)) return;
     if (extra.mechanicsDouble) scale(2);
     if (extra.mechanicsTriple) scale(3);
+    if (relic(user, 'duelGlove') && s.duelReady) { s.duelReady = false; scale(2); }
+    if (s.moonStrike) { s.moonStrike = false; scale(2.5); }
+    if (extra.isSkill && has(user, 'comboSavings') && s.savedCombos) { scale(1 + s.savedCombos * .25); s.savedCombos = 0; }
+    if (extra.isSkill && hit.finalDamage > 0 && has(user, 'bottledAgony') && !s.bottled && dots(user).length) {
+        s.bottled = true; expedition(user).bottledDamage = Math.min(stats.atk * 12, consumeDots(user) * .75);
+        notice(extra, '고통의 병조림 · 다음 전투에 고통을 저장했습니다.');
+    }
     if (extra.isSkill && has(user, 'venomDetonator') && hit.finalDamage > 0) add(consumeDots(user) * .50, '독의 만기일');
     if (s.stolenHits > 0 && hit.finalDamage > 0) { s.stolenHits--; add(s.stolenAttack, '반쪽짜리 약탈'); }
     if (has(user, 'comboSheath') && hit.comboHitCount > 1) { add(s.sheathDamage, '미완성 검무'); s.sheathDamage = 0; }
     if (extra.isBasic) {
+        if (s.feverDamage) { add(s.feverDamage, '열병의 박자'); s.feverDamage = 0; }
         add(extra.mechanicsFixed, '벗어 던진 성벽');
         if (has(user, 'rustPendulum')) { add(s.rustDamage, '녹슨 진자'); s.rustDamage = 0; }
         if (s.harvest) { add(s.harvest, '종말의 수확'); s.harvest = 0; }
@@ -279,6 +352,12 @@ function afterHit(user, stats, extra, hit) {
     }
     if (dot) {
         const n = count(s, 'dotHits');
+        if (has(user, 'feverPitch') && n % 3 === 0) s.feverDamage = Math.min(stats.atk * 5, hit.finalDamage * 3);
+        if (has(user, 'dotSabbatical') && n === 8) {
+            skillEntries(user).filter(skill => !ultimate(user, skill.name)).forEach(skill => reduce(user, skill.name, Infinity));
+            s.guard = true; notice(extra, '여덟 번째 안식 · 일반 스킬 초기화');
+        }
+        if (relic(user, 'alchemistFlask') && n % 5 === 0) { corridor().heal(user, .08, .15); shield(user, 'alchemistFlask', stats.hp * .15, 10); }
         if (has(user, 'meltingArmor') && n % 3 === 0) s.meltReady = true;
         if (has(user, 'emberBattery') && n % 5 === 0) corridor().heal(user, 0, .10);
         if (has(user, 'coagulation') && n % 4 === 0) shield(user, 'coagulation', stats.hp * .08, 6);
@@ -294,6 +373,14 @@ function afterHit(user, stats, extra, hit) {
             if (has(user, 'funeralInterest') && count(e, 'dotKills') % 3 === 0) cardContract(user, '장례 보험금', 7);
         }
         return;
+    }
+    if (has(user, 'dopamineAddiction') && hit.criticalCount > 0) rewardBonus(user, 'dopamineAddiction', hit.criticalCount * .03, .30, extra);
+    if (has(user, 'mercyLedger') && !hit.criticalCount && count(s, 'mercyHits') % 5 === 0) { corridor().heal(user, .15); s.guard = true; }
+    if (has(user, 'shieldReforge') && s.reforgeHits != null && !s.reforgeUsed && ++s.reforgeHits >= 2) {
+        s.reforgeUsed = true; shield(user, 'shieldReforge', stats.hp * .40, 20);
+    }
+    if (relic(user, 'emberSeed') && !s.emberSeedUsed && run.enemy.hp > 0) {
+        s.emberSeedUsed = true; addDot(user, 'emberSeed', '잿불 씨앗', stats.atk * .80 * (1 + Number(stats.dotDamage || 0)), 5);
     }
     if (has(user, 'memoryTheft') && !s.theftUsed && extra.paradiseEnemyHpBefore > run.enemy.maxHp * .50 && run.enemy.hp <= run.enemy.maxHp * .50) {
         s.theftUsed = true; s.stolenAttack = run.enemy.atk; s.stolenHits = 3; notice(extra, '반쪽짜리 약탈 · 적의 공격력 획득');
@@ -330,6 +417,8 @@ function afterHit(user, stats, extra, hit) {
         }
     }
     const combos = Math.max(0, Number(hit.comboHitCount || 1) - 1), before = Number(s.comboHits || 0), total = count(s, 'comboHits', combos);
+    if (has(user, 'comboSavings')) s.savedCombos = Math.min(6, Number(s.savedCombos || 0) + combos);
+    if (has(user, 'comboRoulette') && extra.isBasic) { if (combos === 1) corridor().heal(user, .15); else if (combos >= 2) s.guard = true; }
     const crossed = n => Math.floor(total / n) > Math.floor(before / n);
     if (has(user, 'comboEncore') && extra.isBasic && !combos) s.encoreReady = true;
     if (has(user, 'comboMeter') && crossed(6)) s.meterReady = true;
@@ -356,6 +445,7 @@ function onDamage(user, stats, absorbed, lostHp, shieldBefore, extra) {
     if (!active(user)) return;
     const s = state(user), broken = shieldBefore > 0 && absorbed > 0 && shields.summary(user.field, Date.now()).amount <= 0;
     if (absorbed > 0) {
+        s.absorbedTotal = Number(s.absorbedTotal || 0) + absorbed;
         if (has(user, 'shieldBattery')) {
             s.battery = Number(s.battery || 0) + absorbed;
             while (s.battery >= stats.hp * .10 && Number(s.batteryUses || 0) < 5) {
@@ -370,10 +460,14 @@ function onDamage(user, stats, absorbed, lostHp, shieldBefore, extra) {
         }
     }
     if (broken) {
+        if (relic(user, 'guardianClasp') && !s.claspUsed) { s.claspUsed = true; corridor().heal(user, .15); }
+        if (has(user, 'shieldFuse') && !s.fuseUsed) { s.fuseUsed = true; addDot(user, 'shieldFuse', '깨진 방패의 도화선', Math.min(stats.hp * 2, s.absorbedTotal * 2) / 4, 4, 2000, true); }
+        if (has(user, 'shieldReforge') && s.reforgeHits == null) s.reforgeHits = 0;
         if (has(user, 'glassBastion')) { s.glassReady = true; notice(extra, '깨지는 순간의 광채 · 반격 준비'); }
         if (has(user, 'shieldCooldown') && !s.breakReset) { s.breakReset = true; reduceLongest(user, Infinity, true); notice(extra, '성벽 붕괴 신호 · 스킬 초기화'); }
     }
     if (lostHp > 0 && corridor().getResources(user).hp > 0) {
+        if (relic(user, 'duelGlove')) s.duelReady = true;
         if (has(user, 'shieldStitch') && Number(s.stitches || 0) < 3) { count(s, 'stitches'); shield(user, 'shieldStitch', stats.hp * .10, 6); }
         if (has(user, 'emergencyExit') && !s.secondWind && corridor().getResources(user).hp <= stats.hp * .30) {
             s.secondWind = true; shield(user, 'emergencyExit', stats.hp * .25, 8); skills(user).forEach(skill => reduce(user, skill.name, Infinity));

@@ -307,8 +307,13 @@
         }
     }
 
+    function shieldAmount(player, now) {
+        if (!Array.isArray(player.shieldLayers)) return Math.max(0, Number(player.shield || 0));
+        return player.shieldLayers.reduce((sum, layer) => sum + (!layer.expiresAt || layer.expiresAt > now ? Math.max(0, Number(layer.amount || 0)) : 0), 0);
+    }
+
     return {
-        DIRS, SKILL_TARGETS, id, unique, sourceEffects, labelEffects, skillEffects, skillTarget,
+        DIRS, SKILL_TARGETS, id, unique, sourceEffects, labelEffects, skillEffects, skillTarget, shieldAmount,
         effectIdsFor, presentationEffectIds,
         eventEffectIds, hitEffectIds, annotateEvent, parseEffectId,
         fileName, assetPath, assetUrl, motionProfile, drawCardDeck, drawAttackOrder

@@ -53,10 +53,10 @@ async function skill(user, skillName, reset = true) {
 }
 function grantShield(user, amount, expiresAt = Date.now() + 30000) { shields.grant(user.field, { source: 'test', caster: name, amount, expiresAt }); }
 
-test('62개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 확인한다', () => {
-    assert.equal(catalog.length, 62);
-    assert.deepEqual(Object.fromEntries(['dot', 'combo', 'shield', 'ultimate', 'active', 'passive'].map(key => [key, catalog.filter(a => a.category === key).length])), { dot: 21, combo: 10, shield: 10, ultimate: 5, active: 6, passive: 10 });
-    assert.equal(new Set(corridor.AUGMENTS.map(a => a.id)).size, 288);
+test('85개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 확인한다', () => {
+    assert.equal(catalog.length, 85);
+    assert.deepEqual(Object.fromEntries(['dot', 'combo', 'shield', 'ultimate', 'active', 'passive'].map(key => [key, catalog.filter(a => a.category === key).length])), { dot: 24, combo: 13, shield: 13, ultimate: 8, active: 10, passive: 14 });
+    assert.equal(new Set(corridor.AUGMENTS.map(a => a.id)).size, 311);
     for (const augment of catalog) {
         assert.match(augment.desc, /니다\.$/);
         const user = fresh();
@@ -192,7 +192,7 @@ test('보호막 소모 공격과 파괴 반격·재사용 효과를 실제 피�
     const attack = hit(user); assert.ok(attack.damage >= 50); assert.equal(shields.summary(user.field, Date.now()).amount, 75);
     user.field.skillCooldowns['자인'] = Date.now() + 60000;
     user.paradise.enemy.atk = stats.def * 5 + 500;
-    hit(user); assert.ok(s(user).glassReady); assert.ok(user.field.skillCooldowns['자인'] <= Date.now());
+    user.field.nextEnemyAttackAt = Date.now(); rpg.advanceParadiseCombat(user); assert.ok(s(user).glassReady); assert.ok(user.field.skillCooldowns['자인'] <= Date.now());
     user.paradise.enemy.atk = 0;
     assert.ok(hit(user).criticalCount > 0);
 });
@@ -245,10 +245,10 @@ test('전직과 스펙터 궁극기에 서곡·커튼콜·배당·공백·수확
     assert.equal(user.paradise.contracts.filter(c => c.star === 8).length, 1);
 });
 
-test('신규 스킬 6개를 실제로 사용하고 미보유·쿨타임·스킬 봉인·탐험 밖 사용을 막는다', async t => {
+test('신규 스킬 10개를 실제로 사용하고 미보유·쿨타임·스킬 봉인·탐험 밖 사용을 막는다', async t => {
     t.mock.method(Math, 'random', () => .99);
     const user = fresh(...catalog.filter(a => a.category === 'active').map(a => a.id));
-    assert.equal(mechanics.skillView(user).length, 6);
+    assert.equal(mechanics.skillView(user).length, 10);
     await skill(user, '도화선 점화'); assert.ok(s(user).dots.ignition);
     const consumed = mechanics.dots(user).reduce((sum, d) => sum + d.damage * d.ticks, 0);
     await skill(user, '응혈 폭발'); assert.equal(mechanics.dots(user).length, 0); assert.ok(user.paradise.combatEvents.at(-1).damage >= consumed * .98);
@@ -300,20 +300,20 @@ test('삼색·첫 주문·세 빛 수집·삼중 서약을 실제 기술과 치�
     mechanics.onVictory(user); assert.equal(user.paradise.effects.reward, .03);
 });
 
-test('새 유물의 첫 스킬 보호막·세 스킬 후 평타 배율은 실제 전투와 전투별 한도를 따른다', async t => {
+test('새 유물의 첫 스킬 보호막·두 스킬 후 평타 배율은 실제 전투와 전투별 한도를 따른다', async t => {
     t.mock.method(Math, 'random', () => .99);
     const user = fresh('skillIgnition'), stats = rpg.calculateUserStats(user);
     corridor.grantRelic(user, 'starlightSpool'); corridor.grantRelic(user, 'echoBell');
     await skill(user, '도화선 점화');
-    const amount = Math.round(stats.hp * .10 * (1 + Number(stats.shieldEfficiency || 0)));
+    const amount = Math.round(stats.hp * .25 * (1 + Number(stats.shieldEfficiency || 0)));
     assert.equal(shields.summary(user.field, Date.now()).amount, amount);
     shields.absorb(user.field, amount / 2);
-    await skill(user, '도화선 점화'); await skill(user, '도화선 점화');
+    await skill(user, '도화선 점화');
     assert.equal(shields.summary(user.field, Date.now()).amount, amount / 2);
     assert.equal(user.paradise.battle.echoBellReady, true);
     dot(user); assert.equal(user.paradise.battle.echoBellReady, true);
     const doubled = hit(user).damage, plain = hit(user).damage;
-    assert.equal(doubled, plain * 2); assert.equal(user.paradise.battle.echoBellReady, false);
+    assert.equal(doubled, plain * 3); assert.equal(user.paradise.battle.echoBellReady, false);
     battle(user); await skill(user, '도화선 점화');
     assert.equal(shields.summary(user.field, Date.now()).amount, amount);
     const slot = Object.keys(data.Equipment).find(key => data.Equipment[key].some(item => item.name === '콰트로 1악장'));
@@ -337,30 +337,30 @@ test('소리굽쇠는 전직·스펙터 궁극기 후 일반 공격 한 번에�
     }
 });
 
-test('향로·등불은 획득 이후 3승마다 발동하고 회복 봉쇄·시간 회복 2분 한도를 따른다', t => {
+test('향로·등불은 획득 이후 2승마다 발동하고 회복 봉쇄·시간 회복 3분 한도를 따른다', t => {
     const user = fresh(); user.paradise.battlesWon = 2;
     corridor.grantRelic(user, 'meditationCenser'); corridor.grantRelic(user, 'returnLantern');
     let now = Date.now(); t.mock.method(Date, 'now', () => now);
-    user.paradise.clock = { remainingMs: 600000, updatedAt: now, paused: false };
+    user.paradise.clock = { remainingMs: 600000, limitMs: corridor.TIME_LIMIT_MS, updatedAt: now, paused: false };
     const stats = rpg.calculateUserStats(user);
     resources(user).hp = resources(user).mp = 1;
     for (let i = 1; i <= 21; i++) {
         now += 1000; corridor.victory(user, () => .99);
-        if (i === 2) assert.deepEqual([resources(user).hp, resources(user).mp], [1, 1]);
-        if (i === 3) {
-            assert.equal(resources(user).hp, 1 + Math.round(stats.hp * .20));
-            assert.equal(resources(user).mp, 1 + Math.round(stats.mp * .20));
-            assert.equal(corridor.remainingTime(user.paradise), 617000);
+        if (i === 1) assert.deepEqual([resources(user).hp, resources(user).mp], [1, 1]);
+        if (i === 2) {
+            assert.equal(resources(user).hp, 1 + Math.round(stats.hp * .30));
+            assert.equal(resources(user).mp, 1 + Math.round(stats.mp * .30));
+            assert.equal(corridor.remainingTime(user.paradise), 628000);
             user.paradise.effects.noHealing = 1; resources(user).hp = resources(user).mp = 1;
         }
-        if (i >= 6) assert.deepEqual([resources(user).hp, resources(user).mp], [1, 1]);
+        if (i >= 4) assert.deepEqual([resources(user).hp, resources(user).mp], [1, 1]);
         if (i < 21) battle(user);
     }
-    assert.equal(user.paradise.relicState.timeRestored, 120000);
-    assert.equal(corridor.remainingTime(user.paradise), 699000);
+    assert.equal(user.paradise.relicState.timeRestored, 180000);
+    assert.equal(corridor.remainingTime(user.paradise), 759000);
 });
 
-test('룬 깃펜은 서로 다른 일반·습득 스킬을 요구하고 궁극기를 제외하며 카드 계약은 최대 2회 준다', async t => {
+test('룬 깃펜은 서로 다른 일반·습득 스킬을 요구하고 궁극기를 제외하며 카드 계약은 최대 3회 준다', async t => {
     t.mock.method(Math, 'random', () => .99);
     const user = fresh('skillIgnition', 'skillBulwark'); corridor.grantRelic(user, 'runeQuill');
     for (let i = 0; i < 4; i++) {
@@ -370,15 +370,15 @@ test('룬 깃펜은 서로 다른 일반·습득 스킬을 요구하고 궁극�
         assert.equal(user.paradise.battle.quillSkills.length, 1);
         if (i > 0) { await skill(user, '자인'); await skill(user, '유리 방벽'); }
         corridor.victory(user, () => .99);
-        assert.equal(user.paradise.contracts.filter(c => c.star === 7 && c.type === '일반').length, Math.min(i, 2));
+        assert.equal(user.paradise.contracts.filter(c => c.star === 8 && c.type === '일반').length, Math.min(i, 3));
     }
-    assert.match(user.paradise.rewardReveal.text, /룬 깃펜.*7성 일반/);
+    assert.match(user.paradise.rewardReveal.text, /룬 깃펜.*8성 일반/);
 });
 
 test('탐험 시간이 끝나면 자동 피해·거울 행동·일반 공격·스킬보다 귀환 정산을 우선한다', async () => {
     for (const action of ['basic', 'skill']) {
         const user = fresh('skillIgnition');
-        user.paradise.clock.updatedAt -= 1000000;
+        user.paradise.clock.updatedAt -= corridor.TIME_LIMIT_MS + 1000;
         const hp = user.paradise.enemy.hp;
         assert.match(rpg.buildHuntResult(user, {}, 1e10, { isBasic: false, dotAttack: true, summonAttack: true }), /제한 시간/);
         assert.equal(user.paradise.enemy.hp, hp);
@@ -389,4 +389,173 @@ test('탐험 시간이 끝나면 자동 피해·거울 행동·일반 공격·�
         assert.equal(user.paradise.enemy.hp, hp); assert.equal(user.field, null);
         assert.deepEqual([user.hp, user.mp], [19, 7]);
     }
+});
+
+test('도파민 중독은 확정 치명타도 20%로 고정하고 직접 적중에만 보상을 최대 30%p 지급한다', t => {
+    const random = t.mock.method(Math, 'random', () => .199);
+    const user = fresh('dopamineAddiction', 'dotCritical'), stats = rpg.calculateUserStats(user);
+    assert.equal(stats.crit, .20);
+    assert.equal(rpg.applyCriticalDamage(100, stats, { forceCritical: true }).isCritical, true);
+    random.mock.mockImplementation(() => .20);
+    assert.equal(rpg.applyCriticalDamage(100, stats, { forceCritical: true, critChanceBonus: 100 }).isCritical, false);
+    random.mock.mockImplementation(() => 0);
+    dot(user); hit(user, { summonAttack: true });
+    assert.equal(user.paradise.effects.reward, undefined);
+    hit(user, { comboHitCount: 3 });
+    assert.equal(user.paradise.mechanics.dopamineAddiction, .09);
+    assert.ok(!user.paradise.rewardReveal, '치명타마다 전투를 가리는 정산 창을 띄우지 않는다');
+    assert.match(user.paradise.combatLog.join('\n'), /도파민 중독.*9%p/);
+    for (let i = 0; i < 20; i++) hit(user);
+    assert.equal(user.paradise.mechanics.dopamineAddiction, .30);
+    assert.ok(Math.abs(user.paradise.effects.reward - .30) < 1e-9);
+    user.paradise.status = 'ended';
+    assert.equal(rpg.calculateUserStats(user).fixedCriticalChance, undefined);
+});
+
+test('새 지속 피해 증강은 고통을 다음 전투로 옮기고 3틱 평타 강화·8틱 초기화를 연계한다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('bottledAgony', 'feverPitch', 'dotSabbatical');
+    mechanics.addDot(user, 'test', '고통', 100, 4);
+    hit(user, { isBasic: false, isSkill: true });
+    assert.equal(user.paradise.mechanics.bottledDamage, 300); assert.equal(mechanics.dots(user).length, 0);
+    battle(user);
+    assert.equal(s(user).dots.bottledAgony.damage, 75); assert.equal(user.paradise.mechanics.bottledDamage, undefined);
+    const baseline = hit(user).damage;
+    for (let i = 0; i < 3; i++) dot(user);
+    const stored = s(user).feverDamage;
+    assert.ok(stored > 0); assert.equal(hit(user).damage, baseline + stored); assert.equal(s(user).feverDamage, 0);
+    user.field.skillCooldowns['자인'] = user.field.skillCooldowns['유드 알레프'] = Date.now() + 60000;
+    for (let i = 3; i < 8; i++) dot(user);
+    assert.ok(user.field.skillCooldowns['자인'] <= Date.now());
+    assert.ok(user.field.skillCooldowns['유드 알레프'] > Date.now());
+    assert.equal(mechanics.incomingMultiplier(user), 0); assert.equal(mechanics.incomingMultiplier(user), 1);
+    battle(user); assert.equal(mechanics.dots(user).length, 0);
+});
+
+test('검무 순서·연격 저축·룰렛은 다단 히트와 구분하여 다음 스킬과 방어에 사용한다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('comboStaircase', 'comboSavings', 'comboRoulette');
+    resources(user).hp = 1;
+    assert.equal(hit(user).hits.length, 1);
+    assert.equal(hit(user).hits.length, 2); assert.ok(resources(user).hp > 1);
+    assert.equal(hit(user).hits.length, 3); assert.equal(s(user).guard, true);
+    assert.equal(s(user).savedCombos, 3);
+    const empowered = hit(user, { isBasic: false, isSkill: true }).damage;
+    assert.equal(s(user).savedCombos, 0);
+    const plain = hit(user, { isBasic: false, isSkill: true }).damage;
+    assert.equal(empowered, Math.round(plain * 1.75));
+    hit(user, { isBasic: false, isSkill: true, hitCount: 9 }); assert.equal(s(user).savedCombos, 0);
+    assert.equal(hit(user).hits.length, 1);
+});
+
+test('유리 은행은 잔여 보호막을 정산하고 파괴 도화선·두 타 재생은 전투마다 한 번 발동한다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('shieldEscrow', 'shieldFuse', 'shieldReforge'), stats = rpg.calculateUserStats(user);
+    grantShield(user, 100);
+    user.paradise.enemy.atk = stats.def * 5 + 1000;
+    rpg.advanceParadiseCombat(user, user.field.nextEnemyAttackAt);
+    assert.equal(s(user).dots.shieldFuse.damage, 50);
+    hit(user); assert.equal(shields.summary(user.field, Date.now()).amount, 0);
+    hit(user); assert.equal(shields.summary(user.field, Date.now()).amount, Math.round(stats.hp * .40));
+    shields.absorb(user.field, 1e9); hit(user); hit(user);
+    assert.equal(shields.summary(user.field, Date.now()).amount, 0);
+    for (let i = 0; i < 8; i++) { grantShield(user, stats.hp); corridor.victory(user, () => .99); battle(user); }
+    assert.equal(user.paradise.mechanics.shieldEscrow, .25);
+});
+
+test('궁극기 선불·저수지·마지막 막은 실제 MP 소비·재사용·10초 승리를 판정한다', async t => {
+    let now = Date.now(); t.mock.method(Date, 'now', () => now); t.mock.method(Math, 'random', () => .99);
+    const user = fresh('ultimateLoan', 'ultimateReservoir', 'ultimateWager');
+    const mp = resources(user).mp; await skill(user, '자인');
+    const stored = mp - resources(user).mp; assert.equal(s(user).reservoir, stored);
+    await skill(user, '유드 알레프');
+    assert.equal(user.field.skillCooldowns['유드 알레프'], now);
+    assert.equal(shields.summary(user.field, now).amount, Math.round(Math.min(rpg.calculateUserStats(user).hp * .60, stored * 3)));
+    await skill(user, '유드 알레프', false);
+    const cd = rpg.getUltimateSkills(user)[0].skill.cooltime;
+    assert.equal(user.field.skillCooldowns['유드 알레프'] - now, cd * 2);
+    now += 10000; corridor.victory(user, () => .99);
+    assert.equal(user.paradise.mechanics.ultimateWager, .05);
+    battle(user); resources(user).mp = rpg.calculateUserStats(user).mp; await skill(user, '유드 알레프');
+    now += 10001; corridor.victory(user, () => .99);
+    assert.equal(user.paradise.mechanics.ultimateWager, .05);
+});
+
+test('생명 경매·방벽 투척·운명의 당김·내일 훔치기는 실제 자원·쿨타임과 연결한다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('skillBloodAuction', 'skillWardShatter', 'skillThreadPull', 'skillBorrowedTomorrow');
+    const stats = rpg.calculateUserStats(user), hp = resources(user).hp;
+    resources(user).mp = 0; await skill(user, '생명 경매');
+    assert.equal(resources(user).hp, hp - Math.floor(hp * .15));
+    assert.equal(resources(user).mp, Math.round(stats.mp * .25));
+    assert.equal(mechanics.skillView(user).find(s => s.name === '방벽 투척').disabledReason, '보호막 없음');
+    grantShield(user, 500); await skill(user, '방벽 투척');
+    assert.equal(shields.summary(user.field, Date.now()).amount, 0);
+    assert.ok(user.paradise.combatEvents.at(-1).damage >= 980); assert.equal(s(user).guard, true);
+    await skill(user, '운명의 당김');
+    assert.equal(hit(user).hits.length, 2 + Number(stats.maxCmb || 0));
+    const mp = resources(user).mp; await skill(user, '자인'); assert.equal(resources(user).mp, mp);
+    user.field.skillCooldowns['자인'] = Date.now() + 1e6;
+    user.field.skillCooldowns['유드 알레프'] = Date.now() + 2e6;
+    await skill(user, '내일 훔치기');
+    assert.ok(user.field.skillCooldowns['자인'] <= Date.now());
+    assert.ok(user.field.skillCooldowns['유드 알레프'] > Date.now());
+    assert.equal(user.paradise.distortion, 5);
+});
+
+test('자비·영수증·마지막 티켓은 직접 공격과 승리 조건을 판정하고 계약 한도를 지킨다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('mercyLedger', 'secondReceipt', 'lastTicket', 'skillIgnition');
+    resources(user).hp = 1;
+    for (let i = 0; i < 4; i++) hit(user);
+    dot(user); assert.equal(resources(user).hp, 1);
+    hit(user); assert.ok(resources(user).hp > 1); assert.equal(s(user).guard, true);
+    for (let i = 0; i < 9; i++) {
+        battle(user); resources(user).mp = rpg.calculateUserStats(user).mp;
+        await skill(user, '자인'); await skill(user, '도화선 점화');
+        if (i > 0) user.paradise.battle.hasTakenHpDamage = true;
+        resources(user).hp = 1; corridor.victory(user, () => .99);
+    }
+    assert.equal(user.paradise.contracts.filter(c => c.star === 8 && c.type === '각성').length, 2);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 8 && c.type === '일반').length, 2);
+});
+
+test('찰나의 소매치기는 피격 후 1.5초 이내에만 적 주기를 늦추며 공격마다 한 번 발동한다', async t => {
+    let now = Date.now(); t.mock.method(Date, 'now', () => now); t.mock.method(Math, 'random', () => .99);
+    const user = fresh('pilferTurn', 'skillBloodAuction');
+    user.paradise.enemy.atk = 100;
+    now += 4000; rpg.advanceParadiseCombat(user);
+    const next = user.field.nextEnemyAttackAt;
+    now += 1500; await skill(user, '생명 경매');
+    assert.equal(user.field.nextEnemyAttackAt, next + 2000);
+    await skill(user, '생명 경매'); assert.equal(user.field.nextEnemyAttackAt, next + 2000);
+    now = next + 2000; rpg.advanceParadiseCombat(user);
+    const unchanged = user.field.nextEnemyAttackAt;
+    now += 1501; await skill(user, '생명 경매'); assert.equal(user.field.nextEnemyAttackAt, unchanged);
+});
+
+test('신규 유물은 등급별 효과를 적용하고 특수 유물은 일반 추첨에서 제외한다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh();
+    for (let i = 0; i < 50; i++) corridor.grantRelic(user, null, () => .99);
+    assert.ok(user.paradise.relics.every(id => !corridor.RELICS.find(r => r.id === id).special));
+    assert.equal(corridor.RELICS.length, 30);
+    assert.deepEqual(new Set(corridor.RELICS.map(r => r.rarityLabel)), new Set(['일반', '고급', '특수']));
+    user.paradise.relics = ['guardianClasp', 'hunterBadge', 'emberSeed', 'alchemistFlask', 'duelGlove', 'oracleLens'];
+    battle(user); const stats = rpg.calculateUserStats(user);
+    assert.equal(shields.summary(user.field, Date.now()).amount, Math.round(stats.hp * .30));
+    const first = hit(user); assert.equal(first.hits.length, 3); assert.equal(first.criticalCount, 1);
+    assert.equal(s(user).dots.emberSeed.damage, Math.round(stats.atk * .80));
+    resources(user).mp = 1;
+    for (let i = 0; i < 5; i++) dot(user);
+    assert.ok(resources(user).mp > 1); assert.ok(shields.summary(user.field, Date.now()).amount > stats.hp * .30);
+    shields.absorb(user.field, 1e12); user.paradise.enemy.atk = stats.def * 5 + 100;
+    rpg.advanceParadiseCombat(user, user.field.nextEnemyAttackAt); assert.equal(s(user).duelReady, true);
+    const empowered = hit(user).damage, plain = hit(user).damage; assert.equal(empowered, plain * 2);
+    resources(user).mp = stats.mp; const now = Date.now(); await skill(user, '유드 알레프');
+    assert.ok(user.field.skillCooldowns['유드 알레프'] - now <= rpg.getUltimateSkills(user)[0].skill.cooltime * .30 + 50);
+    assert.equal(s(user).guard, true);
+    user.paradise.relics = ['abyssDiadem']; battle(user);
+    assert.equal(corridor.survive(user, 0, stats.hp), Math.round(stats.hp * .50));
+    assert.equal(resources(user).mp, 0); assert.equal(corridor.survive(user, 0, stats.hp), 0);
 });

@@ -116,6 +116,46 @@
       "id": "bag",
       "file": "DB/RPGenius/ui/낙원/bag.webp",
       "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A compact well-worn dark brown adventurer backpack with two shoulder straps, an elegant brass buckle and a small glowing cyan crystal clasp, front three-quarter view, premium game inventory bag icon."
+    },
+    {
+      "id": "emberSeed",
+      "file": "DB/RPGenius/ui/낙원/relic-emberSeed.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A cracked charcoal seed cradling a vivid orange ember, fine gold root tendrils curling around it."
+    },
+    {
+      "id": "guardianClasp",
+      "file": "DB/RPGenius/ui/낙원/relic-guardianClasp.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A silver wing-shaped cloak clasp holding a luminous ice-blue crystal shield, compact elegant silhouette."
+    },
+    {
+      "id": "hunterBadge",
+      "file": "DB/RPGenius/ui/낙원/relic-hunterBadge.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: An antique bronze hunter badge shaped like three crossed crescent blades, small emerald center gem."
+    },
+    {
+      "id": "alchemistFlask",
+      "file": "DB/RPGenius/ui/낙원/relic-alchemistFlask.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: An ornate small alchemist distillation flask, swirling bright violet and green liquids in separate coiled glass chambers, aged gold stopper."
+    },
+    {
+      "id": "duelGlove",
+      "file": "DB/RPGenius/ui/낙원/relic-duelGlove.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A single black leather duelist gauntlet with crimson gold knuckles, three short glowing red slashes above the fist."
+    },
+    {
+      "id": "oracleLens",
+      "file": "DB/RPGenius/ui/낙원/relic-oracleLens.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A floating faceted crystal eye set in delicate silver orbital rings, pale teal pupil and celestial glints."
+    },
+    {
+      "id": "moonSeal",
+      "file": "DB/RPGenius/ui/낙원/relic-moonSeal.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A crescent moon obsidian seal with an intense violet gemstone, silver moon blades and a faint purple aura."
+    },
+    {
+      "id": "abyssDiadem",
+      "file": "DB/RPGenius/ui/낙원/relic-abyssDiadem.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A majestic floating black iron diadem of jagged obsidian horns, a red fractured sun gem, restrained magenta rift energy."
     }
   ]
 }

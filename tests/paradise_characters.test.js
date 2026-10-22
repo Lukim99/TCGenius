@@ -130,6 +130,7 @@ test('글렌첵: 실제 보호막 흡수 피해를 다음 평타에 돌려주고
     corridor.getResources(user).hp = Math.floor(stats.hp / 2);
     user.paradise.enemy.atk = 500;
     await skill(user, '글버지');
+    user.field.nextEnemyAttackAt = Date.now(); rpg.advanceParadiseCombat(user);
     const stored = user.paradise.battle.characters.shieldDamage;
     assert.ok(stored > 0);
     const before = corridor.getResources(user).hp;
@@ -147,6 +148,7 @@ test('오버라이드: 부활은 탐험당 한 번만 발동하며 후속 불사
     corridor.getResources(user).hp = 1;
     user.paradise.enemy.atk = 1e8;
     await basic(user);
+    user.field.nextEnemyAttackAt = Date.now(); rpg.advanceParadiseCombat(user);
     assert.equal(corridor.getResources(user).hp, 1);
     assert.ok(user.field.skillCooldowns['불사조'] <= Date.now());
     assert.ok(user.field.skillCooldowns['처형박수'] <= Date.now());
@@ -171,6 +173,7 @@ test('일레이나: 피아스트 뒤 MP가 회복되고 보호막 완전 방어�
     user.field.skillCooldowns['이어브피'] = until;
     user.paradise.enemy.atk = 500;
     await skill(user, '피아스트');
+    user.field.nextEnemyAttackAt = Date.now(); rpg.advanceParadiseCombat(user);
     assert.equal(user.field.skillCooldowns['이어브피'], until - 5000);
     const before = corridor.getResources(user).mp;
     await basic(user);
@@ -184,6 +187,7 @@ test('진필규: 수업끝 뒤 두 평타로 재시전하며 피해 감소 상�
     await skill(user, '수업끝');
     const until = user.field.skillCooldowns['수업끝'];
     await basic(user);
+    user.field.nextEnemyAttackAt = Date.now(); rpg.advanceParadiseCombat(user);
     assert.equal(user.field.skillCooldowns['수업끝'], until - 1000);
     await basic(user);
     assert.ok(user.field.skillCooldowns['수업끝'] <= Date.now());

@@ -26,7 +26,8 @@
     }
 
     function create(options = {}) {
-        const host = options.host || document.body, now = options.now || Date.now;
+        // 전투 무대의 transform/overflow와 무관하게 실제 화면 너비로 재생한다.
+        const host = document.body, now = options.now || Date.now;
         const reduced = matchMedia('(prefers-reduced-motion: reduce)');
         const layer = document.createElement('div');
         layer.className = 'ultimate-cutscene' + (options.host ? ' ultimate-cutscene-contained' : '');

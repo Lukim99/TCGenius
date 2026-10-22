@@ -299,16 +299,16 @@
         relics.forEach((relic, i) => {
             const x = 16 + i * step, hovered = inside(x, y, step, size);
             ctx.save(); ctx.globalAlpha = relic.spent ? .35 : 1;
-            ctx.shadowColor = '#e6ce8b'; ctx.shadowBlur = hovered ? 12 : 2;
+            ctx.shadowColor = { normal: '#bfcbd2', advanced: '#f0c66a', special: '#cf9dff' }[relic.rarity]; ctx.shadowBlur = hovered ? 12 : 2;
             iconAt(relic.iconUrl, x + 2, y, size); ctx.restore();
-            register(x, y, step, size, `${relic.name} · ${relic.desc}${relic.spent ? ' · 사용 완료' : ''}`, () => { inventoryTab = 'relics'; overlay = 'inventory'; overlayPage = 0; });
+            register(x, y, step, size, `${relic.rarityLabel} · ${relic.name} · ${relic.desc}${relic.spent ? ' · 사용 완료' : ''}`, () => { inventoryTab = 'relics'; overlay = 'inventory'; overlayPage = 0; });
             if (hovered && !overlay) tooltip = { relic, x };
         });
         if (tooltip) {
             const width = 286, x = Math.min(w - width - 16, tooltip.x), top = y + size + 10, relic = tooltip.relic;
             const rows = wrap(ctx, relic.desc, width - 28, 13, 8);
             panel(ctx, x, top, width, 46 + rows.length * 20, { alpha: .97, edge: '#bfa76b88', r: 3 });
-            text(ctx, relic.name + (relic.spent ? ' · 사용 완료' : ''), x + 14, top + 23, 15, '#edd59a', 'left', 700);
+            text(ctx, relic.rarityLabel + ' · ' + relic.name + (relic.spent ? ' · 사용 완료' : ''), x + 14, top + 23, 15, '#edd59a', 'left', 700);
             rows.forEach((row, i) => text(ctx, row, x + 14, top + 48 + i * 20, 13, '#dce1e1', 'left', 500));
         }
     }
@@ -828,7 +828,7 @@
             hitButton(x + 20, y + bh - 52, 64, 36, '이전', () => overlayPage--, { disabled: overlayPage <= 0, size: 13 }); hitButton(x + bw - 84, y + bh - 52, 64, 36, '다음', () => overlayPage++, { disabled: overlayPage >= pages - 1, size: 13 }); hitButton(w / 2 - 44, y + bh - 52, 88, 36, '새로고침', fetchRanking, { size: 13 });
         } else if (overlay === 'inventory') {
             const run = state.run, groups = {
-                relics: run.relics.map(r => ({ ...r, name: r.name + (r.spent ? ' · 소모됨' : '') })),
+                relics: [...run.relics].sort((a,b) => ({special:0,advanced:1,normal:2}[a.rarity])-({special:0,advanced:1,normal:2}[b.rarity])).map(r => ({ ...r, ink: {normal:'#c5d0d6',advanced:'#f0c66a',special:'#cf9dff'}[r.rarity], name: r.rarityLabel + ' · ' + r.name + (r.spent ? ' · 소모됨' : '') })),
                 augments: [...run.effects.map(a => ({ ...a, desc: a.desc + (run.temporary.find(buff => buff.name === a.name) ? '\n' + run.temporary.find(buff => buff.name === a.name).battles + '회 전투 남음' : '') })),
                     ...run.temporary.filter(buff => !run.effects.some(a => a.name === buff.name)).map(buff => ({ name: buff.name, desc: buff.battles + '회 전투 남음' }))],
                 contracts: [...run.contracts.map(a => ({ name: a.name, desc: '귀환 시 정산됩니다.', ink: '#a9dccb' })), ...(run.quests || []).map(q => ({

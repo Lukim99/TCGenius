@@ -210,5 +210,37 @@
   {
     "file": "hell-hd-v2.webp",
     "sha256": "9cbe69db46da6cc581629c6ec264aac6561b299c5dc0095715349b3eb3f2a2ae"
+  },
+  {
+    "file": "relic-emberSeed.webp",
+    "sha256": "9faa8c14467de9fe2f0bb1d223a1f62febbec60372401e8e10c09bc121fe2cbb"
+  },
+  {
+    "file": "relic-guardianClasp.webp",
+    "sha256": "f64ee314bfde4f514f80fe9db6a99b762f5c1606ae688ce48c8adf4447a4851d"
+  },
+  {
+    "file": "relic-hunterBadge.webp",
+    "sha256": "705899eb69b7c6a94a42008b3835dbe08bde78e4907300cd1051d75fbbe430af"
+  },
+  {
+    "file": "relic-alchemistFlask.webp",
+    "sha256": "091fea4e819848dd4a68a3b471838582b46c3f297e35925e1de3d3fcef760107"
+  },
+  {
+    "file": "relic-duelGlove.webp",
+    "sha256": "5d5e6ccbbb7b03da33f01954e71f98880cec25859175b55349b7120bdc93c969"
+  },
+  {
+    "file": "relic-oracleLens.webp",
+    "sha256": "1527223b059fcab033e2f9de2470895c8f5d44617c102052013437e1b3ed64d8"
+  },
+  {
+    "file": "relic-moonSeal.webp",
+    "sha256": "83fd0159525574391b85204cca28b6ee7497a821023987db854c653b67da9140"
+  },
+  {
+    "file": "relic-abyssDiadem.webp",
+    "sha256": "0708aa2345cad47b7ed7407027850edac0889f6ccbde25a6af0caf10cbd608ee"
   }
 ]

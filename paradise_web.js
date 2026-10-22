@@ -11,7 +11,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         if (resourcesAdded) { corridor.getResources(user); user.paradise.revision++; }
         const chestLimitChanged = hell.normalizeChestSelection(user);
         const rebalanced = corridor.rebalanceEnemy(user);
-        const advanced = rpgenius.advanceParadiseMirror(user);
+        const advanced = rpgenius.advanceParadiseCombat(user);
         if (!timeAdvanced && !resourcesAdded && !chestLimitChanged && !rebalanced && !advanced) return;
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
         await rpgenius.commitProtectedUserChange(user, keys);
@@ -31,11 +31,15 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         for (const key of view.hell.keys) key.iconUrl = getItemIconUrl(items.find(item => item?.name === key.name));
         view.player.card = serializeCard(user.main_card, user);
         view.player.sprite = getCharacterSprite(view.player.card);
-        if (view.run?.enemy) view.run.enemy.sprite = view.run.enemy.kind === 'mirror' ? view.player.sprite : getMonsterSprite(view.run.enemy);
+        if (view.run?.enemy) view.run.enemy.sprite = view.run.enemy.characterCard ? getCharacterSprite(serializeCard(view.run.enemy.characterCard, user)) : view.run.enemy.kind === 'mirror' ? view.player.sprite : getMonsterSprite(view.run.enemy);
         if (view.run) view.run.combatLog = user.paradise.combatLog || [];
         if (view.run) view.run.combatEvents = user.paradise.combatEvents || [];
         if (view.run?.phase === 'combat') {
             view.battle = getCombatView(user);
+            if (user.paradise.battle?.hackCard) {
+                const card = serializeCard(user.paradise.battle.hackCard, user);
+                for (const skill of card.skills || []) if (!view.battle.skills.some(s => s.name === skill.name)) view.battle.skills.push({ ...skill, cooldownEnd: Number(user.field.skillCooldowns[skill.name] || 0), borrowed: true });
+            }
             const characters = require('./paradise_augments_characters'), blocked = characters.skillBlocked(user);
             const mechanics = require('./paradise_mechanics'), stats = rpgenius.calculateUserStats(user);
             view.battle.skills.push(...mechanics.skillView(user));

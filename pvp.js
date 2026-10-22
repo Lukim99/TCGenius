@@ -1057,7 +1057,7 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     components.push(...summonComponents, ...shieldComponents);
     const awakeningHpBefore = defender.hp;
     if (defender.corridorReceiveDamage) {
-        damage = defender.corridorReceiveDamage(damage, Number(result.hitCount || 1), t);
+        damage = defender.corridorReceiveDamage(damage, Number(result.hitCount || 1), t, extra);
     } else defender.hp = resolveSideHp(defender, dStats, Math.max(0, defender.hp - damage), t);
     if (defender.hp !== Math.max(0, awakeningHpBefore - damage)) {
         damage = Math.max(0, awakeningHpBefore - defender.hp);
@@ -2452,7 +2452,7 @@ function createCorridorMirror(user) {
     side.name = '거울 속의 ' + user.name;
     side.maxHp = side.hp = Number(side.snapshot.stats.hp);
     side.enteredAt = Date.now();
-    side.nextActionAt = side.enteredAt;
+    side.nextActionAt = side.enteredAt + 4000;
     side.corridorMirror = true;
     return side;
 }
@@ -2483,8 +2483,8 @@ function corridorMirrorTurn(side, user, stats, hp, receiveDamage, t = Date.now()
     target.maxHp = stats.hp; target.hp = beforeHp; target.maxMp = stats.mp; target.mp = Number(resources.mp);
     // 플레이어의 보호막·가시·회랑 부활은 필드 엔진이 타격마다 처리한다.
     target.snapshot.passiveIds = [];
-    if (receiveDamage) target.corridorReceiveDamage = (damage, count, at) => {
-        const received = receiveDamage(damage, count, at);
+    if (receiveDamage) target.corridorReceiveDamage = (damage, count, at, extra) => {
+        const received = receiveDamage(damage, count, at, extra);
         target.hp = Number(resources.hp); target.mp = Number(resources.mp);
         return received;
     };
@@ -2498,7 +2498,10 @@ function corridorMirrorTurn(side, user, stats, hp, receiveDamage, t = Date.now()
         expireStates(battle, item.t);
         if (item.kind === 'ilionDraw') doIlionDrawTick(battle, item.side, item.t);
         else if (item.kind === 'kinoSpray') doKinoSprayTick(battle, item.side, item.t);
-        else if (item.kind === 'action') doAiAction(battle, item.t);
+        else if (item.kind === 'action') {
+            doAiAction(battle, item.t);
+            side.nextActionAt = item.t + 4000;
+        }
         else if (item.kind === 'summon') doSummonTick(battle, item.side, item.t);
         else if (item.kind === 'mark') doMarkTick(battle, item.side, item.t);
         else if (item.kind === 'burn') doEquipmentBurnTick(battle, item.side, item.t);

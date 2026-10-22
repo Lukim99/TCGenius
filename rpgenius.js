@@ -4160,10 +4160,15 @@ function calculateUserStats(user, _out) {
     stats.finalAtk = (1 + Number(plusStats.finalAtk || 0) + Number(artifactValues.finalAtk || 0)) * (user.battleCryPotion && Date.now() < user.battleCryPotion.expired_at ? 1 + Number(user.battleCryPotion.amount || 0) : 1) - 1;
     stats.atk = Math.round(Number(stats.atk || 0) * stats.awakeningAttackMultiplier * (1 + Number(slotEffects.finalAttackBonus || 0)) * (1 + stats.finalAtk));
     if (_out && typeof _out == 'object') _out.plusStats = plusStats;
-    stats.ilion = Number(user.main_card?.id) === ilionCards.CARD_ID;
+    const hackedCard = paradise.active(user) && user.paradise.mode !== 'hell' && user.paradise.phase === 'combat' ? user.paradise.battle?.hackCard : null;
+    stats.ilion = Number(user.main_card?.id) === ilionCards.CARD_ID || hackedCard?.id === ilionCards.CARD_ID;
     stats.ilionStar = Number(user.main_card?.star || 0);
     ilionCards.applyStats(stats, user.field, slotEffects, Date.now());
     randoCharacters.configureStats(stats, user.main_card, getTranscendEquipmentSnapshot(user));
+    if (hackedCard?.id === randoCharacters.WONYODDI_ID) {
+        stats.wonyoddi = true;
+        stats.randoEquipment ||= Object.fromEntries(getTranscendEquipmentSnapshot(user).entries.map(entry => [entry.name, entry.stage]));
+    }
     stats.wonyoddiShieldChance = Number(stats.wonyoddiShieldChance || 0) + Number(plusStats.wonyoddiShieldChance || 0);
     if (!_out?.skipRandoRuntime) randoCharacters.tickMental(stats, user.field, slotEffects, Date.now());
     const randoShield = !_out?.skipRandoRuntime && getFieldShield(user);
@@ -4693,7 +4698,8 @@ function applyCriticalDamage(damage, stats, extra, defenderStats) {
     const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0);
     const critDef = Math.max(0, Math.min(1, Number(defenderStats && defenderStats.critDef || 0)));
     const finalCritMul = 1 + Math.max(0, critMul - 1) * (1 - critDef);
-    const isCritical = stats.ilionForceCritical || (extra && extra.forceCritical) ? true : Math.random() < critChance;
+    const isCritical = stats.fixedCriticalChance != null ? Math.random() < stats.fixedCriticalChance
+        : stats.ilionForceCritical || (extra && extra.forceCritical) ? true : Math.random() < critChance;
     return {
         damage: isCritical ? Math.round(Number(damage || 0) * finalCritMul) : Number(damage || 0),
         isCritical: isCritical
@@ -4928,6 +4934,8 @@ function getMainCardSkills(user) {
     const card = user.main_card && characterCards[user.main_card.id];
     if (!card) return [];
     let skillIndices = card.skills || [];
+    const hackedCard = paradise.active(user) && user.paradise.mode !== 'hell' && user.paradise.phase === 'combat' ? user.paradise.battle?.hackCard : null;
+    if (hackedCard) skillIndices = [...new Set([...skillIndices, ...(characterCards[hackedCard.id]?.skills || [])])];
     if (user.main_card && ['전직', '각성'].includes(user.main_card.type) && card.class && Array.isArray(card.class.skills)) {
         skillIndices = skillIndices.concat(card.class.skills);
     }
@@ -5818,6 +5826,12 @@ function grantFieldShield(user, source, shield) {
     getFieldShield(user);
     combatShields.grant(user.field, { source, caster: user.name, amount: shield.amount, expiresAt: shield.expired_at });
     return getFieldShield(user);
+}
+
+function getFieldShieldView(user) {
+    if (!user.field || calculateUserStats(user).disableShield) return { shield: 0, shieldLayers: [] };
+    const summary = getFieldShield(user);
+    return { shield: Number(summary?.amount || 0), shieldLayers: combatShields.active(user.field, Date.now()).map(({ amount, expiresAt }) => ({ amount, expiresAt })) };
 }
 
 function applyFieldShieldAbsorption(user, damage, lines) {
@@ -7445,9 +7459,10 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
 }
 
 // 일반 필드의 카드/스킬/장비 계산을 그대로 쓰고, 처치·보상·사망만 회랑 규칙으로 처리한다.
-function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines, at = Date.now()) {
+function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines, at = Date.now(), extra = {}) {
     const resources = paradise.getResources(user);
     const run = user.paradise, enemy = run.enemy, field = user.field;
+    if (receivedHits > 0 && run.mode !== 'hell' && !extra.dotAttack && !extra.summonAttack) (run.battle.mechanics ||= {}).enemyActionAt = at;
     received = Math.round(received * paradise.incomingMultiplier(user, received) * (received > 0 ? paradiseMechanics.incomingMultiplier(user) : 1));
     if (field.iktaeBot && field.iktaeBot.hp > 0 && at < Number(field.iktaeBot.expired_at || 0)) {
         const absorbed = Math.round(received * .30);
@@ -7483,13 +7498,44 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     return received;
 }
 
+function advanceParadiseCombat(user, at = Date.now()) {
+    const run = user.paradise;
+    if (!paradise.active(user) || run.mode === 'hell' || run.phase !== 'combat' || paradise.isTimedOut(user, at)) return false;
+    if (run.enemy?.mirror) return advanceParadiseMirror(user, at);
+    const enemy = run.enemy, field = user.field, resources = paradise.getResources(user);
+    // 시각을 저장하므로 새로고침하거나 공격해도 몬스터의 공격 주기가 밀리지 않는다.
+    field.nextEnemyAttackAt ||= Number(field.enteredAt || at) + 4000;
+    let changed = false;
+    while (field.nextEnemyAttackAt <= at && paradise.active(user) && run.phase === 'combat' && run.enemy === enemy) {
+        const time = field.nextEnemyAttackAt;
+        field.nextEnemyAttackAt += 4000;
+        const stats = calculateUserStats(user), slots = calculateCardSlotEffects(user), lines = [];
+        const avoided = Math.random() < Number(stats.avd || 0);
+        const hit = avoided ? null : calculateMonsterAttackHitResult(enemy, stats, slots, {});
+        const received = receiveParadiseDamage(user, hit?.finalDamage || 0, hit?.hitCount || 0, stats, slots, lines, time);
+        if (avoided) lines.unshift('💨 공격을 회피했습니다.');
+        const defeated = resources.hp <= 0, cleared = enemy.hp <= 0 && !defeated;
+        run.combatSequence = Number(run.combatSequence || 0) + 1;
+        run.combatEvents = [...(run.combatEvents || []), combatEffects.annotateEvent({
+            id: run.id + ':' + run.combatSequence, at: time, enemyId: enemy.id, actor: 'enemy', action: 'basic',
+            hits: [], damage: 0, received, receivedHits: avoided ? [{ avoided: true, damage: 0 }] : [{ damage: received, critical: !!hit?.criticalCount }],
+            targetHp: enemy.hp, defeated, cleared
+        })].slice(-12);
+        run.combatLog = [...lines, ...(run.combatLog || [])].slice(0, 18);
+        changed = true;
+        if (defeated) paradise.finish(user, 'defeated');
+        else if (cleared) paradise.victory(user);
+    }
+    return changed;
+}
+
 function advanceParadiseMirror(user, at = Date.now()) {
     const resources = paradise.getResources(user);
     const run = user.paradise;
     if (!paradise.active(user) || paradise.isTimedOut(user, at) || run.phase !== 'combat' || !run.enemy?.mirror) return false;
     const enemy = run.enemy, stats = calculateUserStats(user), slots = calculateCardSlotEffects(user), lines = [];
     const result = require('./pvp').corridorMirrorTurn(enemy.mirror, user, stats, enemy.hp,
-        (damage, count, time) => receiveParadiseDamage(user, damage, count, stats, slots, lines, time), at);
+        (damage, count, time, extra) => receiveParadiseDamage(user, damage, count, stats, slots, lines, time, extra), at);
     if (!result.changed) return false;
     Object.assign(enemy, { hp: result.hp, maxHp: result.maxHp, mp: result.mp, maxMp: result.maxMp });
     if (user.field.elite) user.field.elite.hp = enemy.hp;
@@ -7564,7 +7610,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         if (extra.skillHpRecovery) applyFlatSkillRecovery(user, stats.hp, extra.skillHpRecovery, stats, lines);
         if (extra.skillMpRecovery) applySkillMpRecovery(user, stats.mp, extra.skillMpRecovery, stats, lines);
         applySkillRecovery(user, stats.hp, extra, lines);
-        if (enemy.hp > 0 && !enemy.mirror) {
+        if (run.mode === 'hell' && enemy.hp > 0 && !enemy.mirror) {
             let received, receivedHits = 1;
             const incoming = Math.random() < Number(stats.avd || 0) ? null : calculateMonsterAttackHitResult(targetStats, stats, slots, extra);
             received = incoming ? incoming.finalDamage : 0;
@@ -7739,6 +7785,7 @@ function executeParadiseSkillInField(user, skill) {
     if (now < Number(field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다.';
     if (now < Number(field.skillCooldowns[skill.name] || 0)) return '❌ 스킬 쿨타임입니다.';
     if (skill.id === 'skillRupture' && !paradiseMechanics.dots(user).length) return '❌ 폭발시킬 지속 피해가 없습니다.';
+    if (skill.id === 'skillWardShatter' && !getFieldShield(user)?.amount) return '❌ 던질 보호막이 없습니다.';
     const context = getFieldCombatContext(user);
     if (context.error) return context.error;
     const stats = calculateUserStats(user), maxResource = stats.kino ? stats.mental : stats.mp;
@@ -17137,6 +17184,8 @@ module.exports = {
     leaveField,
     enqueueFieldAction,
     advanceParadiseMirror,
+    advanceParadiseCombat,
+    getFieldShieldView,
     useBasicAttackInField,
     useSkillInField,
     getPendingFragmentInfo,
