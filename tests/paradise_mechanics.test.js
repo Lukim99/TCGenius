@@ -219,13 +219,16 @@ test('수문장의 부활은 처치 보상보다 먼저 한 번 발동하고 확
     assert.equal(high.finalDamage, 250); assert.match(extra.notice, /앞면!/);
 });
 
-test('84개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 확인한다', () => {
+test('84개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 확인한다', t => {
+    let playerPower;
+    t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
     assert.equal(catalog.length, 84);
     assert.deepEqual(Object.fromEntries(['dot', 'combo', 'shield', 'ultimate', 'active', 'passive'].map(key => [key, catalog.filter(a => a.category === key).length])), { dot: 24, combo: 13, shield: 13, ultimate: 8, active: 10, passive: 14 });
     assert.equal(new Set(corridor.AUGMENTS.map(a => a.id)).size, 310);
     for (const augment of catalog) {
         assert.match(augment.desc, /니다\.$/);
         const user = fresh();
+        playerPower = corridor.recommendedPower(user.paradise.floor + augment.floors);
         user.paradise.phase = 'augment'; user.paradise.choices = [augment.id];
         assert.ok(!corridor.chooseAugment(user, augment.id, () => .99).error, augment.id);
         assert.ok(!user.paradise.choices.includes(augment.id), '중복 제시 ' + augment.id);
@@ -234,6 +237,7 @@ test('84개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 �
     assert.equal(rpg.getUltimateSkills(user).length, 0);
     assert.equal(rpg.isUltimateSkillForUser(user, rpg.getMainCardSkills(user).at(-1).skill), false);
     for (const augment of catalog.filter(a => a.requiresUltimate)) {
+        playerPower = corridor.recommendedPower(user.paradise.floor + augment.floors);
         for (const a of corridor.AUGMENTS) user.paradise.acquired[a.id] = 1;
         delete user.paradise.acquired[augment.id]; corridor.offerAugments(user);
         assert.deepEqual(user.paradise.choices, []);
@@ -317,12 +321,13 @@ test('합창·피의 잉크·지속 피해 계약과 생명보험은 전투별 �
 
 test('지속 피해 처치의 잿더미와 카드 계약은 다음 전투·탐험에 정확히 이어진다', () => {
     const user = fresh('contagiousAsh', 'funeralInterest');
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 15; i++) {
         user.paradise.enemy.hp = 1; dot(user, 100);
         assert.ok(user.paradise.mechanics.carriedAsh > 0);
+        assert.equal(user.paradise.contracts.filter(c => c.name.startsWith('장례 보험금')).length, Math.min(2, Math.floor((i + 1) / 5)));
         battle(user); assert.ok(s(user).dots.ash);
     }
-    assert.equal(user.paradise.contracts.filter(c => c.name.startsWith('장례 보험금')).length, 1);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 5 && c.type === '일반').length, 2);
 });
 
 test('실패한 연격을 저축하고 다음 최대 연격에 마지막 확정 치명타·출혈·파열을 적용한다', t => {
@@ -405,10 +410,37 @@ test('전직과 스펙터 궁극기에 서곡·커튼콜·배당·공백·수확
     assert.ok(s(user).freeNormal); assert.ok(user.field.skillCooldowns['자인'] <= Date.now() + 10000);
     const remaining = user.field.skillCooldowns['유드 알레프'] - Date.now();
     hit(user); assert.ok(user.field.skillCooldowns['유드 알레프'] - Date.now() < remaining * .92);
-    resources(user).mp = rpg.calculateUserStats(user).mp;
-    await skill(user, '빅뱅'); resources(user).mp = rpg.calculateUserStats(user).mp;
-    await skill(user, '빅뱅');
-    assert.equal(user.paradise.contracts.filter(c => c.star === 8).length, 1);
+    for (let i = 0; i < 4; i++) {
+        resources(user).mp = rpg.calculateUserStats(user).mp;
+        await skill(user, '빅뱅');
+    }
+    assert.equal(user.paradise.contracts.filter(c => c.star === 6).length, 1);
+});
+
+test('대단원의 배당은 재접속·다음 전투·계약 상실 후에도 탐험당 3장까지만 지급하고 회복은 계속한다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('ultimateDividend'); user.main_card.specter = '빅뱅 스펙터';
+    const stats = rpg.calculateUserStats(user);
+    for (let i = 1; i <= 20; i++) {
+        resources(user).mp = stats.mp; resources(user).hp = 1;
+        await skill(user, i % 2 ? '유드 알레프' : '빅뱅');
+        assert.equal(user.paradise.contracts.length, Math.min(3, Math.floor(i / 5)) - (i > 15 ? 1 : 0));
+        if (i % 5 === 0) assert.equal(resources(user).hp, Math.min(stats.hp, 1 + Math.round(stats.hp * .20)));
+        if (i === 10) { user.paradise = structuredClone(user.paradise); battle(user); }
+        if (i === 15) user.paradise.contracts.pop();
+    }
+    assert.equal(user.paradise.mechanics.ultimatePrizes, 3);
+    assert.ok(user.paradise.contracts.every(c => c.star === 6));
+    assert.match(corridor.AUGMENTS.find(a => a.id === 'ultimateDividend').desc, /최대 3장/);
+    // 패치 전 지급분도 한도에 포함하되 이미 획득한 8성 카드의 등급은 보존한다.
+    user.paradise.contracts = Array.from({ length: 3 }, () => ({ star: 8, type: '일반', name: '대단원의 배당 · 8성 일반 카드' }));
+    user.paradise.mechanics.ultimateUses = 24; delete user.paradise.mechanics.ultimatePrizes;
+    resources(user).mp = stats.mp; await skill(user, '빅뱅');
+    assert.equal(user.paradise.contracts.length, 3); assert.equal(user.paradise.mechanics.ultimatePrizes, 3);
+    assert.ok(user.paradise.contracts.every(c => c.star === 8));
+    const next = fresh('ultimateDividend');
+    for (let i = 0; i < 5; i++) { resources(next).mp = rpg.calculateUserStats(next).mp; await skill(next, '유드 알레프'); }
+    assert.equal(next.paradise.contracts.length, 1, '다음 탐험에는 새 한도 적용');
 });
 
 test('신규 스킬 10개를 실제로 사용하고 미보유·쿨타임·스킬 봉인·탐험 밖 사용을 막는다', async t => {
@@ -526,19 +558,18 @@ test('향로·등불은 획득 이후 2승마다 발동하고 회복 봉쇄·시
     assert.equal(corridor.remainingTime(user.paradise), 741000);
 });
 
-test('룬 깃펜은 서로 다른 일반·습득 스킬을 요구하고 궁극기를 제외하며 카드 계약은 최대 3회 준다', async t => {
+test('룬 깃펜은 서로 다른 일반·습득 스킬로 3승마다 6성 계약을 최대 2장 주며 궁극기는 제외한다', async t => {
     t.mock.method(Math, 'random', () => .99);
     const user = fresh('skillIgnition', 'skillBulwark'); corridor.grantRelic(user, 'runeQuill');
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 10; i++) {
         battle(user);
         resources(user).mp = rpg.calculateUserStats(user).mp;
         await skill(user, '유드 알레프'); await skill(user, '도화선 점화'); await skill(user, '도화선 점화');
         assert.equal(user.paradise.battle.quillSkills.length, 1);
         if (i > 0) { await skill(user, '자인'); await skill(user, '유리 방벽'); }
         corridor.victory(user, () => .99);
-        assert.equal(user.paradise.contracts.filter(c => c.star === 8 && c.type === '일반').length, Math.min(i, 3));
+        assert.equal(user.paradise.contracts.filter(c => c.star === 6 && c.type === '일반').length, Math.min(Math.floor(i / 3), 2));
     }
-    assert.match(user.paradise.rewardReveal.text, /룬 깃펜.*8성 일반/);
 });
 
 test('탐험 시간이 끝나면 자동 피해·거울 행동·일반 공격·스킬보다 귀환 정산을 우선한다', async () => {
@@ -682,8 +713,8 @@ test('자비·영수증·마지막 티켓은 직접 공격과 승리 조건을 �
         if (i > 0) user.paradise.battle.hasTakenHpDamage = true;
         resources(user).hp = 1; corridor.victory(user, () => .99);
     }
-    assert.equal(user.paradise.contracts.filter(c => c.star === 8 && c.type === '각성').length, 2);
-    assert.equal(user.paradise.contracts.filter(c => c.star === 8 && c.type === '일반').length, 2);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 7 && c.type === '각성').length, 1);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 6 && c.type === '일반').length, 1);
 });
 
 test('찰나의 소매치기는 피격 후 1.5초 이내에만 적 주기를 늦추며 공격마다 한 번 발동한다', async t => {
@@ -705,7 +736,7 @@ test('신규 유물은 등급별 효과를 적용하고 특수 유물은 일반 
     const user = fresh();
     for (let i = 0; i < 50; i++) corridor.grantRelic(user, null, () => .99);
     assert.ok(user.paradise.relics.every(id => !corridor.RELICS.find(r => r.id === id).special));
-    assert.equal(corridor.RELICS.length, 62);
+    assert.equal(corridor.RELICS.length, 61);
     assert.deepEqual(new Set(corridor.RELICS.map(r => r.rarityLabel)), new Set(['일반', '고급', '특수']));
     user.paradise.relics = ['guardianClasp', 'hunterBadge', 'emberSeed', 'alchemistFlask', 'duelGlove', 'oracleLens'];
     battle(user); const stats = rpg.calculateUserStats(user);
@@ -714,7 +745,9 @@ test('신규 유물은 등급별 효과를 적용하고 특수 유물은 일반 
     assert.equal(s(user).dots.emberSeed.damage, Math.round(stats.atk * .72));
     resources(user).mp = 1;
     for (let i = 0; i < 5; i++) dot(user);
-    assert.ok(resources(user).mp > 1); assert.ok(shields.summary(user.field, Date.now()).amount > stats.hp * .27);
+    assert.equal(resources(user).mp, 1, '저장본에 증류병이 남아 있어도 발동하지 않음');
+    assert.equal(shields.summary(user.field, Date.now()).amount, Math.round(stats.hp * .27));
+    assert.ok(!corridor.view(user).run.relics.some(r => !r.id || r.id === 'alchemistFlask'));
     shields.absorb(user.field, 1e12); user.paradise.enemy.atk = stats.def * 5 + 100;
     rpg.advanceParadiseCombat(user, user.field.nextEnemyAttackAt); assert.equal(s(user).duelReady, true);
     const empowered = hit(user).damage, plain = hit(user).damage; assert.equal(empowered, Math.round(plain * 1.9));

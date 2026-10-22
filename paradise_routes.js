@@ -2,6 +2,7 @@
 
 const { RELICS } = require('./paradise_content');
 const shields = require('./combat_shields');
+const cardContracts = require('./paradise_contracts');
 const rpg = () => require('./rpgenius');
 const corridor = () => require('./paradise');
 const mechanics = () => require('./paradise_mechanics');
@@ -10,36 +11,36 @@ const direct = extra => !extra.dotAttack && !extra.paradiseDot && !extra.summonA
 const dot = extra => !!extra.paradiseDot;
 const g = (id, name, rule, reward, options = {}) => ({ id, name, rule, reward, kinds: ['normal', 'elite'], tone: 'amber', sigil: 'sword', ...options });
 const GIMMICKS = [
-    g('bloodSeal', '피로 봉인한 계약', '적의 HP가 35%, 공격력이 25% 증가합니다.', '7성 일반 카드 계약을 획득합니다.', { enemy: { hp: 1.35, atk: 1.25 }, prize: { star: 7, type: '일반' }, tone: 'crimson' }),
+    g('bloodSeal', '피로 봉인한 계약', '적의 HP가 35%, 공격력이 25% 증가합니다.', '6성 일반 카드 계약을 획득합니다.', { enemy: { hp: 1.35, atk: 1.25 }, prize: { star: 6, type: '일반' }, tone: 'crimson' }),
     g('twinHunt', '둘을 위한 칼날', '공격력이 50% 증가합니다. 적 두 마리와 연속으로 싸웁니다.', '모두 쓰러뜨리면 종료 보상이 5%p 증가합니다.', { effects: { atk: .50 }, sequence: 2, prize: { bonus: .05 } }),
     g('gildedElite', '황금 사냥감', '엘리트의 HP와 공격력이 20% 증가합니다.', '고급 유물 세 개 중 하나를 선택합니다.', { kinds: ['elite'], enemy: { hp: 1.20, atk: 1.20 }, prize: { relic: 'advanced' } }),
     g('ashOnly', '재만 남는 길', '적의 HP가 절반이 되며 지속 피해만 받습니다. 직접 공격하면 1초마다 공격력의 40%만큼 5회 피해를 입히는 불씨를 남깁니다.', '지속 피해 증강 중 하나를 선택합니다.', { enemy: { hp: .50 }, category: 'dot', tone: 'crimson', sigil: 'flame' }),
     g('silentArena', '침묵의 검투장', '스킬을 봉인합니다. 일반 공격 피해가 2배가 됩니다.', '연격 증강 중 하나를 선택합니다.', { effects: { basicDamage: 1 }, category: 'combo' }),
-    g('alternatingGate', '엇박자의 문', '직접 공격의 피해가 75% 증가합니다. 같은 종류의 공격을 연속 사용하면 피해를 입히지 못합니다.', '6성 전직 카드 계약을 획득합니다.', { prize: { star: 6, type: '전직' }, tone: 'cyan' }),
+    g('alternatingGate', '엇박자의 문', '직접 공격의 피해가 75% 증가합니다. 같은 종류의 공격을 연속 사용하면 피해를 입히지 못합니다.', '5성 전직 카드 계약을 획득합니다.', { prize: { star: 5, type: '전직' }, tone: 'cyan' }),
     g('thirdSeal', '세 번의 봉인', '직접 공격은 세 번째마다 피해를 3배로 입힙니다. 나머지 두 번은 피해를 입히지 못합니다.', '종료 보상이 5%p 증가합니다.', { prize: { bonus: .05 }, tone: 'violet' }),
     g('glassVault', '유리 금고', '적이 최대 HP의 50%만큼 보호막을 얻습니다. 보호막을 깨면 다음 직접 공격의 피해가 3배가 됩니다.', '일반 유물 세 개 중 하나를 선택합니다.', { prize: { relic: 'normal' }, tone: 'cyan', sigil: 'shield' }),
     g('criticalLock', '치명적인 자물쇠', '적의 HP가 25% 감소하며 치명타만 받습니다. 직접 공격이 세 번 연속 치명타에 실패하면 다음 직접 공격이 확정 치명타가 됩니다.', '치명타 증강 중 하나를 선택합니다.', { enemy: { hp: .75 }, category: 'critical', tone: 'violet' }),
     g('burningFuse', '타오르는 도화선', '직접 공격 피해의 25%를 1초 간격의 지속 피해 3회로 나눕니다. 적의 공격력이 20% 증가합니다.', '최대 HP와 MP의 25%를 회복합니다.', { enemy: { atk: 1.20 }, prize: { heal: .25 }, tone: 'crimson', sigil: 'flame' }),
     g('bloodFuel', '피의 연료', '직접 공격마다 현재 HP의 5%를 바쳐 피해를 2배로 입힙니다. HP는 1 아래로 감소하지 않습니다.', '최대 HP와 MP의 25%를 회복합니다.', { prize: { heal: .25 }, tone: 'crimson' }),
-    g('manaSpring', '마나 샘의 파수꾼', '적의 HP가 40% 증가합니다. 일반 공격마다 MP를 20% 회복하고 가장 긴 쿨타임을 2초 줄입니다.', '6성 전직 카드 계약을 획득합니다.', { enemy: { hp: 1.4 }, prize: { star: 6, type: '전직' }, tone: 'cyan' }),
+    g('manaSpring', '마나 샘의 파수꾼', '적의 HP가 40% 증가합니다. 일반 공격마다 MP를 20% 회복하고 가장 긴 쿨타임을 2초 줄입니다.', '5성 전직 카드 계약을 획득합니다.', { enemy: { hp: 1.4 }, prize: { star: 5, type: '전직' }, tone: 'cyan' }),
     g('reversalSpear', '역전의 창', '적의 첫 두 공격은 피해가 50% 증가합니다. 세 번째 공격을 무효화하고 다음 직접 공격의 피해를 3배로 만듭니다.', '방어 증강 중 하나를 선택합니다.', { category: 'defense', tone: 'crimson', sigil: 'shield' }),
     g('crookedClock', '비껴치는 시계', '일반 공격은 적의 다음 공격을 1초 늦춥니다. 최대 4회 발동합니다. 스킬은 피해가 2배가 되지만 적의 공격을 1초 앞당깁니다.', '종료 보상이 5%p 증가합니다.', { prize: { bonus: .05 }, tone: 'cyan' }),
     g('wardDuel', '성벽 대결', '60초 동안 최대 HP의 50%만큼 보호막을 얻습니다. 보호막이 있으면 피해가 80% 증가하고 없으면 40% 감소합니다. 적의 HP가 25% 증가합니다.', '보호막 증강 중 하나를 선택합니다.', { enemy: { hp: 1.25 }, category: 'shield', tone: 'cyan', sigil: 'shield' }),
     g('cleanHunt', '흠 없는 추격', '적의 공격력이 25% 증가합니다.', 'HP 피해 없이 승리하면 일반 유물을 선택합니다. 실패하면 HP를 10% 회복합니다.', { enemy: { atk: 1.25 }, tone: 'cyan' }),
-    g('fadingContract', '꺼져 가는 계약', '적의 HP가 30% 증가합니다. 계약의 유효 시간은 25초입니다.', '시간 안에 승리하면 8성, 늦으면 5성 일반 카드 계약을 획득합니다.', { enemy: { hp: 1.30 }, tone: 'violet' }),
+    g('fadingContract', '꺼져 가는 계약', '적의 HP가 30% 증가합니다. 계약의 유효 시간은 25초입니다.', '시간 안에 승리하면 6성, 늦으면 5성 일반 카드 계약을 획득합니다.', { cardContract: true, enemy: { hp: 1.30 }, tone: 'violet' }),
     g('secondHalf', '후반전의 왕', '적의 HP가 50% 증가합니다. 적의 첫 세 공격은 피해가 절반이 됩니다. 이후 가하는 피해가 2배가 됩니다.', '종료 보상이 5%p 증가합니다.', { enemy: { hp: 1.50 }, prize: { bonus: .05 } }),
     g('borrowedFinale', '빌려 온 피날레', '궁극기 피해가 2배가 됩니다. 첫 궁극기는 쿨타임이 없으며 이후 받는 피해가 20% 증가합니다.', '궁극기 증강 중 하나를 선택합니다.', { category: 'ultimate', ultimate: true, tone: 'violet' }),
     g('comboToll', '연격 통행료', '일반 공격이 최소 3연격이 되는 대신 피해가 40% 감소합니다. 적의 HP가 30% 증가합니다.', '연격 증강 중 하나를 선택합니다.', { enemy: { hp: 1.30 }, category: 'combo' }),
-    g('vengeance', '맞바꾼 한 방', '적의 공격력이 25% 증가합니다. 잃은 HP를 최대 HP의 50%까지 저장하고 다음 일반 공격에 3배의 고정 피해로 돌려줍니다.', '7성 일반 카드 계약을 획득합니다.', { enemy: { atk: 1.25 }, prize: { star: 7, type: '일반' }, tone: 'crimson' }),
+    g('vengeance', '맞바꾼 한 방', '적의 공격력이 25% 증가합니다. 잃은 HP를 최대 HP의 50%까지 저장하고 다음 일반 공격에 3배의 고정 피해로 돌려줍니다.', '6성 일반 카드 계약을 획득합니다.', { enemy: { atk: 1.25 }, prize: { star: 6, type: '일반' }, tone: 'crimson' }),
     g('lastLight', '마지막 불빛', '현재 HP를 최대 HP의 30% 이하로 낮추고 15초 동안 80%의 보호막을 얻습니다. HP가 30% 이하이면 직접 공격의 피해가 2배가 됩니다.', 'HP와 MP를 모두 회복합니다.', { prize: { heal: 1 }, tone: 'crimson', sigil: 'shield' }),
     g('revenant', '되살아난 수문장', '적이 한 번 부활합니다. 최대 HP의 40%를 회복하고 공격력이 30% 증가합니다.', '일반 유물 세 개 중 하나를 선택합니다.', { prize: { relic: 'normal' }, tone: 'violet' }),
-    g('coinDuel', '앞면의 승부', '직접 공격마다 동전을 던집니다. 피해가 50% 확률로 2.5배, 나머지는 25%가 됩니다.', '50% 확률로 7성 각성, 나머지는 5성 일반 카드 계약을 획득합니다.', { tone: 'amber', sigil: 'gambler' }),
+    g('coinDuel', '앞면의 승부', '직접 공격마다 동전을 던집니다. 피해가 50% 확률로 2.5배, 나머지는 25%가 됩니다.', '25% 확률로 6성 각성, 나머지는 5성 일반 카드 계약을 획득합니다.', { cardContract: true, tone: 'amber', sigil: 'gambler' }),
     g('eventSeal', '빈 방의 봉인', '입장할 때 현재 HP의 10%를 바칩니다.', '이벤트를 마치면 종료 보상이 5%p 증가합니다.', { kinds: ['event'], hpCost: .10, prize: { bonus: .05 }, tone: 'violet', sigil: 'contract' }),
     g('eventLantern', '휴식의 등불', '입장할 때 뒤틀림이 10 증가합니다.', '최대 HP와 MP의 20%를 즉시 회복합니다.', { kinds: ['event'], tone: 'cyan', sigil: 'shield' }),
     g('eventAmbush', '대가 있는 보물지도', '이벤트를 마친 뒤 공격력이 30% 증가한 일반 몬스터와 추가로 싸웁니다.', '추가 전투에서 승리하면 일반 유물을 선택합니다.', { kinds: ['event'], enemy: { atk: 1.30 }, prize: { relic: 'normal' }, tone: 'crimson' }),
     g('eventClock', '시간을 먹는 문', '입장할 때 남은 탐험 시간을 30초 바칩니다.', '이벤트를 마치면 종료 보상이 8%p 증가합니다.', { kinds: ['event'], prize: { bonus: .08 }, tone: 'violet' }),
     g('eventPurity', '정화의 문턱', '입장할 때 현재 MP를 모두 바칩니다.', '뒤틀림이 즉시 25 감소합니다.', { kinds: ['event'], tone: 'cyan', sigil: 'clarity' }),
-    g('eventDeed', '봉인된 증서', '입장할 때 현재 HP의 25%를 바칩니다.', '이벤트를 마치면 카드 계약을 개봉합니다. 5성 일반 70%, 7성 전직 25%, 9성 일반 5%입니다.', { kinds: ['event'], hpCost: .25, tone: 'amber', sigil: 'contract' })
+    g('eventDeed', '봉인된 증서', '입장할 때 현재 HP의 25%를 바칩니다.', '이벤트를 마치면 카드 계약을 개봉합니다. 5성 일반 85%, 6성 전직 13%, 8성 일반 2%입니다.', { cardContract: true, kinds: ['event'], hpCost: .25, tone: 'amber', sigil: 'contract' })
 ];
 const byId = new Map(GIMMICKS.map(gimmick => [gimmick.id, gimmick]));
 function context(user) {
@@ -58,7 +59,7 @@ function eligible(user, kind) {
 }
 function roll(user, kind, random) {
     if (random() >= .20) return null;
-    return pick(eligible(user, kind), random)?.id || null;
+    return cardContracts.pick(eligible(user, kind), random)?.id || null;
 }
 function describe(id) {
     const gimmick = byId.get(id);
@@ -203,10 +204,10 @@ function reflection(user, amount) {
 function complete(user, random = Math.random) {
     const s = context(user); if (!s) return;
     const run = user.paradise, gimmick = byId.get(s.id), prize = { ...gimmick.prize };
-    if (s.id === 'fadingContract') Object.assign(prize, { star: Date.now() - s.startedAt <= 25000 ? 8 : 5, type: '일반' });
+    if (s.id === 'fadingContract') Object.assign(prize, { star: Date.now() - s.startedAt <= 25000 ? 6 : 5, type: '일반' });
     if (s.id === 'cleanHunt') Object.assign(prize, s.damaged ? { healHp: .10 } : { relic: 'normal' });
-    if (s.id === 'coinDuel') Object.assign(prize, random() < .50 ? { star: 7, type: '각성' } : { star: 5, type: '일반' });
-    if (s.id === 'eventDeed') { const roll = random(); Object.assign(prize, roll < .70 ? { star: 5, type: '일반' } : roll < .95 ? { star: 7, type: '전직' } : { star: 9, type: '일반' }); }
+    if (s.id === 'coinDuel') Object.assign(prize, random() < .25 ? { star: 6, type: '각성' } : { star: 5, type: '일반' });
+    if (s.id === 'eventDeed') { const roll = random(); Object.assign(prize, roll < .85 ? { star: 5, type: '일반' } : roll < .98 ? { star: 6, type: '전직' } : { star: 8, type: '일반' }); }
     delete run.routeEncounter;
     const lines = [];
     if (prize.star) { const name = `${prize.star}성 ${prize.type} 카드`; run.contracts.push({ star: prize.star, type: prize.type, name }); lines.push(name + ' 계약 획득'); }

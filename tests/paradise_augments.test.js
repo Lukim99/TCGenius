@@ -1,4 +1,4 @@
-const { test, before, afterEach } = require('node:test');
+const { test, before, afterEach, mock } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
@@ -21,6 +21,7 @@ DynamoDBDocumentClient.prototype.send = async command => {
 };
 const rpg = require('../rpgenius');
 const corridor = require('../paradise');
+const cardContracts = require('../paradise_contracts');
 const added = require('../paradise_augments_extra');
 const userName = 'paradise-augment-test';
 before(() => rpg.initRpgeniusData());
@@ -36,12 +37,75 @@ function fresh() {
 }
 function choose(user, id, random = () => .99) {
     user.paradise.phase = 'augment'; user.paradise.choices = [id];
-    const result = corridor.chooseAugment(user, id, random);
+    const augment = corridor.AUGMENTS.find(a => a.id === id);
+    // 효과 검증은 적정 전투력을 전제로 한다. 실제 등장 조건은 아래에서 별도로 검증한다.
+    const power = augment && cardContracts.isCombatReward(augment)
+        ? mock.method(rpg, 'calculateCombatPower', () => ({ total: corridor.recommendedPower(user.paradise.floor + augment.floors) * (augment.quest?.forceElite ? 1.2 : 1) })) : null;
+    let result;
+    try { result = corridor.chooseAugment(user, id, random); } finally { power?.mock.restore(); }
     // 효과 단위 테스트는 증강 후 일반 전투를 시작한다. 갈림길 API는 paradise.test에서 검증한다.
     if (user.paradise.phase === 'route') corridor.startCombat(user, 'normal', null, random);
     return result;
 }
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} !== ${expected}`);
+
+test('전투 카드 계약은 증강 이동 후 적의 전투력이 내 전투력의 80~130%일 때만 제시하고 선택한다', t => {
+    let playerPower = 1000000;
+    t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
+    const user = fresh();
+    assert.ok(!corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), '초반 과성장 상태에서는 제외');
+    user.paradise.floor = 85; // 사신 선택 후 100층 엘리트: 120만
+    for (const [power, allowed] of [[1500000, true], [1500001, false], [1000000, true], [900000, false]]) {
+        playerPower = power;
+        assert.equal(corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), allowed, String(power));
+    }
+    playerPower = 1000000;
+    user.paradise.celestial.traits = ['fragileElites']; user.paradise.celestial.elites = 1;
+    assert.ok(!corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), 'HP 1 엘리트는 계약 대상에서 제외');
+    user.paradise.celestial.elites = 2;
+    assert.ok(corridor.availableAugments(user).some(a => a.id === 'deathHandshake'));
+    user.paradise.startingAugments = ['prismatic'];
+    assert.ok(!corridor.availableAugments(user).some(a => cardContracts.isCombatReward(a)), '시작 증강에서는 전투 계약 제외');
+    delete user.paradise.startingAugments;
+    user.paradise.celestial.traits = ['halfSteps'];
+    playerPower = corridor.recommendedPower(93) * 1.2;
+    assert.ok(corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), '절반 이동 적용');
+    user.paradise.phase = 'augment'; user.paradise.choices = ['deathHandshake']; playerPower = 1e8;
+    const resources = { ...corridor.getResources(user) };
+    assert.ok(corridor.chooseAugment(user, 'deathHandshake').error, '저장된 선택지도 선택 시 재검증');
+    assert.deepEqual(corridor.getResources(user), resources);
+    assert.equal(user.paradise.acquired.deathHandshake, undefined);
+    assert.equal(user.paradise.quests?.length || 0, 0);
+});
+
+test('부적합해진 계약 선택지만 같은 등급으로 바꾸고 다른 선택지·리롤·보유 계약은 보존한다', t => {
+    t.mock.method(rpg, 'calculateCombatPower', () => ({ total: 1e8 }));
+    const user = fresh(), run = user.paradise;
+    Object.assign(run, { phase: 'augment', choices: ['stolenTurn', 'deathHandshake', 'clockHeart'], offerRarity: 'prismatic', rerolled: [false, true, false], offerSeen: ['stolenTurn', 'deathHandshake', 'clockHeart'] });
+    run.contracts.push({ star: 9, type: '각성', name: '9성 각성 카드' });
+    assert.equal(corridor.normalizeAugmentOffer(user, () => .99), true);
+    assert.equal(run.choices[0], 'stolenTurn'); assert.equal(run.choices[2], 'clockHeart');
+    assert.equal(corridor.AUGMENTS.find(a => a.id === run.choices[1]).rarity, 'prismatic');
+    assert.deepEqual(run.rerolled, [false, true, false]);
+    assert.equal(run.contracts[0].star, 9);
+    assert.equal(corridor.normalizeAugmentOffer(user, () => .99), false);
+    assert.ok(!corridor.rerollAugment(user, run.choices[0], () => .99).error);
+    assert.ok(!run.choices.some(id => cardContracts.isCombatReward(corridor.AUGMENTS.find(a => a.id === id))));
+});
+
+test('카드 계약은 같은 등급 안에서 일반 증강의 35% 가중치로 최초 제시·리롤한다', () => {
+    const card = { cardContract: true }, normal = {};
+    assert.equal(cardContracts.pick([card, normal], () => .2592), card);
+    assert.equal(cardContracts.pick([card, normal], () => .2593), normal);
+    const user = fresh(), run = user.paradise;
+    const remaining = ['contract', 'stolenTurn', 'revengeVault', 'clockHeart'];
+    for (const a of corridor.AUGMENTS) if (!remaining.includes(a.id)) run.acquired[a.id] = 1;
+    corridor.offerAugments(user, () => .20, 'prismatic');
+    assert.notEqual(run.choices[0], 'contract');
+    run.choices = ['clockHeart']; run.offerSeen = ['clockHeart']; run.rerolled = [false];
+    assert.equal(corridor.rerollAugment(user, 'clockHeart', () => .20).error, undefined);
+    assert.notEqual(run.choices[0], 'contract');
+});
 test('악마의 거래는 공격력 대신 추가 피해 66.6%를 적용하고 구형 획득에도 같은 효과를 낸다', t => {
     t.mock.method(Math, 'random', () => .99);
     const user = fresh(), original = rpg.calculateUserStats(user);
@@ -75,7 +139,7 @@ test('복제된 축복은 제거되며 저장된 선택지에만 남아 있어�
     assert.equal(user.paradise.phase, 'route');
 });
 
-test('결투 계약은 공격력 25%, 사신 계약은 완전 회복과 9성 각성 계약을 한 번 지급한다', () => {
+test('결투 계약은 공격력 25%, 새 사신 계약은 완전 회복과 8성 각성 계약을 지급하고 수락한 계약은 보존한다', () => {
     for (const legacy of [false, true]) {
         const duel = fresh(); choose(duel, 'duelistContract');
         if (legacy) duel.paradise.quests[0].reward = { star: 7, type: '일반' };
@@ -87,17 +151,18 @@ test('결투 계약은 공격력 25%, 사신 계약은 완전 회복과 9성 각
         corridor.startCombat(duel, 'normal', null, () => .99); corridor.victory(duel, () => .99);
         close(duel.paradise.effects.atk, .25);
         const death = fresh(); choose(death, 'deathHandshake');
-        if (legacy) death.paradise.quests[0].reward = { star: 8, type: '각성' };
+        if (legacy) death.paradise.quests[0].reward = { star: 9, type: '각성', heal: true };
         corridor.getResources(death).mp = 0;
         corridor.victory(death, () => .99);
         const stats = rpg.calculateUserStats(death);
         assert.deepEqual(corridor.getResources(death), { hp: stats.hp, mp: stats.mp });
-        assert.deepEqual(death.paradise.contracts, [{ star: 9, type: '각성', name: '9성 각성 카드' }]);
+        const star = legacy ? 9 : 8;
+        assert.deepEqual(death.paradise.contracts, [{ star, type: '각성', name: `${star}성 각성 카드` }]);
     }
     const blocked = fresh(); choose(blocked, 'devil'); choose(blocked, 'deathHandshake');
     corridor.getResources(blocked).mp = 0; corridor.victory(blocked, () => .99);
     assert.deepEqual(corridor.getResources(blocked), { hp: 1, mp: 0 });
-    assert.equal(blocked.paradise.contracts[0].star, 9);
+    assert.equal(blocked.paradise.contracts[0].star, 8);
 });
 const equipmentAdditions = corridor.AUGMENTS.filter(a => a.equipment).slice(22);
 const adventure = require('../paradise_augments_adventure');
@@ -365,7 +430,7 @@ test('계약은 승리 조건·기한을 판정하고 보상 계약과 유물을
 });
 
 test('잭팟·계약 도박은 확정 결과를 공개하고 유물 교환은 특수 유물을 보존한다', () => {
-    for (const [rolls, star, type] of [[[.99, .99, .99], 9, '각성'], [[0, 0, 0], 8, '전직'], [[0, 0, .99], 7, '일반'], [[0, .3, .99], 0, null]]) {
+    for (const [rolls, star, type] of [[[.99, .99, .99], 8, '각성'], [[0, 0, 0], 7, '전직'], [[0, 0, .99], 6, '일반'], [[0, .3, .99], 0, null]]) {
         const user = fresh(); let index = 0;
         const result = choose(user, 'sevenBells', () => rolls[index++] ?? .99);
         assert.ok(result.reveal.positive); assert.match(result.reveal.text, /\d, \d, \d/);
@@ -384,7 +449,7 @@ test('잭팟·계약 도박은 확정 결과를 공개하고 유물 교환은 �
     assert.ok(!user.paradise.relics.includes('crown')); assert.ok(user.paradise.relics.includes('judgment'));
     assert.equal(user.paradise.relics.length, 3);
     const crown = fresh(); crown.paradise.relics = ['crown', 'compass', 'ring', 'judgment'];
-    choose(crown, 'emptyHand'); assert.deepEqual(crown.paradise.relics, ['judgment']); assert.equal(crown.paradise.contracts[0].star, 9);
+    choose(crown, 'emptyHand'); assert.deepEqual(crown.paradise.relics, ['judgment']); assert.equal(crown.paradise.contracts[0].star, 8);
 });
 
 test('사건 초대장은 실제 방을 열고 황금 방의 보호는 다음 황금 상자에만 적용된다', () => {

@@ -129,11 +129,11 @@ function onVictory(user) {
     }
     if (has(user, 'ultimateWager') && s.ultimateAt && Date.now() - s.ultimateAt <= 10000) rewardBonus(user, 'ultimateWager', .05, .25);
     if (has(user, 'secondReceipt') && user.paradise.battle.hasTakenHpDamage && (s.normalSkills || []).length >= 2
-        && Number(e.receiptPrizes || 0) < 2 && count(e, 'receiptWins') % 3 === 0) {
-        count(e, 'receiptPrizes'); cardContract(user, '두 번째 영수증', 8, '각성');
+        && Number(e.receiptPrizes || 0) < 1 && count(e, 'receiptWins') % 5 === 0) {
+        count(e, 'receiptPrizes'); cardContract(user, '두 번째 영수증', 7, '각성');
     }
-    if (has(user, 'lastTicket') && hp <= stats.hp * .20 && Number(e.lastTickets || 0) < 2) {
-        count(e, 'lastTickets'); cardContract(user, '마지막 티켓', 8);
+    if (has(user, 'lastTicket') && hp <= stats.hp * .20 && Number(e.lastTickets || 0) < 1 && count(e, 'lastTicketWins') % 3 === 0) {
+        count(e, 'lastTickets'); cardContract(user, '마지막 티켓', 6);
     }
 }
 
@@ -211,8 +211,11 @@ function onSkill(user, name, stats, extra) {
         notice(extra, '피날레 뒤의 서곡 · 일반 스킬 초기화');
     }
     if (has(user, 'ultimateEncore')) s.encoreBasics = 3;
-    if (has(user, 'ultimateDividend') && count(expedition(user), 'ultimateUses') % 3 === 0) {
-        cardContract(user, '대단원의 배당', 8); corridor().heal(user, .20, .20);
+    if (has(user, 'ultimateDividend') && count(expedition(user), 'ultimateUses') % 5 === 0) {
+        const e = expedition(user);
+        e.ultimatePrizes ??= user.paradise.contracts.filter(c => c.name?.startsWith('대단원의 배당')).length;
+        if (Number(e.ultimatePrizes || 0) < 3) { count(e, 'ultimatePrizes'); cardContract(user, '대단원의 배당', 6); }
+        corridor().heal(user, .20, .20);
     }
     if (has(user, 'ultimateHourglass')) {
         const now = Date.now();
@@ -366,7 +369,6 @@ function afterHit(user, stats, extra, hit) {
             skillEntries(user).filter(skill => !ultimate(user, skill.name)).forEach(skill => reduce(user, skill.name, Infinity));
             s.guard = true; notice(extra, '여덟 번째 안식 · 일반 스킬 초기화');
         }
-        if (relic(user, 'alchemistFlask') && n % 5 === 0) { corridor().heal(user, .07, .14); shield(user, 'alchemistFlask', stats.hp * .14, 10); }
         if (has(user, 'meltingArmor') && n % 3 === 0) s.meltReady = true;
         if (has(user, 'emberBattery') && n % 5 === 0) corridor().heal(user, 0, .10);
         if (has(user, 'coagulation') && n % 4 === 0) shield(user, 'coagulation', stats.hp * .08, 6);
@@ -379,7 +381,10 @@ function afterHit(user, stats, extra, hit) {
         if (has(user, 'plaguePact') && n === 12) rewardBonus(user, 'plaguePact', .03, .30);
         if (run.enemy.hp <= 0) {
             if (has(user, 'contagiousAsh')) e.carriedAsh = hit.finalDamage * .40;
-            if (has(user, 'funeralInterest') && count(e, 'dotKills') % 3 === 0) cardContract(user, '장례 보험금', 7);
+            if (has(user, 'funeralInterest') && count(e, 'dotKills') % 5 === 0) {
+                e.funeralPrizes ??= run.contracts.filter(c => c.name?.startsWith('장례 보험금')).length;
+                if (e.funeralPrizes < 2) { count(e, 'funeralPrizes'); cardContract(user, '장례 보험금', 5); }
+            }
         }
         return;
     }

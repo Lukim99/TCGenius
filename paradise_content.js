@@ -30,7 +30,7 @@ const AUGMENTS = [
     a('gambler', '회랑의 도박사', 15, '50% 확률로 공격력이 30% 증가하고, 나머지 50% 확률로 공격력이 20% 감소합니다.', {}, { special: 'gambler' }),
     a('cursedTreasure', '저주받은 보물', 20, '탐험 종료 보상이 30% 증가합니다. 다음 엘리트 몬스터의 공격력이 50% 증가합니다.', { reward: .30 }, { special: 'cursedTreasure', dangerous: true, rarity: 'cursed' }),
     a('greed', '탐욕의 인장', 10, '앞으로 3회 전투에서 모두 승리하면 탐험 종료 보상이 20% 증가합니다.', {}, { special: 'greed' }),
-    a('contract', '신비한 계약', 3, '탐험을 종료할 때 5성 전직 카드 1장을 획득합니다.', {}, { special: 'contract', rarity: 'prismatic' }),
+    a('contract', '신비한 계약', 3, '탐험을 종료할 때 5성 일반 카드 1장을 획득합니다.', {}, { cardContract: true, special: 'contract', rarity: 'prismatic' }),
     ...[
         ['staff', '쿠루미의 힘이 깃든 지팡이', 5, '장비 패시브 효과', 2],
         ['manaHat', '마나번 햇', 8, '공격력 증가 효과', 2],
@@ -137,15 +137,14 @@ const RELICS = [
     ['meditationCenser', '명상 향로', '획득 후 전투에서 2회 승리할 때마다 최대 HP와 MP의 27%를 회복합니다.'],
     ['starlightSpool', '별빛 실타래', '매 전투에서 처음 스킬을 사용하면 최대 HP의 22%만큼 보호막을 15초간 생성합니다.'],
     ['echoBell', '메아리 종', '한 전투에서 스킬을 2회 사용할 때마다 다음 일반 공격의 피해가 2.8배로 증가합니다. 강화된 공격은 한 번만 저장합니다.'],
-    ['riftLens', '균열 돋보기', '증강 선택지를 새로고침할 때마다 뒤틀림이 4 감소하고 최대 MP의 9%를 회복합니다.'],
+    ['riftLens', '균열 돋보기', '증강 선택지를 새로고침할 때마다 뒤틀림이 4 감소하고 최대 MP의 2%를 회복합니다.'],
     ['returnLantern', '귀환 등불', '획득 후 전투에서 2회 승리할 때마다 남은 탐험 시간을 27초 회복합니다. 이번 탐험에서 최대 2분 42초까지 회복합니다.'],
     ['tuningFork', '천상의 소리굽쇠', '궁극기를 사용하면 다음 일반 공격의 피해가 1.9배로 증가하며 적의 방어력을 전부 무시합니다. 강화된 공격은 한 번만 저장합니다.'],
-    ['runeQuill', '룬 깃펜', '한 전투에서 궁극기를 제외한 서로 다른 스킬 2개를 사용하고 승리하면 8성 일반 카드 계약을 획득합니다. 이번 탐험에서 최대 3회 획득합니다.'],
+    ['runeQuill', '룬 깃펜', '궁극기를 제외한 서로 다른 스킬 2개를 사용하고 승리한 전투가 3회 쌓일 때마다 6성 일반 카드 계약을 획득합니다. 이번 탐험에서 최대 2회 획득합니다.'],
     ['crystalVial', '새벽의 이슬병', '퍼즐에 성공하면 최대 HP와 MP의 22%를 회복하고 탐험 종료 보상이 9%p 증가합니다. 보상은 이번 탐험에서 최대 27%p까지 증가합니다.'],
     ['emberSeed', '잿불 씨앗', '매 전투에서 첫 직접 공격이 적에게 불씨를 남깁니다. 불씨는 2초마다 공격력의 72%만큼 피해를 입히며 총 5회 발동합니다.'],
     ['guardianClasp', '수호자의 걸쇠', '전투 시작 시 최대 HP의 27%만큼 보호막을 20초간 생성합니다. 피격으로 보호막이 모두 깨지면 최대 HP의 14%를 회복합니다. 회복은 전투마다 한 번 발동합니다.'],
     ['hunterBadge', '사냥꾼의 휘장', '매 전투의 첫 일반 공격이 최소 3연격으로 발동하며 마지막 연격은 확정 치명타로 적중합니다.'],
-    ['alchemistFlask', '연금술사의 증류병', '지속 피해를 5회 입힐 때마다 최대 HP의 7%와 최대 MP의 14%를 회복하고 최대 HP의 14%만큼 보호막을 10초간 생성합니다.'],
     ['duelGlove', '결투가의 장갑', 'HP에 피해를 받으면 다음 직접 공격의 피해가 1.9배로 증가합니다. 강화된 공격은 한 번만 저장합니다.'],
     ['oracleLens', '예언자의 수정안', '매 전투의 첫 궁극기는 쿨타임이 65% 감소하며 다음 피격을 한 번 무효화합니다.'],
     ['moonSeal', '월야의 인장', '매 전투의 첫 궁극기를 사용하면 다음 직접 공격의 피해가 135% 증가하고 최대 HP의 45%만큼 보호막을 20초간 생성합니다.'],
@@ -184,8 +183,8 @@ const RELICS = [
     ['fadedPostcard', '바랜 엽서', '스킬을 사용하면 다음 피격의 피해가 6% 감소합니다. 한 번만 저장합니다.', { skillGuard: .06 }]
 ].map(([id, name, desc, effect]) => {
     const special = ['judgment', 'riftHeart', 'moonSeal', 'abyssDiadem'].includes(id);
-    const rarity = special ? 'special' : ['ring', 'feather', 'redContract', 'sheath', 'necklace', 'echoBell', 'tuningFork', 'runeQuill', 'alchemistFlask', 'duelGlove', 'oracleLens'].includes(id) ? 'advanced' : 'normal';
-    return { id, name, desc, special, rarity, ...(effect ? { effect } : {}), rarityLabel: { normal: '일반', advanced: '고급', special: '특수' }[rarity], iconUrl: '/rpg-ui?file=' + encodeURIComponent('낙원/relic-' + id + '.webp') };
+    const rarity = special ? 'special' : ['ring', 'feather', 'redContract', 'sheath', 'necklace', 'echoBell', 'tuningFork', 'runeQuill', 'duelGlove', 'oracleLens'].includes(id) ? 'advanced' : 'normal';
+    return { id, name, desc, special, rarity, ...(id === 'runeQuill' ? { cardContract: true } : {}), ...(effect ? { effect } : {}), rarityLabel: { normal: '일반', advanced: '고급', special: '특수' }[rarity], iconUrl: '/rpg-ui?file=' + encodeURIComponent('낙원/relic-' + id + '.webp') };
 });
 
 const EVENTS = {

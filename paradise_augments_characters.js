@@ -18,7 +18,7 @@ const AUGMENTS = [
     a('thanksFist', 5, '답례의 주먹', 5, 'silver', 'defense', '수업끝 또는 감사합니다 친구야의 피해 감소 효과가 유지되는 동안 피격되면 수업끝의 남은 쿨타임을 1초 줄입니다.'),
     a('failedEncore', 6, '실패한 앵콜', 8, 'gold', 'critical', 'SUPER EASY에서 치명타가 발생하지 않으면 쿨타임을 초기화합니다. 전투마다 한 번 발동합니다.'),
     a('lastChorus', 6, '마지막 후렴', 15, 'prismatic', 'critical', 'SUPER EASY로 치명타를 2회 발생시키면 KICK BACK의 쿨타임을 초기화하고 다음 KICK BACK을 확정 치명타로 만듭니다.', 15),
-    a('jackpotSavings', 7, '한탕 적금', 8, 'gold', 'reward', '백억이요로 적을 3회 처치할 때마다 7성 일반 카드 계약을 획득합니다.'),
+    { ...a('jackpotSavings', 7, '한탕 적금', 8, 'gold', 'reward', '백억이요로 적을 5회 처치할 때마다 5성 일반 카드 계약을 획득합니다. 탐험 중 최대 2회 획득합니다.'), cardContract: 'combat' },
     a('riggedJackpot', 7, '조작된 잭팟', 15, 'prismatic', 'skill', '매 전투 처음 사용하는 초특급한탕은 반드시 대박으로 발동합니다.', 22),
     a('sealDividend', 8, '봉인의 대가', 5, 'silver', 'defense', '건력 상태에서 일반 공격을 3회 적중시킬 때마다 현재 최대 HP의 20%만큼 보호막을 생성합니다. 보호막은 8초간 유지하며 기존 효과를 교체합니다.'),
     a('endlessMight', 8, '끝나지 않는 건력', 15, 'prismatic', 'skill', '건력 상태에서 다른 스킬을 사용해도 건력이 해제되지 않습니다. 건력을 다시 사용하면 직접 해제합니다.', 21),
@@ -164,9 +164,11 @@ function afterHit(user, stats, extra, hit) {
     }
     if (name === '백억이요' && has(user, 'jackpotSavings') && user.paradise.enemy.hp <= 0) {
         const run = user.paradise;
-        if ((run.jackpotKills = (run.jackpotKills || 0) + 1) % 3 === 0) {
-            run.contracts.push({ star: 7, type: '일반', name: '한탕 적금 · 7성 일반 카드' });
-            const text = '한탕 적금 · 7성 일반 카드 계약을 획득했습니다.';
+        run.jackpotPrizes ??= run.contracts.filter(c => c.name?.startsWith('한탕 적금')).length;
+        if ((run.jackpotKills = (run.jackpotKills || 0) + 1) % 5 === 0 && Number(run.jackpotPrizes || 0) < 2) {
+            run.jackpotPrizes = Number(run.jackpotPrizes || 0) + 1;
+            run.contracts.push({ star: 5, type: '일반', name: '한탕 적금, 5성 일반 카드' });
+            const text = '한탕 적금, 5성 일반 카드 계약을 획득했습니다.';
             run.rewardReveal = { motif: 'contract', positive: true, text };
             run.history.unshift({ floor: run.floor, text });
             notice(extra, text);

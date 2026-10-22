@@ -57,7 +57,9 @@ async function basic(user) {
 }
 function lastHit(user) { return user.paradise.combatEvents.at(-1); }
 
-test('17개 캐릭터마다 전용 증강 2개를 제공하며 메인 카드와 실제 보유 스킬로 노출·선택을 검증한다', () => {
+test('17개 캐릭터마다 전용 증강 2개를 제공하며 메인 카드와 실제 보유 스킬로 노출·선택을 검증한다', t => {
+    let playerPower;
+    t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
     assert.equal(characters.length, definitions.length * 2);
     assert.equal(new Set(characters.map(a => a.id)).size, characters.length);
     for (const [id, card] of definitions.entries()) {
@@ -67,6 +69,7 @@ test('17개 캐릭터마다 전용 증강 2개를 제공하며 메인 카드와 
             assert.equal(augment.characterName, card.name);
             assert.match(augment.desc, /니다\.$/);
             const user = fresh(id);
+            playerPower = corridor.recommendedPower(user.paradise.floor + augment.floors);
             for (const other of corridor.AUGMENTS) if (other.id !== augment.id) user.paradise.acquired[other.id] = 1;
             user.main_card.id = (id + 1) % definitions.length;
             corridor.offerAugments(user, () => 0);
@@ -229,19 +232,20 @@ test('켄시: 연격의 치명타를 각각 집계하고 남은 치명타를 다
     assert.equal(user.paradise.battle.characters.chorusReady, true);
 });
 
-test('제우스: 세 번의 백억이요 마무리로 실제 카드 계약을 얻고 첫 궁극기는 대박이 된다', async t => {
+test('제우스: 백억이요 처치 5회마다 5성 계약을 최대 2장 얻고 첫 궁극기는 대박이 된다', async t => {
     t.mock.method(Math, 'random', () => .99);
     const user = fresh(7, 'jackpotSavings', 'riggedJackpot');
     const result = await skill(user, '초특급한탕');
     assert.match(result, /초특급 대박/);
     assert.equal(user.paradise.battle.characters.jackpotUsed, true);
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 15; i++) {
         user.paradise.enemy.hp = 1;
+        corridor.getResources(user).mp = rpg.calculateUserStats(user).mp;
         await skill(user, '백억이요');
-        if (i < 2) { corridor.startCombat(user, 'normal', null, () => .99); dummy(user); }
+        assert.equal(user.paradise.contracts.filter(c => c.name.startsWith('한탕 적금')).length, Math.min(2, Math.floor((i + 1) / 5)));
+        if (i < 14) { corridor.startCombat(user, 'normal', null, () => .99); dummy(user); }
     }
-    assert.equal(user.paradise.contracts.filter(c => c.star === 7 && c.type === '일반').length, 1);
-    assert.match(user.paradise.rewardReveal.text, /7성 일반 카드/);
+    assert.equal(user.paradise.contracts.filter(c => c.star === 5 && c.type === '일반').length, 2);
 });
 
 test('제우스: 강제 대박은 교촌 주머니의 실패 효과와 겹치지 않고 시전 실패로 소모되지 않는다', async t => {

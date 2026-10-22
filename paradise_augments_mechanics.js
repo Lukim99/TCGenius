@@ -15,7 +15,7 @@ module.exports = [
     a('coagulation', '응고된 고통', 'dot', 'gold', 8, '지속 피해를 4회 입힐 때마다 최대 HP의 8%만큼 보호막을 생성합니다. 보호막은 6초간 유지하며 같은 효과는 갱신합니다.'),
     a('anesthetic', '신경 마취', 'dot', 'gold', 9, '지속 피해를 3회 입힐 때마다 다음 피격의 피해를 50% 감소시킵니다. 효과는 중첩하지 않습니다.'),
     a('contagiousAsh', '옮겨 붙는 잿더미', 'dot', 'gold', 10, '지속 피해로 적을 처치하면 다음 전투에 잿더미를 옮깁니다. 2초마다 마지막 지속 피해의 40%만큼 3회 피해를 입힙니다. 1회 피해는 공격력의 300%를 넘지 않습니다.'),
-    a('funeralInterest', '장례 보험금', 'dot', 'prismatic', 15, '지속 피해로 적을 3회 처치할 때마다 7성 일반 카드 계약을 획득합니다.'),
+    a('funeralInterest', '장례 보험금', 'dot', 'prismatic', 15, '지속 피해로 적을 5회 처치할 때마다 5성 일반 카드 계약을 획득합니다. 탐험 중 최대 2회 획득합니다.', { cardContract: 'combat' }),
     a('malignantHarmony', '악성 합창', 'dot', 'gold', 10, '서로 다른 지속 피해가 2종 이상 남은 적에게 지속 피해를 입히면 공명을 남깁니다. 공명은 2초마다 공격력의 50%만큼 5회 피해를 입힙니다. 전투마다 한 번 발동합니다.'),
     a('bloodInk', '피로 쓰는 잉크', 'dot', 'gold', -5, '적에게 지속 피해가 남아 있을 때 스킬을 사용하면 최대 HP의 5%를 바칩니다. 이후 지속 피해가 25% 증가하며 전투마다 최대 100%까지 증가합니다. HP는 1 아래로 감소하지 않습니다.'),
     a('putrefaction', '부패한 초침', 'dot', 'silver', 5, '지속 피해를 4회 입힐 때마다 궁극기를 제외하고 남은 쿨타임이 가장 긴 스킬의 쿨타임을 3초 줄입니다.'),
@@ -47,7 +47,7 @@ module.exports = [
 
     a('ultimateOverture', '피날레 뒤의 서곡', 'ultimate', 'prismatic', 18, '매 전투 첫 궁극기를 사용하면 나머지 일반 스킬의 쿨타임을 초기화합니다. 다음 일반 스킬의 MP 또는 정신력 소모를 없앱니다.', { requiresUltimate: true }),
     a('ultimateEncore', '끝나지 않은 커튼콜', 'ultimate', 'gold', 12, '궁극기를 사용한 뒤 일반 공격을 적중시키면 모든 궁극기의 남은 쿨타임을 10% 줄입니다. 궁극기를 사용할 때마다 3회까지 발동합니다.', { requiresUltimate: true }),
-    a('ultimateDividend', '대단원의 배당', 'ultimate', 'prismatic', 20, '궁극기를 3회 사용할 때마다 8성 일반 카드 계약을 획득하고 최대 HP와 MP의 20%를 회복합니다.', { requiresUltimate: true }),
+    a('ultimateDividend', '대단원의 배당', 'ultimate', 'prismatic', 20, '궁극기를 5회 사용할 때마다 최대 HP와 MP의 20%를 회복하고 6성 일반 카드 계약을 획득합니다. 카드 계약은 탐험 중 최대 3장 획득합니다.', { requiresUltimate: true, cardContract: 'combat' }),
     a('ultimateHourglass', '궁극기를 위한 공백', 'ultimate', 'gold', -5, '궁극기의 쿨타임이 40% 감소합니다. 대신 궁극기를 사용할 때 나머지 일반 스킬의 남은 쿨타임을 10초 늘립니다.', { requiresUltimate: true }),
     a('ultimateHarvest', '종말의 수확', 'ultimate', 'gold', 12, '궁극기를 사용하면 적에게 남은 지속 피해를 모두 거둡니다. 남은 기본 피해 총합을 다음 일반 공격에 고정 피해로 추가하며 최대 HP의 20%만큼 보호막을 10초간 생성합니다.', { requiresUltimate: true }),
 

@@ -217,7 +217,7 @@ test('이벤트 기믹의 비용, 확률 계약, 추가 전투와 퍼즐 완료�
     specialRoute(user, 'eventPurity', 'event'); assert.equal(user.paradise.distortion, 0); assert.equal(corridor.getResources(user).mp, 0);
     const before = corridor.remainingTime(user.paradise); specialRoute(user, 'eventClock', 'event');
     const consumed = before - corridor.remainingTime(user.paradise); assert.ok(consumed >= 30000 && consumed < 31000);
-    for (const [roll, star, type] of [[.6999, 5, '일반'], [.70, 7, '전직'], [.9499, 7, '전직'], [.95, 9, '일반']]) {
+    for (const [roll, star, type] of [[.8499, 5, '일반'], [.85, 6, '전직'], [.9799, 6, '전직'], [.98, 8, '일반']]) {
         user = await reset(); corridor.enter(user); specialRoute(user, 'eventDeed', 'event'); forceEvent(user, 'mirror');
         corridor.chooseEvent(user, 'skip', {}, () => roll);
         assert.deepEqual(user.paradise.contracts.map(c => [c.star, c.type]), [[star, type]]);
@@ -242,7 +242,7 @@ test('무피해 계약과 시간 계약은 실제 달성 여부에 따라 보상
         assert.equal(user.paradise.phase, damaged ? 'augment' : 'relic');
         if (damaged) assert.ok(corridor.getResources(user).hp > 1);
     }
-    for (const [elapsed, star] of [[24000, 8], [26000, 5]]) {
+    for (const [elapsed, star] of [[24000, 6], [26000, 5]]) {
         const user = await reset(); corridor.enter(user); specialRoute(user, 'fadingContract');
         user.paradise.routeEncounter.startedAt -= elapsed;
         corridor.victory(user, () => .99); assert.equal(user.paradise.contracts[0].star, star);
@@ -874,7 +874,7 @@ test('낙원 아이템은 관리자 itemImage를 우선하며 입장권·열쇠�
     }
 });
 
-test('권장 전투력의 모든 기준층과 엘리트 1.2배가 실제 몬스터 스탯에 적용된다', async () => {
+test('권장 전투력으로 스탯을 생성한 뒤 방어력만 1만으로 제한하고 다른 스탯에 재분배하지 않는다', async () => {
     const user = await reset(); corridor.enter(user, () => .99);
     assert.deepEqual(corridor.CP_ANCHORS, [[1, 10000], [10, 100000], [100, 1000000], [200, 5000000], [300, 10000000], [400, 30000000], [500, 60000000], [600, 100000000], [700, 300000000], [800, 400000000], [900, 500000000], [999, 1000000000]]);
     let previous;
@@ -885,25 +885,57 @@ test('권장 전투력의 모든 기준층과 엘리트 1.2배가 실제 몬스�
         const normal = user.paradise.enemy;
         const actual = rpg.computeCombatPowerFromStats(normal);
         assert.equal(normal.recommendedPower, actual.total);
-        assert.ok(Math.abs(actual.total - cp) <= 1, String(floor));
+        const originalDef = Math.round(Math.sqrt(cp) * .5);
+        assert.equal(normal.def, Math.min(10000, originalDef));
+        assert.ok(Math.abs(rpg.computeCombatPowerFromStats({ ...normal, def: originalDef }).total - cp) <= 1, '방어력 외 스탯 유지: ' + floor);
         assert.ok(normal.hp >= cp * .5 && normal.hp < cp * .51, 'HP는 전투력에 비례해 성장');
         assert.ok(actual.offense > actual.defense, String(floor));
         assert.ok(Number.isSafeInteger(normal.hp));
         if (previous) {
             assert.ok(normal.atk > previous.atk);
             assert.ok(normal.hp > previous.hp);
-            assert.ok(normal.def > previous.def);
+            assert.ok(normal.def >= previous.def);
         }
         previous = normal;
         corridor.startCombat(user, 'elite', null, () => .99);
-        assert.ok(Math.abs(rpg.computeCombatPowerFromStats(user.paradise.enemy).total - cp * 1.2) <= 1);
+        const elite = user.paradise.enemy, eliteDef = Math.round(Math.sqrt(cp * 1.2) * .5);
+        assert.equal(elite.def, Math.min(10000, eliteDef));
+        assert.ok(Math.abs(rpg.computeCombatPowerFromStats({ ...elite, def: eliteDef }).total - cp * 1.2) <= 1);
     }
     corridor.startCombat(user, 'final', null, () => .99);
-    assert.ok(Math.abs(rpg.computeCombatPowerFromStats(user.paradise.enemy).total - 1000000000) <= 1);
+    assert.equal(user.paradise.enemy.def, 10000);
+    assert.ok(Math.abs(rpg.computeCombatPowerFromStats({ ...user.paradise.enemy, def: Math.round(Math.sqrt(1e9) * .5) }).total - 1e9) <= 1);
     user.paradise.distortion = 75;
     corridor.startCombat(user, 'elite', null, () => 0);
     assert.ok(user.paradise.enemy.traits.length);
     assert.equal(user.paradise.enemy.recommendedPower, rpg.computeCombatPowerFromStats(user.paradise.enemy).total);
+    for (const kind of ['normal', 'elite', 'judge', 'rift', 'final']) {
+        const rolls = [.99, 0, .5]; // 철갑 특성까지 적용한 뒤에도 1만
+        corridor.startCombat(user, kind, null, () => rolls.shift() ?? .99);
+        assert.ok(user.paradise.enemy.traits.includes('철갑, 방어력 +30%'));
+        assert.equal(user.paradise.enemy.def, 10000, kind);
+    }
+});
+
+test('진행 중인 전투의 방어력 제한은 HP·공격력·쿨타임을 그대로 두고 한 번만 저장한다', async () => {
+    const user = await reset(); corridor.enter(user, () => .99); user.paradise.floor = 999;
+    corridor.startCombat(user, 'elite', null, () => .99);
+    user.paradise.enemy.def = 50000;
+    user.paradise.enemy.hp = Math.floor(user.paradise.enemy.maxHp / 2);
+    user.field.elite.hp = user.paradise.enemy.hp;
+    user.field.skillCooldowns['자인'] = Date.now() + 60000;
+    const before = structuredClone(user.paradise.enemy), field = structuredClone(user.field);
+    await user.save(); const count = writes.length;
+    const response = await request('/api/paradise'); assert.equal(response.status, 200);
+    const enemy = persisted.get(account.id).paradise.enemy;
+    assert.deepEqual(enemy, { ...before, def: 10000, recommendedPower: rpg.computeCombatPowerFromStats({ ...before, def: 10000, hp: before.maxHp }).total });
+    assert.deepEqual(persisted.get(account.id).field, field); assert.equal(writes.length, count + 1);
+    await request('/api/paradise'); assert.equal(writes.length, count + 1);
+    const copy = structuredClone(user);
+    copy.paradise.enemy = { ...before, kind: 'mirror', mirror: { snapshot: { stats: { ...before } } } };
+    assert.equal(corridor.rebalanceEnemy(copy), true);
+    assert.equal(copy.paradise.enemy.def, 10000); assert.equal(copy.paradise.enemy.mirror.snapshot.stats.def, 10000);
+    assert.equal(copy.paradise.enemy.hp, before.hp); assert.equal(copy.paradise.enemy.atk, before.atk);
 });
 
 test('13층 도박사의 과도한 HP를 낮추고 자체 전투력 15.6만을 유지한다', async () => {
@@ -964,10 +996,10 @@ test('황금 상자는 희귀 보상을 미리 노출하지 않고 실제 획득
         const contract = user.paradise.contracts.at(-1);
         assert.equal(result.reveal.positive, true); assert.ok(result.message.includes(contract.name));
         if (rareRoll < .7) {
-            assert.equal(contract.star, 9); assert.equal(contract.type, rareRoll === 0 ? '각성' : '전직');
+            assert.equal(contract.star, 8); assert.equal(contract.type, rareRoll === 0 ? '각성' : '전직');
             corridor.finish(user); assert.ok(!corridor.claim(user).error);
             assert.equal(user.inventory.card.at(-1).type, contract.type);
-            assert.equal(user.inventory.card.at(-1).star, 8);
+            assert.equal(user.inventory.card.at(-1).star, 7);
             const count = user.inventory.card.length;
             corridor.claim(user); assert.equal(user.inventory.card.length, count);
         } else assert.equal(contract.bonus, 1);
@@ -983,9 +1015,27 @@ test('천상 도감은 유물과 모든 증강을 제공하되 등장 조건 안
     assert.ok(result.data.augments.every(a => !Object.hasOwn(a, 'condition') && !/때 등장|이상일 때/.test(a.desc)));
     assert.equal(result.data.augments.find(a => a.id === 'sevenBells').rarity, 'prismatic');
     assert.equal(result.data.relics.length, corridor.RELICS.length);
+    assert.ok(!result.data.relics.some(r => r.id === 'alchemistFlask'));
+    assert.match(result.data.relics.find(r => r.id === 'riftLens').desc, /MP의 2%/);
     assert.deepEqual(new Set(result.data.relics.map(r => r.rarity)), new Set(['normal','advanced','special']));
     assert.ok(result.data.relics.every(r => r.iconUrl.includes('/rpg-ui?file=') && r.rarityLabel && r.desc.endsWith('합니다.') && !Object.hasOwn(r, 'effect')));
     assert.equal((await request('/api/dex/augments', undefined, false)).status, 401);
+});
+
+test('삭제된 증류병만 남은 유물 선택지도 재접속 시 정상 복구하고 다시 지급하지 않는다', async () => {
+    const user = await reset(); corridor.enter(user, () => .99);
+    Object.assign(user.paradise, { phase: 'relic', relicChoices: ['alchemistFlask'], relicPicksRemaining: 1, relicDraftRarities: ['advanced'] });
+    assert.ok(corridor.chooseRelic(user, 'alchemistFlask').error);
+    await user.save();
+    const state = (await request('/api/paradise')).data;
+    assert.equal(state.run.phase, 'relic'); assert.equal(state.run.relicChoices.length, 3);
+    assert.ok(state.run.relicChoices.every(r => r.id !== 'alchemistFlask' && r.rarity === 'advanced'));
+    const repeat = (await request('/api/paradise')).data;
+    assert.equal(repeat.revision, state.revision); assert.deepEqual(repeat.run.relicChoices, state.run.relicChoices);
+    const stale = await request('/api/paradise/relic', { ...bodyFor(state), choice: 'alchemistFlask' });
+    assert.equal(stale.status, 400);
+    const selected = await request('/api/paradise/relic', { ...bodyFor(state), choice: state.run.relicChoices[0].id });
+    assert.equal(selected.status, 200); assert.equal(selected.data.state.run.relics.length, 1);
 });
 
 test('계약 진행과 잭팟 결과는 재접속·중복 요청에도 한 번만 지급된다', async t => {
@@ -996,12 +1046,14 @@ test('계약 진행과 잭팟 결과는 재접속·중복 요청에도 한 번�
     const slotBody = { ...bodyFor(state), choice: 'sevenBells' };
     const jackpot = await request('/api/paradise/augment', slotBody);
     assert.match(jackpot.data.reveal.text, /7, 7, 7/);
-    assert.equal(jackpot.data.state.run.contracts[0].star, 9);
+    assert.equal(jackpot.data.state.run.contracts[0].star, 8);
     const repeated = await request('/api/paradise/augment', slotBody);
     assert.deepEqual(repeated.data.reveal, jackpot.data.reveal);
     assert.equal(repeated.data.state.run.contracts.length, 1);
     const latest = await rpg.getRPGUserByName(account.name);
-    buff(latest, 'basicContract');
+    const power = t.mock.method(rpg, 'calculateCombatPower', () => ({ total: corridor.recommendedPower(latest.paradise.floor + 5) }));
+    assert.equal(buff(latest, 'basicContract').error, undefined); power.mock.restore();
+    corridor.victory(latest, () => .99); corridor.nextEncounter(latest, () => .99);
     corridor.victory(latest, () => .99); corridor.nextEncounter(latest, () => .99);
     latest.paradise.enemy.hp = 1; latest.paradise.enemy.atk = 0; await latest.save();
     state = (await request('/api/paradise')).data;
@@ -1706,6 +1758,8 @@ test('저장된 길과 이벤트 선택의 시계를 한 번 멈추고 전투 �
 test('증강 자리마다 1회만 새로고침하며 중복·획득·장착 조건과 동시 요청을 검증한다', async () => {
     const user = await reset(); corridor.enter(user); corridor.victory(user, () => .99);
     user.paradise.relics.push('riftLens'); user.paradise.distortion = 10;
+    corridor.getResources(user).mp = 0;
+    const recoveredMp = Math.round(rpg.calculateUserStats(user).mp * .02);
     user.paradise.acquired.lastStand = 1;
     const initial = [...user.paradise.choices], remaining = corridor.remainingTime(user.paradise);
     await user.save();
@@ -1721,8 +1775,10 @@ test('증강 자리마다 1회만 새로고침하며 중복·획득·장착 조�
     assert.equal(view.run.choices[0].equipment, undefined);
     assert.notEqual(view.run.choices[0].id, 'lastStand');
     assert.equal(view.run.distortion, 6); assert.equal(view.run.timer.remainingMs, remaining);
+    assert.equal(corridor.getResources(await rpg.getRPGUserByName(account.name)).mp, recoveredMp, '동시 요청에도 MP 2%를 한 번만 회복');
     const again = await request('/api/paradise/reroll', { ...bodyFor(view), choice: view.run.choices[0].id });
     assert.equal(again.status, 400); assert.match(again.data.error, /이미 새로고침/);
+    assert.equal(corridor.getResources(await rpg.getRPGUserByName(account.name)).mp, recoveredMp);
     for (const index of [1, 2]) {
         const result = await request('/api/paradise/reroll', { ...bodyFor(view), choice: view.run.choices[index].id });
         assert.equal(result.status, 200); view = result.data.state;

@@ -14,8 +14,9 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         const chestLimitChanged = hell.normalizeChestSelection(user);
         const rebalanced = corridor.rebalanceEnemy(user);
         const offerNormalized = corridor.normalizeAugmentOffer(user);
+        const relicOfferNormalized = corridor.normalizeRelicOffer(user);
         const advanced = rpgenius.advanceParadiseCombat(user);
-        if (!timeAdvanced && !resourcesAdded && !chestLimitChanged && !rebalanced && !offerNormalized && !advanced) return;
+        if (!timeAdvanced && !resourcesAdded && !chestLimitChanged && !rebalanced && !offerNormalized && !relicOfferNormalized && !advanced) return;
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
         await rpgenius.commitProtectedUserChange(user, keys);
     };
