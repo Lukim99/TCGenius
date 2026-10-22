@@ -112,9 +112,17 @@ node --test --test-name-pattern="회랑 증강 도감" tests/web_game_actions.te
 
 ## 신규 방어구 이미지 (2026-10-22)
 
-사용자가 제공한 `C:\Users\dodom\Downloads\새로 추가된 아이템`의 신규 모자/하의/신발 PNG 12개를 원본 그대로 사용한다. 목록과 SHA-256은 `scripts/armor_expansion_assets.json`에 기록했다. 기존 `itemImage/장비/등급 이름.png` 경로와 `/item-image` 응답을 사용하며 S3 키는 `tcgenius/assets/itemImage/장비/등급 이름.png`다. 명시 업로드는 `node scripts/upload_ilion_assets.js --manifest scripts/armor_expansion_assets.json --apply`로 수행한다.
+사용자가 제공한 `C:\Users\dodom\Downloads\새로 추가된 아이템`의 신규 모자/하의/신발 PNG 12개를 사용한다. 최초 등록 후 아래 일괄 여백 조정을 적용했다. 현재 목록과 SHA-256은 `scripts/armor_expansion_assets.json`에 기록했다. 기존 `itemImage/장비/등급 이름.png` 경로와 `/item-image` 응답을 사용하며 S3 키는 `tcgenius/assets/itemImage/장비/등급 이름.png`다. 명시 업로드는 `node scripts/upload_ilion_assets.js --manifest scripts/armor_expansion_assets.json --apply`로 수행한다.
 
 12개 모두 새 객체로 업로드했으며 다시 읽어 원본 SHA-256과 일치함을 확인했다. 기존 S3 객체는 교체하지 않았다.
+
+### 신규 아이템 51개 여백 일괄 조정
+
+사용자가 Python 일괄 조정을 선택했다. 원본 51개를 `새로 추가된 아이템/원본 백업_20261022_221325/`에 보존하고 같은 파일명에 조정본을 저장했다. 그림의 종횡비와 투명도를 보존하고 800×800 투명 캔버스 중앙에 배치했다. 알파를 곱한 색상 공간에서 Lanczos 축소해 투명 가장자리의 검은 테두리를 방지했다.
+
+기존 동일 종류의 이미지에서 알파 8 초과 영역의 긴 변 비율을 측정했다. 장비는 41%, 보주는 42.2%, 패키지는 800px 기존 이미지 중앙값 55.125%, 레전더리 장비 상자는 기존 장비 상자 기준 34.5%, 11월 강화권 상자는 52.125%, 11월 보주 상자는 52%, 카드박스IV는 카드박스III 기준 69.375%로 맞췄다. 실제 출력의 크기, 중앙 정렬, 투명 영역 및 잘림 없음을 확인했다.
+
+현재 운영에 등록된 장비 12개와 레전더리 장비 랜덤 상자 1개는 `scripts/new_item_padding_assets.json`의 13개 해시를 기준으로 S3와 서버 사본을 함께 교체한다. 상자도 이번에 사용자가 제공한 이미지로 통일했다. 교체 전 S3 객체를 백업하며, 아직 등록되지 않은 다른 38개는 원본 폴더의 조정본으로 제공한다. 아이템 데이터, 지급 구성 및 수치는 변경하지 않는다.
 
 ## 낙원 상점 에셋 (2026-10-22)
 

@@ -1,0 +1,67 @@
+[
+  {
+    "category": "itemImage",
+    "file": "장비/레어 흑철 전투 장화.png",
+    "sha256": "37b05e84a9a8a71e42aec4c57120ec9726f8ac159ae2470c62d5d5fe9769dae2"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/레어 흑철 전투 투구.png",
+    "sha256": "2b68ae4b51fd29a3cfc6ef6d8b6eaf5a4a8da5d5454880868e5c416e76dea6a4"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/레어 흑철 판금 하의.png",
+    "sha256": "89e4dc42b554856a069ca1c9f4fde41314c601378e74405a9e1cacaa3adb3a18"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/레전더리 불멸하는 업화의 하의.png",
+    "sha256": "6bd403936e8db1673ea39722dfe1c0e10e10efab4bd5fdc9e538e6ce1d55149e"
+  },
+  {
+    "category": "itemImage",
+    "file": "가챠/레전더리 장비 랜덤 상자.png",
+    "sha256": "f53a35316de183c17622ab11a4438d0fc641e927ca6689fa7470bb76e29609fa"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/레전더리 천리안의 왕관.png",
+    "sha256": "34a91fb3cdc3b989c8747b3d3e22e1a7a08343dafd30f5fbd80169f673adf56b"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/레전더리 폭풍을 걷는 발걸음.png",
+    "sha256": "40e440bddf9181681e07670da335729b8672637b7533d8507d9b713805781924"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/유니크 매의 눈 투구.png",
+    "sha256": "4ef02cc4d3c92ef0c47cf02a34da008a9fdc953fc305cdef9992f5d48e3072d9"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/유니크 바람결의 장화.png",
+    "sha256": "202779bd39943b236f01378156578fb264f64b8c12ebce6c8d89ff69d80840d6"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/유니크 화룡의 비늘 하의.png",
+    "sha256": "bfa58356b1254117b567060693b0d05765d87584e994f3c57614a0f668a3fab9"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/일반 여행자의 가죽 두건.png",
+    "sha256": "f00dd1f12b25238953e7f14ebacfb61932a044d7749ff1ed169f3a5f7cedfd90"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/일반 여행자의 가죽 바지.png",
+    "sha256": "cbe40e8dd584a81124e02a674e5da4ce4801e46b8db90b59c765981bfb783bd9"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/일반 여행자의 가죽 장화.png",
+    "sha256": "1c30c73e9b0ff0ff3a63dfc824645a3fbb122e1a19bb703f370a7e678006c25b"
+  }
+]
