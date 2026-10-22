@@ -8148,8 +8148,10 @@ function dexCharacterDetail(entry) {
 let titlesData = null;
 const titleDexState = { search: '', filter: 'all' };
 const characterDexState = { search: '', filter: 'all' };
-const augmentDexState = { search: '', filter: 'all', category: 'all' };
-const AUGMENT_CATEGORIES = { basic: '공격', skill: '스킬', critical: '치명타', dot: '지속 피해', combo: '연격', shield: '보호막', ultimate: '궁극기', active: '스킬 습득', passive: '패시브 습득', defense: '방어·생존', recovery: '회복', exploration: '탐험', risk: '위험·거래', reward: '보상' };
+const augmentDexState = { search: '', filter: 'all', category: 'all', view: 'augment' };
+const relicDexState = { search: '', filter: 'all' };
+const RELIC_RARITIES = { normal: '일반', advanced: '고급', special: '특수' };
+const AUGMENT_CATEGORIES = { basic: '공격', skill: '스킬', critical: '치명타', dot: '지속 피해', combo: '연격', shield: '보호막', ultimate: '궁극기', active: '스킬 습득', passive: '패시브 습득', defense: '방어와 생존', recovery: '회복', exploration: '탐험', risk: '위험과 거래', reward: '보상' };
 const AUGMENT_RARITIES = { silver: '실버', gold: '골드', prismatic: '프리즘', cursed: '저주' };
 let titleSaving = false;
 
@@ -8196,13 +8198,49 @@ function dexAugmentCard(entry) {
         el('div', { class: 'dex-augment-head' },
             el('h3', null, entry.name),
             el('span', { class: 'dex-augment-floors' + (entry.floors < 0 ? ' descending' : '') }, (entry.floors > 0 ? '+' : '') + entry.floors + '층')),
-        el('div', { class: 'dex-augment-meta' }, [AUGMENT_RARITIES[entry.rarity], AUGMENT_CATEGORIES[entry.category], entry.equipment ? '장착 전용' : entry.characterName ? entry.characterName + ' 전용' : null].filter(Boolean).join(' · ')),
+        el('div', { class: 'dex-augment-meta' }, ...[AUGMENT_RARITIES[entry.rarity], AUGMENT_CATEGORIES[entry.category], entry.equipment ? '장착 전용' : entry.characterName ? entry.characterName + ' 전용' : null].filter(Boolean).map(text => el('span', null, text))),
         el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc))
     );
 }
 
+function dexRelicRow(entry) {
+    return el('article', { class: 'dex-relic-row', 'data-rarity': entry.rarity },
+        el('div', { class: 'dex-relic-icon' },
+            el('span', { 'aria-hidden': 'true' }, String(entry.name || '?').slice(0, 1)),
+            entry.iconUrl ? el('img', { src: entry.iconUrl, alt: '', loading: 'lazy', onerror: event => event.target.remove() }) : null),
+        el('div', { class: 'dex-relic-copy' },
+            el('div', { class: 'dex-relic-head' },
+                el('i', { class: 'dex-relic-gem', 'aria-hidden': 'true' }),
+                el('h3', null, entry.name),
+                el('span', { class: 'dex-relic-grade' }, entry.rarityLabel || RELIC_RARITIES[entry.rarity] || '')),
+            el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc || ''))));
+}
+
+function renderRelicDex(grid) {
+    const toolbar = dexCollection(grid, relicDexState, [['all', '전체'], ...Object.entries(RELIC_RARITIES)], '유물 이름, 효과 검색', list => {
+        list.className = 'dex-relic-list';
+        const query = relicDexState.search.trim().toLocaleLowerCase();
+        const entries = (augmentDexData.relics || []).filter(entry =>
+            [entry.name, entry.desc].join(' ').toLocaleLowerCase().includes(query)
+            && (relicDexState.filter === 'all' || entry.rarity === relicDexState.filter));
+        list.replaceChildren(...(entries.length ? entries.map(dexRelicRow) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return entries.length;
+    });
+    toolbar.classList.add('dex-heaven-toolbar');
+}
+
+function renderHeavenDex(grid) {
+    if (augmentDexState.view === 'relic') renderRelicDex(grid);
+    else renderAugmentDex(grid);
+    const views = [['augment', '증강', (augmentDexData.augments || []).length], ['relic', '유물', (augmentDexData.relics || []).length]];
+    grid.prepend(el('div', { class: 'dex-heaven-views', role: 'group', 'aria-label': '천상 도감 구분' },
+        ...views.map(([value, label, total]) => el('button', { type: 'button', 'aria-pressed': augmentDexState.view === value,
+            onclick: () => { if (augmentDexState.view !== value) { augmentDexState.view = value; renderDex(); } } },
+            el('span', null, label), el('span', { class: 'dex-heaven-view-count' }, total)))));
+}
+
 function renderAugmentDex(grid) {
-    const toolbar = dexCollection(grid, augmentDexState, [['all', '전체'], ['common', '공통'], ['equipment', '장착 전용'], ['character', '카드 전용']], '증강 이름 · 효과 · 장비 · 캐릭터 검색', list => {
+    const toolbar = dexCollection(grid, augmentDexState, [['all', '전체'], ['common', '공통'], ['equipment', '장착 전용'], ['character', '카드 전용']], '증강 이름, 효과, 장비, 캐릭터 검색', list => {
         list.className = 'dex-augment-grid';
         const query = augmentDexState.search.trim().toLocaleLowerCase();
         const entries = (augmentDexData.augments || []).filter(entry =>
@@ -8217,6 +8255,7 @@ function renderAugmentDex(grid) {
         ...Object.entries(AUGMENT_CATEGORIES).map(([value, label]) => el('option', { value }, label)));
     category.value = augmentDexState.category;
     toolbar.insertBefore(category, toolbar.lastElementChild);
+    toolbar.classList.add('dex-heaven-toolbar');
     grid.insertBefore(el('p', { class: 'dex-augment-note' }, '한 탐험에서 같은 증강은 다시 등장하지 않습니다.'), toolbar.nextSibling);
 }
 
@@ -8350,7 +8389,7 @@ function renderDex() {
     const grid = $('#dexList');
     if (dexTab === 'augment') {
         hideDexRarityFilter();
-        if (augmentDexData) renderAugmentDex(grid);
+        if (augmentDexData) renderHeavenDex(grid);
         return;
     }
     if (dexTab === 'potential') {

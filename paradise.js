@@ -6,7 +6,7 @@ const rpg = () => require('./rpgenius');
 const TICKET = '천상의 회랑 입장권';
 const MAX_FLOOR = 999;
 const JUDGE_MIN_FLOOR = 150;
-const RELIC_MIN_FLOOR = 150;
+const RELIC_MIN_FLOOR = 100;
 const ADVANCED_RELIC_CHANCE = .08;
 const TIME_LIMIT_MS = 20 * 60 * 1000;
 const progression = require('./paradise_progression');
@@ -471,15 +471,15 @@ function nextEncounter(user, random = Math.random) {
     const run = user.paradise;
     const eliteChance = run.distortion >= 25 ? .30 : .15;
     const roll = random();
-    if (roll < .05) startEvent(user, random);
-    else startCombat(user, roll < .05 + eliteChance ? 'elite' : 'normal', null, random);
+    if (roll < .15) startEvent(user, random);
+    else startCombat(user, roll < .15 + eliteChance ? 'elite' : 'normal', null, random);
 }
 function offerRoutes(user, random = Math.random) {
     if (forcedEncounter(user, random)) return;
     const run = user.paradise, elite = run.distortion >= 25 ? .30 : .15;
     run.routes = [];
     while (run.routes.length < 2) {
-        const roll = random(), kind = roll < .05 ? 'event' : roll < .05 + elite ? 'elite' : 'normal';
+        const roll = random(), kind = roll < .15 ? 'event' : roll < .15 + elite ? 'elite' : 'normal';
         run.routes.push({ id: crypto.randomUUID(), kind, gimmick: routeMechanics.roll(user, kind, random) });
     }
     run.event = null; run.choices = []; setPhase(user, 'route');
@@ -1113,26 +1113,25 @@ function previewRewards(run) {
     return run.outcome === 'defeated' ? rewards.filter(reward => reward.type === '아이템' && reward.name === progression.TOKEN).map(reward => ({ ...reward, count: Math.floor(reward.count * .50) })).filter(reward => reward.count > 0) : rewards;
 }
 
-function powerWarning(user, floors, enemyKind = 'normal', conditional = false) {
+function powerWarning(user, floors, enemyKind = 'normal', conditional = false, playerPower = rpg().calculateCombatPower(user).total) {
     const floor = clamp(user.paradise.floor + progression.movement(user.paradise, floors), 1, MAX_FLOOR);
     const kind = floor === MAX_FLOOR && enemyKind === 'normal' ? 'final' : enemyKind;
     const power = Math.round(recommendedPower(floor) * ({ elite: 1.2, judge: 3.5, rift: 4, moonDuel: 1.8 }[kind] || 1));
-    const playerPower = rpg().calculateCombatPower(user).total;
     return power * 10 >= playerPower * 11 ? { floor, recommendedPower: power, playerPower, conditional, enemyKind: kind } : null;
 }
-function routePowerWarning(user, route) {
+function routePowerWarning(user, route, playerPower) {
     if (route.kind === 'event') return false;
-    if (!route.gimmick) return !!powerWarning(user, 0, route.kind);
+    if (!route.gimmick) return !!powerWarning(user, 0, route.kind, false, playerPower);
     const stats = heavenMonsterStats(user.paradise.floor, route.kind);
     routeMechanics.scaleEnemy(stats, route.gimmick);
-    return rpg().computeCombatPowerFromStats(stats).total * 10 >= rpg().calculateCombatPower(user).total * 11;
+    return rpg().computeCombatPowerFromStats(stats).total * 10 >= playerPower * 11;
 }
-function eventPowerWarning(user, id) {
+function eventPowerWarning(user, id, playerPower) {
     const event = user.paradise.event?.id;
-    if (event === 'casino' && ['safe', 'risk'].includes(id)) return powerWarning(user, id === 'safe' ? 10 : 50, 'normal', true);
-    if (event === 'collapse' && id === 'rift') return powerWarning(user, 50, 'rift');
-    if (event === 'puzzle' && id === 'solve') return powerWarning(user, 10, 'normal', true);
-    if (id === 'skip') return powerWarning(user, 5);
+    if (event === 'casino' && ['safe', 'risk'].includes(id)) return powerWarning(user, id === 'safe' ? 10 : 50, 'normal', true, playerPower);
+    if (event === 'collapse' && id === 'rift') return powerWarning(user, 50, 'rift', false, playerPower);
+    if (event === 'puzzle' && id === 'solve') return powerWarning(user, 10, 'normal', true, playerPower);
+    if (id === 'skip') return powerWarning(user, 5, 'normal', false, playerPower);
     return null;
 }
 function claim(user) {
@@ -1172,12 +1171,13 @@ function dismiss(user) {
     run.dismissedAt ||= Date.now();
     return { message: '낙원으로 돌아왔습니다.' };
 }
-function view(user) {
+function view(user, stats = rpg().calculateUserStats(user), slotEffects) {
     const resources = getResources(user);
-    const run = user.paradise, config = rpg().getDataCache('Paradise', null), stats = rpg().calculateUserStats(user);
+    const run = user.paradise, config = rpg().getDataCache('Paradise', null);
+    const playerPower = rpg().calculateCombatPower(user, stats, slotEffects).total;
     const ticketId = rpg().getDataCache('Item', []).findIndex(i => i?.name === TICKET);
     const result = { serverTime: Date.now(), weekly: weeklyInfo(user), enabled: !validateConfig(config) && config.enabled, ticket: { name: TICKET, count: ticketId < 0 ? 0 : rpg().getInventoryItemCount(user, ticketId), iconUrl: '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fticket.webp' }, revision: Number(run?.revision || 0), runId: run?.id || null,
-        player: { name: user.name, hp: Number(resources.hp ?? stats.hp), maxHp: stats.hp, mp: Number(resources.mp ?? stats.mp), maxMp: stats.mp, atk: stats.atk, def: stats.def, combatPower: rpg().calculateCombatPower(user).total },
+        player: { name: user.name, hp: Number(resources.hp ?? stats.hp), maxHp: stats.hp, mp: Number(resources.mp ?? stats.mp), maxMp: stats.mp, atk: stats.atk, def: stats.def, combatPower: playerPower },
         progression: progression.view(user), weeklyRewards: config?.weeklyRewards || { participation: [], ranks: [] },
         baseRewards: config?.baseRewards || [], entryBlocked: user.field && !user.field.paradise ? '다른 전투를 먼저 마쳐주세요.' : null, run: null };
     if (!run || run.dismissedAt) return require('./paradise_hell').decorateView(result, user);
@@ -1191,7 +1191,7 @@ function view(user) {
     }
     result.run = { id: run.id, status: run.status, phase: run.phase, completed: !!run.completed, canReturn: canReturn(user), canClaim: run.status === 'ended' && !run.claimed && rewardEligible(run), floor: run.floor, clearedFloor: run.clearedFloor, distortion: run.distortion, outcome: run.outcome || null, claimed: !!run.claimed, battlesWon: run.battlesWon, elitesWon: run.elitesWon, enemy: run.phase === 'combat' ? enemy : null,
         choices: run.phase === 'augment' ? run.choices.filter(id => !obtainedAugment(run, id)).map(id => AUGMENTS.find(a => a.id === id)).filter(Boolean).map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous }) => ({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous })) : [],
-        routes: run.phase === 'route' ? (run.routes || []).map(route => ({ ...route, gimmick: routeMechanics.describe(route.gimmick), title: { normal: '일반 전투', elite: '엘리트 전투', event: '알 수 없는 방' }[route.kind], description: { normal: '몬스터가 길을 지키고 있습니다.', elite: '강한 적에게 도전합니다.', event: '문 너머의 운명을 마주합니다.' }[route.kind], powerWarning: routePowerWarning(user, route) })) : [],
+        routes: run.phase === 'route' ? (run.routes || []).map(route => ({ ...route, gimmick: routeMechanics.describe(route.gimmick), title: { normal: '일반 전투', elite: '엘리트 전투', event: '알 수 없는 방' }[route.kind], description: { normal: '몬스터가 길을 지키고 있습니다.', elite: '강한 적에게 도전합니다.', event: '문 너머의 운명을 마주합니다.' }[route.kind], powerWarning: routePowerWarning(user, route, playerPower) })) : [],
         routeGimmick: routeMechanics.view(user),
         relicChoices: run.phase === 'relic' ? (run.relicChoices || []).map(id => RELICS.find(relic => relic.id === id)).filter(Boolean) : [], relicPicksRemaining: Number(run.relicPicksRemaining || 0),
         event: run.event ? { id: run.event.id, ...EVENTS[run.event.id], equipment: run.event.equipment || null, choices: run.phase === 'event' ? eventChoices(user) : [], ...(run.phase === 'puzzle' ? { puzzle: run.event.puzzle.publicPuzzle, deadline: run.event.deadline } : {}) } : null,
@@ -1201,17 +1201,17 @@ function view(user) {
         offerId: run.offerId || null, timer: run.mode === 'hell' ? null : { remainingMs: remainingTime(run), paused: timerPaused(run) }, timeoutClaimError: run.timeoutClaimError || null,
         skills: rpg().getMainCardSkills(user).map(({ skill }) => ({ name: skill.name, cost: skill.mp_cost, cooldownEnd: Number(user.field?.skillCooldowns?.[skill.name] || 0) })) };
     if (result.run) {
-        if (run.phase === 'augment' && !run.completed && !result.run.choices.length) result.run.continueWarning = powerWarning(user, 5, 'normal');
+        if (run.phase === 'augment' && !run.completed && !result.run.choices.length) result.run.continueWarning = powerWarning(user, 5, 'normal', false, playerPower);
         result.run.highestFloor = Number(run.highestFloor ?? run.clearedFloor ?? 0);
         const canReroll = result.run.choices.length > 0 && !run.completed && rerollPool(user).length > 0;
         result.run.startingAugment = !!run.startingAugments?.length;
         for (const choice of result.run.choices) {
             choice.starting = result.run.startingAugment;
             choice.canReroll = canReroll && !run.rerolled?.[run.choices.indexOf(choice.id)];
-            choice.powerWarning = result.run.startingAugment ? null : powerWarning(user, choice.floors, choice.id === 'rewind' || AUGMENTS.find(a => a.id === choice.id)?.acquire?.forceElite || AUGMENTS.find(a => a.id === choice.id)?.quest?.forceElite || run.forceElite ? 'elite' : 'normal');
+            choice.powerWarning = result.run.startingAugment ? null : powerWarning(user, choice.floors, choice.id === 'rewind' || AUGMENTS.find(a => a.id === choice.id)?.acquire?.forceElite || AUGMENTS.find(a => a.id === choice.id)?.quest?.forceElite || run.forceElite ? 'elite' : 'normal', false, playerPower);
             choice.floors = result.run.startingAugment ? 0 : progression.movement(run, choice.floors);
         }
-        for (const choice of result.run.event?.choices || []) choice.powerWarning = eventPowerWarning(user, choice.id);
+        for (const choice of result.run.event?.choices || []) choice.powerWarning = eventPowerWarning(user, choice.id, playerPower);
     }
     return require('./paradise_hell').decorateView(result, user);
 }

@@ -143,9 +143,13 @@ function finish(user, outcome = 'retired', random = Math.random) {
     if (run.status === 'ended') return;
     const chests = [];
     if (run.clearedFloor > 0) {
-        for (let i = 0; i < 3 + run.bonusChests + run.richChests; i++) {
-            const reward = rollReward(run.rewardTable, random);
-            chests.push(makeChest(reward, tierOf(run.clearedFloor), i >= 3 + run.bonusChests || random() < .1, random));
+        const pool = run.rewardTable.filter(reward => (reward.weight ?? 1) > 0);
+        const count = Math.min(pool.length, 3 + run.bonusChests + run.richChests);
+        const richStart = count - Math.min(run.richChests, count);
+        for (let i = 0; i < count; i++) {
+            const reward = rollReward(pool, random);
+            pool.splice(pool.indexOf(reward), 1);
+            chests.push(makeChest(reward, tierOf(run.clearedFloor), i >= richStart || random() < .1, random));
         }
     }
     rpg().clearFieldRuntimeTimers(user.name);

@@ -169,11 +169,13 @@
         return canvas;
     }
 
+    let stateLoading = false, rankingLoading = false, stateGeneration = 0;
     async function fetchState() {
-        if (busy || pending || heavenEntry || transition?.next || document.hidden || performance.now()<battleUntil) return;
-        try { const response = await fetch('/api/paradise', { cache: 'no-store' }); if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (!response.ok) throw new Error(result.error); accept(result); } catch (error) { announce(error.message); }
+        if (stateLoading || busy || pending || heavenEntry || transition?.next || document.hidden || performance.now()<battleUntil) return;
+        stateLoading = true; const generation = stateGeneration;
+        try { const response = await fetch('/api/paradise', { cache: 'no-store' }); if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (!response.ok) throw new Error(result.error); if (generation === stateGeneration) accept(result); } catch (error) { if (generation === stateGeneration) announce(error.message); } finally { stateLoading = false; }
     }
-    async function fetchRanking() { try { const response = await fetch('/api/paradise/ranking', { cache: 'no-store' }); if (response.ok) ranking = await response.json(); else announce('주간 랭킹을 불러오지 못했습니다.'); } catch (_) { announce('주간 랭킹 연결을 확인해주세요.'); } }
+    async function fetchRanking() { if (rankingLoading) return; rankingLoading = true; try { const response = await fetch('/api/paradise/ranking', { cache: 'no-store' }); if (response.ok) ranking = await response.json(); else announce('주간 랭킹을 불러오지 못했습니다.'); } catch (_) { announce('주간 랭킹 연결을 확인해주세요.'); } finally { rankingLoading = false; } }
     // 천상의 다음 조우(전투, 이벤트, 갈림길)가 바뀔 때만 층 이동 연출을 건다. 같은 응답의 재조회는 키가 같아 다시 재생되지 않는다.
     function encounter(run) {
         if (!run || run.mode === 'hell' || run.status !== 'active') return null;
@@ -224,7 +226,7 @@
         syncPuzzle(); regionKey = '';
     }
     async function mutate(action, input = {}, retry = false) {
-        if (busy || heavenEntry || transition?.next || pending && !retry) return; busy = true; regionKey = '';
+        if (busy || heavenEntry || transition?.next || pending && !retry) return; busy = true; stateGeneration++; regionKey = '';
         if (!retry) { outcomeReveal = null; pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: action.startsWith('progression/') ? state.progression.revision : state.revision, runId: state.runId } }; }
         try {
             const response = await fetch('/api/paradise/' + pending.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending.body) });

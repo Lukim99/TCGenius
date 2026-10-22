@@ -57,7 +57,7 @@ function eligible(user, kind) {
         && (!['alternatingGate', 'borrowedFinale', 'crookedClock'].includes(gimmick.id) || !run.acquired.solitaryIktae));
 }
 function roll(user, kind, random) {
-    if (random() >= .10) return null;
+    if (random() >= .20) return null;
     return pick(eligible(user, kind), random)?.id || null;
 }
 function describe(id) {

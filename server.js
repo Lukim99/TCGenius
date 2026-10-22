@@ -1127,10 +1127,10 @@ server.get('/api/dex/potential', requireUser, (req, res) => {
 });
 
 server.get('/api/dex/augments', requireUser, (req, res) => {
-    const { AUGMENTS } = require('./paradise_content');
+    const { AUGMENTS, RELICS } = require('./paradise_content');
     res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous }) => ({
         id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous
-    })) });
+    })), relics: RELICS.map(({ id, name, desc, rarity, rarityLabel, iconUrl }) => ({ id, name, desc, rarity, rarityLabel, iconUrl })) });
 });
 
 server.get('/api/titles', requireUser, async (req, res) => {
@@ -1483,7 +1483,7 @@ server.get(/^\/static\/assets\/paradise\/(.+)$/, requireUser, (req, res) => {
     res.redirect(307, getGeneralFieldAssetUrl('낙원/' + file));
 });
 registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getItemIconUrl, getEquipmentIconUrl, getCharacterSprite: getHFieldCharacterSprite,
-    getCombatView: user => ({ player: buildHFieldState(user).player, skills: getHFieldSkills(user, serializeCard(user.main_card, user), user.field?.name) }),
+    getCombatView: (user, view, stats) => ({ player: buildFieldPlayer(user, stats, view.player.card, view.player.combatPower), skills: getHFieldSkills(user, view.player.card, user.field?.name) }),
     getMonsterSprite: enemy => {
         if (enemy.portrait === 'gambler') return '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fgambler.webp';
         if (enemy.kind === 'judge') return '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fjudge-boss.webp';
@@ -2073,13 +2073,42 @@ function getHFieldCharacterSprite(mainCard) {
     return '/rpg-ui?file=' + encodeURIComponent(selected.replace(/\\/g, '/'));
 }
 
+function buildFieldPlayer(user, stats, mainCard, combatPower) {
+    const resources = require('./paradise').getResources(user), level = Number(user.level || 1);
+    const maxHp = Number(stats.hp || 0), maxMp = Number(stats.mp || 0);
+    const hp = typeof resources.hp == 'undefined' ? maxHp : Number(resources.hp || 0);
+    return {
+        name: user.name,
+        level,
+        hp,
+        maxHp,
+        mp: typeof resources.mp == 'undefined' ? maxMp : Number(resources.mp || 0),
+        maxMp,
+        atk: Number(stats.atk || 0),
+        def: Number(stats.def || 0),
+        combatPower: Number(combatPower ?? rpgenius.calculateCombatPower(user, stats).total),
+        cardName: mainCard && mainCard.name || '',
+        cardFormatted: mainCard && mainCard.formatted || '',
+        cardStar: mainCard ? Number(mainCard.star || 0) : null,
+        cardImageUrl: mainCard && mainCard.iconUrl || null,
+        cardType: mainCard && mainCard.type || '일반',
+        cardSkin: mainCard && mainCard.skin || '',
+        spriteUrl: getHFieldCharacterSprite(mainCard),
+        ...randoCharacters.view(stats, user.field),
+        ...rpgenius.getFieldShieldView(user, stats),
+        basicUntil: Number(user.field?.basicUntil || 0),
+        attackOrder: rpgenius.getEquipmentAttackOrderPreview(user),
+        ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
+        ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
+    };
+}
+
 function buildHFieldState(user) {
     const resources = require('./paradise').getResources(user);
     const dungeon = rpgenius.getHellDungeon();
     const stats = rpgenius.calculateUserStats(user);
     const maxHp = Number(stats.hp || 0);
-    const maxMp = Number(stats.mp || 0);
-    const mainCard = serializeCard(user.main_card, user);
+    const mainCard = serializeCard(user.main_card, user, { stats, slotEffects: rpgenius.calculateCardSlotEffects(user) });
     const ticket = getHFieldTicketInfo(user);
     const fieldName = user.field && user.field.name || null;
     const inField = fieldName == H_FIELD_NAME;
@@ -2107,30 +2136,7 @@ function buildHFieldState(user) {
         entryError,
         requirements: { minLevel: Number(dungeon.requireLevel || 1), maxLevel: Number(dungeon.maxLevel || 300) },
         ticket,
-        player: {
-            name: user.name,
-            level,
-            hp,
-            maxHp,
-            mp: typeof resources.mp == 'undefined' ? maxMp : Number(resources.mp || 0),
-            maxMp,
-            atk: Number(stats.atk || 0),
-            def: Number(stats.def || 0),
-            combatPower: Number(rpgenius.calculateCombatPower(user).total || 0),
-            cardName: mainCard && mainCard.name || '',
-            cardFormatted: mainCard && mainCard.formatted || '',
-            cardStar: mainCard ? Number(mainCard.star || 0) : null,
-            cardImageUrl: mainCard && mainCard.iconUrl || null,
-            cardType: mainCard && mainCard.type || '일반',
-            cardSkin: mainCard && mainCard.skin || '',
-            spriteUrl: getHFieldCharacterSprite(mainCard),
-            ...randoCharacters.view(stats, user.field),
-            ...rpgenius.getFieldShieldView(user),
-            basicUntil: Number(user.field?.basicUntil || 0),
-            attackOrder: rpgenius.getEquipmentAttackOrderPreview(user),
-            ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
-            ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
-        },
+        player: buildFieldPlayer(user, stats, mainCard),
         target: {
             name: phase == 'pillar' ? '부타의 기둥' : (dungeon.elite && dungeon.elite.name || '부타'),
             element: phase == 'pillar' ? null : dungeon.elite && dungeon.elite.element || null,
@@ -5998,13 +6004,13 @@ function buildSlotEffectInfo(card, data) {
     };
 }
 
-function buildSkillInfo(card, user) {
+function buildSkillInfo(card, user, context) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const skills = readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
     const data = card && characterCards[card.id];
     if (!data || !Array.isArray(data.skills)) return [];
-    const stats = rpgenius.calculateUserStats(user);
-    const slotEffects = rpgenius.calculateCardSlotEffects(user);
+    const stats = context?.stats || rpgenius.calculateUserStats(user);
+    const slotEffects = context?.slotEffects || rpgenius.calculateCardSlotEffects(user);
     const star = Number(card && card.star || 0);
     return data.skills.map(skillIndex => {
         const skill = skills[skillIndex];
@@ -6022,15 +6028,15 @@ function buildSkillInfo(card, user) {
     }).filter(Boolean);
 }
 
-function serializeCard(card, user) {
+function serializeCard(card, user, context) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const data = card && characterCards[card.id];
     if (!data) return null;
     let classInfo = null;
     if (data.class) {
         const skills = readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
-        const stats = user ? rpgenius.calculateUserStats(user) : {};
-        const slotEffects = user ? rpgenius.calculateCardSlotEffects(user) : {};
+        const stats = context?.stats || (user ? rpgenius.calculateUserStats(user) : {});
+        const slotEffects = context?.slotEffects || (user ? rpgenius.calculateCardSlotEffects(user) : {});
         const star = Number(card && card.star || 0);
         const fmtPct = v => (Math.round(Number(v || 0) * 1000) / 10) + '%';
         classInfo = {
@@ -6072,8 +6078,8 @@ function serializeCard(card, user) {
         const specterData = rpgenius.findSpecterByName(card.specter);
         const specterSkill = specterData ? rpgenius.getSpecterSkill(specterData) : null;
         if (specterSkill) {
-            const stats = user ? rpgenius.calculateUserStats(user) : {};
-            const slotEffects = user ? rpgenius.calculateCardSlotEffects(user) : {};
+            const stats = context?.stats || (user ? rpgenius.calculateUserStats(user) : {});
+            const slotEffects = context?.slotEffects || (user ? rpgenius.calculateCardSlotEffects(user) : {});
             const star = Number(card.star || 0);
             const mpCost = Number(card.id) === randoCharacters.KINO_ID ? randoCharacters.mentalCost(stats, specterSkill) : Math.max(0, Math.round(Number(specterSkill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, specterSkill.name, Date.now())));
             const cooltime = Math.max(0, Number(specterSkill.cooltime || 0) + Number(stats.skillCooldown || 0));
@@ -6102,7 +6108,7 @@ function serializeCard(card, user) {
         imageUrl: getCardImageUrl(card, user),
         iconUrl: getCardIconUrl(card, user),
         slotEffect: buildSlotEffectInfo(card, data),
-        skills: buildSkillInfo(card, user),
+        skills: buildSkillInfo(card, user, context),
         classInfo,
         awakening: rpgenius.cardAwakening.getDefinition(card) ? {
             descLines: rpgenius.cardAwakening.formatPassive(card).split('\n'),
@@ -9489,7 +9495,7 @@ function renderUserDashboard(sess, opts) {
     <aside class="dex-sidebar" aria-label="도감 종류">
       <h2>도감</h2>
       <div class="dex-tabs">
-        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="artifact">아티팩트</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button><button class="dex-tab" data-tab="augment">천상 증강</button>
+        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="artifact">아티팩트</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button><button class="dex-tab" data-tab="augment">천상</button>
       </div>
     </aside>
     <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>

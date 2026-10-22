@@ -27,7 +27,8 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
     };
     const revealView = (reveal, user) => reveal?.kind === 'rewards' ? { ...reveal, items: reveal.items.map(reward => rewardView(reward, user)) } : reveal || null;
     const state = user => {
-        const view = corridor.view(user);
+        const stats = rpgenius.calculateUserStats(user), slotEffects = rpgenius.calculateCardSlotEffects(user);
+        const context = { stats, slotEffects }, view = corridor.view(user, stats, slotEffects);
         const items = rpgenius.getDataCache('Item', []);
         view.ticket.iconUrl = getItemIconUrl(items.find(item => item?.name === view.ticket.name));
         view.progression.tokenIconUrl = getItemIconUrl(items.find(item => item?.name === progression.TOKEN));
@@ -37,20 +38,20 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             reward.iconUrl = reward.type === '가넷' ? '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('가넷.png') : getItemIconUrl(items.find(item => item?.name === reward.name));
         }
         for (const key of view.hell.keys) key.iconUrl = getItemIconUrl(items.find(item => item?.name === key.name));
-        view.player.card = serializeCard(user.main_card, user);
+        view.player.card = serializeCard(user.main_card, user, context);
         view.player.sprite = getCharacterSprite(view.player.card);
-        if (view.run?.enemy) view.run.enemy.sprite = view.run.enemy.characterCard ? getCharacterSprite(serializeCard(view.run.enemy.characterCard, user)) : view.run.enemy.kind === 'mirror' ? view.player.sprite : getMonsterSprite(view.run.enemy);
+        if (view.run?.enemy) view.run.enemy.sprite = view.run.enemy.characterCard ? getCharacterSprite(serializeCard(view.run.enemy.characterCard, user, context)) : view.run.enemy.kind === 'mirror' ? view.player.sprite : getMonsterSprite(view.run.enemy);
         if (view.run) view.run.combatLog = user.paradise.combatLog || [];
         if (view.run) view.run.combatEvents = user.paradise.combatEvents || [];
         if (view.run?.phase === 'combat') {
-            view.battle = getCombatView(user);
+            view.battle = getCombatView(user, view, stats);
             if (user.paradise.battle?.hackCard) {
-                const card = serializeCard(user.paradise.battle.hackCard, user);
+                const card = serializeCard(user.paradise.battle.hackCard, user, context);
                 for (const skill of card.skills || []) if (!view.battle.skills.some(s => s.name === skill.name)) view.battle.skills.push({ ...skill, cooldownEnd: Number(user.field.skillCooldowns[skill.name] || 0), borrowed: true });
             }
             const characters = require('./paradise_augments_characters'), blocked = characters.skillBlocked(user) || require('./paradise_routes').skillBlocked(user);
-            const mechanics = require('./paradise_mechanics'), stats = rpgenius.calculateUserStats(user);
-            view.battle.skills.push(...mechanics.skillView(user));
+            const mechanics = require('./paradise_mechanics');
+            view.battle.skills.push(...mechanics.skillView(user, stats));
             for (const skill of view.battle.skills) {
                 if (blocked) skill.disabledReason = blocked;
                 if (characters.freeSkill(user, skill.name)) skill.mpCost = 0;
@@ -102,7 +103,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             const user = await rpgenius.getRPGUserByName(req.session.name);
             if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
             res.setHeader('Cache-Control', 'no-store');
-            res.json(corridor.buildWeeklyRanking(await rpgenius.getAllRPGUsers(), user));
+            res.json(corridor.buildWeeklyRanking(await rpgenius.getParadiseWeeklyRecords(), user));
         } catch (error) { console.error('[paradise ranking]', error.message); res.status(500).json({ error: '주간 랭킹을 불러오지 못했습니다.' }); }
     });
     for (const action of ['unlockEquipment', 'enhance', 'unlockTrait', 'rerollTrait']) {

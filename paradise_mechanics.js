@@ -163,9 +163,9 @@ function payment(user, stats, cost, name) {
         return { cost: mp, hpCost: shortfall * 2 };
     return { cost, hpCost: 0 };
 }
-function skillView(user) {
+function skillView(user, knownStats) {
     if (!active(user)) return [];
-    const stats = rpg().calculateUserStats(user);
+    const stats = knownStats || rpg().calculateUserStats(user);
     return skills(user).map(skill => ({ name: skill.name, element: skill.element || null,
         hpCost: Math.floor(corridor().getResources(user).hp * Number(skill.hpCost || 0)),
         mpCost: Math.ceil((stats.kino ? stats.mental : stats.mp) * skill.ratio), resourceLabel: stats.kino ? '정신력' : 'MP',

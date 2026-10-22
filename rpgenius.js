@@ -4248,9 +4248,9 @@ function getAdvancedEquipmentCombatPowerModifiers(user, stats) {
     return result;
 }
 
-function calculateCombatPower(user) {
-    const stats = calculateUserStats(user);
-    const slot = calculateCardSlotEffects(user);
+function calculateCombatPower(user, knownStats, knownSlots) {
+    const stats = knownStats ? { ...knownStats } : calculateUserStats(user);
+    const slot = knownSlots || calculateCardSlotEffects(user);
     if (findEquipWithPassiveId(user, 4)) {
         const passive = getEquipmentPassives()[4];
         if (passive) stats.finalDamage = (Number(stats.finalDamage || 0) + Number(passive.format && passive.format[1] && passive.format[1].base || 0.05));
@@ -5829,8 +5829,8 @@ function grantFieldShield(user, source, shield) {
     return getFieldShield(user);
 }
 
-function getFieldShieldView(user) {
-    if (!user.field || calculateUserStats(user).disableShield) return { shield: 0, shieldLayers: [] };
+function getFieldShieldView(user, stats) {
+    if (!user.field || (stats || calculateUserStats(user)).disableShield) return { shield: 0, shieldLayers: [] };
     const summary = getFieldShield(user);
     return { shield: Number(summary?.amount || 0), shieldLayers: combatShields.active(user.field, Date.now()).map(({ amount, expiresAt }) => ({ amount, expiresAt })) };
 }
@@ -15193,6 +15193,13 @@ async function getAllRPGUsers() {
     return users;
 }
 
+// 랭킹 조회에는 가방, 장비, 탐험 전체를 로드하지 않고 필요한 기록만 복제한다.
+async function getParadiseWeeklyRecords() {
+    const ready = await ensureUserCacheReady();
+    const users = !ready && userCacheById.size === 0 ? await getAllRPGUsers() : Array.from(userCacheById.values(), entry => entry.raw);
+    return users.map(user => ({ name: user.name, paradiseWeekly: user.paradiseWeekly ? { ...user.paradiseWeekly } : null }));
+}
+
 // 웹 회원가입. /RPGenius 등록과 동일한 검증 + 같은 UA로 로그인된 계정이 있으면 등록 불가.
 async function webRegisterRPGUser(nickname, ua) {
     const name = String(nickname || '').trim();
@@ -17065,6 +17072,7 @@ module.exports = {
     mailGoldFee,
     checkAttendance,
     getAllRPGUsers,
+    getParadiseWeeklyRecords,
     getMaxExpForLevel,
     addExperience,
     onChat,
