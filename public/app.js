@@ -3720,7 +3720,7 @@ const HUNT_MENU = [
         } catch (e) { showAlert(e.message); }
     } },
     { key: '훈련장', level: 'Lv.1 ~ 300', imageUrl: '/rpg-ui?file=' + encodeURIComponent('필드/훈련장.png'), action: () => { location.href = '/training'; } },
-    { key: '낙원', level: 'Lv.1 ~ Lv.300', imageUrl: '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fparadise.webp', action: () => { location.href = '/paradise'; } }
+    { key: '낙원', level: 'Lv.141 ~ Lv.300', imageUrl: '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fparadise.webp', action: () => { location.href = '/paradise'; } }
 ];
 
 function renderHuntMenu() {

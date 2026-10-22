@@ -75,7 +75,7 @@ async function reset() {
     rpg.clearFieldRuntimeTimers(account.name);
     const user = await rpg.getRPGUserByName(account.name);
     Object.assign(user, new rpg.RPGUser(account.name, account.id), structuredClone(account));
-    user.field = null; user.paradise = null; user.paradiseReceipt = null; user.paradiseWeekly = null; user.paradiseProgression = null; user.paradiseProgressionReceipt = null;
+    user.field = null; user.paradise = null; user.paradiseReceipt = null; user.paradiseWeekly = null; user.paradiseProgression = null; user.paradiseProgressionReceipt = null; user.paradiseShop = null; user.paradiseShopReceipt = null; user.isAdmin = false;
     const stats = rpg.calculateUserStats(user); corridor.getResources(user).hp = stats.hp; corridor.getResources(user).mp = stats.mp;
     rpg.addInventoryItem(user, data.Item.length - 1, 3);
     await user.save(); return user;
@@ -385,6 +385,26 @@ function setupHell(t, rewards) {
         const user = await reset(); rpg.addInventoryItem(user, items.findIndex(item => item.name === key), 2); await user.save(); return user;
     } };
 }
+
+test('낙원은 141레벨부터 천상과 지옥에 입장하고 미달 시 입장 재료를 보존한다', async t => {
+    const env = setupHell(t);
+    for (const mode of ['heaven','hell']) {
+        const user = await env.user(), inventory = structuredClone(user.inventory);
+        user.level = 140; await user.save();
+        const before = (await request('/api/paradise')).data;
+        assert.match(before.entryBlocked,/141레벨/);
+        const input = {...bodyFor(before),mode,key:env.hell.KEYS[0].name};
+        const blocked = await request('/api/paradise/enter',input);
+        assert.equal(blocked.status,400); assert.match(blocked.data.error,/141레벨/);
+        assert.deepEqual((await rpg.getRPGUserByName(account.name)).inventory,inventory);
+        user.level = 141; await user.save();
+        const ready = (await request('/api/paradise')).data;
+        assert.equal(ready.entryBlocked,null);
+        const entered = await request('/api/paradise/enter',{...input,...bodyFor(ready)});
+        assert.equal(entered.status,200,JSON.stringify(entered.data));
+        assert.equal(entered.data.state.run.phase,'combat');
+    }
+});
 
 test('지옥 열쇠 3종은 5/6/7회 낙하로 입장하며 동시 재요청에도 1개만 차감한다', async t => {
     const env = setupHell(t);
@@ -1027,7 +1047,7 @@ test('뒤틀림·유물의 이동 효과와 붕괴 세 갈래가 적용된다', 
         corridor.move(user, -100); assert.equal(user.paradise.distortion, 15); assert.equal(user.paradise.floor, 1); assert.equal(user.paradise.compass, .07);
         user.paradise.distortion = 100; corridor.nextEncounter(user, () => .99); assert.equal(user.paradise.event.id, 'collapse');
         corridor.chooseEvent(user, choice, {}, () => .99);
-        if (choice === 'accept') { assert.equal(user.paradise.battle.doubledReward, true); assert.equal(user.paradise.temporary.find(b => b.id === 'collapse').battles, 3); }
+        if (choice === 'accept') { assert.equal(user.paradise.battle.collapse, true); assert.equal(user.paradise.temporary.find(b => b.id === 'collapse').battles, 3); }
         else if (choice === 'rift') assert.equal(user.paradise.enemy.kind, 'rift');
         else assert.equal(user.paradise.distortion, 50);
     }
@@ -1507,16 +1527,17 @@ test('도박사·붕괴·최종 보스는 개별 전투 이미지로 연결된�
     }
 });
 
-test('붕괴 수락은 사건 전투의 강화와 특별 보스의 카드 계약·유물 보상도 두 배로 지급한다', async () => {
-    for (const [event, choice, effect, amount] of [['mirror', 'fight', 'atk', .40], ['judge', 'three', 'atk', .30], ['well', 'destroy', 'hp', .20], ['judge', 'boss'], ['collapse', 'rift']]) {
+test('붕괴 수락은 사건 전투 보상을 복제하지 않고 3회 승리 후 종료 보상만 증가시킨다', async () => {
+    for (const [event, choice, effect, amount] of [['mirror', 'fight', 'atk', .20], ['judge', 'three', 'atk', .15], ['well', 'destroy', 'hp', .10], ['judge', 'boss'], ['collapse', 'rift']]) {
         const user = await reset(); corridor.enter(user, () => .99);
         user.paradise.temporary.push({ id: 'collapse', battles: 3 });
         forceEvent(user, event); const result = corridor.chooseEvent(user, choice, {}, () => .99);
         assert.equal(result.error, undefined);
         while (user.paradise.phase === 'combat') corridor.victory(user, () => .99);
         if (effect) assert.equal(user.paradise.effects[effect], amount, event);
-        else { assert.equal(user.paradise.contracts.filter(c => c.star).length, 2); assert.equal(user.paradise.relics.length, event === 'collapse' ? 3 : 2); }
-        if (event === 'mirror') assert.equal(user.paradise.contracts[0].bonus, .60);
+        else { assert.equal(user.paradise.contracts.filter(c => c.star).length, 1); assert.equal(user.paradise.relics.length, event === 'collapse' ? 2 : 1); }
+        if (event === 'mirror') assert.equal(user.paradise.contracts[0].bonus, .30);
+        assert.equal(Number(user.paradise.effects.reward || 0), event === 'judge' && choice === 'three' ? .30 : 0);
     }
 });
 
@@ -2124,20 +2145,20 @@ test('강제 엘리트, 지정 이벤트, 붕괴, 999층은 갈림길을 생략�
     }
 });
 
-test('100층부터 엘리트 유물을 세 후보 중 선택하며 추가 보상, 소유 중복, 재요청을 처리한다', async () => {
-    let user = await reset(); corridor.enter(user); user.paradise.floor = 99; corridor.startCombat(user, 'elite'); corridor.victory(user, () => 0);
-    assert.equal(user.paradise.phase, 'augment'); assert.equal(user.paradise.relics.length, 0);
-    user = await reset(); corridor.enter(user); user.paradise.floor = 100; corridor.startCombat(user, 'elite'); corridor.victory(user, () => .30);
+test('모든 층의 엘리트 유물은 60% 확률로 한 번만 세 후보 중 선택하고 중복 요청을 처리한다', async () => {
+    let user = await reset(); corridor.enter(user); user.paradise.floor = 1; corridor.startCombat(user, 'elite'); corridor.victory(user, () => .5999);
+    assert.equal(user.paradise.phase, 'relic'); assert.equal(user.paradise.relics.length, 0);
+    user = await reset(); corridor.enter(user); user.paradise.floor = 100; corridor.startCombat(user, 'elite'); corridor.victory(user, () => .60);
     assert.equal(user.paradise.phase, 'augment');
     user = await reset(); corridor.enter(user); user.paradise.floor = 100; user.paradise.relics = ['necklace']; corridor.startCombat(user, 'elite'); corridor.victory(user, () => 0);
     await user.save();
     let state = (await request('/api/paradise')).data;
-    assert.equal(state.run.phase, 'relic'); assert.equal(state.run.relicPicksRemaining, 3); assert.equal(state.run.canReturn, false);
+    assert.equal(state.run.phase, 'relic'); assert.equal(state.run.relicPicksRemaining, 1); assert.equal(state.run.canReturn, false);
     assert.equal(state.run.relicChoices.length, 3); assert.equal(new Set(state.run.relicChoices.map(r => r.id)).size, 3);
     assert.ok(state.run.relicChoices.every(r => !r.special && r.id !== 'necklace'));
     assert.equal(state.run.timer.paused, false);
     const picks = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 1; i++) {
         assert.deepEqual((await request('/api/paradise')).data.run.relicChoices, state.run.relicChoices);
         assert.equal((await request('/api/paradise/relic', { ...bodyFor(state), choice: 'judgment' })).status, 400);
         const choice = state.run.relicChoices[0].id, body = { ...bodyFor(state), choice };
@@ -2146,7 +2167,7 @@ test('100층부터 엘리트 유물을 세 후보 중 선택하며 추가 보상
         assert.equal(selected.status, 200); state = selected.data.state;
         const retry = await request('/api/paradise/relic', body);
         assert.deepEqual(retry.data.state.run.relics, state.run.relics);
-        assert.equal(state.run.relicPicksRemaining, 2 - i);
+        assert.equal(state.run.relicPicksRemaining, 0);
     }
     assert.equal(state.run.phase, 'augment');
     assert.ok(persisted.get(account.id).paradise.relics.includes(picks[0]));
@@ -2324,4 +2345,128 @@ test('상태 조회는 현재 능력치를 한 번 계산해 플레이어와 스
     const stats = calculate(latest), before = structuredClone(stats);
     assert.deepEqual(rpg.calculateCombatPower(latest, stats), rpg.calculateCombatPower(latest));
     assert.deepEqual(stats, before);
+});
+
+test('목걸이는 종료 보상만 30% 늘리고 기존 처치 배율 기록은 더 이상 반영하지 않는다', async () => {
+    const user = await reset(); corridor.enter(user);
+    user.paradise.relics = ['necklace'];
+    corridor.startCombat(user, 'elite', { kind: 'elite', remaining: 1, reward: 'casino' });
+    corridor.victory(user, () => .99);
+    assert.equal(user.paradise.relics.length, 2);
+    assert.equal(user.paradise.phase, 'augment');
+    user.paradise.rewardUnits = 30; user.paradise.eliteUnits = 30;
+    corridor.finish(user);
+    assert.equal(corridor.view(user).run.rewards.find(r => r.type === '골드').count, 130);
+});
+
+test('마력의 구슬은 MP 15%를 회복하고 균열의 심장은 정돈된 수치를 적용한다', async () => {
+    const user = await reset(); corridor.enter(user);
+    const base = rpg.calculateUserStats(user); user.paradise.relics = ['orb'];
+    corridor.getResources(user).mp = 0; corridor.startCombat(user, 'normal');
+    assert.equal(corridor.getResources(user).mp, Math.round(base.mp * .15));
+    user.paradise.relics = ['riftHeart']; const stats = rpg.calculateUserStats(user);
+    assert.equal(stats.atk, Math.round(base.atk * 1.70));
+    assert.equal(stats.takenDamage, Number(base.takenDamage || 0) - .20);
+    corridor.victory(user, () => .99); corridor.finish(user);
+    assert.equal(corridor.view(user).run.rewards.find(r => r.type === '골드').count, 200);
+});
+
+test('연속 엘리트도 처치마다 유물 추첨하며 붕괴 계약은 세 번째 승리에만 보상을 준다', async () => {
+    const user = await reset(); corridor.enter(user);
+    user.paradise.temporary.push({ id: 'collapse', battles: 3 });
+    corridor.startCombat(user, 'elite', { kind: 'elite', remaining: 3 });
+    for (let i = 1; i <= 3; i++) {
+        corridor.victory(user, () => 0);
+        assert.equal(user.paradise.relicPicksRemaining, i);
+        assert.equal(Number(user.paradise.effects.reward || 0), i === 3 ? .30 : 0);
+    }
+    assert.equal(user.paradise.phase, 'relic');
+});
+
+function shopEnvironment(t) {
+    const { PRODUCTS, LEGENDARY_BOX } = require('../scripts/register_paradise_shop'), shop = require('../paradise_shop'), get = rpg.getDataCache;
+    const items = structuredClone(get('Item')), config = { ...get('Paradise'), shop: structuredClone(PRODUCTS) };
+    for (const name of ['천상의 증표', ...PRODUCTS.map(p => p.item)]) if (!items.some(i => i.name === name)) items.push(name === LEGENDARY_BOX.name ? structuredClone(LEGENDARY_BOX) : { name, type: '재료', desc: name });
+    t.mock.method(rpg, 'getDataCache', (key, fallback) => key === 'Item' ? items : key === 'Paradise' ? config : get(key, fallback));
+    const token = items.findIndex(i => i.name === '천상의 증표');
+    return { shop, items, config, token, async user() {
+        const user = await reset(); user.gold = 1000000000; rpg.addInventoryItem(user, token, 2000000); await user.save(); return user;
+    } };
+}
+const shopBody = (state, product, quantity = 1) => ({ requestId: crypto.randomUUID(), revision: state.shop.revision, catalogRevision: state.shop.catalogRevision, product, quantity });
+
+test('낙원 상점은 일반 계정에도 노출되고 로그인한 계정으로 구매할 수 있다', async t => {
+    const env = shopEnvironment(t); await reset();
+    assert.equal((await request('/api/paradise')).data.shop.items.length, 12);
+    assert.equal((await request('/api/paradise/shop/buy', {})).status, 400);
+    assert.equal((await request('/api/paradise/shop/buy', {}, false)).status, 401);
+    const user = await env.user(), state = (await request('/api/paradise')).data;
+    assert.equal(state.shop.items.length, 12);
+    assert.equal(state.shop.balances.tokens, 2000000);
+    assert.deepEqual(state.shop.items.filter(i => i.currency === 'gold').map(i => [i.price, i.weeklyLimit]), [[1000000, 1], [10000000, 2], [100000000, null]]);
+    assert.equal(user.isAdmin, false);
+    const purchased = await request('/api/paradise/shop/buy', shopBody(state, 'warcry'));
+    assert.equal(purchased.status, 200);
+    assert.equal(purchased.data.state.shop.balances.tokens, 1999900);
+    assert.equal(purchased.data.state.shop.items.find(item => item.id === 'warcry').owned, 1);
+});
+
+test('낙원 상점은 요청 중복과 동시 구매를 막고 재화와 상품을 함께 저장한다', async t => {
+    const env = shopEnvironment(t); await env.user(); let state = (await request('/api/paradise')).data;
+    const body = shopBody(state, 'trade-ticket', 2), first = await request('/api/paradise/shop/buy', body);
+    assert.equal(first.status, 200); assert.equal(first.data.state.shop.balances.tokens, 1998000);
+    const saved = structuredClone(persisted.get(account.id));
+    const retry = await request('/api/paradise/shop/buy', body);
+    assert.equal(retry.status, 200); assert.deepEqual(retry.data.purchase, first.data.purchase);
+    assert.deepEqual(persisted.get(account.id), saved);
+    assert.equal((await request('/api/paradise/shop/buy', { ...body, quantity: 3 })).status, 400);
+    state = first.data.state;
+    const parallel = await Promise.all([request('/api/paradise/shop/buy', shopBody(state, 'heaven-weekly-1')), request('/api/paradise/shop/buy', shopBody(state, 'heaven-weekly-1'))]);
+    assert.deepEqual(parallel.map(r => r.status).sort(), [200, 409]);
+    assert.equal((await request('/api/paradise')).data.shop.balances.gold, 999000000);
+    const write = writes.filter(w => Object.values(w.ExpressionAttributeNames || {}).includes('paradiseShopReceipt')).at(-1);
+    for (const key of ['inventory', 'gold', 'paradiseShop', 'paradiseShopReceipt']) assert.ok(Object.values(write.ExpressionAttributeNames).includes(key));
+});
+
+test('구매 저장 후 응답을 잃어도 같은 요청 재시도로 한 번만 지급한다', async t => {
+    const env = shopEnvironment(t); await env.user(); const state = (await request('/api/paradise')).data, body = shopBody(state, 'orb-box');
+    const commit = rpg.commitProtectedUserChange; let fail = true;
+    t.mock.method(rpg, 'commitProtectedUserChange', async (...args) => { await commit(...args); if (fail) { fail = false; throw new Error('simulated lost response'); } });
+    assert.equal((await request('/api/paradise/shop/buy', body)).status, 503);
+    const result = await request('/api/paradise/shop/buy', body);
+    assert.equal(result.status, 200); assert.equal(result.data.state.shop.balances.tokens, 1900000);
+    assert.equal(result.data.state.shop.items.find(i => i.id === 'orb-box').owned, 1);
+});
+
+test('주간 상품별 한도와 한국 시간 월요일 초기화를 적용하고 잘못된 수량과 잔액을 거부한다', async t => {
+    const env = shopEnvironment(t), user = await env.user(); const sun = new Date('2026-10-25T14:59:59Z'), mon = new Date('2026-10-25T15:00:00Z');
+    for (const [product, quantity] of [['trade-ticket', 10], ['heaven-weekly-1', 1], ['heaven-weekly-2', 2]]) {
+        assert.equal(env.shop.buy(user, { product, quantity }, sun).error, undefined);
+        assert.match(env.shop.buy(user, { product, quantity: 1 }, sun).error, /주.*한도/);
+    }
+    assert.equal(env.shop.view(user, undefined, sun).items.find(i => i.id === 'heaven-ticket').remaining, null);
+    assert.equal(env.shop.view(user, undefined, sun).resetAt, mon.getTime());
+    assert.equal(env.shop.view(user, undefined, mon).items.find(i => i.id === 'trade-ticket').remaining, 10);
+    assert.equal(env.shop.buy(user, { product: 'heaven-weekly-1', quantity: 1 }, mon).error, undefined);
+    const before = structuredClone(user.inventory);
+    for (const quantity of [0, -1, 1.5, '1', Number.MAX_SAFE_INTEGER]) assert.ok(env.shop.buy(user, { product: 'warcry', quantity }, mon).error);
+    assert.deepEqual(user.inventory, before);
+    user.gold = 0; assert.match(env.shop.buy(user, { product: 'heaven-ticket', quantity: 1 }, mon).error, /부족/);
+});
+
+test('상품 변경과 운영 아이템 누락은 구매 전에 검증하며 상점 등록은 기존 운영 구성을 보존한다', async t => {
+    const env = shopEnvironment(t); await env.user(); const state = (await request('/api/paradise')).data;
+    const before = structuredClone(persisted.get(account.id));
+    env.config.shop[0].price++;
+    assert.equal((await request('/api/paradise/shop/buy', shopBody(state, 'hell-key'))).status, 409);
+    assert.deepEqual(persisted.get(account.id), before);
+    const { appendShop, LEGENDARY_BOX } = require('../scripts/register_paradise_shop');
+    const original = { Item: env.items.filter(i => i.name !== LEGENDARY_BOX.name), Paradise: { enabled: true, baseRewards: [{ type: '골드', count: 777 }], shop: [] } };
+    const added = appendShop(original);
+    assert.deepEqual(added.Paradise, original.Paradise); assert.deepEqual(added.Item.slice(0, -1), original.Item);
+    assert.deepEqual(appendShop(added), added);
+    env.items.splice(env.items.findIndex(i => i.name === '투신의 함성 포션'), 1);
+    const fresh = (await request('/api/paradise')).data;
+    assert.equal(fresh.shop.items.find(i => i.id === 'warcry').available, false);
+    assert.equal((await request('/api/paradise/shop/buy', shopBody(fresh, 'warcry'))).status, 400);
 });

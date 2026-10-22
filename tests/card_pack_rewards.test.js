@@ -731,6 +731,202 @@ test('TCG는 4세트에서만 발동하고 지속 중인 버프는 새 발동으
     assert.ok(!extra.triggeredEffectIds.includes('set:TCG의 유산'));
 });
 
+test('신규 방어구 등록은 기존 장비와 인덱스를 보존하며 0강과 15강 수치를 맞춘다', () => {
+    const { definitions } = require('../armor_expansion'), { appendEquipment } = require('../scripts/register_armor_expansion');
+    const before = read('Equipment');
+    for (const [slot, entries] of Object.entries(definitions)) before[slot] = before[slot].filter(item => !entries.some(entry => entry.name === item.name));
+    before.hat[0].desc = '운영 설명'; before.hat[0].upgrade = [];
+    const snapshot = structuredClone(before), after = appendEquipment(before);
+    assert.deepEqual(before, snapshot);
+    for (const slot of Object.keys(before)) assert.deepEqual(after[slot].slice(0, before[slot].length), before[slot]);
+    const expected = {
+        hat: [[2,30,31,30],[14,67,66,907],[34,395,143,2454],[91,725,374,6728]],
+        pants: [[2,40,42,40],[18,90,88,1210],[46,526,192,3272],[122,967,500,8971]],
+        shoes: [[2,25,29,25],[12,56,60,758],[29,329,124,2048],[76,605,315,5608]]
+    };
+    for (const [slot, entries] of Object.entries(definitions)) entries.forEach((entry, i) => {
+        const live = rpg.getDataCache('Equipment')[slot].find(item => item.name === entry.name);
+        const {evolution, ...definition} = live;
+        assert.deepEqual(definition, entry);
+        if (entry.rarity === '유니크') assert.equal(rpg.getDataCache('Equipment')[slot][evolution].name, entries.find(item => item.rarity === '레전더리').name);
+        const start = rpg.getEquipmentStatsAtLevel(live, 0), end = rpg.getEquipmentStatsAtLevel(live, 15);
+        assert.deepEqual([start.def,start.hp,end.def,end.hp], expected[slot][i], entry.name);
+        for (const key of Object.keys(start).filter(key => !['def','hp'].includes(key))) assert.equal(end[key], start[key]);
+        assert.ok(live.upgrade.every(step => Object.keys(step.plusStat).length === 0));
+        if (entry.passive_id != null) assert.equal(rpg.getEquipmentPassives()[entry.passive_id].desc, entry.desc);
+    });
+    after.hat.at(-1).stat.def = 777;
+    assert.deepEqual(appendEquipment(after), after, '재실행 시 운영자가 수정한 신규 장비도 보존');
+    before.weapon.push({name:'패시브 충돌',passive_id:97});
+    assert.throws(() => appendEquipment(before), /충돌/);
+});
+
+test('신규 유니크 3종은 같은 장비 10강 3개로 같은 부위의 레전더리에 진화한다', () => {
+    const {definitions} = require('../armor_expansion'), equipment = rpg.getDataCache('Equipment');
+    for (const [slot, entries] of Object.entries(definitions)) {
+        const unique = entries.find(item => item.rarity === '유니크'), legendary = entries.find(item => item.rarity === '레전더리');
+        const id = equipment[slot].findIndex(item => item.name === unique.name), u = user();
+        u.equipments = {}; u.inventory.equipment = Array.from({length:3}, () => ({type:slot,id,level:10}));
+        assert.ok(rpg.formatEquipmentSynthesisPreview(u,[1,2,3]).includes(legendary.name));
+        assert.ok(rpg.runEquipmentSynthesis(u).includes(legendary.name));
+        assert.equal(u.inventory.equipment.length,1);
+        assert.equal(u.inventory.equipment[0].type,slot);
+        assert.equal(equipment[slot][u.inventory.equipment[0].id].name,legendary.name);
+    }
+});
+
+test('기존 등급별 장비 상자를 개봉해 신규 모자·하의·신발 12종을 획득할 수 있다', async () => {
+    const { definitions } = require('../armor_expansion'), equipment = rpg.getDataCache('Equipment'), items = rpg.getDataCache('Item');
+    for (const [slot, entries] of Object.entries(definitions)) for (const entry of entries) {
+        const pool = ['weapon','hat','armor','pants','shoes','accessory'].flatMap(type => equipment[type].map((item,id) => ({type,id,item})))
+            .filter(({item}) => item.rarity === entry.rarity && !(item.rarity === '유니크' && item.isRaid));
+        const index = pool.findIndex(({item}) => item.name === entry.name);
+        assert.ok(index >= 0);
+        const id = items.push({name:'검증 상자 ' + entry.name,type:'가챠',pack:{type:'장비 상자',rarity:entry.rarity}}) - 1;
+        const u = user(); rpg.addInventoryItem(u, id, 1);
+        const message = await fixed((index + .5) / pool.length, () => rpg.useItem(u, items[id].name, 1));
+        assert.ok(message.includes(entry.name), message);
+        assert.equal(rpg.getInventoryItemCount(u, id), 0);
+        assert.equal(u.inventory.equipment.length, 1);
+        assert.equal(u.inventory.equipment[0].type, slot);
+        assert.equal(u.inventory.equipment[0].id, pool[index].id);
+    }
+});
+
+test('천리안은 실제 치명타 확률 30%부터 발동하며 타격 보정과 고정 확률을 반영한다', async t => {
+    const armor = require('../armor_expansion'), equipment = rpg.getDataCache('Equipment'), u = user();
+    u.equipments = {hat:{id:equipment.hat.findIndex(item => item.name === '천리안의 왕관')}};
+    const stats = {...rpg.calculateUserStats(u),atk:1000,crit:.29,critMul:1.5,clairvoyanceBonus:0};
+    assert.equal(stats.hasClairvoyance, true);
+    armor.applyConditionalStats(stats); assert.equal(stats.critMul, 1.5);
+    const hit = extra => rpg.calculateAttackHitResult(1000,0,0,stats,{}, {forceCritical:true,disableEquipmentBonusDamage:true,...extra},{}).finalDamage;
+    t.mock.method(Math, 'random', () => .5);
+    assert.equal(hit({}),1500); assert.equal(hit({critChanceBonus:.01}),1700);
+    stats.crit = .30; armor.applyConditionalStats(stats); armor.applyConditionalStats(stats);
+    assert.equal(stats.critMul,1.7); assert.equal(hit({}),1700);
+    stats.fixedCriticalChance = .20; armor.applyConditionalStats(stats);
+    assert.equal(stats.critMul,1.5);
+    t.mock.method(Math, 'random', () => .1);
+    const fixedHit = hit({critChanceBonus:1}); stats.hasClairvoyance = false;
+    assert.equal(fixedHit,hit({critChanceBonus:1}), '고정 20%일 때 천리안 미발동');
+});
+
+test('폭풍을 걷는 자는 쿨타임 감소 20% 초과부터 적용되고 반복 계산해도 중첩되지 않는다', () => {
+    const armor = require('../armor_expansion'), u = user(), equipment = rpg.getDataCache('Equipment');
+    u.equipments = {shoes:{id:equipment.shoes.findIndex(item => item.name === '폭풍을 걷는 발걸음')}};
+    const stats = {...rpg.calculateUserStats(u),cooldown:.20,stormWalkerBonus:0};
+    assert.equal(stats.hasStormWalker,true);
+    armor.applyConditionalStats(stats); assert.equal(stats.cooldown,.20); assert.equal(rpg.getSkillCooldownRate(stats),.8);
+    stats.cooldown = .201; armor.applyConditionalStats(stats); armor.applyConditionalStats(stats);
+    assert.ok(Math.abs(stats.cooldown - .251) < 1e-9);
+    assert.ok(Math.abs(rpg.getSkillCooldownRate(stats) - .749) < 1e-9);
+    stats.cooldown -= .001; armor.applyConditionalStats(stats);
+    assert.ok(Math.abs(stats.cooldown - .20) < 1e-9);
+});
+
+test('업화는 필드에서 HP 20%에 발동하고 5초 지속·15초 쿨타임을 지킨다', t => {
+    let now = Date.now(); t.mock.method(Date,'now',() => now);
+    const u = user(), equipment = rpg.getDataCache('Equipment');
+    u.equipments = {pants:{id:equipment.pants.findIndex(item => item.name === '불멸하는 업화의 하의')}};
+    u.field = {name:rpg.getRegularFieldDungeons()[0].name,enteredAt:now,equipmentState:{}};
+    const before = rpg.calculateUserStats(u), lines = [];
+    assert.equal(before.hasHellfireRage,true); assert.equal(equipment.pants[u.equipments.pants.id].stat.fireRes,200);
+    u.hp = Math.ceil(before.hp * .21); assert.equal(rpg.tryHellfireRage(u,before.hp,lines),false);
+    u.hp = Math.floor(before.hp * .20); const hp = u.hp;
+    assert.equal(rpg.tryHellfireRage(u,before.hp,lines),true);
+    assert.ok(Math.abs(rpg.calculateUserStats(u).atk - before.atk * 1.2) <= 2);
+    assert.equal(u.hp,hp); assert.equal(lines.length,1);
+    now += 4999; assert.ok(rpg.calculateUserStats(u).atk > before.atk);
+    now++; assert.equal(rpg.calculateUserStats(u).atk,before.atk);
+    now += 9999; assert.equal(rpg.tryHellfireRage(u,before.hp,lines),false);
+    now++; assert.equal(rpg.tryHellfireRage(u,before.hp,lines),true);
+    now += 15000; u.hp = 0; assert.equal(rpg.tryHellfireRage(u,before.hp,lines),false);
+    rpg.clearFieldRuntimeTimers(u.name);
+});
+
+test('업화는 거울/PvP와 레이드의 실제 피격 경로에서도 발동한다', t => {
+    let now = Date.now(); t.mock.method(Date,'now',() => now);
+    const u = user(), equipment = rpg.getDataCache('Equipment');
+    u.equipments = {pants:{id:equipment.pants.findIndex(item => item.name === '불멸하는 업화의 하의')}};
+    const side = pvp.createCorridorMirror(u), before = pvp.getCorridorMirrorStats(side).atk;
+    side.hp = Math.floor(side.maxHp * .20) + 1;
+    pvp.corridorMirrorHit(side,user(),1,{});
+    assert.ok(side.runtime.equipment.hellfireRage);
+    assert.ok(pvp.getCorridorMirrorStats(side).atk > before);
+    const member = {name:u.name,position:'브루저',skills:[],baseSnapshot:{stats:{atk:1000,hp:1000,mp:1000,hasHellfireRage:true},slotEffects:{},passives:[]},
+        runtime:{hp:201,hpMax:1000,mp:1000,mpMax:1000,dead:false,buffs:[],equipmentState:{},equipmentAtkBuffs:{},cooldownsUntil:{},stackCounters:{}}};
+    const room = {members:[member],phaseIndex:0,questId:'mansionNormal',monster:{name:'검증',hp:10000,hpMax:10000,stats:{},debuffs:[]}};
+    party.applyDamageToMember(room,member,1,'검증');
+    assert.equal(member.runtime.hp,200); assert.equal(party.getPartyAttackBuffValue(member),.20);
+    now += 5000;
+    assert.equal(pvp.getCorridorMirrorStats(side).atk,before); assert.equal(party.getPartyAttackBuffValue(member),0);
+});
+
+test('천공 장비 패치는 지정한 수치와 설명만 바꾸고 기존 운영 설정과 배열 순서를 보존한다', () => {
+    const { PATCHES, patchEquipment } = require('../scripts/update_sky_equipment_balance');
+    const before = read('Equipment');
+    for (const patch of PATCHES) {
+        const item = before[patch.slot].find(entry => entry.name === patch.name);
+        item[patch.group][patch.key] = .99; item.desc = '운영 중인 이전 설명';
+        item.stat.def = 777; item.no_trade = true; item.upgrade = [];
+    }
+    const snapshot = structuredClone(before), after = patchEquipment(before);
+    assert.deepEqual(before, snapshot);
+    const restored = structuredClone(after);
+    for (const patch of PATCHES) {
+        const item = after[patch.slot].find(entry => entry.name === patch.name);
+        assert.equal(item[patch.group][patch.key], patch.value);
+        assert.equal(item.desc, patch.desc);
+        const original = before[patch.slot].find(entry => entry.name === patch.name);
+        const entry = restored[patch.slot].find(entry => entry.name === patch.name);
+        entry[patch.group][patch.key] = original[patch.group][patch.key]; entry.desc = original.desc;
+    }
+    assert.deepEqual(restored, before);
+    assert.deepEqual(patchEquipment(after), after);
+    delete before.hat;
+    assert.throws(() => patchEquipment(before), /운영 장비/);
+});
+
+test('천공 장비의 초월 1~3단계 스탯과 공통 전투 피해 및 장비 표기가 새 수치와 일치한다', t => {
+    t.mock.method(Math, 'random', () => .5);
+    const content = require('../transcend_equipment');
+    const equipment = rpg.getDataCache('Equipment');
+    for (const [slot, name, key, rates] of [
+        ['hat', '천공의 모자', 'critLightBonus', [.10, .14, .18]],
+        ['armor', '천공의 갑옷', 'lightFinalDamage', [.10, .15, .20]],
+        ['pants', '천공의 하의', 'nonCritLightBonus', [.08, .11, .14]]
+    ]) {
+        const id = equipment[slot].findIndex(item => item.name === name), definition = equipment[slot][id];
+        assert.equal(definition.desc, content.definitions[slot].find(item => item.name === name).desc);
+        for (let stage = 1; stage <= 3; stage++) {
+            const u = user(); u.equipments = { [slot]: { id, level: 0, transcendStage: stage } };
+            const rate = rates[stage - 1], stats = rpg.calculateUserStats(u);
+            assert.ok(Math.abs(stats[key] - rate) < 1e-9, name + ' ' + stage);
+            assert.ok(rpg.formatCurrentEquipmentStatLines(definition, 0, null, { transcendStage: stage }).includes('+' + Math.round(rate * 100) + '%'));
+            const damageStats = { atk: 1000, crit: 0, critMul: 1.5, [key]: stats[key] };
+            const extra = slot === 'hat' ? { forceCritical: true } : { disableCritical: true, attackElement: slot === 'armor' ? '명' : '화' };
+            const hit = rpg.calculateAttackHitResult(1000, 0, 0, damageStats, {}, extra, {});
+            assert.equal(hit.finalDamage, (slot === 'hat' ? 1500 : 1000) + Math.round(1000 * rate));
+            const opposite = rpg.calculateAttackHitResult(1000, 0, 0, damageStats, {}, slot === 'pants' ? { forceCritical: true } : { disableCritical: true, attackElement: '화' }, {});
+            assert.equal(opposite.finalDamage, slot === 'pants' ? 1500 : 1000);
+        }
+    }
+});
+
+test('TCG의 유산으로 재발동하는 천공 모자와 하의도 새 초월 단계 배율로 피해를 준다', () => {
+    const tcg = require('../tcg_equipment_effects');
+    for (const [name, damage] of [['천공의 모자', [100, 140, 180]], ['천공의 하의', [80, 110, 140]]]) {
+        for (let stage = 1; stage <= 3; stage++) {
+            const state = {}, extra = {};
+            tcg.record(state, '핏빛 모자');
+            const activated = tcg.activate({ state, stats: { atk: 1000 }, runtime: {}, extra, now: 1000, setCount: 4,
+                entries: [{ name: '핏빛 모자', stage: 1 }, { name, stage }], element: () => 1 });
+            assert.deepEqual(activated, [name]);
+            assert.equal(extra.oneTimeFinalDamage, damage[stage - 1]);
+        }
+    }
+});
+
 test('TCG 추첨은 원래 장비를 제외하며 다른 장비 발동에도 정확히 한 번 실행한다', async () => {
     const tcg = require('../tcg_equipment_effects');
     for (const random of [0, .49, .99]) {

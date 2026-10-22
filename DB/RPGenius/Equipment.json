@@ -4677,12 +4677,12 @@
       ]
     },
     {
-      "desc": "명속성 공격 최종 피해 +20%(단계당 +5%).",
+      "desc": "명속성 공격의 최종 피해가 10% 증가합니다. 초월 단계마다 5%p 추가로 증가합니다.",
       "name": "천공의 갑옷",
       "no_trade": false,
       "passive_id": 57,
       "plusStat": {
-        "lightFinalDamage": 0.2
+        "lightFinalDamage": 0.1
       },
       "rarity": "초월",
       "set": "천공의 심판",
@@ -5698,7 +5698,7 @@
       ]
     },
     {
-      "desc": "치명타 발생 시 공격력 70%(단계당 +20%) 명속성 추가 피해.",
+      "desc": "치명타가 발생하면 공격력의 10%만큼 명속성 추가 피해를 입힙니다. 초월 단계마다 피해 배율이 4%p 증가합니다.",
       "name": "천공의 모자",
       "no_trade": false,
       "passive_id": 56,
@@ -5710,7 +5710,7 @@
         "4": "공격 시 8초간 대상을 심판 대상으로 지정(쿨타임 15초). 종료 시 해당 시간 동안 가한 피해량의 15%만큼 명속성 추가 피해."
       },
       "stat": {
-        "critLightBonus": 0.7,
+        "critLightBonus": 0.1,
         "def": 270,
         "hp": 1300
       },
@@ -5916,6 +5916,475 @@
             "def": 211,
             "hp": 2284
           }
+        }
+      ]
+    },
+    {
+      "name": "여행자의 가죽 두건",
+      "rarity": "일반",
+      "armorSlot": "hat",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 2,
+        "hp": 30
+      },
+      "plusStat": {},
+      "desc": "여행자의 가죽 두건입니다.",
+      "upgrade": [
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 0
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 0
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5
+          },
+          "plusStat": {}
+        }
+      ]
+    },
+    {
+      "name": "흑철 전투 투구",
+      "rarity": "레어",
+      "armorSlot": "hat",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 14,
+        "hp": 67
+      },
+      "plusStat": {},
+      "desc": "흑철 전투 투구입니다.",
+      "upgrade": [
+        {
+          "stat": {
+            "def": 1,
+            "hp": 15
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1,
+            "hp": 18
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 21
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 24
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 30
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 33
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 36
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 42
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 48
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 57
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 66
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4,
+            "hp": 78
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 90
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 108
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 9,
+            "hp": 174
+          },
+          "plusStat": {}
+        }
+      ]
+    },
+    {
+      "name": "매의 눈 투구",
+      "rarity": "유니크",
+      "armorSlot": "hat",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 34,
+        "hp": 395,
+        "crit": 0.02
+      },
+      "plusStat": {},
+      "desc": "매의 눈 투구입니다.",
+      "upgrade": [
+        {
+          "stat": {
+            "def": 2,
+            "hp": 27
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 33
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 39
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 48
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4,
+            "hp": 57
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 66
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 78
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 90
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 105
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 8,
+            "hp": 126
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 9,
+            "hp": 150
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 10,
+            "hp": 180
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 12,
+            "hp": 232
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 14,
+            "hp": 328
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 18,
+            "hp": 500
+          },
+          "plusStat": {}
+        }
+      ],
+      "evolution": 12
+    },
+    {
+      "name": "천리안의 왕관",
+      "rarity": "레전더리",
+      "armorSlot": "hat",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 91,
+        "hp": 725,
+        "crit": 0.04
+      },
+      "plusStat": {},
+      "desc": "치명타 확률이 30% 이상이면 치명타 피해량이 20% 증가합니다.",
+      "passive_id": 97,
+      "upgrade": [
+        {
+          "stat": {
+            "def": 5,
+            "hp": 84
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 102
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 120
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 7,
+            "hp": 144
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 9,
+            "hp": 174
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 11,
+            "hp": 210
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 11,
+            "hp": 252
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 13,
+            "hp": 300
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 16,
+            "hp": 360
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 20,
+            "hp": 432
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 22,
+            "hp": 516
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 28,
+            "hp": 624
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 33,
+            "hp": 756
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 41,
+            "hp": 912
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 56,
+            "hp": 1017
+          },
+          "plusStat": {}
         }
       ]
     }
@@ -6695,7 +7164,7 @@
       ]
     },
     {
-      "desc": "비치명타 공격이 공격력 35%(단계당 +10%) 명속성 추가 피해.",
+      "desc": "치명타가 발생하지 않으면 공격력의 8%만큼 명속성 추가 피해를 입힙니다. 초월 단계마다 피해 배율이 3%p 증가합니다.",
       "name": "천공의 하의",
       "no_trade": false,
       "passive_id": 58,
@@ -6709,7 +7178,7 @@
       "stat": {
         "def": 270,
         "hp": 1600,
-        "nonCritLightBonus": 0.35
+        "nonCritLightBonus": 0.08
       },
       "transcend": true,
       "upgrade": [
@@ -7024,6 +7493,478 @@
             "def": 211,
             "hp": 2741
           }
+        }
+      ]
+    },
+    {
+      "name": "여행자의 가죽 바지",
+      "rarity": "일반",
+      "armorSlot": "pants",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 2,
+        "hp": 40
+      },
+      "plusStat": {},
+      "desc": "여행자의 가죽 바지입니다.",
+      "upgrade": [
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 0
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 7
+          },
+          "plusStat": {}
+        }
+      ]
+    },
+    {
+      "name": "흑철 판금 하의",
+      "rarity": "레어",
+      "armorSlot": "pants",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 18,
+        "hp": 90
+      },
+      "plusStat": {},
+      "desc": "흑철 판금 하의입니다.",
+      "upgrade": [
+        {
+          "stat": {
+            "def": 2,
+            "hp": 20
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1,
+            "hp": 24
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 28
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 32
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 40
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 44
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4,
+            "hp": 48
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 56
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4,
+            "hp": 64
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 76
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 88
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 104
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 7,
+            "hp": 120
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 9,
+            "hp": 144
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 12,
+            "hp": 232
+          },
+          "plusStat": {}
+        }
+      ]
+    },
+    {
+      "name": "화룡의 비늘 하의",
+      "rarity": "유니크",
+      "armorSlot": "pants",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 46,
+        "hp": 526
+      },
+      "plusStat": {
+        "hp": 0.05
+      },
+      "desc": "화룡의 비늘 하의입니다.",
+      "upgrade": [
+        {
+          "stat": {
+            "def": 3,
+            "hp": 36
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 44
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4,
+            "hp": 52
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 64
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 76
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 88
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 7,
+            "hp": 104
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 8,
+            "hp": 120
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 9,
+            "hp": 140
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 10,
+            "hp": 168
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 12,
+            "hp": 200
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 14,
+            "hp": 240
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 16,
+            "hp": 310
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 19,
+            "hp": 437
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 24,
+            "hp": 667
+          },
+          "plusStat": {}
+        }
+      ],
+      "evolution": 13
+    },
+    {
+      "name": "불멸하는 업화의 하의",
+      "rarity": "레전더리",
+      "armorSlot": "pants",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 122,
+        "hp": 967,
+        "fireRes": 200
+      },
+      "plusStat": {
+        "hp": 0.08
+      },
+      "desc": "화속성 저항이 200 증가합니다. 현재 HP가 최대 HP의 20% 이하로 내려가면 5초 동안 공격력이 20% 증가합니다. 재사용 대기시간은 15초입니다.",
+      "passive_id": 98,
+      "upgrade": [
+        {
+          "stat": {
+            "def": 6,
+            "hp": 112
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 8,
+            "hp": 136
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 8,
+            "hp": 160
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 9,
+            "hp": 192
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 12,
+            "hp": 232
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 14,
+            "hp": 280
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 15,
+            "hp": 336
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 18,
+            "hp": 400
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 21,
+            "hp": 480
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 26,
+            "hp": 576
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 30,
+            "hp": 688
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 37,
+            "hp": 832
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 45,
+            "hp": 1008
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 55,
+            "hp": 1216
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 74,
+            "hp": 1356
+          },
+          "plusStat": {}
         }
       ]
     }
@@ -8350,6 +9291,477 @@
             "def": 257,
             "hp": 4873
           }
+        }
+      ]
+    },
+    {
+      "name": "여행자의 가죽 장화",
+      "rarity": "일반",
+      "armorSlot": "shoes",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 2,
+        "hp": 25
+      },
+      "plusStat": {},
+      "desc": "여행자의 가죽 장화입니다.",
+      "upgrade": [
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 0
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 0
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5
+          },
+          "plusStat": {}
+        }
+      ]
+    },
+    {
+      "name": "흑철 전투 장화",
+      "rarity": "레어",
+      "armorSlot": "shoes",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 12,
+        "hp": 56
+      },
+      "plusStat": {},
+      "desc": "흑철 전투 장화입니다.",
+      "upgrade": [
+        {
+          "stat": {
+            "def": 1,
+            "hp": 13
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1,
+            "hp": 15
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 17
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 1,
+            "hp": 20
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 25
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 28
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 30
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 35
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 40
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4,
+            "hp": 48
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4,
+            "hp": 55
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4,
+            "hp": 65
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 75
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 91
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 8,
+            "hp": 145
+          },
+          "plusStat": {}
+        }
+      ]
+    },
+    {
+      "name": "바람결의 장화",
+      "rarity": "유니크",
+      "armorSlot": "shoes",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 29,
+        "hp": 329,
+        "avd": 0.01
+      },
+      "plusStat": {},
+      "desc": "바람결의 장화입니다.",
+      "upgrade": [
+        {
+          "stat": {
+            "def": 2,
+            "hp": 23
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 2,
+            "hp": 27
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 33
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 40
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 3,
+            "hp": 47
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 55
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 4,
+            "hp": 66
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 75
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 87
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 7,
+            "hp": 105
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 8,
+            "hp": 126
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 9,
+            "hp": 150
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 10,
+            "hp": 194
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 12,
+            "hp": 273
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 16,
+            "hp": 418
+          },
+          "plusStat": {}
+        }
+      ],
+      "evolution": 15
+    },
+    {
+      "name": "폭풍을 걷는 발걸음",
+      "rarity": "레전더리",
+      "armorSlot": "shoes",
+      "no_trade": false,
+      "require": [],
+      "stat": {
+        "def": 76,
+        "hp": 605,
+        "avd": 0.02
+      },
+      "plusStat": {
+        "cooldown": 0.02
+      },
+      "desc": "스킬 쿨타임 감소량이 20%를 초과하면 추가로 5%p 감소합니다.",
+      "passive_id": 99,
+      "upgrade": [
+        {
+          "stat": {
+            "def": 4,
+            "hp": 70
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 85
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 5,
+            "hp": 100
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 6,
+            "hp": 120
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 7,
+            "hp": 145
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 9,
+            "hp": 175
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 10,
+            "hp": 210
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 11,
+            "hp": 250
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 13,
+            "hp": 300
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 17,
+            "hp": 360
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 19,
+            "hp": 430
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 23,
+            "hp": 520
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 28,
+            "hp": 630
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 35,
+            "hp": 760
+          },
+          "plusStat": {}
+        },
+        {
+          "stat": {
+            "def": 47,
+            "hp": 848
+          },
+          "plusStat": {}
         }
       ]
     }

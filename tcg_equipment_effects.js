@@ -144,9 +144,10 @@ function activate(ctx) {
     effect('해류를 거스르는 신발', () => { ctx.cooldown(extra.skillName, .08, 5000); mp(.03); });
     effect('검은 잔향 신발', () => buff('blackEchoShoesBuff', { value: value('검은 잔향 신발', .07, .03) }, 60));
     effect('심연의 신발', () => { hpCost(.02); buff('darkAttackBuff', { value: .25 }, 12); buff('abyssBuff', {}, 12); });
-    effect('천공의 모자', () => damage(value('천공의 모자', .70, .20), '명'));
-    effect('천공의 하의', () => damage(value('천공의 하의', .35, .10), '명'));
+    effect('천공의 모자', () => damage(value('천공의 모자', .10, .04), '명'));
+    effect('천공의 하의', () => damage(value('천공의 하의', .08, .03), '명'));
     effect('심판자의 하의', () => damage(.70, '명'));
+    effect('불멸하는 업화의 하의', () => buff('hellfireRage', { attack: attack(.20) }, 5));
     effect('잿불 모자', () => ctx.burn(value('잿불 모자', .30, .05), duration(8 + Number(stats.burnDurationFlat || 0))));
     effect('잿불 신발', () => ctx.detonate(value('잿불 신발', .60, .10), false));
     effect('종말을 걷는 장송곡', () => ctx.detonate(1, true));

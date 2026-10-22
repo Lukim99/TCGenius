@@ -36,6 +36,7 @@ function checkRewardItems(config) {
     return null;
 }
 function enter(user, keyName, random = Math.random) {
+    if (Number(user.level || 1) < corridor().MIN_LEVEL) return { error: '낙원은 ' + corridor().MIN_LEVEL + '레벨부터 입장할 수 있습니다.' };
     if (user.paradise?.status === 'active' || user.field || require('./partyquest').getRoomOf(user.name) || user.pvp?.battle && user.pvp.battle.phase !== 'ended') return { error: '진행 중인 전투나 탐험을 먼저 마쳐주세요.' };
     if (user.paradise?.status === 'ended' && !user.paradise.claimed && (user.paradise.mode === 'hell' || user.paradise.outcome !== 'defeated' || require('./paradise_progression').has(user.paradise, 'deathInsurance'))) return { error: '지난 탐험의 보상을 먼저 수령해주세요.' };
     if (!user.main_card || user.need_character_card_select) return { error: '메인 카드를 먼저 선택해주세요.' };

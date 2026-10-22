@@ -140,9 +140,9 @@ const armorDefinitions = [
     armor('심해의 하의', 'pants', 270, 1600, '심해의 순환', '수속성 저항 +200(+30), 수속성 강화 +150(+25).'),
     armor('심해의 신발', 'shoes', 270, 1300, '심해의 순환', '스킬 사용 시 해당 스킬 남은 쿨타임 4%(단계당 +1%), 최대 3초 감소.'),
     armor('해류를 거스르는 신발', 'shoes', 300, 2100, '심해의 순환', '스킬 적중 시 해당 스킬의 남은 쿨타임 8%, 최대 5초 감소. 쿨타임 8초. 발동 시 최대 MP의 3% 회복.', true),
-    armor('천공의 모자', 'hat', 270, 1300, '천공의 심판', '치명타 발생 시 공격력 70%(단계당 +20%) 명속성 추가 피해.'),
-    armor('천공의 갑옷', 'armor', 270, 1800, '천공의 심판', '명속성 공격 최종 피해 +20%(단계당 +5%).'),
-    armor('천공의 하의', 'pants', 270, 1600, '천공의 심판', '비치명타 공격이 공격력 35%(단계당 +10%) 명속성 추가 피해.'),
+    armor('천공의 모자', 'hat', 270, 1300, '천공의 심판', '치명타가 발생하면 공격력의 10%만큼 명속성 추가 피해를 입힙니다. 초월 단계마다 피해 배율이 4%p 증가합니다.'),
+    armor('천공의 갑옷', 'armor', 270, 1800, '천공의 심판', '명속성 공격의 최종 피해가 10% 증가합니다. 초월 단계마다 5%p 추가로 증가합니다.'),
+    armor('천공의 하의', 'pants', 270, 1600, '천공의 심판', '치명타가 발생하지 않으면 공격력의 8%만큼 명속성 추가 피해를 입힙니다. 초월 단계마다 피해 배율이 3%p 증가합니다.'),
     armor('천공의 신발', 'shoes', 270, 1300, '천공의 심판', '명속성 저항 +200(+30), 명속성 강화 +150(+25).'),
     armor('심판자의 하의', 'pants', 300, 2100, '천공의 심판', '비치명타 공격이 공격력 70% 명속성 추가 피해. 치명타 확률 +10%.', true),
     armor('검은 잔향 모자', 'hat', 230, 1500, '검은 잔향', '암속성 저항 +200(+30), 암속성 강화 +150(+25).'),
@@ -221,9 +221,9 @@ const uniqueStaticEffects = {
     '잿불 갑옷': { stat: { fireRes: 200, fireAtk: 150 } },
     '잿불 하의': { stat: { burnDurationFlat: 2 }, plusStat: { burnDamage: .25 } },
     '심해의 하의': { stat: { waterRes: 200, waterAtk: 150 } },
-    '천공의 모자': { stat: { critLightBonus: .70 } },
-    '천공의 갑옷': { plusStat: { lightFinalDamage: .20 } },
-    '천공의 하의': { stat: { nonCritLightBonus: .35 } },
+    '천공의 모자': { stat: { critLightBonus: .10 } },
+    '천공의 갑옷': { plusStat: { lightFinalDamage: .10 } },
+    '천공의 하의': { stat: { nonCritLightBonus: .08 } },
     '천공의 신발': { stat: { lightRes: 200, lightAtk: 150 } },
     '심판자의 하의': { stat: { crit: .10, nonCritLightBonus: .70 } },
     '검은 잔향 모자': { stat: { darkRes: 200, darkAtk: 150 } },
@@ -278,9 +278,9 @@ const uniqueStaticPerStageEffects = {
     '잿불 갑옷': { stat: { fireRes: 30, fireAtk: 25 } },
     '잿불 하의': { plusStat: { burnDamage: .08 } },
     '심해의 하의': { stat: { waterRes: 30, waterAtk: 25 } },
-    '천공의 모자': { stat: { critLightBonus: .20 } },
+    '천공의 모자': { stat: { critLightBonus: .04 } },
     '천공의 갑옷': { plusStat: { lightFinalDamage: .05 } },
-    '천공의 하의': { stat: { nonCritLightBonus: .10 } },
+    '천공의 하의': { stat: { nonCritLightBonus: .03 } },
     '천공의 신발': { stat: { lightRes: 30, lightAtk: 25 } },
     '검은 잔향 모자': { stat: { darkRes: 30, darkAtk: 25 } },
     '레인보우 프리즘': { plusStat: { atk: .03 } },
@@ -501,7 +501,8 @@ const uniquePassiveDescriptions = {
 };
 
 const uniquePassiveIds = {};
-Object.keys(uniquePassiveDescriptions).forEach((name, index) => { uniquePassiveIds[name] = index + 6; });
+// 97~99는 armor_expansion의 저장된 레전더리 패시브 ID다. 기존 ID는 유지한다.
+Object.keys(uniquePassiveDescriptions).forEach((name, index) => { uniquePassiveIds[name] = index + 6 + (index >= 91 ? 3 : 0); });
 
 for (const data of [...weaponDefinitions, ...armorDefinitions, ...accessoryDefinitions]) {
     const effect = uniqueStaticEffects[data.name];

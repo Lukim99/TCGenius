@@ -57,7 +57,7 @@
     // ── 입장 타일: 실제 아트가 주인공, 하단만 어둡게 눌러 글자를 얹는다.
     function realm(i, x, y, w, h, o, mobile) {
         const s = o.state, hell = i === 1, keys = s.hell?.keys || [], keyCount = keys.reduce((a, k) => a + (k.count || 0), 0), tickets = s.ticket?.count || 0;
-        const can = hell ? !!s.hell?.enabled && keyCount > 0 : !!s.enabled && tickets >= 1 && !s.entryBlocked, off = !can || o.busy;
+        const can = !s.entryBlocked && (hell ? !!s.hell?.enabled && keyCount > 0 : !!s.enabled && tickets >= 1), off = !can || o.busy;
         const hov = !off && A.inside(x, Math.max(y, floor), w, h), k = hov ? 1 : can ? .84 : .42, tone = hell ? '255,122,72' : '255,236,190';
         art(hell ? 'hell' : 'corridor', x, y, w, h, hell && !can ? [k, k * .86, k * .88, 1] : [k, k, k, 1]);
         let g = C.createLinearGradient(0, y + h * .3, 0, y + h); g.addColorStop(0, 'rgba(4,7,11,0)'); g.addColorStop(1, 'rgba(4,7,11,.94)'); C.fillStyle = g; C.fillRect(x, y + h * .3, w, h * .7);
@@ -181,6 +181,15 @@
         const mobile = w <= 700, cw = Math.min(1160, w - (mobile ? 24 : 48)), x = (w - cw) / 2, gap = mobile ? 10 : 20, rw = (cw - gap) / 2, rh = mobile ? Math.min(300, rw * 1.5) : 300;
         let y = 86 - scroll; realm(0, x, y, rw, rh, o, mobile); realm(1, x + rw + gap, y, rw, rh, o, mobile); y += rh;
         if (s.entryBlocked) y += 12 + A.paragraph(C, s.entryBlocked, x + cw / 2, y + 16, Math.min(cw, 560), 13, '#eba493', 19, 3, 'center');
+        if (s.shop) {
+            y += 14;
+            stone(x, y, cw, 62, .86);
+            A.iconAt(s.shop.tokenIconUrl, x + 12, y + 9, 44);
+            A.text(C, '낙원 상점', x + 66, y + 31, mobile ? 16 : 18, IVORY, 'left', 700);
+            if (!mobile) A.text(C, A.fmt(s.shop.balances.tokens), x + cw - 178, y + 31, 16, GOLD, 'right', 700);
+            btn(x + cw - 144, y + 10, 132, 42, '상점 열기', () => A.openShop(), { primary: true, disabled: o.busy });
+            y += 62;
+        }
         y = sanctum(o, x, y + (mobile ? 24 : 32), cw, mobile);
         y = weekly(o, x, y + (mobile ? 28 : 34), cw, mobile);
         return y + scroll + 32;

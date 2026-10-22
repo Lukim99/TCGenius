@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const tcgEquipment = require('./tcg_equipment_effects');
+const armorExpansion = require('./armor_expansion');
 const path = require('path');
 const crypto = require('crypto');
 const rpgenius = require('./rpgenius.js');
@@ -148,7 +149,7 @@ function getPartyAttackBuffValue(member) {
     }
     const equipmentState = member && member.runtime && member.runtime.equipmentState;
     if (equipmentState && Date.now() < Number(equipmentState.trueBeomUntil || 0)) equipmentValue += scalePartyAttackBuff(member, getTranscendStageValue(member, '범부의 대나무', .30, .05));
-    return runtimeValue + equipmentValue;
+    return runtimeValue + equipmentValue + armorExpansion.attackBonus(equipmentState);
 }
 
 function scalePartyAttackBuff(source, value) {
@@ -189,8 +190,9 @@ function getPartyLiveStats(member) {
     const stats = ilionCards.applyStats(Object.assign({}, member?.baseSnapshot?.stats || {}), member?.runtime,
         member?.baseSnapshot?.slotEffects, Date.now());
     randoCharacters.tickMental(stats, member?.runtime, member?.baseSnapshot?.slotEffects, Date.now());
-    return randoCharacters.applyStats(stats, member?.runtime, member?.baseSnapshot?.slotEffects,
+    randoCharacters.applyStats(stats, member?.runtime, member?.baseSnapshot?.slotEffects,
         member?.runtime ? refreshMemberShield(member) : 0, Date.now());
+    return armorExpansion.applyConditionalStats(stats);
 }
 
 function tickPartyKino(room, member) {
@@ -5006,6 +5008,13 @@ function applyDamageToMember(room, member, dmg, source) {
 }
 
 function maybeStartImmortalArmorRegen(room, member) {
+    const runtime = member.runtime, stats = member.baseSnapshot?.stats || {};
+    if (runtime && !runtime.dead && armorExpansion.triggerHellfire(stats, runtime.equipmentState ||= {}, runtime.hp, runtime.hpMax)) {
+        upsertMemberBuff(member, { id: 'hellfireRage', label: '업화 (공격력 +20%)', remain: 5 });
+        tcgEquipment.record(runtime.equipmentState, '불멸하는 업화의 하의');
+        tcgEquipment.outsideAttack(runtime.equipmentState, extra => activatePartyTcg(room, member, extra));
+        pushNotice(room, member.name + ' 업화 발동! 5초 동안 공격력이 20% 증가합니다.', 'success', 3000);
+    }
     const snap = member.baseSnapshot && member.baseSnapshot.immortalArmor;
     if (!snap) return;
     const r = member.runtime;

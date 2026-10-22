@@ -3,6 +3,7 @@
 // 상대 레코드는 전투 중에는 절대 건드리지 않고, 종료 시 레이팅/전적만 상대 계정 큐로 반영한다.
 const fs = require('fs');
 const tcgEquipment = require('./tcg_equipment_effects');
+const armorExpansion = require('./armor_expansion');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const cardAwakening = require('./card_awakening');
@@ -325,7 +326,7 @@ function skillMpCost(side, skill, t = now()) {
 
 function skillCooldownMs(side, skill, t = now()) {
     const stats = getLiveEquipmentStats(side, t);
-    return Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * Math.max(.2, 1 - Number(stats.cooldown || 0)) * randoCharacters.cooldownMultiplier(stats, skill.name));
+    return Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * rpgenius.getSkillCooldownRate(stats) * randoCharacters.cooldownMultiplier(stats, skill.name));
 }
 
 function isDefending(side, t) {
@@ -526,7 +527,7 @@ function getLiveEquipmentStats(side, t) {
     const liberation = active('liberationBuff');
     const dynamicAtkPlus = Number(manaAttack && manaAttack.value || 0)
         + Number(encore && encore.attack || 0)
-        + Number(bloodHat && bloodHat.value || 0);
+        + Number(bloodHat && bloodHat.value || 0) + armorExpansion.attackBonus(state, t);
     if (dynamicAtkPlus != 0) {
         const staticAtkPlus = Number(side.snapshot.staticAtkPlus || 0);
         const baseMultiplier = 1 + staticAtkPlus;
@@ -544,7 +545,8 @@ function getLiveEquipmentStats(side, t) {
     ilionCards.applyStats(stats, side.runtime, side.snapshot.slotEffects, t);
     randoCharacters.tickMental(stats, side.runtime, side.snapshot.slotEffects, t);
     const shield = refreshShield(side, t);
-    return randoCharacters.applyStats(stats, side.runtime, side.snapshot.slotEffects, shield && shield.amount || 0, t);
+    randoCharacters.applyStats(stats, side.runtime, side.snapshot.slotEffects, shield && shield.amount || 0, t);
+    return armorExpansion.applyConditionalStats(stats);
 }
 
 function activatePvpTcg(actor, target, extra, t) {
@@ -1123,6 +1125,10 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
         }
     }
     const defenderState = equipmentRuntime(defender);
+    if (damage > 0 && armorExpansion.triggerHellfire(dStats, defenderState, defender.hp, defender.maxHp, t)) {
+        tcgEquipment.record(defenderState, '불멸하는 업화의 하의');
+        defenderEffectIds.push(combatEffects.id('combat', '공격력 강화'));
+    }
     if (defender.hp > 0 && defender.hp / Math.max(1, defender.maxHp) <= .20 && hasEquipmentPassive(defender, 3) && t >= Number(defenderState.dragonRegenReadyAt || 0)) {
         defenderState.dragonRegen = { ticksLeft: 5, nextTickAt: t + 1000 };
         defenderState.dragonRegenReadyAt = t + 65000;
@@ -2221,7 +2227,7 @@ function buffViews(side) {
         destinyDiceBuff: '운명의 주사위', judgeDiceBuff: '심판의 주사위',
         cleanWaterBuff: '정수 필터망', deepWaterAttackBuff: '심해 수속성 강화',
         darkAttackBuff: '심연 암속성 강화', blackEchoShoesBuff: '검은 잔향',
-        fortuneExtraDamage: '행운의 복주머니', culprit: '피의 서약', abyssBuff: '심연'
+        fortuneExtraDamage: '행운의 복주머니', culprit: '피의 서약', abyssBuff: '심연', hellfireRage: '업화'
     };
     Object.keys(equipmentLabels).forEach(key => {
         const buff = equipment[key];

@@ -382,5 +382,9 @@
   {
     "file": "relic-fadedPostcard.webp",
     "sha256": "8822f418fca67826d1e6cf377ef21f0a71c190f2ff882411cac799380e294a05"
+  },
+  {
+    "file": "audio/purchase-v1.mp3",
+    "sha256": "a774da552f04598bd8c56a34961e4b0d4c6c28987342bdb18f3331ce554872a3"
   }
 ]

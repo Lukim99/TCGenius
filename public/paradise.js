@@ -227,7 +227,7 @@
     }
     async function mutate(action, input = {}, retry = false) {
         if (busy || heavenEntry || transition?.next || pending && !retry) return; busy = true; stateGeneration++; regionKey = '';
-        if (!retry) { outcomeReveal = null; pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: action.startsWith('progression/') ? state.progression.revision : state.revision, runId: state.runId } }; }
+        if (!retry) { outcomeReveal = null; pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: action === 'shop/buy' ? state.shop.revision : action.startsWith('progression/') ? state.progression.revision : state.revision, ...(action === 'shop/buy' ? { catalogRevision: state.shop.catalogRevision } : {}), runId: state.runId } }; }
         try {
             const response = await fetch('/api/paradise/' + pending.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending.body) });
             if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (result.retryable) throw new Error(result.error);
@@ -238,7 +238,8 @@
                 sound('reveal');
             } else if (result.reveal) {
                 outcomeReveal = {...result.reveal, at:performance.now()}; announce(result.message, false); sound(result.reveal.positive ? 'reveal' : 'land');
-            } else if (!['attack', 'skill'].includes(action)) announce(result.message, !['enter', 'retire', 'claim', 'reroll', 'dismiss', 'route', 'relic'].includes(action));
+            } else if (!['attack', 'skill'].includes(action)) announce(result.message, !['enter', 'retire', 'claim', 'reroll', 'dismiss', 'route', 'relic', 'shop/buy'].includes(action));
+            if (!result.error && action === 'shop/buy') { window.ParadiseShop.purchaseComplete(result.purchase); audio.play('purchase-v1', .38); }
             if (!result.error && action === 'dismiss') { overlay = null; outcomeReveal = null; lobbyScroll = 0; chestPage = 0; syncPuzzle(); }
             if (!result.error && action.startsWith('progression/')) { sound(result.state.progression.lastResult?.success ? 'reveal' : 'land'); }
             if (!result.error && action === 'reroll') { renderer.clearCards(); sound('reveal'); }
@@ -484,6 +485,8 @@
             renderer, asset, inside, fmt, mutate: (action,input) => mutate('progression/' + action,input),
             enterHeaven: () => mutate('enter'), openHell: () => { overlay = 'hell'; hellKey = null; sound('tap'); },
             openEquipment: slot => { overlay = 'equipment:' + slot; sound('tap'); },
+            openShop: () => { if (!state.shop) return; window.ParadiseShop.open(); overlay = 'shop'; sound('tap'); },
+            buy: (product,quantity) => mutate('shop/buy',{product,quantity}),
             openRanking: () => { overlay = 'ranking'; overlayPage = 0; fetchRanking(); }, close: () => { overlay = null; }
         };
     }
@@ -1120,6 +1123,7 @@
         hitButton(w / 2 - 130, h - 108, 260, 50, '낙원으로 돌아가기', () => { returnToLobby(); }, { primary: true, size: 16 });
     }
     function drawOverlay(w, h) {
+        if(overlay === 'shop') { regions=[]; if (!state.shop) { overlay = null; return; } window.ParadiseShop.draw({ctx,w,h,t:performance.now(),state,busy:busy||!!pending,api:lobbyApi(w,h)}); return; }
         if(overlay.startsWith('equipment:')) { regions=[]; window.ParadiseLobby.drawEquipment({ctx,w,h,t:performance.now(),state,busy:busy||!!pending,slot:overlay.split(':')[1],api:lobbyApi(w,h)}); return; }
         const keys = state.hell?.keys || [], hell = state.run?.mode === 'hell';
         const mobile = w < 700, bw = Math.min(w - 24, 680), bh = Math.min(h - (mobile ? 88 : 140), overlay === 'hell' ? 200 + keys.length * 92 : overlay === 'retire' && hell ? 360 : 640), x = (w - bw) / 2, y = (h - bh) / 2;

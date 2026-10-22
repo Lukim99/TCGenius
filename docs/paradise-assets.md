@@ -108,3 +108,27 @@ node --test --test-name-pattern="회랑 증강 도감" tests/web_game_actions.te
 ## 지옥 배경 고화질 교체
 
 2026-10-20 사용자가 첨부한 674×380 지옥 배경을 imagegen으로 1672×941로 개선해 `hell-hd-v2.webp`에 저장했다. 경기장·성채·용암의 기존 배치를 유지하며 디테일을 복원했다. 낙원 지옥 선택 패널·전투·낙하 화면은 모두 새 S3 자산을 사용한다. 이전 `hell.webp`는 보존하고, 천상 회랑 배경과 낙원 기본 이미지는 변경하지 않았다.
+
+
+## 신규 방어구 이미지 (2026-10-22)
+
+사용자가 제공한 `C:\Users\dodom\Downloads\새로 추가된 아이템`의 신규 모자/하의/신발 PNG 12개를 원본 그대로 사용한다. 목록과 SHA-256은 `scripts/armor_expansion_assets.json`에 기록했다. 기존 `itemImage/장비/등급 이름.png` 경로와 `/item-image` 응답을 사용하며 S3 키는 `tcgenius/assets/itemImage/장비/등급 이름.png`다. 명시 업로드는 `node scripts/upload_ilion_assets.js --manifest scripts/armor_expansion_assets.json --apply`로 수행한다.
+
+12개 모두 새 객체로 업로드했으며 다시 읽어 원본 SHA-256과 일치함을 확인했다. 기존 S3 객체는 교체하지 않았다.
+
+## 낙원 상점 에셋 (2026-10-22)
+
+Claude CLI `claude-opus-5-5`에 상점 시각 구현을 위임했다($2.32, 상한 $6). 석조 진열대, 금속 테두리, 아이템 인장과 구매 완료 빛 연출을 기존 게임 캔버스에 그린다. PC 1440×900과 모바일 390×844, 360×640에서 구매 수량, 주간 잔여량, 재화 차감과 완료 연출을 확인했다. 주간 제한이 없는 상품에는 제한 관련 문구를 표시하지 않는다.
+
+- 아이콘: `DB/RPGenius/itemImage/가챠/레전더리 장비 랜덤 상자.png`, 1254×1254 RGBA. 기존 아이템의 넓은 투명 여백을 참고해 imagegen으로 신규 생성했다.
+- S3: `tcgenius/assets/itemImage/가챠/레전더리 장비 랜덤 상자.png`, SHA-256 `89d02da1917ab0e7cc97c4efdae6738e845f758c35caeb4c6889c4ee916207eb`.
+- 구매 효과음: [Kenney RPG Audio](https://kenney.nl/assets/rpg-audio)의 CC0 `Audio/handleCoins2.ogg`. 130Hz 하이패스와 마지막 0.078초 페이드를 적용한 0.338초 MP3다. 구매 성공 시에만 음량 0.38로 재생하며 기존 음소거 설정을 따른다.
+- 효과음 파일: `DB/RPGenius/ui/낙원/audio/purchase-v1.mp3`. S3 키 `tcgenius/assets/ui/낙원/audio/purchase-v1.mp3`, SHA-256 `a774da552f04598bd8c56a34961e4b0d4c6c28987342bdb18f3331ce554872a3`.
+
+두 파일 모두 S3 업로드 후 실제 객체를 읽어 해시와 Content-Type을 검증했다. 기존 객체를 덮어쓰지 않고 새 경로로 등록했다.
+
+아이콘 최종 프롬프트 (신규 생성, 투명 배경):
+
+```text
+Create a production fantasy RPG inventory icon for 'Legendary Equipment Random Chest'. Square transparent PNG. A closed ornate gold and dark obsidian equipment chest, small elegant gold sword and polished dark steel breastplate together as one compact collectible cluster, violet jewel in the central clasp, warm fine rim lighting and sophisticated painted game item art. Absolutely no text, numbers, frames, UI, scenery or background. True alpha transparency. Existing game inventory assets use very large transparent margins: the entire detailed object cluster should occupy only the central 38% of the canvas width and 32% of its height, precisely centered, with broad empty transparent margins on all four sides. Complete object visible, no cropping. High clarity at small display sizes, restrained glow entirely inside the central cluster.
+```

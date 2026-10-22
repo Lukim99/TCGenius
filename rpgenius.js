@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const ragbot = require('./ragbot');
 const transcendEquipment = require('./transcend_equipment');
+const armorExpansion = require('./armor_expansion');
 const combatEffects = require('./public/combat-effects.js');
 const wisdomPuzzle = require('./wisdom_puzzle');
 const paradise = require('./paradise');
@@ -4052,6 +4053,9 @@ function calculateUserStats(user, _out) {
     if (equippedPassiveIds.has(0)) stats.trueDamageChance = Math.max(Number(stats.trueDamageChance || 0), DESTINY_AION_TRUE_DAMAGE_CHANCE);
     if (equippedPassiveIds.has(1)) stats.hasAbyssDoom = true;
     if (equippedPassiveIds.has(2)) stats.hasCelestia = true;
+    if (equippedPassiveIds.has(armorExpansion.PASSIVE_IDS.clairvoyance)) stats.hasClairvoyance = true;
+    if (equippedPassiveIds.has(armorExpansion.PASSIVE_IDS.hellfire)) stats.hasHellfireRage = true;
+    if (equippedPassiveIds.has(armorExpansion.PASSIVE_IDS.stormWalker)) stats.hasStormWalker = true;
     const fashion = getCardStatFashion(user.main_card);
     if (fashion && Number(user.main_card && user.main_card.star || 0) >= Number(fashion.requireStar || 0)) {
         addStats(stats, fashion.option && fashion.option.stat || {});
@@ -4175,7 +4179,7 @@ function calculateUserStats(user, _out) {
     const randoShield = !_out?.skipRandoRuntime && getFieldShield(user);
     if (!_out?.skipRandoRuntime) randoCharacters.applyStats(stats, user.field, slotEffects, randoShield && randoShield.expired_at > Date.now() ? randoShield.amount : 0, Date.now());
     paradise.applyStats(user, stats);
-    return stats;
+    return armorExpansion.applyConditionalStats(stats);
 }
 
 const CP_WEIGHTS = {
@@ -4696,7 +4700,8 @@ function getComboHitCount(stats) {
 function applyCriticalDamage(damage, stats, extra, defenderStats) {
     if (extra && extra.disableCritical && !stats.ilionForceCritical) return { damage: Number(damage || 0), isCritical: false };
     const critChance = Math.max(0, Number(stats.crit || 0) + Number(extra && extra.critChanceBonus || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1) + Number(extra && extra.awakeningCritChanceBonus || 0);
-    const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0);
+    const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0)
+        + armorExpansion.criticalBonus(stats, stats.fixedCriticalChance ?? critChance) - Number(stats.clairvoyanceBonus || 0);
     const critDef = Math.max(0, Math.min(1, Number(defenderStats && defenderStats.critDef || 0)));
     const finalCritMul = 1 + Math.max(0, critMul - 1) * (1 - critDef);
     const isCritical = stats.fixedCriticalChance != null ? Math.random() < stats.fixedCriticalChance
@@ -4974,6 +4979,7 @@ function getEquipmentPassives() {
         const id = Number(transcendEquipment.uniquePassiveIds[name]);
         passives[id] = { name, desc: transcendEquipment.uniquePassiveDescriptions[name], format: [] };
     });
+    for (const [id, passive] of Object.entries(armorExpansion.passives)) passives[id] = passive;
     return passives;
 }
 
@@ -5044,6 +5050,20 @@ function tryImmortalArmorRegen(user, maxHp, lines) {
     lines.push('🔥 ' + data.name + '의 불굴 효과 발동! ' + IMMORTAL_DRAGON_ARMOR_REGEN_TICKS + '초에 걸쳐 초당 최대 체력의 ' + Math.round(IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * 100) + '%를 회복합니다.');
     ensureFieldEquipmentDotTimer(user);
     return true;
+}
+
+function tryHellfireRage(user, maxHp, lines = []) {
+    if (!user.field || !findEquipWithPassiveId(user, armorExpansion.PASSIVE_IDS.hellfire)) return false;
+    const state = getEquipmentCombatState(user), stats = calculateUserStats(user);
+    if (!armorExpansion.triggerHellfire(stats, state, Number(paradise.getResources(user).hp || 0), maxHp ?? stats.hp)) return false;
+    lines.push('업화 발동! 5초 동안 공격력이 20% 증가합니다.');
+    tcgEquipment.record(state, '불멸하는 업화의 하의');
+    tcgEquipment.outsideAttack(state, extra => activateFieldTcg(user, extra));
+    return true;
+}
+function tryLowHpEquipmentEffects(user, maxHp, lines) {
+    tryHellfireRage(user, maxHp, lines);
+    return tryImmortalArmorRegen(user, maxHp, lines);
 }
 
 function applySkillRecovery(user, maxHp, extra, lines) {
@@ -5318,6 +5338,7 @@ function applyTranscendEquipmentStats(user, stats, plusStats) {
         if (choices.includes('resist')) add(stats, { allElementRes: Number(combatState.liberationBuff.resistValue || 80) });
     }
     if (combatState) {
+        add(plusStats, { atk: armorExpansion.attackBonus(combatState) });
         const active = key => combatState[key] && Date.now() < Number(combatState[key].expiredAt || 0) ? combatState[key] : null;
         const manaAtk = active('manaBurnAttackBuff');
         const manaElement = active('manaBurnElementBuff');
@@ -6297,7 +6318,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         lines.push('', isHell ? '💀 보상을 획득하지 못하고 퇴장했습니다. 소모한 헬 초대장은 반환되지 않습니다.' : '💀 보상을 획득하지 못하고 필드에서 퇴장했습니다.');
         return lines.join('\n');
     }
-    tryImmortalArmorRegen(user, maxHp, lines);
+    tryLowHpEquipmentEffects(user, maxHp, lines);
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
     if (!(extra && extra.isBotAutoAttack)) setNextFieldActionAt(user);
     return lines.join('\n');
@@ -6537,7 +6558,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         return lines.join('\n');
     }
 
-    tryImmortalArmorRegen(user, maxHp, lines);
+    tryLowHpEquipmentEffects(user, maxHp, lines);
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
 
     if (isDailyDungeon) {
@@ -7502,7 +7523,7 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
         if (routeNotice.notice) lines.push(routeNotice.notice);
     }
     applyDamageTakenSlotRecovery(user, stats.hp, received, slots, stats, lines);
-    tryImmortalArmorRegen(user, stats.hp, lines);
+    tryLowHpEquipmentEffects(user, stats.hp, lines);
     return received;
 }
 
@@ -7725,7 +7746,7 @@ function buildTrainingHuntResult(user, target, rawDamage, extra) {
         }
         applySkillRecovery(user, stats.hp, extra, lines);
         if (!extra.skipPassiveMpRecovery) applySkillMpRecovery(user, stats.mp, getPassiveMpRecovery(user), stats, lines);
-        tryImmortalArmorRegen(user, stats.hp, lines);
+        tryLowHpEquipmentEffects(user, stats.hp, lines);
         setNextFieldActionAt(user);
     }
     return lines.join('\n');
@@ -7887,7 +7908,7 @@ function isUltimateSkillForUser(user, skill) {
 }
 
 function getSkillCooldownRate(stats) {
-    return Math.max(.2, 1 - Number(stats && stats.cooldown || 0));
+    return Math.max(.2, 1 - (Number(stats && stats.cooldown || 0) - Number(stats?.stormWalkerBonus || 0) + armorExpansion.cooldownBonus(stats || {})));
 }
 
 function prepareTranscendSkillEffects(user, skill, stats) {
@@ -8865,7 +8886,7 @@ async function processBlackCurtainDueAttacks(user, boss, now) {
         };
         events.push(event); pushBlackCurtainTickEvent(user.name, boss.name, event);
         if (defeatWorldBossPlayer(user, boss, lines)) break;
-        tryImmortalArmorRegen(user, Number(calculateUserStats(user).hp || 0), lines);
+        tryLowHpEquipmentEffects(user, Number(calculateUserStats(user).hp || 0), lines);
     }
     return events;
 }
@@ -9052,7 +9073,7 @@ async function runWorldBossSkillTick(userName, bossName) {
         tickLines.push('- 남은 체력: 1/' + comma(Number(userStats.hp || 0)));
         tickLines.push('', '💀 ' + boss.name + '에게 패배하고 필드에서 퇴장했습니다.');
     } else {
-        tryImmortalArmorRegen(latest, Number(userStats.hp || 0), tickLines);
+        tryLowHpEquipmentEffects(latest, Number(userStats.hp || 0), tickLines);
         tickLines.push('- 남은 체력: ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
     }
     if (latest.field && latest.field.worldBoss) scheduleNextWorldBossSkillTimer(latest, boss);
@@ -12551,7 +12572,10 @@ function grantEquipmentBox(user, pack, useCount, summary) {
     const candidates = [];
     [
         { type: 'weapon', key: 'weapon' },
+        { type: 'hat', key: 'hat' },
         { type: 'armor', key: 'armor' },
+        { type: 'pants', key: 'pants' },
+        { type: 'shoes', key: 'shoes' },
         { type: 'accessory', key: 'accessory' }
     ].forEach(group => {
         (equipments[group.key] || []).forEach((equipment, id) => {
@@ -17299,6 +17323,7 @@ module.exports = {
     TITLE_IMAGE_PATH,
     getEquipmentPassives,
     getEquippedPassiveIds,
+    tryHellfireRage,
     drainFieldTickEvents,
     drainFieldActionEffectIds,
     getManaResonanceBonus,
