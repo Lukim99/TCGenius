@@ -1,0 +1,22 @@
+{
+  "tool": "image_gen.imagegen",
+  "purpose": "천상 장비와 특수능력 공통 아이콘",
+  "processing": "기존 아이템과 동일한 512px 투명 캔버스, 중앙 294px 영역, WebP quality90",
+  "assets": [
+    {
+      "file": "celestial-weapon.webp",
+      "source": "exec-77735ad9-f976-4e16-8ace-f87b155f27b8.png",
+      "prompt": "Ivory and gold celestial sword with a cyan crystal, vertical isolated game item icon, transparent background, clean silhouette, no letters."
+    },
+    {
+      "file": "celestial-armor.webp",
+      "source": "exec-c2ecc0d8-026a-4ebb-beac-94ade1bd19c3.png",
+      "prompt": "Ivory and gold celestial breastplate with a cyan crystal, front view isolated game item icon, transparent background, clean silhouette, no letters."
+    },
+    {
+      "file": "celestial-abilities.webp",
+      "source": "exec-e3c3384d-305b-4c57-8910-61935af49489.png",
+      "prompt": "Golden celestial astrolabe surrounding a cyan crystal, isolated game rune icon, transparent background, clean silhouette, no letters."
+    }
+  ]
+}

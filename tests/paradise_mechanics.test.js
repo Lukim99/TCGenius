@@ -53,10 +53,10 @@ async function skill(user, skillName, reset = true) {
 }
 function grantShield(user, amount, expiresAt = Date.now() + 30000) { shields.grant(user.field, { source: 'test', caster: name, amount, expiresAt }); }
 
-test('85개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 확인한다', () => {
-    assert.equal(catalog.length, 85);
+test('84개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 확인한다', () => {
+    assert.equal(catalog.length, 84);
     assert.deepEqual(Object.fromEntries(['dot', 'combo', 'shield', 'ultimate', 'active', 'passive'].map(key => [key, catalog.filter(a => a.category === key).length])), { dot: 24, combo: 13, shield: 13, ultimate: 8, active: 10, passive: 14 });
-    assert.equal(new Set(corridor.AUGMENTS.map(a => a.id)).size, 311);
+    assert.equal(new Set(corridor.AUGMENTS.map(a => a.id)).size, 310);
     for (const augment of catalog) {
         assert.match(augment.desc, /니다\.$/);
         const user = fresh();
@@ -305,7 +305,7 @@ test('새 유물의 첫 스킬 보호막·두 스킬 후 평타 배율은 실제
     const user = fresh('skillIgnition'), stats = rpg.calculateUserStats(user);
     corridor.grantRelic(user, 'starlightSpool'); corridor.grantRelic(user, 'echoBell');
     await skill(user, '도화선 점화');
-    const amount = Math.round(stats.hp * .25 * (1 + Number(stats.shieldEfficiency || 0)));
+    const amount = Math.round(stats.hp * .22 * (1 + Number(stats.shieldEfficiency || 0)));
     assert.equal(shields.summary(user.field, Date.now()).amount, amount);
     shields.absorb(user.field, amount / 2);
     await skill(user, '도화선 점화');
@@ -313,7 +313,7 @@ test('새 유물의 첫 스킬 보호막·두 스킬 후 평타 배율은 실제
     assert.equal(user.paradise.battle.echoBellReady, true);
     dot(user); assert.equal(user.paradise.battle.echoBellReady, true);
     const doubled = hit(user).damage, plain = hit(user).damage;
-    assert.equal(doubled, plain * 3); assert.equal(user.paradise.battle.echoBellReady, false);
+    assert.equal(doubled, Math.round(plain * 2.8)); assert.equal(user.paradise.battle.echoBellReady, false);
     battle(user); await skill(user, '도화선 점화');
     assert.equal(shields.summary(user.field, Date.now()).amount, amount);
     const slot = Object.keys(data.Equipment).find(key => data.Equipment[key].some(item => item.name === '콰트로 1악장'));
@@ -337,7 +337,7 @@ test('소리굽쇠는 전직·스펙터 궁극기 후 일반 공격 한 번에�
     }
 });
 
-test('향로·등불은 획득 이후 2승마다 발동하고 회복 봉쇄·시간 회복 3분 한도를 따른다', t => {
+test('향로·등불은 획득 이후 2승마다 발동하고 회복 봉쇄·시간 회복 162초 한도를 따른다', t => {
     const user = fresh(); user.paradise.battlesWon = 2;
     corridor.grantRelic(user, 'meditationCenser'); corridor.grantRelic(user, 'returnLantern');
     let now = Date.now(); t.mock.method(Date, 'now', () => now);
@@ -348,16 +348,16 @@ test('향로·등불은 획득 이후 2승마다 발동하고 회복 봉쇄·시
         now += 1000; corridor.victory(user, () => .99);
         if (i === 1) assert.deepEqual([resources(user).hp, resources(user).mp], [1, 1]);
         if (i === 2) {
-            assert.equal(resources(user).hp, 1 + Math.round(stats.hp * .30));
-            assert.equal(resources(user).mp, 1 + Math.round(stats.mp * .30));
-            assert.equal(corridor.remainingTime(user.paradise), 628000);
+            assert.equal(resources(user).hp, 1 + Math.round(stats.hp * .27));
+            assert.equal(resources(user).mp, 1 + Math.round(stats.mp * .27));
+            assert.equal(corridor.remainingTime(user.paradise), 625000);
             user.paradise.effects.noHealing = 1; resources(user).hp = resources(user).mp = 1;
         }
         if (i >= 4) assert.deepEqual([resources(user).hp, resources(user).mp], [1, 1]);
         if (i < 21) battle(user);
     }
-    assert.equal(user.paradise.relicState.timeRestored, 180000);
-    assert.equal(corridor.remainingTime(user.paradise), 759000);
+    assert.equal(user.paradise.relicState.timeRestored, 162000);
+    assert.equal(corridor.remainingTime(user.paradise), 741000);
 });
 
 test('룬 깃펜은 서로 다른 일반·습득 스킬을 요구하고 궁극기를 제외하며 카드 계약은 최대 3회 준다', async t => {
@@ -543,19 +543,19 @@ test('신규 유물은 등급별 효과를 적용하고 특수 유물은 일반 
     assert.deepEqual(new Set(corridor.RELICS.map(r => r.rarityLabel)), new Set(['일반', '고급', '특수']));
     user.paradise.relics = ['guardianClasp', 'hunterBadge', 'emberSeed', 'alchemistFlask', 'duelGlove', 'oracleLens'];
     battle(user); const stats = rpg.calculateUserStats(user);
-    assert.equal(shields.summary(user.field, Date.now()).amount, Math.round(stats.hp * .30));
+    assert.equal(shields.summary(user.field, Date.now()).amount, Math.round(stats.hp * .27));
     const first = hit(user); assert.equal(first.hits.length, 3); assert.equal(first.criticalCount, 1);
-    assert.equal(s(user).dots.emberSeed.damage, Math.round(stats.atk * .80));
+    assert.equal(s(user).dots.emberSeed.damage, Math.round(stats.atk * .72));
     resources(user).mp = 1;
     for (let i = 0; i < 5; i++) dot(user);
-    assert.ok(resources(user).mp > 1); assert.ok(shields.summary(user.field, Date.now()).amount > stats.hp * .30);
+    assert.ok(resources(user).mp > 1); assert.ok(shields.summary(user.field, Date.now()).amount > stats.hp * .27);
     shields.absorb(user.field, 1e12); user.paradise.enemy.atk = stats.def * 5 + 100;
     rpg.advanceParadiseCombat(user, user.field.nextEnemyAttackAt); assert.equal(s(user).duelReady, true);
-    const empowered = hit(user).damage, plain = hit(user).damage; assert.equal(empowered, plain * 2);
+    const empowered = hit(user).damage, plain = hit(user).damage; assert.equal(empowered, Math.round(plain * 1.9));
     resources(user).mp = stats.mp; const now = Date.now(); await skill(user, '유드 알레프');
-    assert.ok(user.field.skillCooldowns['유드 알레프'] - now <= rpg.getUltimateSkills(user)[0].skill.cooltime * .30 + 50);
+    assert.ok(user.field.skillCooldowns['유드 알레프'] - now <= rpg.getUltimateSkills(user)[0].skill.cooltime * .35 + 50);
     assert.equal(s(user).guard, true);
     user.paradise.relics = ['abyssDiadem']; battle(user);
-    assert.equal(corridor.survive(user, 0, stats.hp), Math.round(stats.hp * .50));
+    assert.equal(corridor.survive(user, 0, stats.hp), Math.round(stats.hp * .45));
     assert.equal(resources(user).mp, 0); assert.equal(corridor.survive(user, 0, stats.hp), 0);
 });

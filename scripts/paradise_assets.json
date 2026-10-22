@@ -242,5 +242,17 @@
   {
     "file": "relic-abyssDiadem.webp",
     "sha256": "0708aa2345cad47b7ed7407027850edac0889f6ccbde25a6af0caf10cbd608ee"
+  },
+  {
+    "file": "celestial-weapon.webp",
+    "sha256": "8aba48b6a0105022e65714d79744212ee2032adc5969cadcea0b48db17583abd"
+  },
+  {
+    "file": "celestial-armor.webp",
+    "sha256": "ea4e4c6a8955ae5d6c2f89d86c30c430049d420b1bdb6095246b652688559cfb"
+  },
+  {
+    "file": "celestial-abilities.webp",
+    "sha256": "c7ef42f9f1358fb92975ebe888d11cc0cbd4280ec903de1984e02b9ca7aa610e"
   }
 ]

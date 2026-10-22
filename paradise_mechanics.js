@@ -109,7 +109,7 @@ function onBattle(user) {
     if (has(user, 'wardRelay') && e.carriedWard) shield(user, 'wardRelay', Math.min(e.carriedWard, stats.hp * .40), 15);
     if (has(user, 'contagiousAsh') && e.carriedAsh) addDot(user, 'ash', '옮겨 붙는 잿더미', Math.min(e.carriedAsh, stats.atk * 3), 3, 2000, true);
     if (has(user, 'bottledAgony') && e.bottledDamage) addDot(user, 'bottledAgony', '고통의 병조림', e.bottledDamage / 4, 4, 2000, true);
-    if (relic(user, 'guardianClasp')) shield(user, 'guardianClasp', stats.hp * .30, 20);
+    if (relic(user, 'guardianClasp')) shield(user, 'guardianClasp', stats.hp * .27, 20);
     delete e.bottledDamage;
     delete e.carriedWard; delete e.carriedAsh;
 }
@@ -201,7 +201,7 @@ function onSkill(user, name, stats, extra) {
     s.ultimateAt = Date.now(); count(s, 'ultimateCasts');
     if (has(user, 'ultimateReservoir')) { shield(user, 'ultimateReservoir', Math.min(stats.hp * .60, Number(s.reservoir || 0) * 3), 20); s.reservoir = 0; }
     if (relic(user, 'oracleLens') && !s.oracleUsed) { s.oracleUsed = true; s.oracleSkill = name; s.guard = true; }
-    if (relic(user, 'moonSeal') && !s.moonUsed) { s.moonUsed = true; s.moonStrike = true; shield(user, 'moonSeal', stats.hp * .50, 20); }
+    if (relic(user, 'moonSeal') && !s.moonUsed) { s.moonUsed = true; s.moonStrike = true; shield(user, 'moonSeal', stats.hp * .45, 20); }
     if (has(user, 'ultimateOverture') && !s.overtureUsed) {
         s.overtureUsed = true; s.freeNormal = true;
         skillEntries(user).filter(skill => !ultimate(user, skill.name)).forEach(skill => reduce(user, skill.name, Infinity));
@@ -231,7 +231,7 @@ function afterCooldown(user, name) {
         if (s.ultimateCasts === 1) user.field.skillCooldowns[name] = now;
         else if (s.ultimateCasts === 2) user.field.skillCooldowns[name] = now + Math.max(0, until - now) * 2;
     }
-    if (s.oracleSkill === name) { user.field.skillCooldowns[name] = now + Math.max(0, user.field.skillCooldowns[name] - now) * .30; delete s.oracleSkill; }
+    if (s.oracleSkill === name) { user.field.skillCooldowns[name] = now + Math.max(0, user.field.skillCooldowns[name] - now) * .35; delete s.oracleSkill; }
 }
 function activeSkill(user, skill, stats, extra) {
     const s = state(user);
@@ -323,8 +323,8 @@ function modifyHit(user, stats, extra, hit) {
     if (!direct(extra)) return;
     if (extra.mechanicsDouble) scale(2);
     if (extra.mechanicsTriple) scale(3);
-    if (relic(user, 'duelGlove') && s.duelReady) { s.duelReady = false; scale(2); }
-    if (s.moonStrike) { s.moonStrike = false; scale(2.5); }
+    if (relic(user, 'duelGlove') && s.duelReady) { s.duelReady = false; scale(1.9); }
+    if (s.moonStrike) { s.moonStrike = false; scale(2.35); }
     if (extra.isSkill && has(user, 'comboSavings') && s.savedCombos) { scale(1 + s.savedCombos * .25); s.savedCombos = 0; }
     if (extra.isSkill && hit.finalDamage > 0 && has(user, 'bottledAgony') && !s.bottled && dots(user).length) {
         s.bottled = true; expedition(user).bottledDamage = Math.min(stats.atk * 12, consumeDots(user) * .75);
@@ -357,7 +357,7 @@ function afterHit(user, stats, extra, hit) {
             skillEntries(user).filter(skill => !ultimate(user, skill.name)).forEach(skill => reduce(user, skill.name, Infinity));
             s.guard = true; notice(extra, '여덟 번째 안식 · 일반 스킬 초기화');
         }
-        if (relic(user, 'alchemistFlask') && n % 5 === 0) { corridor().heal(user, .08, .15); shield(user, 'alchemistFlask', stats.hp * .15, 10); }
+        if (relic(user, 'alchemistFlask') && n % 5 === 0) { corridor().heal(user, .07, .14); shield(user, 'alchemistFlask', stats.hp * .14, 10); }
         if (has(user, 'meltingArmor') && n % 3 === 0) s.meltReady = true;
         if (has(user, 'emberBattery') && n % 5 === 0) corridor().heal(user, 0, .10);
         if (has(user, 'coagulation') && n % 4 === 0) shield(user, 'coagulation', stats.hp * .08, 6);
@@ -380,7 +380,7 @@ function afterHit(user, stats, extra, hit) {
         s.reforgeUsed = true; shield(user, 'shieldReforge', stats.hp * .40, 20);
     }
     if (relic(user, 'emberSeed') && !s.emberSeedUsed && run.enemy.hp > 0) {
-        s.emberSeedUsed = true; addDot(user, 'emberSeed', '잿불 씨앗', stats.atk * .80 * (1 + Number(stats.dotDamage || 0)), 5);
+        s.emberSeedUsed = true; addDot(user, 'emberSeed', '잿불 씨앗', stats.atk * .72 * (1 + Number(stats.dotDamage || 0)), 5);
     }
     if (has(user, 'memoryTheft') && !s.theftUsed && extra.paradiseEnemyHpBefore > run.enemy.maxHp * .50 && run.enemy.hp <= run.enemy.maxHp * .50) {
         s.theftUsed = true; s.stolenAttack = run.enemy.atk; s.stolenHits = 3; notice(extra, '반쪽짜리 약탈 · 적의 공격력 획득');
@@ -460,7 +460,7 @@ function onDamage(user, stats, absorbed, lostHp, shieldBefore, extra) {
         }
     }
     if (broken) {
-        if (relic(user, 'guardianClasp') && !s.claspUsed) { s.claspUsed = true; corridor().heal(user, .15); }
+        if (relic(user, 'guardianClasp') && !s.claspUsed) { s.claspUsed = true; corridor().heal(user, .14); }
         if (has(user, 'shieldFuse') && !s.fuseUsed) { s.fuseUsed = true; addDot(user, 'shieldFuse', '깨진 방패의 도화선', Math.min(stats.hp * 2, s.absorbedTotal * 2) / 4, 4, 2000, true); }
         if (has(user, 'shieldReforge') && s.reforgeHits == null) s.reforgeHits = 0;
         if (has(user, 'glassBastion')) { s.glassReady = true; notice(extra, '깨지는 순간의 광채 · 반격 준비'); }

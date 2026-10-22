@@ -20,6 +20,7 @@
     let battleUntil = 0, heldBattle = null, keyboardCard = -1, inputMode = 'pointer';
     const hoverLevels = [0, 0, 0]; let hoverTime = performance.now();
     let hellKey = null, fall = null, landing = null, lastDropKey = '', chestPick = null, chestPage = 0;
+    let lobbyScroll = 0, lobbyHeight = 0, dismissedRun = null;
     let outcomeReveal = null, rewardReveal = null, heavenEntry = null, noticeDetail = '';
     const now = () => Date.now() + offset;
     const rand = n => { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); };
@@ -147,7 +148,7 @@
         // 하단 띠: 카드 외곽에 맞춰 잘린 어두운 바탕 + 금속 구분선, 층 이동과 조건을 한 줄로.
         c.save(); outline(); c.clip(); c.fillStyle = 'rgba(0,0,0,.32)'; c.fillRect(0, footTop, w, h); c.restore();
         c.save(); c.globalAlpha = .55; line(c, 4, footTop, w - 4, footTop, edge, 1); c.restore();
-        const floors = `${choice.floors > 0 ? '+' : ''}${choice.floors}층`, fy = footTop + 25, floorColor = choice.floors < 0 ? '#8fe0d2' : color;
+        const floors = choice.starting ? '시작 증강' : `${choice.floors > 0 ? '+' : ''}${choice.floors}층`, fy = footTop + 25, floorColor = choice.floors < 0 ? '#8fe0d2' : color;
         if (tag) { text(c, floors, pad, fy, 22, floorColor, 'left', 800); const fw = c.measureText(floors).width; text(c, tag, w - pad, fy + 1, 13, choice.dangerous ? '#e9a0a6' : '#a7b2b8', 'right', 500, tw - fw - 14); }
         else text(c, floors, cx, fy, 22, floorColor, 'center', 800);
         return canvas;
@@ -160,6 +161,7 @@
     async function fetchRanking() { try { const response = await fetch('/api/paradise/ranking', { cache: 'no-store' }); if (response.ok) ranking = await response.json(); else announce('주간 랭킹을 불러오지 못했습니다.'); } catch (_) { announce('주간 랭킹 연결을 확인해주세요.'); } }
     function accept(next) {
         battle.prepare(next.player?.card);
+        if (next.run?.id === dismissedRun && next.run.status === 'ended' && !next.run.canClaim) next.run = null;
         const run = next.run;
         const previous=battleState(state), upcoming=battleState(next), events=run?.combatEvents||[];
         const latest=previous&&events.filter(e=>e.enemyId===previous.target.id).at(-1);
@@ -191,7 +193,7 @@
     }
     async function mutate(action, input = {}, retry = false) {
         if (busy || heavenEntry || pending && !retry) return; busy = true; regionKey = '';
-        if (!retry) { outcomeReveal = null; pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: state.revision, runId: state.runId } }; }
+        if (!retry) { outcomeReveal = null; pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: action.startsWith('progression/') ? state.progression.revision : state.revision, runId: state.runId } }; }
         try {
             const response = await fetch('/api/paradise/' + pending.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending.body) });
             if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (result.retryable) throw new Error(result.error);
@@ -203,6 +205,7 @@
             } else if (result.reveal) {
                 outcomeReveal = {...result.reveal, at:performance.now()}; announce(result.message, false); sound(result.reveal.positive ? 'reveal' : 'land');
             } else if (!['attack', 'skill'].includes(action)) announce(result.message, !['enter', 'retire', 'claim', 'reroll'].includes(action));
+            if (!result.error && action.startsWith('progression/')) { sound(result.state.progression.lastResult?.success ? 'reveal' : 'land'); }
             if (!result.error && action === 'reroll') { renderer.clearCards(); sound('reveal'); }
             if (!result.error && action === 'enter' && state.run?.mode !== 'hell') {
                 heavenEntry = { at: performance.now(), ticket: state.ticket.iconUrl };
@@ -430,28 +433,22 @@
         const vignette = ctx.createRadialGradient(w / 2, h * .45, h * .2, w / 2, h / 2, Math.max(w, h) * .7); vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,.6)'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, w, h);
         const top = ctx.createLinearGradient(0, 0, 0, 110); top.addColorStop(0, 'rgba(3,6,10,.7)'); top.addColorStop(1, 'rgba(3,6,10,0)'); ctx.fillStyle = top; ctx.fillRect(0, 0, w, 110);
     }
+    function lobbyApi(w, h) {
+        return { text, paragraph, wrap, line, panel, metal, chamfer, rr, iconAt, hitButton,
+            register: (x,y,rw,rh,label,fn,disabled) => { const top = Math.max(0,y), bottom = Math.min(h,y+rh); if (bottom > top) register(x,top,rw,bottom-top,label,fn,disabled); },
+            renderer, asset, inside, fmt, mutate: (action,input) => mutate('progression/' + action,input),
+            enterHeaven: () => mutate('enter'), openHell: () => { overlay = 'hell'; hellKey = null; sound('tap'); },
+            openEquipment: slot => { overlay = 'equipment:' + slot; sound('tap'); },
+            openRanking: () => { overlay = 'ranking'; overlayPage = 0; fetchRanking(); }, close: () => { overlay = null; }
+        };
+    }
+    function returnToLobby() { dismissedRun = state.run?.id; state.run = null; activeScene = 'lobby'; sceneKey = ''; lobbyScroll = 0; fetchRanking(); }
     function lobby(w, h, t) {
-        const mobile = w < 700, gap = mobile ? 12 : 28, pw = mobile ? (w - 32 - gap) / 2 : 280, ph = mobile ? Math.min(h * .46, pw * 1.55) : Math.min(h * .5, 400);
-        const top = mobile ? Math.max(84, h * .42 - ph / 2) : h * .46 - ph / 2, canEnter = state.enabled && state.ticket.count >= 1 && !state.entryBlocked, art = renderer.image(asset('corridor'));
-        const keys = state.hell?.keys || [], keyCount = keys.reduce((a, k) => a + (k.count || 0), 0), canHell = !!state.hell?.enabled && keyCount > 0, hellArt = renderer.image(asset('hell'));
-        const openHell = () => { overlay = 'hell'; hellKey = null; sound('tap'); };
-        for (let i = 0; i < 2; i++) {
-            const x = w / 2 + (i ? gap / 2 : -gap / 2 - pw), can = i ? canHell : canEnter, hovered = can && inside(x, top, pw, ph), cx = x + pw / 2;
-            if (hovered) renderer.quad(renderer.glow, x - pw * .2, top - ph * .1, pw * 1.4, ph * 1.2, i ? [1, .42, .16, .16] : [1, .82, .5, .14]);
-            renderer.cover(i ? hellArt : art, x, top, pw, ph, i ? (!can ? [.45, .38, .38, 1] : hovered ? [1, 1, 1, 1] : [.86, .86, .86, 1]) : hovered ? [1, 1, 1, 1] : [.88, .88, .88, 1]);
-            const scrim = ctx.createLinearGradient(0, top + ph * .4, 0, top + ph); scrim.addColorStop(0, 'rgba(5,8,12,0)'); scrim.addColorStop(1, 'rgba(5,8,12,.9)'); ctx.fillStyle = scrim; ctx.fillRect(x, top + ph * .4, pw, ph * .6);
-            rr(ctx, x, top, pw, ph, 3); ctx.strokeStyle = i && !can ? 'rgba(170,90,100,.45)' : metal(ctx, i ? 'ember' : 'gold', x, top, pw, ph); ctx.lineWidth = i && !can ? 1 : hovered ? 2.5 : 2; ctx.stroke();
-            if (i && !can) { const ly = top + ph * .42; ctx.beginPath(); ctx.arc(cx, ly - 4, 9, Math.PI, 0); ctx.strokeStyle = '#d6aeb3cc'; ctx.lineWidth = 3; ctx.stroke(); rr(ctx, cx - 14, ly - 4, 28, 22, 4); ctx.fillStyle = '#d6aeb3cc'; ctx.fill(); }
-            else { path(ctx, [[cx, top - 8], [cx + 9, top], [cx, top + 8], [cx - 9, top]]); ctx.fillStyle = metal(ctx, i ? 'ember' : 'gold', cx - 9, top - 8, 18, 16); ctx.fill(); }
-            text(ctx, i ? '지옥' : '천상', cx, top + ph - 46, mobile ? 18 : 22, i ? (can ? '#ffd8bc' : '#c9a5aa') : '#f6edd8', 'center', 700, pw - 20);
-            text(ctx, i ? (!state.hell?.enabled ? '준비 중' : keyCount ? `열쇠 ${keyCount}개` : '열쇠 없음') : `최고 ${state.weekly.bestFloor || 0}층`, cx, top + ph - 20, mobile ? 13 : 14, i ? (can ? '#f0b48a' : '#9c7d82') : '#d8c99f', 'center', 500, pw - 16);
-            register(x, top, pw, ph, i ? '지옥 · 열쇠 선택' : '천상 입장', i ? openHell : () => mutate('enter'), i ? !canHell : !state.enabled || state.ticket.count < 1 || !!state.entryBlocked);
-        }
-        const by = top + ph + 24, bs = mobile ? 14 : 16;
-        hitButton(w / 2 - gap / 2 - pw, by, pw, 52, !state.enabled ? '준비 중' : state.ticket.count < 1 ? '입장권 없음' : '입장 ×1', () => mutate('enter'), { primary: true, icon: state.ticket.iconUrl, size: bs, disabled: !canEnter });
-        hitButton(w / 2 + gap / 2, by, pw, 52, !state.hell?.enabled ? '준비 중' : keyCount ? '열쇠 선택' : '열쇠 없음', openHell, { primary: true, size: bs, disabled: !canHell });
-        if (mobile) text(ctx, `전투력 ${fmt(state.player.combatPower)}`, w / 2, by + 74, 13, '#a3b2b8', 'center');
-        if (state.entryBlocked) paragraph(ctx, state.entryBlocked, w / 2, by + (mobile ? 100 : 78), Math.min(w - 48, 480), 13, '#eba493', 19, 2, 'center');
+        lobbyScroll = clamp(lobbyScroll,0,Math.max(0,lobbyHeight-h));
+        ctx.save(); ctx.beginPath(); ctx.rect(0,68,w,h-68); ctx.clip();
+        lobbyHeight = window.ParadiseLobby.draw({ctx,w,h,t,state,ranking,busy:busy||!!pending,scroll:lobbyScroll,api:lobbyApi(w,h)});
+        ctx.restore();
+        if(lobbyHeight>h){const track=h-92,thumb=Math.max(32,track*(h-68)/(lobbyHeight-68)),y=78+(track-thumb)*lobbyScroll/(lobbyHeight-h);rr(ctx,w-6,y,3,thumb,1.5);ctx.fillStyle='#ead49a88';ctx.fill();}
     }
     function heavenEntryScene(w, h, t) {
         const age = t - heavenEntry.at, duration = reduced ? 180 : 1850, p = clamp(age / duration, 0, 1);
@@ -536,7 +533,7 @@
             const amount=hoverLevels[card.i], brightness=mobile?1:hover<0?1:card.i===hover?1+.06*amount:.92;
             renderer.quad(renderer.card(card.choice, geo.cardW, geo.cardH), card.x, card.y, card.w, card.h, [brightness, brightness, brightness, card.alpha]);
             if(amount>.01&&!mobile){ctx.save();ctx.globalAlpha=amount*.55;chamfer(ctx,card.x+1,card.y+1,card.w-2,card.h-2,12);ctx.strokeStyle=colors[card.choice.rarity]||colors.gold;ctx.lineWidth=2;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=14;ctx.stroke();ctx.restore();}
-            register(Math.max(0, card.slotX), card.slotY, Math.min(w, card.slotX + card.slotW) - Math.max(0, card.slotX), card.slotH, `${tier[card.choice.rarity] || '증강'} ${card.choice.name} · ${card.choice.desc} · ${card.choice.floors > 0 ? '+' : ''}${card.choice.floors}층${warnLabel(card.choice.powerWarning)}`, () => mobile && focused !== card.i ? (focused = card.i, sound('tap')) : choose(card.choice, card.i), !!selection || t-sceneAt<460);
+            register(Math.max(0, card.slotX), card.slotY, Math.min(w, card.slotX + card.slotW) - Math.max(0, card.slotX), card.slotH, `${tier[card.choice.rarity] || '증강'} ${card.choice.name} · ${card.choice.desc} · ${card.choice.starting ? '시작 증강' : `${card.choice.floors > 0 ? '+' : ''}${card.choice.floors}층`}${warnLabel(card.choice.powerWarning)}`, () => mobile && focused !== card.i ? (focused = card.i, sound('tap')) : choose(card.choice, card.i), !!selection || t-sceneAt<460);
             if (!mobile) hitButton(card.slotX + card.slotW / 2 - 48, geo.y + geo.cardH + 12, 96, 36, `${card.choice.name} 새로고침`, () => mutate('reroll', { choice: card.choice.id }), { glyph: card.choice.canReroll ? '↻  1' : '↻  0', size: 18, disabled: !card.choice.canReroll || !!selection || t-sceneAt<460 });
         }
         if (mobile) {
@@ -614,7 +611,7 @@
         text(ctx, run.highestFloor || run.clearedFloor || run.floor, w / 2, y0 + 66, mobile ? 56 : 72, '#f2d58a', 'center', 800); text(ctx, '도달층', w / 2, y0 + 112, 13, '#b8bfc2', 'center', 600);
         const stats = [['클리어', run.clearedFloor + '층'], ['승리', run.battlesWon + '회'], ['정예 처치', run.elitesWon + '회']], sw = Math.min(140, (w - 56) / 3), sy = y0 + 140;
         stats.forEach(([label, value], i) => { const x = w / 2 - sw / 2 + (i - 1) * (sw + 12); panel(ctx, x, sy, sw, 64, { alpha: .78 }); text(ctx, value, x + sw / 2, sy + 25, 18, '#f5ecd6', 'center', 700, sw - 12); text(ctx, label, x + sw / 2, sy + 47, 12, '#9fabb1', 'center', 500); });
-        const rewards = run.claimed ? (run.rewardSummary || []).map(r => `${r.name} ×${fmt(r.count)}`) : run.canClaim ? [...run.rewards.map(r => `${r.name || r.type} ×${fmt(r.count)}`), ...run.contracts.filter(c => c.star).map(c => c.name + ' 확정')] : [];
+        const rewards = run.claimed ? (run.rewardSummary || []).map(r => `${r.name} ×${fmt(r.count)}`) : run.canClaim ? [...run.rewards.map(r => `${r.name || r.type} ×${fmt(r.count)}`), ...run.contracts.filter(c => c.star && run.outcome !== 'defeated').map(c => c.name + ' 확정')] : [];
         const rw = Math.min(w - 32, 480), ry = sy + 84, rows = Math.max(1, Math.min(rewards.length, Math.floor((h - 140 - ry - 44) / 26))), rh = 44 + rows * 26;
         panel(ctx, (w - rw) / 2, ry, rw, rh, { alpha: .8 }); text(ctx, '정산 보상', (w - rw) / 2 + 18, ry + 20, 13, '#a7b2b8', 'left', 600);
         if (rewards.length) rewards.slice(0, rows).forEach((reward, i) => text(ctx, reward, (w - rw) / 2 + 18, ry + 46 + i * 26, 15, '#f0d99e', 'left', 600, rw - 36));
@@ -624,7 +621,7 @@
         hitButton(w / 2 - 130, h - 108, 260, 50, label, () => {
             if (run.canReturn) mutate('retire');
             else if (run.canClaim) mutate('claim');
-            else { state.run = null; activeScene = 'lobby'; sceneKey = ''; }
+            else { returnToLobby(); }
         }, { primary: true, size: 16 });
     }
     // 지옥: 픽셀 배경은 최근접 필터로 선명하게, 낙하 중에는 선택 방향으로 밀리며 깊이 확대된다.
@@ -800,9 +797,10 @@
         });
         if (!list.length) text(ctx, '획득한 보상이 없습니다.', w / 2, ry + 37, 15, '#b8b0aa', 'center');
         if (pages > 1) { const py = ry + rh - 46; hitButton(rx + 12, py, 64, 36, '이전', () => chestPage--, { disabled: chestPage <= 0, size: 13 }); text(ctx, `${chestPage + 1} / ${pages}`, w / 2, py + 18, 14, '#c9bdb2', 'center', 600); hitButton(rx + rw - 76, py, 64, 36, '다음', () => chestPage++, { disabled: chestPage >= pages - 1, size: 13 }); }
-        hitButton(w / 2 - 130, h - 108, 260, 50, '낙원으로 돌아가기', () => { state.run = null; activeScene = 'lobby'; sceneKey = ''; }, { primary: true, size: 16 });
+        hitButton(w / 2 - 130, h - 108, 260, 50, '낙원으로 돌아가기', () => { returnToLobby(); }, { primary: true, size: 16 });
     }
     function drawOverlay(w, h) {
+        if(overlay.startsWith('equipment:')) { regions=[]; window.ParadiseLobby.drawEquipment({ctx,w,h,t:performance.now(),state,busy:busy||!!pending,slot:overlay.split(':')[1],api:lobbyApi(w,h)}); return; }
         const keys = state.hell?.keys || [], hell = state.run?.mode === 'hell';
         const mobile = w < 700, bw = Math.min(w - 24, 680), bh = Math.min(h - (mobile ? 88 : 140), overlay === 'hell' ? 200 + keys.length * 92 : overlay === 'retire' && hell ? 360 : 640), x = (w - bw) / 2, y = (h - bh) / 2;
         ctx.fillStyle = 'rgba(4,8,12,.68)'; ctx.fillRect(0, 0, w, h); panel(ctx, x, y, bw, bh, { alpha: .97, r: 14 }); regions = [];
@@ -916,6 +914,12 @@
         }
         syncRegions(); requestAnimationFrame(frame);
     }
+    const scrollLobby = delta => { if(!state || state.run || overlay || rewardReveal) return false; lobbyScroll=clamp(lobbyScroll+delta,0,Math.max(0,lobbyHeight-innerHeight));regionKey='';return true; };
+    addEventListener('wheel',event=>{if(scrollLobby(event.deltaY))event.preventDefault();},{passive:false});
+    let lobbyTouchY=0;
+    addEventListener('touchstart',event=>{lobbyTouchY=event.touches[0].clientY;},{passive:true});
+    addEventListener('touchmove',event=>{const y=event.touches[0].clientY;if(scrollLobby(lobbyTouchY-y))event.preventDefault();lobbyTouchY=y;},{passive:false});
+    addEventListener('keydown',event=>{if(state&&!state.run&&!overlay&&['PageDown','PageUp','ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();scrollLobby({PageDown:innerHeight*.8,PageUp:-innerHeight*.8,ArrowDown:64,ArrowUp:-64,Home:-lobbyHeight,End:lobbyHeight}[event.key]);}});
     addEventListener('pointermove', event => { if(Math.hypot(pointer.x-event.clientX,pointer.y-event.clientY)>4)inputMode='pointer';pointer.x=event.clientX;pointer.y=event.clientY; });
     addEventListener('pointerdown',()=>{inputMode='pointer';audio.unlock();});
     document.addEventListener('pointerleave',()=>{pointer={x:-1000,y:-1000};});

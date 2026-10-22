@@ -29,7 +29,7 @@ function checkRewardItems(config) {
 }
 function enter(user, keyName, random = Math.random) {
     if (user.paradise?.status === 'active' || user.field || require('./partyquest').getRoomOf(user.name) || user.pvp?.battle && user.pvp.battle.phase !== 'ended') return { error: '진행 중인 전투나 탐험을 먼저 마쳐주세요.' };
-    if (user.paradise?.status === 'ended' && !user.paradise.claimed && (user.paradise.mode === 'hell' || user.paradise.outcome !== 'defeated')) return { error: '지난 탐험의 보상을 먼저 수령해주세요.' };
+    if (user.paradise?.status === 'ended' && !user.paradise.claimed && (user.paradise.mode === 'hell' || user.paradise.outcome !== 'defeated' || require('./paradise_progression').has(user.paradise, 'deathInsurance'))) return { error: '지난 탐험의 보상을 먼저 수령해주세요.' };
     if (!user.main_card || user.need_character_card_select) return { error: '메인 카드를 먼저 선택해주세요.' };
     if (user.pendingAction || user.pendingFragment || user.fishing === true) return { error: '진행 중인 작업이나 보상 선택을 먼저 완료해주세요.' };
     const config = rpg().getDataCache('Paradise', null)?.hell;

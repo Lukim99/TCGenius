@@ -1,6 +1,7 @@
 const corridor = require('./paradise');
 const hell = require('./paradise_hell');
 const combatEffects = require('./public/combat-effects');
+const progression = require('./paradise_progression');
 
 function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getCharacterSprite, getMonsterSprite, getEquipmentIconUrl, getItemIconUrl, getCombatView }) {
     const weeklyRewards = require('./paradise_rewards');
@@ -28,6 +29,12 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         const view = corridor.view(user);
         const items = rpgenius.getDataCache('Item', []);
         view.ticket.iconUrl = getItemIconUrl(items.find(item => item?.name === view.ticket.name));
+        view.progression.tokenIconUrl = getItemIconUrl(items.find(item => item?.name === progression.TOKEN));
+        view.weeklyRewards = structuredClone(view.weeklyRewards);
+        for (const reward of [...view.weeklyRewards.participation, ...view.weeklyRewards.ranks.flatMap(row => row.rewards)]) {
+            reward.name ||= reward.type;
+            reward.iconUrl = reward.type === '가넷' ? '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('가넷.png') : getItemIconUrl(items.find(item => item?.name === reward.name));
+        }
         for (const key of view.hell.keys) key.iconUrl = getItemIconUrl(items.find(item => item?.name === key.name));
         view.player.card = serializeCard(user.main_card, user);
         view.player.sprite = getCharacterSprite(view.player.card);
@@ -63,7 +70,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
     };
     server.get('/paradise', (req, res) => {
         if (!getSession(req)?.name) return res.redirect('/');
-        res.type('html').send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#05090e"><title>낙원</title><link rel="stylesheet" href="/static/paradise.css"></head><body><main id="paradiseRoot" aria-label="낙원"><canvas id="paScene" aria-hidden="true"></canvas><div id="paBattle" hidden><canvas id="hfCanvas" aria-hidden="true"></canvas><canvas id="hfHud" aria-hidden="true"></canvas></div><canvas id="paHud" aria-hidden="true"></canvas><div id="paControls" aria-label="게임 조작"></div><form id="paPuzzle" hidden></form><div id="paLive" class="sr-only" role="status" aria-live="polite"></div><div id="paFatal" hidden></div></main><noscript>낙원에 입장하려면 JavaScript를 켜주세요.</noscript><script>window.FIELD_MODE="paradise";</script><link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js" defer></script><script src="/static/paradise-audio.js" defer></script><script src="/static/hfield.js" defer></script><script src="/static/paradise.js" defer></script></body></html>`);
+        res.type('html').send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#05090e"><title>낙원</title><link rel="stylesheet" href="/static/paradise.css"></head><body><main id="paradiseRoot" aria-label="낙원"><canvas id="paScene" aria-hidden="true"></canvas><div id="paBattle" hidden><canvas id="hfCanvas" aria-hidden="true"></canvas><canvas id="hfHud" aria-hidden="true"></canvas></div><canvas id="paHud" aria-hidden="true"></canvas><div id="paControls" aria-label="게임 조작"></div><form id="paPuzzle" hidden></form><div id="paLive" class="sr-only" role="status" aria-live="polite"></div><div id="paFatal" hidden></div></main><noscript>낙원에 입장하려면 JavaScript를 켜주세요.</noscript><script>window.FIELD_MODE="paradise";</script><link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js" defer></script><script src="/static/paradise-audio.js" defer></script><script src="/static/hfield.js" defer></script><script src="/static/paradise-lobby.js" defer></script><script src="/static/paradise.js" defer></script></body></html>`);
     });
     server.get('/api/paradise', requireUser, async (req, res) => {
         try {
@@ -86,6 +93,30 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             res.json(corridor.buildWeeklyRanking(await rpgenius.getAllRPGUsers(), user));
         } catch (error) { console.error('[paradise ranking]', error.message); res.status(500).json({ error: '주간 랭킹을 불러오지 못했습니다.' }); }
     });
+    for (const action of ['unlockEquipment', 'enhance', 'unlockTrait', 'rerollTrait']) {
+        server.post('/api/paradise/progression/' + action, requireUser, async (req, res) => {
+            const body = req.body || {};
+            if (!/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId || '') || !Number.isSafeInteger(body.revision) || body.revision < 0) return res.status(400).json({ error: '낙원 화면을 새로 열어주세요.' });
+            try {
+                const seed = await rpgenius.getRPGUserByName(req.session.name);
+                if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+                const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+                    const user = await rpgenius.getRPGUserByName(req.session.name), receipt = user.paradiseProgressionReceipt;
+                    if (receipt?.id === body.requestId) return receipt.action === action ? { ok: true, message: receipt.message, state: state(user) } : { error: '이미 사용한 요청입니다.' };
+                    if (progression.view(user).revision !== body.revision) return { error: '다른 화면에서 강화가 진행되었습니다. 현재 상태를 불러왔습니다.', stale: true, state: state(user) };
+                    const result = progression.mutate(user, action, body);
+                    if (result.error) return { ...result, state: state(user) };
+                    user.paradiseProgressionReceipt = { id: body.requestId, action, message: result.message };
+                    await rpgenius.commitProtectedUserChange(user, ['inventory', 'paradiseProgression', 'paradiseProgressionReceipt']);
+                    return { ok: true, message: result.message, state: state(user) };
+                });
+                res.status(payload.error ? 400 : 200).json(payload);
+            } catch (error) {
+                console.error('[paradise progression]', error.message);
+                res.status(503).json({ error: '저장을 확인하지 못했습니다. 같은 요청으로 재시도해주세요.', retryable: true });
+            }
+        });
+    }
     for (const action of ['enter', 'augment', 'reroll', 'event', 'puzzle', 'attack', 'skill', 'retire', 'claim', 'descend', 'altar', 'continue', 'chest']) {
         server.post('/api/paradise/' + action, requireUser, async (req, res) => {
             const body = req.body || {};

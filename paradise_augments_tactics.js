@@ -22,6 +22,5 @@ module.exports = [
     a('pilferTurn', '찰나의 소매치기', 'passive', 'prismatic', 15, '적의 직접 공격을 받은 뒤 1.5초 안에 스킬을 사용하면 적의 다음 행동을 2초 늦추고 최대 MP의 10%를 회복합니다. 적의 공격마다 한 번 발동합니다.'),
     a('lastTicket', '마지막 티켓', 'passive', 'gold', 10, 'HP가 20% 이하인 상태로 승리하면 8성 일반 카드 계약을 획득합니다. 탐험 중 최대 2회 획득합니다.'),
     a('dopamineAddiction', '도파민 중독', 'critical', 'prismatic', 15, '치명타 확률이 20%로 고정되고 치명타 피해량이 50% 증가합니다. 직접 공격으로 치명타를 적중시킬 때마다 탐험 종료 보상이 3%p 증가합니다. 최대 30%p까지 증가합니다.'),
-    a('rukimHack', '루킴, 해킹해줘!', 'skill', 'silver', 5, '다음 전투에서 무작위 캐릭터 카드의 일반 스킬을 추가로 획득합니다. 해당 전투가 끝나면 사라집니다.', { special: 'rukimHack' }),
-    a('moonDuel', '월야섬', 'risk', 'prismatic', 15, '다음 전투에 스킬과 궁극기를 사용하는 강력한 전직 뭔마가 등장합니다. 승리하면 Z 일반 뭔마 카드 계약과 월야의 인장을 획득합니다.', { special: 'moonDuel', dangerous: true })
+    a('rukimHack', '루킴, 해킹해줘!', 'skill', 'silver', 5, '다음 전투에서 무작위 캐릭터 카드의 일반 스킬을 추가로 획득합니다. 해당 전투가 끝나면 사라집니다.', { special: 'rukimHack' })
 ];

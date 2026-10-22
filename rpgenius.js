@@ -7626,7 +7626,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     }
     run.combatLog = [...lines, ...(run.combatLog || [])].slice(0, 18);
     const defeated = resources.hp <= 0;
-    if (defeated) { paradise.finish(user, 'defeated'); lines.push(run.mode === 'hell' ? '지옥 탐험이 끝났습니다. 마지막 클리어 층의 보상 상자를 확인해주세요.' : '전투에서 패배하여 탐험 보상과 계약 보상을 잃었습니다.'); }
+    if (defeated) { const result = paradise.finish(user, 'defeated'); lines.push(run.mode === 'hell' ? '지옥 탐험이 끝났습니다. 마지막 클리어 층의 보상 상자를 확인해주세요.' : result.message); }
     else if (enemy.hp <= 0) { paradise.victory(user); lines.push('전투 승리!'); }
     else if (manual) setNextFieldActionAt(user);
     // 전투 연출에는 회복과 섞인 HP 차이가 아니라 엔진이 판정한 타격을 전달한다.
