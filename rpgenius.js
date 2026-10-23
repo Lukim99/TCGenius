@@ -13,6 +13,7 @@ const paradise = require('./paradise');
 const paradiseCharacters = require('./paradise_augments_characters');
 const paradiseMechanics = require('./paradise_mechanics');
 const paradiseFeatures = require('./paradise_features');
+const paradisePower = require('./paradise_power');
 const paradiseStones = require('./paradise_stones');
 const paradiseRoutes = require('./paradise_routes');
 const shopCatalog = require('./shop_catalog');
@@ -477,6 +478,7 @@ async function runFieldMarkTick(userName, trainingUser) {
 
 const fieldEquipmentDotTimers = {};
 function ensureFieldEquipmentDotTimer(user, channel) {
+    if (paradisePower.context(user)) return;
     if (!user || !user.field || user.field.training) return;
     const deckStage = getIlionWeaponStage(user, '무한홀덤덱');
     const state = deckStage ? getEquipmentCombatState(user) : user.field.equipmentState || {};
@@ -2869,6 +2871,7 @@ function getSlotEffectValueAtStar(se, star) {
 }
 
 function calculateCardSlotEffects(user) {
+    if (paradisePower.context(user)) return { ...paradisePower.context(user).slots };
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const effects = {
         expBonus: 0,
@@ -3961,6 +3964,7 @@ function equipTitleByName(user, name) {
 }
 
 function calculateUserStats(user, _out) {
+    if (paradisePower.context(user)) return { ...paradisePower.context(user).stats };
     const resources = paradise.getResources(user);
     const stats = getBaseStat(user.main_card);
     if (user.main_card && ['전직', '각성'].includes(user.main_card.type)) {
@@ -4261,7 +4265,8 @@ function calculateCombatPower(user, knownStats, knownSlots) {
         const passive = getEquipmentPassives()[4];
         if (passive) stats.finalDamage = (Number(stats.finalDamage || 0) + Number(passive.format && passive.format[1] && passive.format[1].base || 0.05));
     }
-    return computeCombatPowerFromStats(stats, slot, getAdvancedEquipmentCombatPowerModifiers(user, stats));
+    const base = computeCombatPowerFromStats(stats, slot, getAdvancedEquipmentCombatPowerModifiers(user, stats));
+    return paradisePower.apply(user, stats, slot, base);
 }
 
 function getTotalDefenseReductionRate(stats, slotEffects) {
@@ -4691,23 +4696,24 @@ function getCombatStats(data) {
     }, data || {});
 }
 
-function getComboHitCount(stats) {
+function getComboHitCount(stats, random = Math.random) {
     const chance = Math.max(0, Math.min(1, Number(stats && stats.cmb || 0)));
     const maxHits = 2 + Math.max(0, Math.floor(Number(stats && stats.maxCmb || 0)));
     let hitCount = 1;
-    while (hitCount < maxHits && Math.random() < chance) hitCount++;
+    while (hitCount < maxHits && random() < chance) hitCount++;
     return hitCount;
 }
 
 function applyCriticalDamage(damage, stats, extra, defenderStats) {
+    const random = extra?.random || Math.random;
     if (extra && extra.disableCritical && !stats.ilionForceCritical) return { damage: Number(damage || 0), isCritical: false };
     const critChance = Math.max(0, Number(stats.crit || 0) + Number(extra && extra.critChanceBonus || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1) + Number(extra && extra.awakeningCritChanceBonus || 0);
     const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0)
         + armorExpansion.criticalBonus(stats, stats.fixedCriticalChance ?? critChance) - Number(stats.clairvoyanceBonus || 0);
     const critDef = Math.max(0, Math.min(1, Number(defenderStats && defenderStats.critDef || 0)));
     const finalCritMul = 1 + Math.max(0, critMul - 1) * (1 - critDef);
-    const isCritical = stats.fixedCriticalChance != null ? Math.random() < stats.fixedCriticalChance
-        : stats.ilionForceCritical || (extra && extra.forceCritical) ? true : Math.random() < critChance;
+    const isCritical = stats.fixedCriticalChance != null ? random() < stats.fixedCriticalChance
+        : stats.ilionForceCritical || (extra && extra.forceCritical) ? true : random() < critChance;
     return {
         damage: isCritical ? Math.round(Number(damage || 0) * finalCritMul) : Number(damage || 0),
         isCritical: isCritical
@@ -4722,13 +4728,14 @@ const DESTINY_AION_NAME = '운명의 아이온';
 const DESTINY_AION_TRUE_DAMAGE_CHANCE = 0.25;
 
 function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEffects, extra, defenderStats) {
+    const random = extra?.random || Math.random;
     if (extra && extra.precalculatedDamage) {
         const damage = Math.max(0, Math.round(Number(rawDamage || 0)));
         return { hitCount: 1, comboHitCount: 1, attackUnitCount: 1, hitDamages: [damage], hitDetails: [{ damage, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false }], damageComponents: [{ damage, type: 'hit', label: null, hitIndex: 0, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false }], finalDamage: damage, criticalCount: 0, bonusTripleZero: 0, destinyDamageCount: 0, trueDamageCount: 0, extraDamageDealt: 0 };
     }
     const isFixedMultiHit = !!(extra && extra.hitCount);
     const separateBasicAttackHits = !!(isFixedMultiHit && extra && extra.separateBasicAttackHits);
-    const comboHitCount = isFixedMultiHit ? 1 : Math.max(1, Math.floor(Number(extra && extra.comboHitCount || getComboHitCount(stats))));
+    const comboHitCount = isFixedMultiHit ? 1 : Math.max(1, Math.floor(Number(extra && extra.comboHitCount || getComboHitCount(stats, random))));
     const hitCount = isFixedMultiHit ? Math.max(1, Math.floor(Number(extra.hitCount || 1))) : comboHitCount;
     const hitDamages = [];
     const hitDetails = [];
@@ -4781,7 +4788,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         const criticalResult = applyCriticalDamage(baseDamage, stats, hitExtra, defenderStats);
         if (finalDamageMultiplier > 0) criticalResult.damage *= Math.max(0, finalDamageMultiplier + cardAwakening.conditionalFinalDamage(stats, criticalResult.isCritical)) / finalDamageMultiplier;
         if (criticalResult.isCritical && extra && extra.extraOnCrit && totalHits < maxCriticalHits) totalHits++;
-        if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
+        if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && random() < 0.3) {
             totalHits++;
             abyssDoomUsed = true;
             extra.onEquipmentProc?.('심연');
@@ -4794,13 +4801,13 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         };
         const isFixedCriticalDamage = !!(hitExtra.trueDamageOnCrit && criticalResult.isCritical);
         const forcedDestiny = i < Number(extra?.tcgDestiny || 0);
-        const isDestinyDamage = !isFixedCriticalDamage && (forcedDestiny || (trueChance > 0 && Math.random() < trueChance));
+        const isDestinyDamage = !isFixedCriticalDamage && (forcedDestiny || (trueChance > 0 && random() < trueChance));
         if (isDestinyDamage && !forcedDestiny) extra?.onEquipmentProc?.('운명');
         hitDamage = isFixedCriticalDamage ? Math.max(0, Math.round(criticalResult.damage)) : isDestinyDamage
             ? getDamageAfterDestinyDefense(criticalResult.damage, defense, Number(penetration || 0) + Number(unitModifier.pntBonus || 0), Math.max(0, Math.min(1, getTotalDefenseReductionRate(stats, slotEffects) + Number(hitExtra.defReductionBonus || 0))))
             : getDamageAfterReducedDefense(criticalResult.damage, defense, Number(penetration || 0) + Number(unitModifier.pntBonus || 0), Math.max(0, Math.min(1, getTotalDefenseReductionRate(stats, slotEffects) + Number(hitExtra.defReductionBonus || 0))));
         
-        if (!(extra && extra.disableEquipmentBonusDamage) && stats && stats.hasCelestia && extra && extra.isSkill && Math.random() < 0.2) {
+        if (!(extra && extra.disableEquipmentBonusDamage) && stats && stats.hasCelestia && extra && extra.isSkill && random() < 0.2) {
             addEarlyDamage(Math.round(criticalResult.damage * 0.15), '셀레스티아 추가 피해');
             extra.onEquipmentProc?.('별빛의 축복');
         }
@@ -4808,15 +4815,15 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
 
         if (isDestinyDamage) destinyDamageCount++;
         if (criticalResult.isCritical) criticalCount++;
-        if (!(extra && extra.disableEquipmentBonusDamage) && Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
-            const bonus = [10, 100, 1000][randomInt(0, 2)];
+        if (!(extra && extra.disableEquipmentBonusDamage) && Number(stats['000'] || 0) > 0 && random() < Number(stats['000'])) {
+            const bonus = [10, 100, 1000][Math.floor(random() * 3)];
             bonusTripleZero += bonus;
             addEarlyDamage(bonus, '000 추가 피해');
         }
         if (extra && Number(extra.skillTrueDmg || 0) > 0) addEarlyDamage(Number(extra.skillTrueDmg), '스킬 고정 피해');
         if (i == 0 && extra && Number(extra.oneTimeTrueDmg || 0) > 0) addEarlyDamage(Number(extra.oneTimeTrueDmg), '일회 고정 피해');
         const comboDamageMul = isComboExtraHit && Number(stats && stats.comboDamage || 0) != 0 ? 1 + Number(stats.comboDamage) : 1;
-        const varianceMul = randomInt(98, 102) / 100;
+        const varianceMul = extra?.powerPreview ? 1 : randomInt(98, 102) / 100;
         const transformEarlyDamage = value => {
             let transformed = Number(value || 0);
             if (comboDamageMul !== 1) transformed = Math.round(transformed * comboDamageMul);
@@ -4937,6 +4944,8 @@ function getSkillValue(skill, index, star) {
 }
 
 function getMainCardSkills(user) {
+    const powerPreview = paradisePower.context(user);
+    if (powerPreview?.skills) return powerPreview.skills;
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const skills = readJson(SKILLS_PATH, []);
     const card = user.main_card && characterCards[user.main_card.id];
@@ -4951,9 +4960,11 @@ function getMainCardSkills(user) {
     const specter = getCardSpecter(user.main_card);
     if (specter && typeof specter.skill == 'number') skillIndices = skillIndices.concat([specter.skill]);
     const stone = paradiseStones.skill(user);
-    return skillIndices.map(index => stone && index === card.skills?.[0]
-        ? { index: 'paradise:stoneThrow', skill: { name: stone.name, mp_cost: 0, cooltime: stone.cooldown, element: stone.element, desc: '공격력의 10%만큼 피해를 입힙니다.' } }
+    const result = skillIndices.map(index => stone && index === card.skills?.[0]
+        ? { index: 'paradise:stoneThrow', skill: { ...stone, desc: `공격력의 10%만큼 피해를 입히며 고정 피해 ${paradiseStones.flatDamage(user).toLocaleString('ko-KR')}을 추가합니다.` } }
         : { index, skill: skills[index] }).filter(data => data.skill);
+    if (powerPreview) powerPreview.skills = result;
+    return result;
 }
 
 function findUsableSkill(user, skillName) {
@@ -4961,11 +4972,15 @@ function findUsableSkill(user, skillName) {
 }
 
 function getUltimateSkills(user) {
+    const powerPreview = paradisePower.context(user);
+    if (powerPreview?.ultimates) return powerPreview.ultimates;
     const card = readJson(CHARACTER_CARDS_PATH, [])[user.main_card?.id];
     const indices = new Set(['전직', '각성'].includes(user.main_card?.type) ? card?.class?.skills || [] : []);
     const specter = getCardSpecter(user.main_card);
     if (typeof specter?.skill === 'number') indices.add(specter.skill);
-    return getMainCardSkills(user).filter(entry => indices.has(entry.index));
+    const result = getMainCardSkills(user).filter(entry => indices.has(entry.index));
+    if (powerPreview) powerPreview.ultimates = result;
+    return result;
 }
 
 function getPassiveMpRecovery(user) {

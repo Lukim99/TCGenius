@@ -4,7 +4,7 @@ const a = (id, name, branch, rarity, floors, desc, requires = ['stoneThrow'], op
     stoneRequires: requires, ...options
 });
 module.exports = [
-    a('stoneThrow', '습박 돌 던져!', 'shared', 'silver', 4, '캐릭터 카드의 기본 액티브 스킬을 돌 던지기로 변경합니다. MP와 정신력을 소모하지 않고 공격력의 10%만큼 피해를 입힙니다. 쿨타임은 2초이며 일반 공격과 궁극기는 유지합니다. 즉시 돌 던지기의 첫 강화를 선택합니다.', []),
+    a('stoneThrow', '습박 돌 던져!', 'shared', 'silver', 4, '캐릭터 카드의 기본 액티브 스킬을 돌 던지기로 변경합니다. MP와 정신력을 소모하지 않고 공격력의 10%만큼 피해를 입히며 고정 피해 30,000을 추가합니다. 쿨타임은 2초이며 일반 공격과 궁극기는 유지합니다. 즉시 돌 던지기의 첫 강화를 선택합니다.', []),
 
     a('stoneBankShot', '여기 당구장 아닌데요', 'billiards', 'silver', 4, '돌이 벽에 세 번 튕겨 돌아옵니다. 공격력의 40%, 60%, 80%만큼 차례로 추가 피해를 입힙니다.', ['stoneThrow'], { isStoneEntry: true }),
     a('stoneCushion', '쿠션 하나 더', 'billiards', 'silver', 3, '돌이 한 번 더 튕겨 공격력의 40%만큼 추가 피해를 입힙니다.', ['stoneBankShot']),
@@ -25,7 +25,7 @@ module.exports = [
     a('stoneShrapnel', '알맹이도 드세요', 'siege', 'gold', 8, '돌을 세 개 이상 장전해 던지면 공격력의 40%만큼 피해를 입히는 파편 세 개를 추가합니다.', ['stonePocket']),
     a('stoneRecoil', '반동으로 휘두르기', 'siege', 'silver', 4, '가득 장전한 돌을 던지면 다음 일반 공격에 공격력의 150%만큼 피해를 추가합니다. 효과는 중첩하지 않습니다.', ['stonePocket']),
     a('stoneCounterweight', '궁극기는 장전 손잡이', 'siege', 'gold', 8, '매 전투 첫 궁극기를 사용하면 돌을 장전 한도까지 채웁니다.', ['stonePocket'], { requiresUltimate: true }),
-    a('stoneRailgun', '투석기의 산업혁명', 'siege', 'prismatic', 12, '장전탄을 하나의 관통탄으로 합칩니다. 장전탄 한 개당 공격력의 180%만큼 피해를 입히고 방어력을 75% 무시합니다. 돌 던지기의 쿨타임이 최소 6초가 됩니다.', ['stonePocket', 'stoneHeavyAmmo'], { stoneExcludes: ['stoneShotgun'] }),
+    a('stoneRailgun', '투석기의 산업혁명', 'siege', 'prismatic', 12, '장전탄을 하나의 관통탄으로 합칩니다. 장전탄 한 개당 공격력의 180%만큼 피해를 입히고 방어력을 75% 무시합니다. 돌 던지기의 기본 고정 피해가 3배가 되며 쿨타임이 최소 6초가 됩니다.', ['stonePocket', 'stoneHeavyAmmo'], { stoneExcludes: ['stoneShotgun'] }),
     a('stoneShotgun', '산탄 주머니', 'siege', 'prismatic', 11, '장전탄 한 개를 세 개의 탄환으로 나누어 발사합니다. 탄환마다 공격력의 40%만큼 피해를 입히며 치명타를 각각 판정합니다.', ['stonePocket', 'stoneShrapnel'], { stoneExcludes: ['stoneRailgun'] }),
 
     a('stoneTower', '돌탑 공사 중', 'tower', 'silver', 4, '돌 두 개를 쌓고 전투를 시작합니다. 돌을 던질 때마다 한 개를 쌓으며 최대 다섯 개 보관합니다. 세 개 이상 쌓았을 때 일반 공격을 적중시키면 돌탑을 무너뜨려 돌 한 개당 공격력의 70%만큼 추가 피해를 입힙니다.', ['stoneThrow'], { isStoneEntry: true }),
@@ -124,4 +124,10 @@ module.exports = [
     a('stoneTimeBank', '과거에서 튕겨 온 돌', 'shared', 'gold', 8, '시간의 돌이 도착할 때 공격력의 80%만큼 피해를 입히는 도탄을 하나 추가합니다. 이 도탄은 새 시간의 돌을 만들지 않습니다.', ['stoneTime', 'stoneBankShot']),
     a('stoneElementDig', '지층별 원소 조사', 'shared', 'gold', 8, '한 전투에서 네 가지 속성 돌을 모두 던지면 즉시 한 번 발굴합니다. 전투마다 한 번 발동하며 추가 발굴은 발생하지 않습니다.', ['stoneSeasons', 'stoneDig'])
 ];
+// 모든 후속 강화의 보강 피해는 투사체 수와 무관하게 돌 던지기 한 번에 한 번만 적용한다.
+for (const augment of module.exports) {
+    augment.stoneFlatDamage = augment.id === 'stoneThrow' ? 30000 : { silver: 2500, gold: 5000, prismatic: 10000 }[augment.rarity];
+    if (augment.id === 'stoneThrow') augment.desc += ' 후속 강화의 추가 투사체는 공격력 비례 피해가 10% 증가하며, 공격력 100%당 고정 피해 4,000을 추가합니다.';
+    else augment.desc += ` 돌 던지기의 고정 피해가 ${augment.stoneFlatDamage.toLocaleString('ko-KR')} 증가합니다.`;
+}
 module.exports.BRANCHES = { billiards: '도탄 당구', siege: '장전 투석기', tower: '돌탑 공사', chance: '주사위 카지노', element: '원소 지질학', orbit: '궤도 위성', dig: '발굴 현장', guard: '반격 방벽', time: '시간 배송', shared: '공용 강화' };

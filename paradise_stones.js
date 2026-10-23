@@ -1,9 +1,12 @@
 const catalog = require('./paradise_augments_stones');
 const shields = require('./combat_shields');
+const power = require('./paradise_power');
 const rpg = () => require('./rpgenius');
 const corridor = () => require('./paradise');
 const mechanics = () => require('./paradise_mechanics');
 const NAME = '돌 던지기';
+const FLAT_DAMAGE = new Map(catalog.map(augment => [augment.id, augment.stoneFlatDamage]));
+const flatDamage = user => Object.keys(user.paradise?.acquired || {}).reduce((sum, id) => sum + (user.paradise.acquired[id] ? FLAT_DAMAGE.get(id) || 0 : 0), 0);
 const own = (user, id) => !!user.paradise?.acquired?.[id];
 const active = user => corridor().active(user) && user.paradise.mode !== 'hell' && user.paradise.phase === 'combat' && !!user.field?.paradise && own(user, 'stoneThrow');
 const has = (user, id) => active(user) && own(user, id);
@@ -59,7 +62,7 @@ function skill(user) { return active(user) ? { id: 'stoneThrow', name: NAME, rat
 function skillView(user) {
     if (!active(user)) return [];
     return [{ name: NAME, element: null, mpCost: 0, resourceLabel: 'MP', cooldownEnd: Number(user.field.skillCooldowns[NAME] || 0),
-        cooltimeText: has(user, 'stoneRailgun') ? '6초' : '2초', descLines: ['마나를 소모하지 않고 돌을 던집니다. 습득한 돌 강화가 함께 발동합니다.'], augmentSkill: true, stoneSkill: true }];
+        cooltimeText: has(user, 'stoneRailgun') ? '6초' : '2초', descLines: [`마나를 소모하지 않고 공격력의 ${has(user, 'stonePolish') ? 40 : 10}%만큼 피해를 입히며 고정 피해 ${(flatDamage(user) * (has(user, 'stoneRailgun') ? 3 : 1)).toLocaleString('ko-KR')}을 추가합니다.`, '돌 강화의 추가 투사체는 공격력 비례 피해가 10% 증가하며 공격력 100%당 고정 피해 4,000을 추가합니다.'], augmentSkill: true, stoneSkill: true }];
 }
 function onChoose(user, choice) {
     if (choice.category !== 'stone') return;
@@ -107,13 +110,13 @@ function demolish(user, stats, extra, leaning = false) {
     if (has(user, 'stoneCathedral') && blocks >= 5) { ward(user, 'cathedral', .20, 12, stats); corridor().heal(user, .05); }
     if (has(user, 'stoneTowerGuard')) ward(user, 'demolish', Math.min(.30, blocks * .03), 10, stats);
     if (has(user, 'stoneTowerDice')) {
-        if (Math.random() < .5) { stack(user, 2); notice(extra, '철거 뽑기 당첨! 돌 두 개를 다시 쌓았습니다.'); }
+        if (power.random(user) < .5) { stack(user, 2); notice(extra, '철거 뽑기 당첨! 돌 두 개를 다시 쌓았습니다.'); }
         else { corridor().heal(user, .08); notice(extra, '철거 뽑기 실패, HP를 8% 회복합니다.'); }
     }
     notice(extra, '돌탑 ' + blocks + '개 붕괴!');
 }
 function rollDice(user, stats, extra, fullAmmo) {
-    const s = state(user), die = () => Math.min(6, 1 + Math.floor(Math.random() * 6));
+    const s = state(user), die = () => Math.min(6, 1 + Math.floor(power.random(user) * 6));
     let face, forced = false;
     if (has(user, 'stoneSiegeDice') && fullAmmo && Number(s.siegeRigged || 0) < 2) { count(s, 'siegeRigged'); face = 6; forced = true; }
     else if (has(user, 'stoneHouseWins')) face = (Number(s.casts || 1) - 1) % 6 + 1;
@@ -179,7 +182,7 @@ function excavate(user, stats, extra, single = false) {
     const draws = !single && has(user, 'stoneGoldRush') ? 2 : 1;
     if (draws === 2) hpCost(user, .05);
     for (let i = 0; i < draws; i++) {
-        const index = has(user, 'stoneSurvey') ? count(s, 'survey') - 1 : Math.floor(Math.random() * names.length);
+        const index = has(user, 'stoneSurvey') ? count(s, 'survey') - 1 : Math.floor(power.random(user) * names.length);
         const found = names[index % names.length];
         notice(extra, found + ' 발굴!');
         s.finds = [...new Set([...(s.finds || []), found])];
@@ -204,6 +207,7 @@ function cast(user, stats, extra) {
     if (!active(user)) return 0;
     const s = state(user), e = expedition(user), n = count(s, 'casts');
     extra.stoneCast = true; extra.hitCount = 1; extra.stoneCastNumber = n;
+    packet(extra, 0, '돌 던지기', { fixed: flatDamage(user) * (has(user, 'stoneRailgun') ? 3 : 1), stoneBase: true });
     extra.stoneBranch = (e.branches || []).filter(branch => catalog.some(a => a.isStoneEntry && a.stoneBranch === branch && own(user, a.id))).at(-1) || 'shared';
     const oldWard = shields.summary(user.field, Date.now()).amount;
     if (has(user, 'stonePolish') && n === 1 || has(user, 'stoneCritTicket') && s.noCrit >= 4) { extra.forceCritical = true; s.noCrit = 0; }
@@ -351,20 +355,33 @@ function prepareHit(user, stats, extra, hit) {
         if (item.fixed != null) { amount = Math.max(0, Math.round(item.fixed)); fixedDamage = amount; }
         else {
             const bonus = enemy.kind === 'normal' ? Number(stats.damageBonus || 0) + Number(slots.damageBonus || 0) : enemy.kind === 'elite' ? Number(stats.eliteDmg || 0) : Number(stats.bossDmg || 0);
-            const base = item.raw != null ? item.raw : stats.atk * item.ratio;
+            const base = item.raw != null ? item.raw * 1.10 : stats.atk * item.ratio * 1.10;
             const result = rpg().calculateAttackHitResult(base * Math.max(0, 1 + Number(stats.afterSkill || 0) + Number(slots.skillDamageBonus || 0)) * Math.max(0, 1 + bonus),
                 Math.max(0, Number(target.def || 0) - Number(stats.atkDefReduce || 0)), Number(stats.pnt || 0), stats, slots,
                 { hitCount: 1, isSkill: true, summonAttack: true, stoneSecondary: true, attackElement: item.element || extra.attackElement || null,
+                    ...(power.context(user) ? { powerPreview: true, random: power.context(user).random } : {}),
                     forceCritical: !!item.critical, defReductionBonus: Number(item.pierce || 0) }, target);
             const multiplier = Number(extra.paradiseAttackMultiplier ?? 1);
             amount = Math.max(0, Math.round(result.finalDamage * multiplier)); critical = result.criticalCount > 0;
             fixedDamage = Math.min(amount, Math.round((result.hitDetails || []).reduce((sum, detail) => sum + Number(detail.fixedDamage || 0), 0) * multiplier));
             destiny = result.destinyDamageCount > 0;
+            const flat = Math.round((item.ratio || 0) * 4000 * multiplier);
+            amount += flat; fixedDamage += flat;
+            if (power.context(user) && item.pierce) {
+                const pen = 1 + Number(stats.pnt || 0) / 280, rate = Math.min(1, Number(stats.pntPercent || 0) + Number(slots.defReduction || 0));
+                amount = fixedDamage + Math.round((amount - fixedDamage) * (pen + Math.min(1, rate + item.pierce) * .5) / (pen + rate * .5));
+            }
         }
+        if (item.stoneBase) { amount = Math.round(amount * Number(extra.paradiseAttackMultiplier ?? 1)); fixedDamage = amount; }
         if (!(amount > 0)) continue;
         hit.finalDamage += amount;
-        (hit.hitDetails ||= []).push({ damage: amount, fixedDamage, isCritical: critical, isDestinyDamage: destiny, label: item.label, stoneSecondary: true });
-        (hit.damageComponents ||= []).push({ damage: amount, type: 'additional', label: item.label, isCritical: critical, fixed: item.fixed != null, stoneSecondary: true });
+        const parts = fixedDamage > 0 && fixedDamage < amount
+            ? [{ damage: amount - fixedDamage, label: item.label, fixed: false }, { damage: fixedDamage, label: '돌 강화 고정 피해', fixed: true }]
+            : [{ damage: amount, label: item.label, fixed: fixedDamage === amount }];
+        for (const part of parts) {
+            (hit.hitDetails ||= []).push({ damage: part.damage, fixedDamage: part.fixed ? part.damage : 0, isCritical: !part.fixed && critical, isDestinyDamage: !part.fixed && destiny, label: part.label, stoneSecondary: true });
+            (hit.damageComponents ||= []).push({ ...part, type: 'additional', isCritical: !part.fixed && critical, stoneSecondary: true });
+        }
     }
 }
 function afterHit(user, stats, extra, hit) {
@@ -449,4 +466,4 @@ function view(user) {
     if (has(user, 'stoneTime')) result.push({ label: '배송', value: (s.queue || []).filter(item => item.kind === 'time').length, max: 4 });
     return result;
 }
-module.exports = { NAME, active, has, eligible, skill, skillView, onChoose, onBattle, cast, onSkill, afterCooldown, prepareAttack, prepareHit, afterHit, incomingMultiplier, onDamage, onVictory, view };
+module.exports = { NAME, active, has, eligible, skill, skillView, flatDamage, onChoose, onBattle, cast, onSkill, afterCooldown, prepareAttack, prepareHit, afterHit, incomingMultiplier, onDamage, onVictory, view };

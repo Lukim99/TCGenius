@@ -1,5 +1,6 @@
 const catalog = require('./paradise_augments_playful');
 const shields = require('./combat_shields');
+const power = require('./paradise_power');
 const rpg = () => require('./rpgenius');
 const corridor = () => require('./paradise');
 const mechanics = () => require('./paradise_mechanics');
@@ -123,7 +124,7 @@ function onSkill(user, name, stats, extra) {
         notice(extra, '휴전 티타임! 자신은 HP와 MP 20%, 적은 HP 10%를 회복합니다.');
     }
     if (has(user, 'damagedVending') && s.skillUses <= 3) {
-        if (Math.random() < .35) { s.vending = Math.max(2, Number(s.vending || 0)); notice(extra, '자판기 당첨! 다음 일반 공격 피해가 2배가 됩니다.'); }
+        if (power.random(user) < .35) { s.vending = Math.max(2, Number(s.vending || 0)); notice(extra, '자판기 당첨! 다음 일반 공격 피해가 2배가 됩니다.'); }
         else {
             count(s, 'vendingMisses');
             if (s.vendingMisses === 3) { s.vending = 4; notice(extra, '세 번 모두 꽝! 자판기를 털어 다음 일반 공격 피해가 4배가 됩니다.'); }
@@ -182,7 +183,7 @@ function prepareAttack(user, stats, extra) {
     if (has(user, 'troubleLottery') && !s.lotteryPlayed) {
         s.lotteryPlayed = true;
         const chance = Math.min(1, .2 + Number(e.lotteryMisses || 0) * .2);
-        if (Math.random() < chance) { e.lotteryMisses = 0; add(stats.atk * 2); notice(extra, '꽝도 모으면 당첨!'); }
+        if (power.random(user) < chance) { e.lotteryMisses = 0; add(stats.atk * 2); notice(extra, '꽝도 모으면 당첨!'); }
         else { count(e, 'lotteryMisses'); notice(extra, '꽝! 다음 전투 당첨 확률 ' + Math.min(100, 20 + e.lotteryMisses * 20) + '%'); }
     }
     if (has(user, 'healthTug') && corridor().getResources(user).hp / stats.hp < user.paradise.enemy.hp / user.paradise.enemy.maxHp) pending.multiplier *= 1.25;
@@ -193,14 +194,14 @@ function prepareAttack(user, stats, extra) {
     if (s.applauseHits > 0) { s.applauseHits--; extra.forceCritical = true; }
     if (s.audience?.[k] > 0) { s.audience[k]--; pending.multiplier *= 1.5; }
     if (has(user, 'loadedDeck')) {
-        if (!s.deck?.length) s.deck = shuffledDeck();
+        if (!s.deck?.length) s.deck = shuffledDeck(() => power.random(user));
         const multiplier = s.deck.shift(); pending.multiplier *= multiplier;
         notice(extra, '다음 장은 대박입니다! ' + Math.round(multiplier * 100) + '% 카드');
-        if (!s.deck.length) s.deck = shuffledDeck();
+        if (!s.deck.length) s.deck = shuffledDeck(() => power.random(user));
     }
     if (has(user, 'pityMachine') && Number(s.pityWins || 0) < 5) {
         const chance = Math.min(1, .1 + Number(s.pityMisses || 0) * .1);
-        if (Math.random() < chance) { s.pityMisses = 0; count(s, 'pityWins'); s.pityPenalty = true; add(stats.atk * 5); notice(extra, '천장 당첨! 다음 피격 피해가 20% 증가합니다.'); }
+        if (power.random(user) < chance) { s.pityMisses = 0; count(s, 'pityWins'); s.pityPenalty = true; add(stats.atk * 5); notice(extra, '천장 당첨! 다음 피격 피해가 20% 증가합니다.'); }
         else { count(s, 'pityMisses'); notice(extra, '천장 ' + Math.min(100, 10 + s.pityMisses * 10) + '%'); }
     }
     if (s.giftBroken && !s.giftClaimed) {
@@ -305,7 +306,7 @@ function afterHit(user, stats, extra, hit) {
     }
     if (has(user, 'windowSeat') && s.seat === 'left' && s.seatUses < 2 && k === 'basic') { s.seatUses++; corridor().heal(user, .03); }
     if (has(user, 'blackjackCounter') && k === 'basic') {
-        const drawn = 1 + Math.min(5, Math.floor(Math.random() * 6));
+        const drawn = 1 + Math.min(5, Math.floor(power.random(user) * 6));
         s.blackjack = Number(s.blackjack || 0) + drawn;
         if (s.blackjack > 21) { notice(extra, '블랙잭 ' + s.blackjack + '점! 초과하여 MP 8%를 회복합니다.'); s.blackjack = 0; corridor().heal(user, 0, .08); }
         else notice(extra, '+' + drawn + ', 블랙잭 ' + s.blackjack + '점');

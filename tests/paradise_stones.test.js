@@ -77,6 +77,160 @@ test('돌 트리는 시작 하나와 후속 108개이며 모든 선행과 택일
     assert.equal(stones.eligible(user, catalog.find(a => a.id === 'stonePinball')), false);
 });
 
+test('돌 고정 피해는 공격력이 낮아도 적용하며 후속 강화를 획득할 때마다 증가한다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('stoneBankShot');
+    const base = stones.flatDamage(user);
+    assert.equal(base, 32500);
+    const extra = {}, stats = { ...rpg.calculateUserStats(user), atk: 1, crit: 0 };
+    const raw = stones.cast(user, stats, extra), hit = { finalDamage: raw, hitDetails: [] };
+    stones.prepareHit(user, stats, extra, hit);
+    assert.ok(hit.finalDamage >= base + 7200);
+    assert.equal(hit.hitDetails.filter(h => h.label === '돌 던지기').length, 1);
+    user.paradise.acquired.stoneCushion = 1;
+    assert.equal(stones.flatDamage(user), base + 2500);
+    user.paradise.acquired.stoneCornerPocket = 1;
+    assert.equal(stones.flatDamage(user), base + 7500);
+    user.paradise.acquired.stonePinball = 1;
+    assert.equal(stones.flatDamage(user), base + 17500);
+});
+
+function powerUser() {
+    const user = fresh(); delete user.paradise.acquired.stoneThrow; battle(user);
+    rpg.calculateCombatPower(user);
+    return user;
+}
+test('초반 첫 실버 선택에는 돌 던지기를 제시하고 강제 분류 및 중복 금지는 유지한다', () => {
+    const user = powerUser();
+    corridor.offerAugments(user, () => .99, 'silver');
+    assert.ok(user.paradise.choices.includes('stoneThrow'));
+    assert.equal(new Set(user.paradise.choices).size, 3);
+    assert.ok(user.paradise.choices.every(id => corridor.AUGMENTS.find(a => a.id === id).rarity === 'silver'));
+    user.paradise.stoneIntroShown = false; user.paradise.augmentCategory = 'dot';
+    corridor.offerAugments(user, () => .99, 'silver');
+    assert.ok(!user.paradise.choices.includes('stoneThrow'));
+    delete user.paradise.augmentCategory; user.paradise.acquired.stoneThrow = 1;
+    corridor.offerAugments(user, () => .99, 'silver');
+    assert.ok(!user.paradise.choices.includes('stoneThrow'));
+});
+
+test('저공격력 돌 빌드의 피해량으로 100층 일반 몬스터를 8회 이하 투척으로 처치한다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const builds = {
+        pinball: ['stoneBankShot', 'stoneCushion', 'stoneCornerPocket', 'stoneChalk', 'stoneEightBall', 'stoneSpareCue', 'stoneTrickRail', 'stoneComboRail', 'stonePinball'],
+        siege: ['stonePocket', 'stoneQuickLoad', 'stoneHeavyAmmo', 'stoneDryFire', 'stoneFuse', 'stoneShrapnel', 'stoneRecoil', 'stoneRailgun', 'stonePolish'],
+        time: ['stoneTime', 'stoneDelay', 'stoneEarlyBird', 'stoneMeteorShower', 'stoneBankShot', 'stoneCushion', 'stoneTimeBank', 'stonePolish', 'stonePocket']
+    };
+    for (const [name, ids] of Object.entries(builds)) {
+        const user = fresh(...ids); user.paradise.floor = 100;
+        corridor.startCombat(user, 'normal', null, () => .99);
+        const maxHp = user.paradise.enemy.maxHp, stats = { ...rpg.calculateUserStats(user), atk: 1000, crit: 0, cmb: 0 }, slots = rpg.calculateCardSlotEffects(user);
+        let casts = 0;
+        while (user.paradise.enemy.hp > 0 && casts < 9) {
+            if (name === 'siege') s(user).ammo = 4;
+            const extra = { isSkill: true }, raw = stones.cast(user, stats, extra);
+            stones.prepareAttack(user, stats, extra);
+            const result = rpg.calculateAttackHitResult(raw, user.paradise.enemy.def, stats.pnt, stats, slots, extra, user.paradise.enemy);
+            stones.prepareHit(user, stats, extra, result);
+            user.paradise.enemy.hp -= result.finalDamage; casts++;
+        }
+        assert.ok(user.paradise.enemy.hp <= 0 && casts <= 8, name + ': ' + casts);
+        t.diagnostic(`${name}: 100층 HP ${maxHp.toLocaleString('ko-KR')}, 공격력 1,000, ${casts}회 투척`);
+    }
+});
+test('천상 전투력은 추가 피해 유물과 첫 일격의 발동 및 소모를 반영한다', () => {
+    const user = powerUser(), plain = rpg.calculateCombatPower(user);
+    user.paradise.effects.firstStrike = 1;
+    assert.ok(rpg.calculateCombatPower(user).offense >= plain.offense * 1.99);
+    user.paradise.battle.firstAttack = false;
+    assert.equal(rpg.calculateCombatPower(user).offense, plain.offense);
+    user.paradise.relics.push('practiceSword');
+    assert.ok(rpg.calculateCombatPower(user).offense > plain.offense);
+    user.paradise.relics = ['echoBell'];
+    user.paradise.battle.echoBellReady = true;
+    const ready = rpg.calculateCombatPower(user).offense;
+    user.paradise.battle.echoBellReady = false;
+    assert.ok(rpg.calculateCombatPower(user).offense < ready);
+});
+
+test('보호막과 부활은 실시간 전투력에 반영하며 조회로 소비하거나 타이머를 만들지 않는다', t => {
+    const user = powerUser(), plain = rpg.calculateCombatPower(user);
+    user.paradise.relics.push('feather', 'emberSeed', 'clock');
+    const stats = rpg.calculateUserStats(user);
+    shields.grant(user.field, { source: 'test', amount: stats.hp, expiresAt: Date.now() + 60000 });
+    // 기본 능력치 계산이 기존 보호막 표시용 필드를 동기화한 뒤 천상 계산의 무변경을 확인한다.
+    rpg.calculateUserStats(user);
+    const before = JSON.stringify(user), enhanced = rpg.calculateCombatPower(user);
+    assert.ok(enhanced.defense > plain.defense);
+    assert.ok(enhanced.offense > plain.offense);
+    assert.equal(JSON.stringify(user), before);
+    assert.deepEqual(rpg.calculateCombatPower(user), enhanced);
+    user.paradise.featherUsed = true; user.field.shieldLayers = [];
+    assert.ok(rpg.calculateCombatPower(user).defense < enhanced.defense);
+    user.paradise.status = 'ended';
+    const outside = rpg.calculateCombatPower(user);
+    user.paradise = null;
+    assert.deepEqual(rpg.calculateCombatPower(user), outside);
+});
+
+test('보상 전용 증강과 유물은 전투력을 부풀리지 않으며 돌 빌드는 전투력에 반영한다', () => {
+    const user = powerUser(), plain = rpg.calculateCombatPower(user);
+    user.paradise.acquired.contract = 1; user.paradise.relics.push('ring', 'brassReceipt');
+    assert.deepEqual(rpg.calculateCombatPower(user), plain);
+    user.paradise.acquired.stoneThrow = 1;
+    const stone = rpg.calculateCombatPower(user);
+    assert.ok(stone.offense > plain.offense);
+    user.paradise.acquired.stoneBankShot = user.paradise.acquired.stoneCushion = 1;
+    assert.ok(rpg.calculateCombatPower(user).offense > stone.offense);
+});
+
+test('캐릭터 증강과 마력 순환은 현재 전투 상태와 화면 전투력에 반영한다', () => {
+    const user = powerUser();
+    user.main_card.id = 11;
+    const ordinary = rpg.calculateCombatPower(user);
+    user.paradise.acquired.solitaryIktae = 1;
+    assert.ok(rpg.calculateCombatPower(user).offense > ordinary.offense);
+    delete user.paradise.acquired.solitaryIktae;
+    user.field.iktaeBot = { hp: 100, atkMul: 2, expired_at: Date.now() + 60000 };
+    user.paradise.acquired.frenziedIktaeBot = 1;
+    const accelerated = rpg.calculateCombatPower(user).offense;
+    user.field.iktaeBot.expired_at = 1;
+    assert.ok(rpg.calculateCombatPower(user).offense < accelerated);
+
+    user.main_card.id = 16;
+    user.paradise.acquired.emergencyComeback = 1;
+    user.paradise.battle.characters = { kinoEncoreReady: true };
+    const encore = rpg.calculateCombatPower(user);
+    assert.equal(corridor.view(user).player.combatPower, encore.total);
+    user.paradise.battle.characters.kinoEncoreReady = false;
+    assert.ok(corridor.view(user).player.combatPower < encore.total);
+
+    user.main_card.id = 0;
+    const beforeMana = rpg.calculateCombatPower(user).utility;
+    user.paradise.effects.manaCycle = true;
+    assert.ok(rpg.calculateCombatPower(user).utility > beforeMana);
+});
+
+test('전체 증강과 유물의 전투력 계산은 유한한 값이며 실제 탐험 상태를 변경하지 않는다', () => {
+    const seed = powerUser();
+    for (const entry of [...corridor.AUGMENTS, ...corridor.RELICS.map(r => ({ ...r, relic: true }))]) {
+        const user = Object.assign(new rpg.RPGUser(name, name), structuredClone(seed));
+        if (entry.relic) user.paradise.relics.push(entry.id);
+        else {
+            user.paradise.acquired[entry.id] = 1;
+            Object.assign(user.paradise.effects, entry.effect);
+            for (const id of entry.stoneRequires || []) user.paradise.acquired[id] = 1;
+            if (entry.category === 'stone') user.paradise.acquired.stoneThrow = 1;
+            if (entry.character != null) user.main_card.id = entry.character;
+        }
+        const stats = rpg.calculateUserStats(user), slots = rpg.calculateCardSlotEffects(user);
+        const before = JSON.stringify(user);
+        const result = rpg.calculateCombatPower(user, stats, slots);
+        assert.ok(Number.isFinite(result.total) && result.total > 0, entry.id);
+        assert.equal(JSON.stringify(user), before, entry.id);
+    }
+});
+
 test('돌은 카드 기본 액티브만 바꾸고 MP 0에서도 사용하며 행동 간격은 유지한다', async t => {
     t.mock.method(Math, 'random', () => .99);
     const user = fresh(), stats = rpg.calculateUserStats(user);

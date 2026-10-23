@@ -290,6 +290,12 @@ function availableAugments(user, rarity = null, category = null) {
     const run = user.paradise, equipped = equipmentOptions(user).map(e => e.name), playerPower = rpg().calculateCombatPower(user).total;
     return AUGMENTS.filter(a => (!rarity || a.rarity === rarity) && (!category || a.category === category) && !obtainedAugment(run, a.id) && eligibleAugment(user, a, equipped, playerPower));
 }
+function pickAugment(pool, run, random) {
+    if (run.floor > 100 || !pool.some(a => a.id === 'stoneThrow')) return cardContracts.pick(pool, random);
+    const weight = a => a.id === 'stoneThrow' ? run.floor <= 50 ? 15 : 8 : cardContracts.isCardReward(a) ? cardContracts.WEIGHT : 1;
+    let roll = random() * pool.reduce((sum, a) => sum + weight(a), 0);
+    return pool.find(a => (roll -= weight(a)) < 0) || pool.at(-1);
+}
 function offerAugments(user, random = Math.random, rarity = null) {
     const run = user.paradise;
     const entryOffer = !!run.stoneEntryResume && !run.augmentCategory;
@@ -300,12 +306,19 @@ function offerAugments(user, random = Math.random, rarity = null) {
     delete run.augmentFromElite;
     const pool = eligible.filter(a => a.rarity === run.offerRarity);
     const choices = [];
+    const firstStone = run.floor <= 50 && !run.stoneIntroShown && pool.find(a => a.id === 'stoneThrow');
+    if (firstStone) { choices.push(firstStone.id); pool.splice(pool.indexOf(firstStone), 1); }
     while (choices.length < 3 && pool.length) {
         const stonePool = !choices.length && run.acquired.stoneThrow ? pool.filter(a => a.stoneBranch) : [];
-        const choice = cardContracts.pick(stonePool.length ? stonePool : pool, random);
+        const choice = pickAugment(stonePool.length ? stonePool : pool, run, random);
         choices.push(choice.id); pool.splice(pool.indexOf(choice), 1);
     }
     if (!entryOffer) features.call('modifyOffers', user, choices, eligible.filter(a => a.rarity === run.offerRarity), random);
+    if (firstStone && !choices.includes(firstStone.id)) {
+        const replaceAt = choices.findLastIndex(id => !(run.traitState?.offerProtected || []).includes(id));
+        if (replaceAt >= 0) choices[replaceAt] = firstStone.id;
+    }
+    if (choices.includes('stoneThrow')) run.stoneIntroShown = true;
     // 트리 외 증강도 고를 수 있게 두면서, 진행 가능한 돌 강화 한 칸은 유지한다.
     if (run.acquired.stoneThrow && !choices.some(id => AUGMENTS.find(a => a.id === id)?.stoneBranch)) {
         const stonePool = eligible.filter(a => a.rarity === run.offerRarity && a.stoneBranch);
@@ -355,7 +368,7 @@ function rerollAugment(user, id, random = Math.random) {
         const stonePool = pool.filter(a => a.stoneBranch);
         if (stonePool.length) pool = stonePool;
     }
-    const choice = pool.length ? cardContracts.pick(pool, random) : null;
+    const choice = pool.length ? pickAugment(pool, run, random) : null;
     if (!choice) return { error: '새로 제시할 수 있는 증강이 없습니다.' };
     run.rerolled ||= run.choices.map(() => false);
     run.offerSeen ||= [...run.choices];

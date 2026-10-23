@@ -1,5 +1,6 @@
 const catalog = require('./paradise_augments_mechanics');
 const shields = require('./combat_shields');
+const power = require('./paradise_power');
 const rpg = () => require('./rpgenius');
 const corridor = () => require('./paradise');
 const active = user => corridor().active(user) && user.paradise.mode !== 'hell' && user.paradise.phase === 'combat' && !!user.field?.paradise;
@@ -53,7 +54,7 @@ function dots(user, now = Date.now()) {
         if (!dot || consumedDots.has(dot) || !(dot[endKey] > now)) return;
         const next = nextKey ? Number(dot[nextKey] || now + interval) : now + interval;
         const ticks = Math.max(0, Math.floor((dot[endKey] - Math.max(now, next)) / interval) + 1);
-        if (ticks) result.push({ key, damage: Number(damage || 0), ticks,
+        if (ticks) result.push({ key, damage: Number(damage || 0), ticks, precalculated: !!dot.precalculated,
             get consumed() { return consumedDots.has(dot); },
             extend: ms => { dot[endKey] += ms; }, remove: () => { consumedDots.add(dot); remove(); } });
     };
@@ -242,7 +243,7 @@ function activeSkill(user, skill, stats, extra) {
             skillEntries(user).filter(entry => entry.name !== skill.name && !ultimate(user, entry.name)).forEach(entry => reduce(user, entry.name, 5000));
             extendDots(user, 2000); extra.disableEquipmentBonusDamage = true; notice(extra, '시간 접기 · 일반 스킬 -5초 · 지속 피해 +2초'); return 0;
         case 'skillDoubleDown':
-            if (Math.random() < .50) { notice(extra, '판돈 뒤집기 · 대박! 공격력 600% 피해'); return stats.atk * 6; }
+            if (power.random(user) < .50) { notice(extra, '판돈 뒤집기 · 대박! 공격력 600% 피해'); return stats.atk * 6; }
             shield(user, 'skillDoubleDown', stats.hp * .20, 8); notice(extra, '판돈 뒤집기 · 실패 · 보호막 획득'); return stats.atk * .50;
         case 'skillBloodAuction':
             if (!user.paradise.effects.noHealing) {
@@ -292,7 +293,7 @@ function prepareAttack(user, stats, extra) {
     }
     if (s.waltzReady) { extra.mechanicsDouble = true; s.waltzReady = false; corridor().heal(user, 0, .10); }
     if (has(user, 'loadedCoin') && count(s, 'coinAttacks') % 4 === 0) {
-        if (Math.random() < .50) { extra.mechanicsTriple = true; notice(extra, '네 번째 동전 · 성공! 피해 3배'); }
+        if (power.random(user) < .50) { extra.mechanicsTriple = true; notice(extra, '네 번째 동전 · 성공! 피해 3배'); }
         else { corridor().heal(user, .15); notice(extra, '네 번째 동전 · 실패 · HP 15% 회복'); }
     }
 }
@@ -311,7 +312,7 @@ function modifyHit(user, stats, extra, hit) {
     if (isDot(extra)) {
         scale(1 + (has(user, 'patientPoison') ? Math.min(1, Number(s.dotHits || 0) * .10) : 0) + Number(s.ink || 0));
         if (has(user, 'dotCritical') && hit.finalDamage > 0) {
-            const result = rpg().applyCriticalDamage(hit.finalDamage, stats, {}, user.paradise.enemy);
+            const result = rpg().applyCriticalDamage(hit.finalDamage, stats, power.context(user) ? { random: power.context(user).random } : {}, user.paradise.enemy);
             if (result.isCritical) {
                 scale(result.damage / hit.finalDamage); hit.criticalCount = 1;
                 for (const detail of hit.hitDetails || []) detail.isCritical = true;
