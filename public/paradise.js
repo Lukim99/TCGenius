@@ -178,7 +178,9 @@
     async function fetchRanking() { if (rankingLoading) return; rankingLoading = true; try { const response = await fetch('/api/paradise/ranking', { cache: 'no-store' }); if (response.ok) ranking = await response.json(); else announce('주간 랭킹을 불러오지 못했습니다.'); } catch (_) { announce('주간 랭킹 연결을 확인해주세요.'); } finally { rankingLoading = false; } }
     // 천상의 다음 조우(전투, 이벤트, 갈림길)가 바뀔 때만 층 이동 연출을 건다. 같은 응답의 재조회는 키가 같아 다시 재생되지 않는다.
     function encounter(run) {
-        if (!run || run.mode === 'hell' || run.status !== 'active') return null;
+        if (!run || run.mode === 'hell') return null;
+        if (run.outcome === 'collapsed') return `collapse@${run.id}`;
+        if (run.status !== 'active') return null;
         return run.phase === 'combat' ? `c${run.enemy?.id}@${run.floor}` : ['event', 'puzzle'].includes(run.phase) ? `e${run.event?.id}@${run.floor}` : run.phase === 'route' ? `r${run.floor}` : '';
     }
     function accept(next) {
@@ -211,7 +213,7 @@
         const drop = run?.mode === 'hell' ? run.lastDrop : null, dropKey = drop ? [run.id, drop.from, drop.to].join() : '';
         if (drop && state && dropKey !== lastDropKey) { landing = { drop, at: performance.now() }; sound('land'); fall = null; }
         lastDropKey = dropKey;
-        const autoReturn = run?.outcome === 'timedOut' && (state?.run?.id !== run.id || state.run.outcome !== 'timedOut');
+        const autoReturn = ['timedOut', 'collapsed'].includes(run?.outcome) && (state?.run?.id !== run.id || state.run.outcome !== run.outcome);
         state = next; offset = next.serverTime - Date.now(); activeScene = !run ? 'lobby' : run.phase === 'event' ? run.event.id : run.phase;
         if (autoReturn) {
             overlay = null; outcomeReveal = null;
@@ -219,7 +221,7 @@
                 rewardReveal = { title: '자동 귀환 보상', items: run.rewardSummary, page: 0, at: performance.now() };
                 rewardReveal.items.forEach(item => { if (item.iconUrl) renderer.image(item.iconUrl); }); sound('reveal');
             }
-            announce(run.timeoutClaimError || '제한 시간이 종료되어 자동 귀환했습니다.', false);
+            announce(run.timeoutClaimError || (run.outcome === 'collapsed' ? '천상이 완전히 붕괴하여 강제로 귀환했습니다.' : '제한 시간이 종료되어 자동 귀환했습니다.'), false);
         }
         if (!ranking || ranking.week !== next.weekly.week) fetchRanking();
         audio.setScene(run?.status==='active'?(run.mode==='hell'?'hell':'heaven'):null);
@@ -466,8 +468,8 @@
     }
     function sceneBackground(w, h, t) {
         if (state?.run?.mode === 'hell' || state && !state.run && overlay === 'hell') return hellBackground(w, h, t);
-        const scene = activeScene, event = ['casino', 'forge', 'mirror', 'chests', 'judge', 'well', 'puzzle', 'riftTrader'].includes(scene);
-        const bg = renderer.image(asset(event ? scene : scene === 'lobby' ? 'paradise' : 'corridor')), dim = scene === 'augment' || scene === 'relic' || overlay ? .5 : scene === 'lobby' ? .6 : scene === 'route' ? .62 : scene === 'ended' ? .55 : scene === 'combat' ? .9 : 1;
+        const scene = activeScene === 'ended' && state.run?.outcome === 'collapsed' ? 'collapse' : activeScene, event = ['casino', 'forge', 'mirror', 'chests', 'judge', 'well', 'puzzle', 'riftTrader', 'collapse'].includes(scene);
+        const bg = renderer.image(asset(event ? scene : scene === 'lobby' ? 'paradise' : 'corridor')), dim = scene === 'augment' || scene === 'relic' || overlay ? .5 : scene === 'lobby' ? .6 : scene === 'route' ? .62 : activeScene === 'ended' ? .55 : scene === 'combat' ? .9 : 1;
         const drift = reduced ? 0 : Math.sin(t / 11000) * 8;
         renderer.cover(bg, -12 + drift, -8, w + 24, h + 16, [dim, dim, dim, 1]);
         const particleColor = scene === 'riftTrader' ? [.66, .48, .87] : scene === 'forge' ? [1, .45, .10] : scene === 'well' || scene === 'collapse' ? [1, .12, .18] : scene === 'casino' || scene === 'chests' ? [1, .77, .29] : [.44, .83, .83];
@@ -476,7 +478,12 @@
         if (scene === 'riftTrader') renderer.quad(renderer.glow, w * .46, h * .05, w * .08, h * .56, [.66, .48, .87, reduced ? .12 : .12 + Math.sin(t / 640) * .035]);
         if (scene === 'well' || scene === 'puzzle') for (let i = 0; i < 3; i++) { const r = 70 + ((t / 35 + i * 50) % 160); renderer.quad(renderer.glow, w / 2 - r, h * .43 - r / 3, r * 2, r / 1.5, [...particleColor, .05]); }
         if (scene === 'chests') [[.27, [1, .18, .20]], [.50, [.17, .53, 1]], [.73, [1, .74, .2]]].forEach(([x, color]) => renderer.quad(renderer.glow, w * x - 70, h * .18, 140, h * .5, [...color, .2]));
-        if (scene === 'judge' || scene === 'collapse') renderer.quad(renderer.glow, w * .48, -h * .1, w * .04, h * .9, scene === 'collapse' ? [1, .1, .15, .3] : [1, .85, .5, .2]);
+        if (scene === 'judge') renderer.quad(renderer.glow, w * .48, -h * .1, w * .04, h * .9, [1, .85, .5, .2]);
+        if (scene === 'collapse') {
+            const pulse = reduced ? .15 : .15 + Math.sin(t / 620) * .035;
+            renderer.quad(renderer.glow, w * .47, h * .04, w * .28, h * .43, [.69, .13, .29, pulse]);
+            renderer.quad(renderer.glow, w * .54, h * .12, w * .16, h * .26, [.42, .17, .82, .3 - pulse]);
+        }
         const vignette = ctx.createRadialGradient(w / 2, h * .45, h * .2, w / 2, h / 2, Math.max(w, h) * .7); vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,.6)'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, w, h);
         const top = ctx.createLinearGradient(0, 0, 0, 110); top.addColorStop(0, 'rgba(3,6,10,.7)'); top.addColorStop(1, 'rgba(3,6,10,0)'); ctx.fillStyle = top; ctx.fillRect(0, 0, w, 110);
     }
@@ -677,9 +684,9 @@
     // 천상 결과 의식: 최고 도달층 메달리온을 중심에 두고, 결과별 빛과 금속으로 톤을 나눈다.
     function ended(w, h, t) {
         const run = state.run, mobile = w < 700, defeated = run.outcome === 'defeated', summit = run.completed || run.outcome === 'cleared';
-        const tone = defeated ? { ink: '#e8949a', glow: [1, .32, .36], metal: 'cursed' } : run.outcome === 'timedOut' ? { ink: '#9fd8d0', glow: [.5, .86, .84], metal: 'silver' }
+        const tone = defeated || run.outcome === 'collapsed' ? { ink: '#e8949a', glow: [1, .32, .36], metal: 'cursed' } : run.outcome === 'timedOut' ? { ink: '#9fd8d0', glow: [.5, .86, .84], metal: 'silver' }
             : summit || run.outcome === 'cleared' ? { ink: '#f0d18a', glow: [1, .78, .42], metal: 'gold' } : { ink: '#c9d7de', glow: [.7, .84, .92], metal: 'silver' };
-        const title = summit ? '999층 정복' : { cleared: '회랑 정복', defeated: '전투 패배', timedOut: '시간 종료' }[run.outcome] || '탐험 종료';
+        const title = summit ? '999층 정복' : { cleared: '회랑 정복', defeated: '전투 패배', timedOut: '시간 종료', collapsed: '천상 붕괴' }[run.outcome] || '탐험 종료';
         const floor = run.highestFloor ?? run.clearedFloor ?? 0, starred = run.contracts.filter(c => c.star);
         const items = run.claimed ? (run.rewardSummary || []) : run.canClaim || run.canReturn
             ? [...(run.rewards || []).map(r => ({ name: r.name || r.type, count: r.count, iconUrl: r.iconUrl, kind: r.type === '골드' ? 'gold' : 'item' })), ...(defeated ? [] : starred.map(c => ({ name: c.name, contract: true })))] : [];

@@ -18,7 +18,7 @@ const TRAITS = [
     ['chaosCrown', '혼돈의 왕관', '뒤틀림이 60 이상이면 최종 피해가 30% 증가합니다.'],
     ['calmStrength', '고요한 힘', '뒤틀림이 0이면 공격력이 10% 증가합니다.'],
     ['upwardFate', '거스르는 운명', '층수가 감소하는 대신 1층을 올라갑니다.'],
-    ['halfSteps', '느린 순례', '층수를 절반만 올라갑니다. 소수점은 올림합니다.'],
+    ['halfSteps', '느린 순례', '층을 올라갈 때 3층 덜 올라갑니다. 최소 1층은 올라갑니다.'],
     ['extraTime', '머무는 시간', '탐험 제한 시간이 5분 늘어납니다.'],
     ['tokenBounty', '천상의 은혜', '탐험 종료 시 천상의 증표를 20% 추가로 획득합니다.'],
     ['deathInsurance', '마지막 은총', '사망해도 정산될 천상의 증표의 50%를 획득합니다. 다른 보상과 계약은 잃습니다.']
@@ -104,6 +104,6 @@ function applyStats(run, stats) {
 }
 function movement(run, floors) {
     if (floors < 0 && has(run, 'upwardFate')) return 1;
-    return floors > 0 && has(run, 'halfSteps') ? Math.ceil(floors / 2) : floors;
+    return floors > 0 && has(run, 'halfSteps') ? Math.max(1, floors - 3) : floors;
 }
 module.exports = { TOKEN, VALUES, COSTS, CHANCES, TRAITS, has, view, mutate, snapshot, applyStats, movement };

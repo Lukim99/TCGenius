@@ -12579,7 +12579,7 @@ function grantEquipmentBox(user, pack, useCount, summary) {
         { type: 'accessory', key: 'accessory' }
     ].forEach(group => {
         (equipments[group.key] || []).forEach((equipment, id) => {
-            if (rarity == '유니크' && equipment && equipment.isRaid === true) return;
+            if (['유니크', '레전더리'].includes(rarity) && equipment && equipment.isRaid === true) return;
             if (equipment && equipment.rarity == rarity) candidates.push({ type: group.type, id, equipment });
         });
     });

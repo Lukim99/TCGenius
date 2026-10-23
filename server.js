@@ -7083,14 +7083,14 @@ function buildPackChanceEntries(pack) {
     }).filter(Boolean);
 }
 
-function buildUniformEquipmentOutcomes(types, rarity, excludeRaidUnique) {
+function buildUniformEquipmentOutcomes(types, rarity, excludeRaid) {
     const equipment = rpgenius.getDataCache('Equipment', {});
     const typeLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
     const candidates = [];
     types.forEach(type => {
         (equipment[type] || []).forEach((data, id) => {
             if (!data || data.rarity !== rarity) return;
-            if (excludeRaidUnique && rarity === '유니크' && data.isRaid === true) return;
+            if (excludeRaid && ['유니크', '레전더리'].includes(rarity) && data.isRaid === true) return;
             candidates.push({ type, id, data });
         });
     });
@@ -7190,8 +7190,8 @@ function buildGachaDetail(item) {
         entries = buildCharacterPackOutcomes(item.pack);
         note = '캐릭터와 성급은 가능한 모든 조합에서 동일한 확률로 결정됩니다.';
     } else if (item.pack && item.pack.type === '장비 상자') {
-        entries = buildUniformEquipmentOutcomes(['weapon', 'armor', 'accessory'], String(item.pack.rarity || ''), true);
-        note = '표시된 장비 중 하나를 동일한 확률로 획득합니다. 유니크 레이드 장비는 대상에서 제외됩니다.';
+        entries = buildUniformEquipmentOutcomes(['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory'], String(item.pack.rarity || ''), true);
+        note = '표시된 장비 중 하나를 동일한 확률로 획득합니다. 유니크와 레전더리 등급의 레이드 장비는 대상에서 제외됩니다.';
     } else if (item.pack && item.pack.type === '보조 장비 상자') {
         entries = buildUniformEquipmentOutcomes(['support'], String(item.pack.rarity || ''), false);
         note = '표시된 보조 장비 중 하나를 동일한 확률로 획득합니다.';

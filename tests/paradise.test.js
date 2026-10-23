@@ -874,9 +874,11 @@ test('낙원 아이템은 관리자 itemImage를 우선하며 입장권·열쇠�
     }
 });
 
-test('권장 전투력으로 스탯을 생성한 뒤 방어력만 1만으로 제한하고 다른 스탯에 재분배하지 않는다', async () => {
+test('새 전투력 기준과 완만한 성장 곡선을 따르며 방어력에 1만 제한을 두지 않는다', async () => {
     const user = await reset(); corridor.enter(user, () => .99);
-    assert.deepEqual(corridor.CP_ANCHORS, [[1, 10000], [10, 100000], [100, 1000000], [200, 5000000], [300, 10000000], [400, 30000000], [500, 60000000], [600, 100000000], [700, 300000000], [800, 400000000], [900, 500000000], [999, 1000000000]]);
+    assert.deepEqual(corridor.CP_ANCHORS, [[1, 10000], [10, 100000], [100, 1000000], [200, 10000000], [300, 30000000], [400, 90000000], [500, 200000000], [600, 500000000], [700, 1000000000], [800, 3000000000], [900, 5000000000], [999, 10000000000]]);
+    for (let floor = 2; floor <= 999; floor++) assert.ok(corridor.recommendedPower(floor) > corridor.recommendedPower(floor - 1));
+    assert.equal(corridor.recommendedPower(150), Math.round(Math.sqrt(1e6 * 1e7)));
     let previous;
     for (const [floor, cp] of corridor.CP_ANCHORS) {
         user.paradise.floor = floor;
@@ -886,7 +888,7 @@ test('권장 전투력으로 스탯을 생성한 뒤 방어력만 1만으로 제
         const actual = rpg.computeCombatPowerFromStats(normal);
         assert.equal(normal.recommendedPower, actual.total);
         const originalDef = Math.round(Math.sqrt(cp) * .5);
-        assert.equal(normal.def, Math.min(10000, originalDef));
+        assert.equal(normal.def, originalDef);
         assert.ok(Math.abs(rpg.computeCombatPowerFromStats({ ...normal, def: originalDef }).total - cp) <= 1, '방어력 외 스탯 유지: ' + floor);
         assert.ok(normal.hp >= cp * .5 && normal.hp < cp * .51, 'HP는 전투력에 비례해 성장');
         assert.ok(actual.offense > actual.defense, String(floor));
@@ -899,25 +901,25 @@ test('권장 전투력으로 스탯을 생성한 뒤 방어력만 1만으로 제
         previous = normal;
         corridor.startCombat(user, 'elite', null, () => .99);
         const elite = user.paradise.enemy, eliteDef = Math.round(Math.sqrt(cp * 1.2) * .5);
-        assert.equal(elite.def, Math.min(10000, eliteDef));
+        assert.equal(elite.def, eliteDef);
         assert.ok(Math.abs(rpg.computeCombatPowerFromStats({ ...elite, def: eliteDef }).total - cp * 1.2) <= 1);
     }
     corridor.startCombat(user, 'final', null, () => .99);
-    assert.equal(user.paradise.enemy.def, 10000);
-    assert.ok(Math.abs(rpg.computeCombatPowerFromStats({ ...user.paradise.enemy, def: Math.round(Math.sqrt(1e9) * .5) }).total - 1e9) <= 1);
+    assert.equal(user.paradise.enemy.def, 50000);
+    assert.ok(Math.abs(rpg.computeCombatPowerFromStats(user.paradise.enemy).total - 1e10) <= 1);
     user.paradise.distortion = 75;
     corridor.startCombat(user, 'elite', null, () => 0);
     assert.ok(user.paradise.enemy.traits.length);
     assert.equal(user.paradise.enemy.recommendedPower, rpg.computeCombatPowerFromStats(user.paradise.enemy).total);
     for (const kind of ['normal', 'elite', 'judge', 'rift', 'final']) {
-        const rolls = [.99, 0, .5]; // 철갑 특성까지 적용한 뒤에도 1만
+        const rolls = [.99, 0, .5];
         corridor.startCombat(user, kind, null, () => rolls.shift() ?? .99);
         assert.ok(user.paradise.enemy.traits.includes('철갑, 방어력 +30%'));
-        assert.equal(user.paradise.enemy.def, 10000, kind);
+        assert.ok(user.paradise.enemy.def > 50000, kind);
     }
 });
 
-test('진행 중인 전투의 방어력 제한은 HP·공격력·쿨타임을 그대로 두고 한 번만 저장한다', async () => {
+test('현재 버전 전투와 거울의 높은 방어력은 조회 시 잘라내지 않는다', async () => {
     const user = await reset(); corridor.enter(user, () => .99); user.paradise.floor = 999;
     corridor.startCombat(user, 'elite', null, () => .99);
     user.paradise.enemy.def = 50000;
@@ -928,24 +930,25 @@ test('진행 중인 전투의 방어력 제한은 HP·공격력·쿨타임을 �
     await user.save(); const count = writes.length;
     const response = await request('/api/paradise'); assert.equal(response.status, 200);
     const enemy = persisted.get(account.id).paradise.enemy;
-    assert.deepEqual(enemy, { ...before, def: 10000, recommendedPower: rpg.computeCombatPowerFromStats({ ...before, def: 10000, hp: before.maxHp }).total });
-    assert.deepEqual(persisted.get(account.id).field, field); assert.equal(writes.length, count + 1);
-    await request('/api/paradise'); assert.equal(writes.length, count + 1);
+    assert.deepEqual(enemy, before);
+    assert.deepEqual(persisted.get(account.id).field, field); assert.equal(writes.length, count);
+    await request('/api/paradise'); assert.equal(writes.length, count);
     const copy = structuredClone(user);
     copy.paradise.enemy = { ...before, kind: 'mirror', mirror: { snapshot: { stats: { ...before } } } };
-    assert.equal(corridor.rebalanceEnemy(copy), true);
-    assert.equal(copy.paradise.enemy.def, 10000); assert.equal(copy.paradise.enemy.mirror.snapshot.stats.def, 10000);
+    assert.equal(corridor.rebalanceEnemy(copy), false);
+    assert.equal(copy.paradise.enemy.def, 50000); assert.equal(copy.paradise.enemy.mirror.snapshot.stats.def, 50000);
     assert.equal(copy.paradise.enemy.hp, before.hp); assert.equal(copy.paradise.enemy.atk, before.atk);
 });
 
-test('13층 도박사의 과도한 HP를 낮추고 자체 전투력 15.6만을 유지한다', async () => {
+test('13층 도박사는 새 곡선의 엘리트 전투력을 따르고 과도한 HP를 갖지 않는다', async () => {
     const user = await reset(); corridor.enter(user, () => .99);
     user.paradise.floor = 13; forceEvent(user, 'casino');
     corridor.chooseEvent(user, 'attack', {}, () => .99);
     const enemy = user.paradise.enemy;
     assert.equal(enemy.name, '잊혀진 도박사');
-    assert.equal(rpg.computeCombatPowerFromStats(enemy).total, 156000);
-    assert.ok(enemy.maxHp >= 78000 && enemy.maxHp < 80000);
+    const power = corridor.recommendedPower(13) * 1.2;
+    assert.ok(Math.abs(rpg.computeCombatPowerFromStats(enemy).total - power) <= 1);
+    assert.ok(enemy.maxHp >= power * .5 && enemy.maxHp < power * .51);
     assert.ok(enemy.atk > 3500 && enemy.def > 14);
 });
 
@@ -959,7 +962,7 @@ test('진행 중인 구형 전투는 HP 비율과 강화·진행 상태를 보�
     const expected = structuredClone(user.paradise.enemy), field = structuredClone(user.field);
     const battle = structuredClone(user.paradise.battle), sequence = structuredClone(user.paradise.sequence);
     Object.assign(user.paradise.enemy, { hp: 14408462, maxHp: 28816924, atk: 8000, def: 14 });
-    user.paradise.enemy.statVersion = 2;
+    user.paradise.enemy.statVersion = 3;
     expected.traits = expected.traits.map(trait => trait.replace(', ', ' · '));
     user.paradise.enemy.traits = [...expected.traits];
     user.field.elite.hp = user.paradise.enemy.hp;
@@ -1010,12 +1013,13 @@ test('천상 도감은 유물과 모든 증강을 제공하되 등장 조건 안
     await reset();
     const result = await request('/api/dex/augments');
     assert.equal(result.status, 200);
-    assert.equal(result.data.augments.length, 310);
+    assert.equal(result.data.augments.length, 306);
     assert.equal(result.data.augments.filter(a => a.equipment).length, 72);
     assert.ok(result.data.augments.every(a => !Object.hasOwn(a, 'condition') && !/때 등장|이상일 때/.test(a.desc)));
     assert.equal(result.data.augments.find(a => a.id === 'sevenBells').rarity, 'prismatic');
     assert.equal(result.data.relics.length, corridor.RELICS.length);
-    assert.ok(!result.data.relics.some(r => r.id === 'alchemistFlask'));
+    assert.ok(!result.data.relics.some(r => ['alchemistFlask', 'moonSeal'].includes(r.id)));
+    assert.equal(result.data.augments.find(a => a.id === 'comboRupture').rarity, 'prismatic');
     assert.match(result.data.relics.find(r => r.id === 'riftLens').desc, /MP의 2%/);
     assert.deepEqual(new Set(result.data.relics.map(r => r.rarity)), new Set(['normal','advanced','special']));
     assert.ok(result.data.relics.every(r => r.iconUrl.includes('/rpg-ui?file=') && r.rarityLabel && r.desc.endsWith('합니다.') && !Object.hasOwn(r, 'effect')));
@@ -1103,6 +1107,70 @@ test('뒤틀림·유물의 이동 효과와 붕괴 세 갈래가 적용된다', 
         if (choice === 'accept') { assert.equal(user.paradise.battle.collapse, true); assert.equal(user.paradise.temporary.find(b => b.id === 'collapse').battles, 3); }
         else if (choice === 'rift') assert.equal(user.paradise.enemy.kind, 'rift');
         else assert.equal(user.paradise.distortion, 50);
+    }
+});
+
+test('균열 보스 격파 뒤 두 번째 붕괴는 마지막 클리어 층으로 강제 귀환하고 재조회에도 한 번만 정산한다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = await reset(); corridor.enter(user, () => .99);
+    user.paradise.distortion = 100; corridor.nextEncounter(user, () => .99);
+    assert.equal(user.paradise.event.id, 'collapse');
+    corridor.chooseEvent(user, 'rift', {}, () => .99);
+    assert.equal(user.paradise.enemy.kind, 'rift');
+    corridor.victory(user, () => .99);
+    const run = user.paradise, cleared = run.highestFloor;
+    assert.equal(run.riftDefeated, true); assert.equal(run.status, 'active');
+    // 보상을 반납해도 보스 격파 기록은 남는다.
+    run.relics = []; run.distortion = 95; run.choices = ['blade']; run.offerRarity = 'silver';
+    const gold = user.gold; await user.save();
+    const before = (await request('/api/paradise')).data, body = { ...bodyFor(before), choice: 'blade' };
+    const response = await request('/api/paradise/augment', body);
+    assert.equal(response.status, 200);
+    const end = response.data.state.run;
+    assert.equal(end.outcome, 'collapsed'); assert.equal(end.status, 'ended'); assert.equal(end.claimed, true);
+    assert.equal(end.highestFloor, cleared); assert.ok(end.floor > cleared);
+    assert.equal(end.event, null); assert.equal(end.timer.paused, true);
+    const stored = structuredClone(persisted.get(account.id));
+    assert.equal(stored.field, null); assert.equal(stored.paradiseWeekly.bestFloor, cleared);
+    assert.equal(stored.gold - gold, cleared * 100);
+    assert.equal(stored.inventory.card.length, 1);
+    await request('/api/paradise/augment', body); await request('/api/paradise');
+    assert.equal(persisted.get(account.id).gold, stored.gold);
+    assert.deepEqual(persisted.get(account.id).inventory.card, stored.inventory.card);
+});
+
+test('저장된 두 번째 붕괴도 자동 귀환하며 카드 공간 부족이면 보상을 보존한다', async () => {
+    const user = await reset(); corridor.enter(user, () => .99);
+    const run = user.paradise;
+    run.relics = ['riftHeart']; run.highestFloor = run.clearedFloor = 50; run.floor = 65;
+    run.distortion = 100; forceEvent(user, 'collapse');
+    run.contracts = [{ star: 8, type: '전직', name: '8성 전직 카드' }];
+    user.maxCardLimit = 1; user.inventory.card = [{ id: 0, star: 0, type: '일반' }];
+    const gold = user.gold; await user.save();
+    const result = await request('/api/paradise');
+    assert.equal(result.data.run.outcome, 'collapsed'); assert.equal(result.data.run.claimed, false);
+    assert.match(result.data.run.timeoutClaimError, /공간/);
+    assert.equal(persisted.get(account.id).gold, gold);
+    const restored = await rpg.getRPGUserByName(account.name); restored.inventory.card = []; await restored.save();
+    const claim = await request('/api/paradise/claim', bodyFor((await request('/api/paradise')).data));
+    assert.equal(claim.status, 200); assert.equal(claim.data.state.run.claimed, true);
+    assert.equal(persisted.get(account.id).inventory.card.length, 1);
+    assert.equal(persisted.get(account.id).paradise.highestFloor, 50);
+});
+
+test('유물 확률과 피해 변경은 이벤트 결과 및 실제 능력치에 적용된다', async () => {
+    for (const [roll, won] of [[.8499, true], [.85, false]]) {
+        const user = await reset(); corridor.enter(user); user.paradise.relics = ['dice'];
+        forceEvent(user, 'casino');
+        assert.match(corridor.view(user).run.event.choices[0].desc, /85%/);
+        corridor.chooseEvent(user, 'safe', {}, () => roll);
+        assert.equal(Number(user.paradise.effects.atk || 0), won ? .1 : 0);
+    }
+    for (const [roll, good] of [[.5699, true], [.57, false]]) {
+        const user = await reset(); corridor.enter(user); user.paradise.relics = ['key', 'redContract'];
+        assert.equal(corridor.sumEffects(user.paradise).final, .30);
+        forceEvent(user, 'chests'); corridor.chooseEvent(user, 'gold', {}, () => roll);
+        assert.equal(Number(user.paradise.effects.atk || 0), good ? .25 : 0);
     }
 });
 test('퍼즐 정답·오답·무시·서버 시간 초과, 정답 비공개를 검증한다', async () => {
@@ -1272,7 +1340,7 @@ test('첫 타격·처형·역전·집중·마력 순환·첫 스킬 시계는 �
     corridor.getResources(user).mp = 0; corridor.onSkillUsed(user, 50); assert.equal(corridor.getResources(user).mp, 10);
     user.paradise.relics.push('clock');
     user.paradise.temporary.push({ id: 'forbidden', battles: 1 });
-    assert.equal(corridor.cooldownMultiplier(user), .15); assert.equal(corridor.cooldownMultiplier(user), .50);
+    assert.equal(corridor.cooldownMultiplier(user), .35); assert.equal(corridor.cooldownMultiplier(user), .50);
     user.paradise.effects.focus = 1;
     user.paradise.enemy.hp = user.paradise.enemy.maxHp = 10000000; user.paradise.enemy.atk = 0;
     t.mock.method(Math, 'random', () => 0);
@@ -1288,7 +1356,7 @@ test('실제 스킬 사용은 MP 환급·쿨타임 감소를 적용하며 거울
     const message = await rpg.useSkillInField(user, skill.name);
     assert.ok(!message.startsWith('❌'), message);
     assert.equal(corridor.getResources(user).mp, mp - skill.mp_cost + Math.floor(skill.mp_cost * .20));
-    assert.ok(user.field.skillCooldowns[skill.name] - time <= skill.cooltime * .30 + 100);
+    assert.ok(user.field.skillCooldowns[skill.name] - time <= skill.cooltime * .70 + 100);
     const pvp = require('../pvp');
     const copy = pvp.createCorridorMirror({ ...user, paradise: null, field: null });
     const response = pvp.corridorMirrorTurn(copy, user, rpg.calculateUserStats(user), copy.hp, undefined, copy.enteredAt + 4000);
@@ -1652,11 +1720,13 @@ test('이동 후 권장 전투력이 현재 전투력의 1.1배 이상일 때만
     const choices = corridor.view(user).run.choices;
     assert.equal(choices[0].powerWarning, null);
     assert.equal(choices[1].powerWarning, null); assert.equal(choices[2].powerWarning, null);
-    user.paradise.floor = 8; // 계약 +3층: 110,000, 정확히 1.1배.
+    user.paradise.floor = 8;
+    const boundary = corridor.recommendedPower(11) / 1.1;
+    playerPower = Math.floor(boundary);
     assert.equal(corridor.view(user).run.choices[0].powerWarning.floor, 11);
-    playerPower = 100001;
+    playerPower = Math.ceil(boundary);
     assert.equal(corridor.view(user).run.choices[0].powerWarning, null);
-    playerPower = 99999;
+    playerPower = Math.floor(boundary) - 1;
     assert.equal(corridor.view(user).run.choices[0].powerWarning.floor, 11);
     playerPower = 100000; user.paradise.floor = 9;
     forceEvent(user, 'casino'); const events = corridor.view(user).run.event.choices;
@@ -1854,20 +1924,21 @@ test('시간 만료 시 카드 공간 부족은 미수령 보상으로 보존하
     assert.equal(user.inventory.card.length, 1);
 });
 
-test('유물 설명을 문장으로 통일하고 퍼즐 유물은 성공할 때만 회복·최대 27% 보상을 준다', async () => {
+test('퍼즐 유물은 성공할 때만 10% 회복과 3%p 보상을 주며 최대 30%p까지 누적한다', async () => {
     assert.ok(corridor.RELICS.length >= 22);
     assert.ok(corridor.RELICS.every(r => /합니다\.$/.test(r.desc) && r.iconUrl.includes('relic-')));
     assert.ok(corridor.AUGMENTS.every(a => !a.name.startsWith('패시브:')));
     const user = await reset(); corridor.enter(user); user.paradise.relics.push('crystalVial');
     const stats = rpg.calculateUserStats(user);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 11; i++) {
         forceEvent(user, 'puzzle'); corridor.chooseEvent(user, 'solve');
         corridor.getResources(user).hp = corridor.getResources(user).mp = 1;
         corridor.answerPuzzle(user, user.paradise.event.puzzle.solution, () => .99);
-        assert.equal(corridor.getResources(user).hp, 1 + Math.round(stats.hp * .22));
-        assert.equal(corridor.getResources(user).mp, 1 + Math.round(stats.mp * .22));
+        assert.equal(corridor.getResources(user).hp, 1 + Math.round(stats.hp * .10));
+        assert.equal(corridor.getResources(user).mp, 1 + Math.round(stats.mp * .10));
+        assert.ok(Math.abs(user.paradise.effects.reward - Math.min(i + 1, 10) * .03) < 1e-9);
     }
-    assert.ok(Math.abs(user.paradise.effects.reward - .27) < 1e-9);
+    assert.ok(Math.abs(user.paradise.effects.reward - .30) < 1e-9);
     forceEvent(user, 'puzzle'); corridor.chooseEvent(user, 'solve'); corridor.getResources(user).hp = 1;
     corridor.answerPuzzle(user, null);
     assert.equal(corridor.getResources(user).hp, 1);
@@ -1980,7 +2051,7 @@ test('월야섬은 신규 증강에서 제거하고 이미 진행 중인 전투�
     const basic = pvp.corridorMirrorTurn(mirror, user, stats, mirror.hp, undefined, mirror.enteredAt + 12000);
     assert.equal(basic.events.at(-1).action, 'attack');
     corridor.victory(user, () => .99);
-    assert.ok(user.paradise.relics.includes('moonSeal'));
+    assert.ok(!user.paradise.relics.includes('moonSeal'));
     assert.ok(user.paradise.contracts.some(c => c.star === 10 && c.type === '일반' && c.cardId === 1));
     corridor.finish(user, 'return');
     assert.equal(corridor.claim(user).error, undefined);
@@ -2130,8 +2201,11 @@ test('회복·층수·뒤틀림·제한시간 특수능력이 실제 천상 전�
     const env = progressionEnvironment(t); let user = await env.user(['woundedAscent','halfSteps']); corridor.enter(user, () => .99);
     let stats = rpg.calculateUserStats(user), resources = corridor.getResources(user), start = resources.hp;
     assert.equal(start, Math.max(1, Math.round(stats.hp * .05)));
-    corridor.move(user, 5); assert.equal(user.paradise.floor, 4); assert.equal(resources.hp, start + Math.round(stats.hp * .15));
-    user.paradise.celestial.traits = ['upwardFate','halfSteps']; corridor.move(user, -10); assert.equal(user.paradise.floor, 5);
+    corridor.move(user, 5); assert.equal(user.paradise.floor, 3); assert.equal(resources.hp, start + Math.round(stats.hp * .10));
+    corridor.move(user, 3); assert.equal(user.paradise.floor, 4);
+    corridor.move(user, 1); assert.equal(user.paradise.floor, 5);
+    corridor.move(user, 20); assert.equal(user.paradise.floor, 22);
+    user.paradise.celestial.traits = ['upwardFate','halfSteps']; corridor.move(user, -10); assert.equal(user.paradise.floor, 23);
     user = await env.user(['augmentHp','augmentMp']); corridor.enter(user, () => .99); stats = rpg.calculateUserStats(user); resources = corridor.getResources(user); resources.hp = resources.mp = 1;
     buff(user, 'firstStrike'); assert.equal(resources.hp, 1 + Math.round(stats.hp * .02)); assert.equal(resources.mp, 1 + Math.round(stats.mp * .02));
     user = await env.user(['distortedEdge','chaosCrown']); corridor.enter(user, () => .99);
@@ -2215,7 +2289,7 @@ test('증강 세 후보와 새로고침은 같은 등급이며 엘리트 승리�
 test('증강 후 중복된 갈림길도 저장되며 유효한 길 하나만 선택할 수 있다', async t => {
     t.mock.method(Math, 'random', () => .99);
     const user = await reset(); corridor.enter(user); corridor.victory(user, () => .5);
-    user.paradise.choices = ['blade']; await user.save();
+    user.paradise.choices = ['blade']; user.paradise.offerRarity = 'silver'; await user.save();
     const before = (await request('/api/paradise')).data;
     const result = await request('/api/paradise/augment', { ...bodyFor(before), choice: 'blade' });
     assert.equal(result.status, 200);

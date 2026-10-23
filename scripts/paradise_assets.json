@@ -390,5 +390,9 @@
   {
     "file": "riftTrader.webp",
     "sha256": "91c80d774d81b2a26cc3c54870a47d89a22997173c2a160ee7a58f338edb51ed"
+  },
+  {
+    "file": "collapse.webp",
+    "sha256": "4ec456a5c6d9f450a65c5a56905eecf9d219197cc80b8807ab9fe2518674f305"
   }
 ]

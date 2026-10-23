@@ -54,7 +54,7 @@ test('전투 카드 계약은 증강 이동 후 적의 전투력이 내 전투�
     t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
     const user = fresh();
     assert.ok(!corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), '초반 과성장 상태에서는 제외');
-    user.paradise.floor = 85; // 사신 선택 후 100층 엘리트: 120만
+    user.paradise.floor = 88; // 사신 선택 후 100층 엘리트: 120만
     for (const [power, allowed] of [[1500000, true], [1500001, false], [1000000, true], [900000, false]]) {
         playerPower = power;
         assert.equal(corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), allowed, String(power));
@@ -68,8 +68,8 @@ test('전투 카드 계약은 증강 이동 후 적의 전투력이 내 전투�
     assert.ok(!corridor.availableAugments(user).some(a => cardContracts.isCombatReward(a)), '시작 증강에서는 전투 계약 제외');
     delete user.paradise.startingAugments;
     user.paradise.celestial.traits = ['halfSteps'];
-    playerPower = corridor.recommendedPower(93) * 1.2;
-    assert.ok(corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), '절반 이동 적용');
+    playerPower = corridor.recommendedPower(97) * 1.2;
+    assert.ok(corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), '3층 덜 이동 적용');
     user.paradise.phase = 'augment'; user.paradise.choices = ['deathHandshake']; playerPower = 1e8;
     const resources = { ...corridor.getResources(user) };
     assert.ok(corridor.chooseAugment(user, 'deathHandshake').error, '저장된 선택지도 선택 시 재검증');
@@ -165,7 +165,7 @@ test('결투 계약은 공격력 25%, 새 사신 계약은 완전 회복과 9성
     assert.equal(blocked.paradise.contracts[0].star, 9);
 });
 
-test('신비한 계약과 헌 유물 보상은 지정된 일반 카드 등급을 지급하고 장난신의 확률은 유지한다', () => {
+test('신비한 계약과 헌 유물 보상은 지정된 일반 카드 등급을 지급한다', () => {
     for (const [id, star] of [['contract', 7], ['backpackExchange', 6]]) {
         const user = fresh(); user.paradise.relics = ['crown'];
         assert.equal(choose(user, id).error, undefined);
@@ -173,11 +173,20 @@ test('신비한 계약과 헌 유물 보상은 지정된 일반 카드 등급을
         assert.match(corridor.AUGMENTS.find(a => a.id === id).desc, new RegExp(`${star}성 일반`));
         if (id === 'backpackExchange') assert.ok(!user.paradise.relics.includes('crown'));
     }
-    for (const [roll, card] of [[.7499, false], [.75, true]]) {
-        const user = fresh(), result = choose(user, 'tricksterGift', () => roll);
-        assert.equal(result.error, undefined);
-        if (card) assert.deepEqual(user.paradise.contracts, [{ star: 7, type: '각성', name: '7성 각성 카드' }]);
-        else { assert.equal(user.paradise.contracts.length, 0); assert.equal(user.paradise.relics.length, 3); }
+});
+
+test('삭제된 증강은 저장된 선택지에서 교체하고 이미 받은 계약과 유물은 보존한다', () => {
+    const removed = ['museumNight', 'tricksterGift', 'collectorTrinity', 'comboJackpot'];
+    for (const id of removed) {
+        const user = fresh(), run = user.paradise;
+        assert.ok(!corridor.AUGMENTS.some(a => a.id === id));
+        Object.assign(run, { phase: 'augment', choices: ['stolenTurn', id, 'clockHeart'], offerRarity: 'prismatic', rerolled: [false, true, false], offerSeen: ['stolenTurn', id, 'clockHeart'] });
+        run.contracts.push({ star: 7, type: '각성', name: '기존 계약' }); run.relics.push('crown');
+        assert.equal(corridor.normalizeAugmentOffer(user, () => .5), true);
+        assert.equal(run.choices[0], 'stolenTurn'); assert.equal(run.choices[2], 'clockHeart');
+        assert.ok(!run.choices.includes(id)); assert.equal(run.rerolled[1], true);
+        assert.equal(run.contracts.length, 1); assert.deepEqual(run.relics, ['crown']);
+        assert.equal(corridor.normalizeAugmentOffer(user), false);
     }
 });
 const equipmentAdditions = corridor.AUGMENTS.filter(a => a.equipment).slice(22);
@@ -383,8 +392,8 @@ test('새 증강 64개는 모두 선택할 수 있고 같은 탐험에서 다시
     }
 });
 
-test('새 메커니즘 증강 30개는 조건을 만족할 때 선택할 수 있고 등급이 다양하게 나온다', () => {
-    assert.equal(adventure.length, 30);
+test('모험 증강 28개는 조건을 만족할 때 선택할 수 있고 등급이 다양하게 나온다', () => {
+    assert.equal(adventure.length, 28);
     for (const augment of adventure) {
         const user = fresh();
         user.paradise.relics = ['crown', 'compass', 'ring'];

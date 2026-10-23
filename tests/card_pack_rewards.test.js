@@ -779,7 +779,7 @@ test('기존 등급별 장비 상자를 개봉해 신규 모자·하의·신발 
     const { definitions } = require('../armor_expansion'), equipment = rpg.getDataCache('Equipment'), items = rpg.getDataCache('Item');
     for (const [slot, entries] of Object.entries(definitions)) for (const entry of entries) {
         const pool = ['weapon','hat','armor','pants','shoes','accessory'].flatMap(type => equipment[type].map((item,id) => ({type,id,item})))
-            .filter(({item}) => item.rarity === entry.rarity && !(item.rarity === '유니크' && item.isRaid));
+            .filter(({item}) => item.rarity === entry.rarity && !(['유니크', '레전더리'].includes(item.rarity) && item.isRaid));
         const index = pool.findIndex(({item}) => item.name === entry.name);
         assert.ok(index >= 0);
         const id = items.push({name:'검증 상자 ' + entry.name,type:'가챠',pack:{type:'장비 상자',rarity:entry.rarity}}) - 1;
@@ -790,6 +790,31 @@ test('기존 등급별 장비 상자를 개봉해 신규 모자·하의·신발 
         assert.equal(u.inventory.equipment.length, 1);
         assert.equal(u.inventory.equipment[0].type, slot);
         assert.equal(u.inventory.equipment[0].id, pool[index].id);
+    }
+});
+
+test('레전더리와 유니크 장비 상자는 실제 추첨과 확률 안내 모두 레이드 장비를 제외한다', async t => {
+    const slots = ['weapon','hat','armor','pants','shoes','accessory'];
+    const equipment = rpg.getDataCache('Equipment'), items = rpg.getDataCache('Item');
+    const before = Object.fromEntries(slots.map(slot => [slot, equipment[slot]]));
+    t.after(() => Object.assign(equipment, before));
+    for (const rarity of ['레전더리', '유니크']) {
+        for (const slot of slots) equipment[slot] = [
+            { name: slot + ' 레이드', rarity, isRaid: true, stat: {} },
+            { name: slot + ' 일반', rarity, stat: {} }
+        ];
+        const id = items.push({name:rarity + ' 검증 랜덤 상자',type:'가챠',pack:{type:'장비 상자',rarity}}) - 1;
+        for (let i = 0; i < slots.length; i++) {
+            const u = user(); rpg.addInventoryItem(u, id, 1);
+            const message = await fixed((i + .5) / slots.length, () => rpg.useItem(u, items[id].name, 1));
+            assert.ok(!message.includes('레이드'));
+            assert.equal(u.inventory.equipment[0].type, slots[i]); assert.equal(u.inventory.equipment[0].id, 1);
+        }
+        const response = await fetch(base + '/api/inventory/items/' + id + '/detail', { headers: { Cookie: cookie } });
+        assert.equal(response.status, 200);
+        const entries = (await response.json()).detail.rewards.entries;
+        assert.equal(entries.length, slots.length);
+        assert.ok(entries.every(e => !e.name.includes('레이드') && e.chance === 1 / slots.length));
     }
 });
 

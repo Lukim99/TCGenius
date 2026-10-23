@@ -28,8 +28,6 @@ module.exports = [
     a('stolenTurn', '훔쳐 온 한 턴', 15, 'prismatic', 'skill', '직접 공격을 5번 적중시키면 가장 긴 스킬 쿨타임을 초기화하고, 다음에 받는 적의 공격을 한 번 무효화합니다.', { stolenTurn: 1 }),
     a('revengeVault', '복수의 금고', 12, 'prismatic', 'risk', '피격으로 잃은 HP를 저장했다가 다음 스킬 공격에 추가 피해로 돌려줍니다. 최대 HP의 2배까지 저장됩니다.', { revengeVault: 1 }),
     a('overkillParcel', '남은 일격의 행선지', 15, 'prismatic', 'basic', '직접 공격으로 적을 처치하고 남은 피해를 다음 전투 첫 직접 공격에 보냅니다. 다음 적 최대 HP의 30%까지 전달합니다.', { overkillParcel: 1 }),
-    a('tricksterGift', '장난신의 선물', 12, 'prismatic', 'reward', '봉인된 선물을 즉시 엽니다. 25% 확률로 7성 각성 카드 계약을 얻고, 나머지 확률로 천상 유물 3개를 얻습니다.', {}, { cardContract: true, special: 'tricksterGift' }),
-    a('museumNight', '박물관 야간 개장', 20, 'prismatic', 'exploration', '천상 유물 3개를 즉시 얻습니다. 다음 엘리트의 HP가 50% 늘어납니다.', {}, { special: 'museumNight' }),
     a('clockHeart', '멈춘 시계의 심장', 15, 'prismatic', 'skill', '매 전투 처음 사용하는 스킬에는 쿨타임이 생기지 않습니다.', { clockHeart: 1 }),
     a('phoenixPact', '불사조의 담보', 20, 'prismatic', 'defense', '사망할 때 일반 천상 유물 하나를 태우고 HP 30%로 살아납니다. 탐험당 최대 3회 발동합니다. 태울 유물이 없으면 발동하지 않습니다.', { phoenixPact: 1 }),
     a('treasureMap', '황금 방으로 가는 샛길', 15, 'prismatic', 'exploration', '즉시 상자 방으로 이동합니다. 다음 황금 상자에서 저주가 나오면 대신 천상 유물 하나를 얻습니다.', { goldAmnesty: 1 }, { encounter: 'chests' })
