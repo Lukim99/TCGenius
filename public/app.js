@@ -8150,8 +8150,10 @@ const titleDexState = { search: '', filter: 'all' };
 const characterDexState = { search: '', filter: 'all' };
 const augmentDexState = { search: '', filter: 'all', category: 'all', view: 'augment' };
 const relicDexState = { search: '', filter: 'all' };
+const traitDexState = { search: '', filter: 'all' };
+const stoneDexState = { search: '', filter: 'all', branch: 'all' };
 const RELIC_RARITIES = { normal: '일반', advanced: '고급', special: '특수' };
-const AUGMENT_CATEGORIES = { basic: '공격', skill: '스킬', critical: '치명타', dot: '지속 피해', combo: '연격', shield: '보호막', ultimate: '궁극기', active: '스킬 습득', passive: '패시브 습득', defense: '방어와 생존', recovery: '회복', exploration: '탐험', risk: '위험과 거래', reward: '보상' };
+const AUGMENT_CATEGORIES = { basic: '공격', skill: '스킬', critical: '치명타', dot: '지속 피해', combo: '연격', shield: '보호막', ultimate: '궁극기', active: '스킬 습득', passive: '패시브 습득', defense: '방어와 생존', recovery: '회복', exploration: '탐험', risk: '위험과 거래', reward: '보상', stone: '돌 던지기' };
 const AUGMENT_RARITIES = { silver: '실버', gold: '골드', prismatic: '프리즘', cursed: '저주' };
 let titleSaving = false;
 
@@ -8231,12 +8233,55 @@ function renderRelicDex(grid) {
 
 function renderHeavenDex(grid) {
     if (augmentDexState.view === 'relic') renderRelicDex(grid);
+    else if (augmentDexState.view === 'trait') renderTraitDex(grid);
+    else if (augmentDexState.view === 'stone') renderStoneDex(grid);
     else renderAugmentDex(grid);
-    const views = [['augment', '증강', (augmentDexData.augments || []).length], ['relic', '유물', (augmentDexData.relics || []).length]];
+    const views = [['augment', '증강', (augmentDexData.augments || []).length], ['relic', '유물', (augmentDexData.relics || []).length],
+        ['trait', '특수능력', (augmentDexData.traits || []).length], ['stone', '돌 던지기', (augmentDexData.augments || []).filter(a => a.category === 'stone').length]];
     grid.prepend(el('div', { class: 'dex-heaven-views', role: 'group', 'aria-label': '천상 도감 구분' },
         ...views.map(([value, label, total]) => el('button', { type: 'button', 'aria-pressed': augmentDexState.view === value,
             onclick: () => { if (augmentDexState.view !== value) { augmentDexState.view = value; renderDex(); } } },
             el('span', null, label), el('span', { class: 'dex-heaven-view-count' }, total)))));
+}
+
+function renderTraitDex(grid) {
+    const toolbar = dexCollection(grid, traitDexState, [['all', '전체']], '특수능력 이름, 효과 검색', list => {
+        list.className = 'dex-augment-grid';
+        const query = traitDexState.search.trim().toLocaleLowerCase();
+        const entries = (augmentDexData.traits || []).filter(entry => [entry.name, entry.desc].join(' ').toLocaleLowerCase().includes(query));
+        list.replaceChildren(...(entries.length ? entries.map(entry => el('article', { class: 'dex-augment-card', 'data-rarity': 'silver' },
+            el('div', { class: 'dex-augment-head' }, el('h3', null, entry.name)), el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc)))) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return entries.length;
+    });
+    toolbar.classList.add('dex-heaven-toolbar');
+}
+
+function renderStoneDex(grid) {
+    const all = augmentDexData.augments || [], names = new Map(all.map(a => [a.id, a.name]));
+    const branches = augmentDexData.stoneBranches || {};
+    const toolbar = dexCollection(grid, stoneDexState, [['all', '전체'], ['silver', '실버'], ['gold', '골드'], ['prismatic', '프리즘']], '돌 강화 이름, 효과 검색', list => {
+        list.className = 'dex-augment-grid';
+        const query = stoneDexState.search.trim().toLocaleLowerCase();
+        const entries = all.filter(entry => entry.category === 'stone' && [entry.name, entry.desc].join(' ').toLocaleLowerCase().includes(query)
+            && (stoneDexState.filter === 'all' || entry.rarity === stoneDexState.filter)
+            && (stoneDexState.branch === 'all' || entry.stoneBranch === stoneDexState.branch));
+        list.replaceChildren(...(entries.length ? entries.map(entry => {
+            const card = dexAugmentCard(entry), links = [];
+            if (entry.stoneBranch) card.querySelector('.dex-augment-meta').appendChild(el('span', null, branches[entry.stoneBranch] || entry.stoneBranch));
+            for (const [label, ids] of [['선행 강화', entry.stoneRequires], ['하나를 보유', entry.stoneRequiresAny], ['함께 선택 불가', entry.stoneExcludes]]) {
+                if (!ids?.length) continue;
+                links.push(el('div', { class: 'dex-stone-links' }, el('span', null, label), ...ids.map(id => el('button', { type: 'button', onclick: () => {
+                    stoneDexState.search = names.get(id) || ''; stoneDexState.branch = 'all'; stoneDexState.filter = 'all'; renderDex();
+                } }, names.get(id) || id))));
+            }
+            card.append(...links); return card;
+        }) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return entries.length;
+    });
+    const branch = el('select', { class: 'dex-rarity-select', 'aria-label': '돌 던지기 계열', onchange: event => { stoneDexState.branch = event.target.value; renderDex(); } },
+        el('option', { value: 'all' }, '모든 계열'), ...Object.entries(branches).map(([value, name]) => el('option', { value }, name)));
+    branch.value = stoneDexState.branch;
+    toolbar.insertBefore(branch, toolbar.lastElementChild); toolbar.classList.add('dex-heaven-toolbar');
 }
 
 function renderAugmentDex(grid) {

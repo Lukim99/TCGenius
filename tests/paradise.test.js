@@ -1013,9 +1013,12 @@ test('천상 도감은 유물과 모든 증강을 제공하되 등장 조건 안
     await reset();
     const result = await request('/api/dex/augments');
     assert.equal(result.status, 200);
-    assert.equal(result.data.augments.length, 306);
+    assert.equal(result.data.augments.length, 465);
+    assert.equal(result.data.traits.length, 47);
+    assert.equal(result.data.augments.filter(a => a.category === 'stone').length, 109);
     assert.equal(result.data.augments.filter(a => a.equipment).length, 72);
-    assert.ok(result.data.augments.every(a => !Object.hasOwn(a, 'condition') && !/때 등장|이상일 때/.test(a.desc)));
+    // 효과가 발동하는 조건은 설명하되 선택지의 등장 조건은 효과 문구에서 숨긴다.
+    assert.ok(result.data.augments.every(a => !Object.hasOwn(a, 'condition') && !/때 등장/.test(a.desc)));
     assert.equal(result.data.augments.find(a => a.id === 'sevenBells').rarity, 'prismatic');
     assert.equal(result.data.relics.length, corridor.RELICS.length);
     assert.ok(!result.data.relics.some(r => ['alchemistFlask', 'moonSeal'].includes(r.id)));
@@ -2090,7 +2093,7 @@ test('천상 장비는 0~25강 표의 고정 능력치·비용·확률을 적용
 
 test('특수능력은 순서대로 해금하고 100개로 선택한 줄만 중복 없이 다시 추첨한다', async t => {
     const env = progressionEnvironment(t), p = env.progression, user = await env.user();
-    assert.equal(p.TRAITS.length, 17);
+    assert.equal(p.TRAITS.length, 47);
     assert.ok(p.mutate(user, 'unlockTrait', { index: 1 }).error);
     p.mutate(user, 'unlockTrait', { index: 0 }, () => 0);
     assert.deepEqual(user.paradiseProgression.traits, ['ordinaryRelic']); assert.equal(p.view(user).tokens, 49000);
@@ -2098,9 +2101,9 @@ test('특수능력은 순서대로 해금하고 100개로 선택한 줄만 중�
     assert.deepEqual(user.paradiseProgression.traits, ['ordinaryRelic','silverAugment']); assert.equal(p.view(user).tokens, 46000);
     assert.ok(p.mutate(user, 'rerollTrait', {}).error);
     p.mutate(user, 'rerollTrait', { index: 0 }, () => .999);
-    assert.deepEqual(user.paradiseProgression.traits, ['deathInsurance','silverAugment']); assert.equal(p.view(user).tokens, 45900);
+    assert.deepEqual(user.paradiseProgression.traits, [p.TRAITS.at(-1).id,'silverAugment']); assert.equal(p.view(user).tokens, 45900);
     p.mutate(user, 'rerollTrait', { index: 1 }, () => .999);
-    assert.deepEqual(user.paradiseProgression.traits, ['deathInsurance','tokenBounty']); assert.equal(p.view(user).tokens, 45800);
+    assert.deepEqual(user.paradiseProgression.traits, [p.TRAITS.at(-1).id,p.TRAITS.at(-2).id]); assert.equal(p.view(user).tokens, 45800);
     user.inventory.item = []; const before = structuredClone(user.paradiseProgression);
     assert.ok(p.mutate(user, 'rerollTrait', { index: 0 }, () => 0).error); assert.deepEqual(user.paradiseProgression, before);
 });
@@ -2184,6 +2187,7 @@ test('시작 유물은 지정 등급으로 지급하고 시작 증강은 같은 
         corridor.rerollAugment(user, user.paradise.choices[0], () => .99);
         assert.ok(corridor.view(user).run.choices.every(a => a.rarity === rarity && !corridor.AUGMENTS.find(entry => entry.id === a.id).encounter));
         corridor.chooseAugment(user, user.paradise.choices[0], () => .99);
+        if (user.paradise.stoneEntryOffer) corridor.chooseAugment(user, user.paradise.choices[0], () => .99);
     }
     assert.equal(user.paradise.floor, 1); assert.equal(user.paradise.phase, 'combat'); assert.equal(user.paradise.enemy.kind, 'normal');
     now += 4000; assert.equal(corridor.remainingTime(user.paradise), 1196000);
@@ -2438,13 +2442,15 @@ test('줄별 재설정 API는 다른 능력을 유지하고 같은 요청을 반
     const body = { requestId: crypto.randomUUID(), revision: 0, index: 0 }, route = '/api/paradise/progression/rerollTrait';
     const [a,b] = await Promise.all([request(route,body),request(route,body)]);
     assert.equal(a.status,200); assert.equal(b.status,200);
-    assert.deepEqual(a.data.state.progression.traits.lines.map(l => l.id), ['deathInsurance','silverAugment']);
+    const lastTrait = require('../paradise_progression').TRAITS.at(-1).id;
+    const previousTrait = require('../paradise_progression').TRAITS.at(-2).id;
+    assert.deepEqual(a.data.state.progression.traits.lines.map(l => l.id), [lastTrait,'silverAugment']);
     assert.deepEqual(a.data.state.progression,b.data.state.progression); assert.equal(a.data.state.progression.tokens,49900);
     const invalid = await request(route,{requestId:crypto.randomUUID(),revision:1,index:2});
     assert.equal(invalid.status,400); assert.equal(invalid.data.state.progression.tokens,49900);
     const second = await request(route,{requestId:crypto.randomUUID(),revision:1,index:1});
     assert.equal(second.status,200); assert.equal(second.data.state.progression.tokens,49800);
-    assert.deepEqual(second.data.state.progression.traits.lines.map(l => l.id), ['deathInsurance','tokenBounty']);
+    assert.deepEqual(second.data.state.progression.traits.lines.map(l => l.id), [lastTrait,previousTrait]);
 });
 
 
@@ -2657,4 +2663,113 @@ test('상품 변경과 운영 아이템 누락은 구매 전에 검증하며 상
     const fresh = (await request('/api/paradise')).data;
     assert.equal(fresh.shop.items.find(i => i.id === 'warcry').available, false);
     assert.equal((await request('/api/paradise/shop/buy', shopBody(fresh, 'warcry'))).status, 400);
+});
+
+test('돌 던지기 획득은 입문 세 갈래와 추가 이동 없는 선택을 저장하며 재요청으로 중복 획득하지 않는다', async () => {
+    const user = await reset(); corridor.enter(user); corridor.victory(user, () => .99);
+    user.paradise.choices = ['stoneThrow']; user.paradise.offerRarity = 'silver'; await user.save();
+    let state = (await request('/api/paradise')).data;
+    const rootBody = { ...bodyFor(state), choice: 'stoneThrow' };
+    const first = await request('/api/paradise/augment', rootBody);
+    assert.equal(first.status, 200); state = first.data.state;
+    assert.equal(state.run.phase, 'augment'); assert.equal(state.run.stoneEntryOffer, true);
+    assert.equal(state.run.choices.length, 3);
+    assert.ok(state.run.choices.every(a => a.isStoneEntry && a.rarity === 'silver' && a.floors === 0));
+    assert.equal(new Set(state.run.choices.map(a => a.stoneBranch)).size, 3);
+    assert.equal(state.run.timer.paused, true);
+    const floor = state.run.floor, ids = state.run.choices.map(a => a.id);
+    const repeat = await request('/api/paradise/augment', rootBody);
+    assert.equal(repeat.status, 200); assert.deepEqual(repeat.data.state.run.choices.map(a => a.id), ids);
+    state = (await request('/api/paradise')).data;
+    const chosen = await request('/api/paradise/augment', { ...bodyFor(state), choice: ids[0] });
+    assert.equal(chosen.status, 200); assert.equal(chosen.data.state.run.phase, 'route');
+    assert.equal(chosen.data.state.run.floor, floor); assert.equal(chosen.data.state.run.stoneEntryOffer, false);
+});
+
+test('돌 던지기는 기본 액티브만 교체하고 MP 0으로 실제 공격하며 궁극기와 탐험 밖 스킬을 유지한다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = await reset(); user.main_card.type = '전직';
+    const original = rpg.getMainCardSkills(user).map(s => s.skill.name), ultimates = rpg.getUltimateSkills(user).map(s => s.skill.name);
+    corridor.enter(user); user.paradise.acquired.stoneThrow = 1;
+    Object.assign(user.paradise.enemy, { hp: 1e9, maxHp: 1e9, atk: 0, def: 0, crit: 0, cmb: 0 });
+    assert.ok(!rpg.getMainCardSkills(user).some(s => s.skill.name === original[0]));
+    assert.ok(rpg.getMainCardSkills(user).some(s => s.skill.name === '돌 던지기'));
+    assert.deepEqual(rpg.getUltimateSkills(user).map(s => s.skill.name), ultimates);
+    const resources = corridor.getResources(user); resources.mp = 0; user.field.nextActionAt = 0;
+    const cast = await rpg.useSkillInField(user, '돌 던지기');
+    assert.ok(!cast.startsWith('❌'), cast); assert.equal(resources.mp, 0);
+    assert.ok(user.paradise.combatEvents.at(-1).damage > 0);
+    assert.equal(user.paradise.combatEvents.at(-1).skillName, '돌 던지기');
+    assert.ok(user.field.skillCooldowns['돌 던지기'] > Date.now());
+    assert.match(await rpg.useSkillInField(user, '돌 던지기'), /아직 행동|쿨타임/);
+    user.field.nextActionAt = 0;
+    assert.match(await rpg.useSkillInField(user, original[0]), /사용할 수 없는 스킬/);
+    await user.save();
+    const web = (await request('/api/paradise')).data;
+    assert.equal(web.battle.skills.filter(s => s.name === '돌 던지기').length, 1);
+    assert.equal(web.battle.skills.find(s => s.name === '돌 던지기').mpCost, 0);
+    assert.ok(!web.battle.skills.some(s => s.name === original[0]));
+    user.paradise.phase = 'augment'; corridor.finish(user); corridor.claim(user);
+    assert.deepEqual(rpg.getMainCardSkills(user).map(s => s.skill.name), original);
+});
+
+test('돌 트리 후보와 새로고침은 선행 조건과 동일 등급 및 마지막 전용 후보를 유지한다', async () => {
+    const user = await reset(); corridor.enter(user);
+    assert.ok(corridor.availableAugments(user).every(a => !a.stoneBranch || a.id === 'stoneThrow'));
+    user.paradise.acquired.stoneThrow = 1; user.paradise.acquired.stoneBankShot = 1;
+    for (const rarity of ['silver', 'gold', 'prismatic']) {
+        corridor.offerAugments(user, () => .31, rarity);
+        assert.ok(corridor.view(user).run.choices.every(a => a.rarity === rarity));
+        if (corridor.availableAugments(user, rarity).some(a => a.stoneBranch)) {
+            assert.ok(corridor.view(user).run.choices.some(a => a.stoneBranch));
+            const id = corridor.view(user).run.choices.find(a => a.stoneBranch).id;
+            corridor.rerollAugment(user, id, () => .7);
+            assert.ok(corridor.view(user).run.choices.some(a => a.stoneBranch));
+        }
+    }
+    assert.ok(!corridor.availableAugments(user).some(a => a.id === 'stonePinball'));
+    user.paradise.acquired.stoneCushion = 1;
+    assert.ok(corridor.availableAugments(user).some(a => a.id === 'stonePinball'));
+    user.paradise.acquired.stoneStraightShot = 1;
+    assert.ok(!corridor.availableAugments(user).some(a => a.id === 'stonePinball'));
+    user.paradise.phase = 'augment'; user.paradise.choices = ['stonePinball'];
+    assert.ok(corridor.chooseAugment(user, 'stonePinball').error);
+});
+
+test('돌 강화 보장은 특수능력의 전공 후보와 예약 후보를 함께 보존한다', async t => {
+    const env = progressionEnvironment(t), user = await env.user(['subjectMajor', 'waitingList']); corridor.enter(user);
+    user.paradise.acquired.stoneThrow = 1; user.paradise.acquired.stoneBankShot = 1;
+    const waiting = corridor.availableAugments(user, 'gold').find(a => a.category === 'critical').id;
+    for (const roll of [0, .15, .5, .99]) {
+        user.paradise.traitState = { subject: 'skill', waiting };
+        corridor.offerAugments(user, () => roll, 'gold');
+        const choices = corridor.view(user).run.choices;
+        assert.equal(new Set(choices.map(a => a.id)).size, 3);
+        assert.ok(choices.some(a => a.id === waiting));
+        assert.ok(choices.some(a => a.category === 'skill'));
+        assert.ok(choices.some(a => a.category === 'stone'));
+    }
+});
+
+test('투석기의 최소 6초 쿨타임은 특수능력과 유물의 감소 이후에도 유지한다', async t => {
+    const now = Date.now(); t.mock.method(Date, 'now', () => now); t.mock.method(Math, 'random', () => .99);
+    const env = progressionEnvironment(t), user = await env.user(['reservedSeat', 'oddEvenLuggage']); corridor.enter(user);
+    for (const id of ['stoneThrow', 'stonePocket', 'stoneHeavyAmmo', 'stoneRailgun']) user.paradise.acquired[id] = 1;
+    user.paradise.traitState = { seat: 'spell' }; user.paradise.relics = ['clock'];
+    corridor.startCombat(user, 'normal', null, () => .99);
+    Object.assign(user.paradise.enemy, { hp: 1e12, maxHp: 1e12, atk: 0 });
+    assert.ok(!(await rpg.useSkillInField(user, '돌 던지기')).startsWith('❌'));
+    assert.equal(user.field.skillCooldowns['돌 던지기'] - now, 6000);
+});
+
+test('거울 반사로 확정된 패배는 공격 후 회복 증강으로 취소되지 않는다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = await reset(); corridor.enter(user); user.paradise.acquired.windowSeat = 1;
+    user.paradise.playfulState = { seat: 'left' }; corridor.startCombat(user, 'mirror');
+    const stats = rpg.calculateUserStats(user);
+    t.mock.method(require('../pvp'), 'corridorMirrorHit', () => ({ damage: 10, hp: user.paradise.enemy.maxHp - 10, hits: [], reflectedDamage: stats.hp * 100 }));
+    rpg.buildHuntResult(user, {}, 100, { isBasic: true, comboHitCount: 1, skillHpRecovery: stats.hp });
+    assert.equal(user.paradise.status, 'ended'); assert.equal(user.paradise.outcome, 'defeated');
+    assert.equal(user.paradise.resources.hp, 0); assert.equal(user.paradise.highestFloor, 0);
+    assert.ok(corridor.claim(user).error);
 });

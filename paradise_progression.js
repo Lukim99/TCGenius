@@ -22,7 +22,7 @@ const TRAITS = [
     ['extraTime', '머무는 시간', '탐험 제한 시간이 5분 늘어납니다.'],
     ['tokenBounty', '천상의 은혜', '탐험 종료 시 천상의 증표를 20% 추가로 획득합니다.'],
     ['deathInsurance', '마지막 은총', '사망해도 정산될 천상의 증표의 50%를 획득합니다. 다른 보상과 계약은 잃습니다.']
-].map(([id, name, desc]) => ({ id, name, desc }));
+].map(([id, name, desc]) => ({ id, name, desc })).concat(require('./paradise_traits').TRAITS);
 const icon = name => '/rpg-ui?file=' + encodeURIComponent('낙원/celestial-' + name + '.webp');
 const state = user => user.paradiseProgression || { revision: 0, weapon: null, armor: null, traits: [] };
 const locked = user => user.paradise?.status === 'active' || !!user.field || !!require('./partyquest').getRoomOf(user.name) || user.pvp?.battle && user.pvp.battle.phase !== 'ended';

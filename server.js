@@ -1128,9 +1128,11 @@ server.get('/api/dex/potential', requireUser, (req, res) => {
 
 server.get('/api/dex/augments', requireUser, (req, res) => {
     const { AUGMENTS, RELICS } = require('./paradise_content');
-    res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous }) => ({
-        id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous
-    })), relics: RELICS.map(({ id, name, desc, rarity, rarityLabel, iconUrl }) => ({ id, name, desc, rarity, rarityLabel, iconUrl })) });
+    res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous, stoneBranch, stoneRequires, stoneRequiresAny, stoneExcludes, isStoneEntry }) => ({
+        id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous,
+        stoneBranch, stoneRequires, stoneRequiresAny, stoneExcludes, isStoneEntry
+    })), relics: RELICS.map(({ id, name, desc, rarity, rarityLabel, iconUrl }) => ({ id, name, desc, rarity, rarityLabel, iconUrl })),
+    traits: require('./paradise_progression').TRAITS, stoneBranches: require('./paradise_augments_stones').BRANCHES });
 });
 
 server.get('/api/titles', requireUser, async (req, res) => {

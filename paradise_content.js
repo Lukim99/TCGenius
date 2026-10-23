@@ -116,7 +116,9 @@ const AUGMENTS = [
     ...require('./paradise_augments_extra'),
     ...require('./paradise_augments_adventure'),
     ...require('./paradise_augments_characters'),
-    ...require('./paradise_augments_mechanics')
+    ...require('./paradise_augments_mechanics'),
+    ...require('./paradise_augments_playful'),
+    ...require('./paradise_augments_stones')
 ].map(augment => ({ ...augment, floors: augment.floors >= 15 ? Math.round(augment.floors * .8) : augment.floors }));
 
 const RELICS = [

@@ -26,6 +26,7 @@
     let hellKey = null, fall = null, landing = null, lastDropKey = '', chestPick = null, chestPage = 0;
     let lobbyScroll = 0, lobbyHeight = 0, transition = null;
     let outcomeReveal = null, rewardReveal = null, heavenEntry = null, noticeDetail = '';
+    const mechanicChanges = new Map();
     const now = () => Date.now() + offset;
     const rand = n => { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); };
     const ctx = hudCanvas.getContext('2d');
@@ -117,13 +118,16 @@
     }
     function sigil(c, id, x, y, size, color, category) {
         if (category && !['firstStrike','blade','execution','combo','comeback','lastStand','unyielding','ironSkin','insurance','thirst','risk','devil','glass','focus','clarity','pilgrim','future','rewind','forbidden','rest','gambler','greed','contract','cursedTreasure','duplicate'].includes(id)) {
-            id = { basic:'blade', skill:'manaCycle', critical:'focus', dot:'thirst', combo:'combo', shield:'ironSkin', ultimate:'forbidden', active:'manaCycle', passive:'clarity', defense:'ironSkin', recovery:'thirst', exploration:'rewind', risk:'devil', reward:'contract' }[category] || id;
+            id = { basic:'blade', skill:'manaCycle', critical:'focus', dot:'thirst', combo:'combo', shield:'ironSkin', ultimate:'forbidden', active:'manaCycle', passive:'clarity', defense:'ironSkin', recovery:'thirst', exploration:'rewind', risk:'devil', reward:'contract', stone:'stone' }[category] || id;
         }
         c.save(); c.translate(x, y); c.scale(size / 100, size / 100); c.strokeStyle = color; c.fillStyle = color; c.lineWidth = 4.5; c.lineCap = 'round'; c.lineJoin = 'round';
         const stroke = points => { path(c, points, false); c.stroke(); };
         const circle = (x, y, r) => { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.stroke(); };
         const sword = (angle = 0) => { c.save(); c.rotate(angle); path(c, [[-6, 19], [-7, -30], [0, -47], [7, -30], [6, 19]]); c.stroke(); stroke([[-23, 20], [0, 15], [23, 20]]); stroke([[0, 20], [0, 44]]); circle(0, 47, 4); c.restore(); };
-        if (['firstStrike', 'blade', 'execution', 'combo', 'comeback'].includes(id)) {
+        if (id === 'stone') {
+            path(c, [[-25,-14],[-9,-33],[23,-22],[34,5],[13,30],[-22,22],[-33,1]]); c.stroke();
+            stroke([[-25,-14],[1,-4],[23,-22]]); stroke([[1,-4],[13,30]]); stroke([[-48,10],[-37,10]]); stroke([[-43,26],[-32,26]]);
+        } else if (['firstStrike', 'blade', 'execution', 'combo', 'comeback'].includes(id)) {
             if (id === 'combo') { sword(-.55); sword(.55); } else { sword(id === 'execution' ? .45 : .15); if (id === 'firstStrike') for (let i = 0; i < 5; i++) { const a = -Math.PI + i * .5; stroke([[Math.cos(a) * 33, Math.sin(a) * 33 - 8], [Math.cos(a) * 46, Math.sin(a) * 46 - 8]]); } }
         } else if (['lastStand', 'unyielding', 'ironSkin', 'insurance'].includes(id)) { path(c, [[0, -43], [36, -27], [31, 17], [0, 45], [-31, 17], [-36, -27]]); c.stroke(); if (id === 'lastStand') stroke([[4, -30], [-9, -6], [9, 1], [-7, 29]]); else { stroke([[-18, 0], [-3, 14], [22, -15]]); } }
         else if (['thirst', 'risk', 'devil', 'glass'].includes(id)) { c.beginPath(); c.moveTo(0, -44); c.bezierCurveTo(5, -22, 37, -6, 29, 22); c.bezierCurveTo(24, 48, -25, 48, -29, 22); c.bezierCurveTo(-37, -6, -5, -22, 0, -44); c.stroke(); stroke([[0, -17], [-8, 4], [7, 9], [0, 30]]); if (id === 'devil') { stroke([[-20, -19], [-37, -38], [-31, -10]]); stroke([[20, -19], [37, -38], [31, -10]]); } }
@@ -577,7 +581,7 @@
             hitButton(w/2-120,h*.5,240,48,'5층 올라가기',()=>mutate('continue'),{primary:true});
             return;
         }
-        text(ctx, '증강 선택', w / 2, mobile ? 82 : geo.y - 46, mobile ? 18 : 24, '#f5ecd6', 'center', 700);
+        text(ctx, state.run.stoneEntryOffer ? '첫 돌 강화' : '증강 선택', w / 2, mobile ? 82 : geo.y - 46, mobile ? 18 : 24, '#f5ecd6', 'center', 700);
         const dt=Math.min(50,t-hoverTime); hoverTime=t;
         const slots=cardLayouts(w,h,t);
         const active=inputMode==='keyboard'?keyboardCard:slots.findIndex(r=>inside(r.slotX,r.slotY,r.slotW,r.slotH));
@@ -618,6 +622,26 @@
         battle.update(current, [], state.runId, true);
         for(const r of battle.draw(t, locked)) register(r.x,r.y,r.w,r.h,r.label,r.action,locked);
         gimmickBadge(w);
+        mechanicChips(w, h, t);
+    }
+    function mechanicChips(w, h, t) {
+        const all = state.run.mechanicStatus || []; if (!all.length) return;
+        const mobile = w < 650, limit = mobile ? 3 : 4, shown = all.slice(0, limit), more = all.length > shown.length;
+        const gap = 5, cw = Math.min(mobile ? 92 : 110, (w - 24 - (more ? 34 : 0) - gap * (shown.length - 1)) / shown.length), width = shown.length * (cw + gap) - gap + (more ? 34 : 0), x = (w - width) / 2;
+        const y = h - (mobile ? 160 : 154) - ((state.battle?.skills.length || 0) > (mobile ? 4 : 7) ? 33 : 0);
+        const detail = all.map(item => `${item.label}: ${item.value}${item.max != null ? ' / ' + item.max : ''}`).join('\n');
+        shown.forEach((item, index) => {
+            const key = state.run.id + ':' + item.label, value = String(item.value), previous = mechanicChanges.get(key);
+            if (!previous || previous.value !== value) mechanicChanges.set(key, { value, at: t });
+            const flash = reduced ? 0 : Math.max(0, 1 - (t - mechanicChanges.get(key).at) / 140), bx = x + index * (cw + gap), ready = item.max != null && Number(item.value) >= Number(item.max);
+            panel(ctx, bx, y, cw, 22, { alpha: .82, edge: ready ? '#c5b488aa' : '#59616c66', r: 3 });
+            const shortLabel = item.label === '다음 피해 카드' ? '다음 패' : item.label.replace('손가락 ', ''), shortValue = value.replace(/일반 공격/g, '평').replace(/스킬/g, '스'), wideValue = shortValue.length > 5;
+            text(ctx, shortLabel, bx + 7, y + 11, 10, '#aeb8c5', 'left', 600, cw * (wideValue ? .35 : .57), false);
+            text(ctx, shortValue, bx + cw - 7, y + 11, 11 + flash * 1.5, flash > .3 ? '#ffffff' : '#ecd5a5', 'right', 700, cw * (wideValue ? .55 : .36), false);
+            register(bx, y, cw, 22, detail.replace(/\n/g, ', '), () => { noticeDetail = detail; overlay = 'notice'; });
+        });
+        if (more) hitButton(x + width - 30, y, 30, 22, '전투 상태 더 보기', () => { noticeDetail = detail; overlay = 'notice'; }, { glyph: '+' + (all.length - shown.length), size: 10 });
+        if (mechanicChanges.size > 60) for (const key of mechanicChanges.keys()) if (!key.startsWith(state.run.id + ':')) mechanicChanges.delete(key);
     }
     // 진행 중인 봉인: 우측 상단 헤더 아래 이름과 진행도만. 데스크톱은 hover 툴팁, 누르면 알림 창에서 전체 내용.
     function gimmickBadge(w) {

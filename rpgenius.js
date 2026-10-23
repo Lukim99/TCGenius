@@ -12,6 +12,8 @@ const wisdomPuzzle = require('./wisdom_puzzle');
 const paradise = require('./paradise');
 const paradiseCharacters = require('./paradise_augments_characters');
 const paradiseMechanics = require('./paradise_mechanics');
+const paradiseFeatures = require('./paradise_features');
+const paradiseStones = require('./paradise_stones');
 const paradiseRoutes = require('./paradise_routes');
 const shopCatalog = require('./shop_catalog');
 const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
@@ -4948,7 +4950,10 @@ function getMainCardSkills(user) {
     // 스펙터 스킬은 항상 마지막 → isUltimateSkillForUser가 궁극기로 판정
     const specter = getCardSpecter(user.main_card);
     if (specter && typeof specter.skill == 'number') skillIndices = skillIndices.concat([specter.skill]);
-    return skillIndices.map(index => ({ index: index, skill: skills[index] })).filter(data => data.skill);
+    const stone = paradiseStones.skill(user);
+    return skillIndices.map(index => stone && index === card.skills?.[0]
+        ? { index: 'paradise:stoneThrow', skill: { name: stone.name, mp_cost: 0, cooltime: stone.cooldown, element: stone.element, desc: '공격력의 10%만큼 피해를 입힙니다.' } }
+        : { index, skill: skills[index] }).filter(data => data.skill);
 }
 
 function findUsableSkill(user, skillName) {
@@ -7486,7 +7491,7 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     const run = user.paradise, enemy = run.enemy, field = user.field;
     if (!extra.dotAttack && !extra.summonAttack) received = paradiseRoutes.incoming(user, received);
     if (receivedHits > 0 && run.mode !== 'hell' && !extra.dotAttack && !extra.summonAttack) (run.battle.mechanics ||= {}).enemyActionAt = at;
-    received = Math.round(received * paradise.incomingMultiplier(user, received) * (received > 0 ? paradiseMechanics.incomingMultiplier(user) : 1));
+    received = Math.round(received * paradise.incomingMultiplier(user, received) * (received > 0 ? paradiseMechanics.incomingMultiplier(user) : 1) * paradiseFeatures.incomingMultiplier(user, received));
     if (field.iktaeBot && field.iktaeBot.hp > 0 && at < Number(field.iktaeBot.expired_at || 0)) {
         const absorbed = Math.round(received * .30);
         received -= absorbed; field.iktaeBot.hp -= absorbed;
@@ -7508,6 +7513,7 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     paradiseRoutes.onDamage(user, stats, lostHp);
     const mechanicNotice = {};
     paradiseMechanics.onDamage(user, stats, beforeShield - received, lostHp, shieldBefore, mechanicNotice);
+    paradiseFeatures.call('onDamage', user, stats, beforeShield - received, lostHp, shieldBefore, mechanicNotice);
     if (mechanicNotice.notice) lines.push(mechanicNotice.notice);
     lines.push('❗ 받은 피해 ' + comma(lostHp));
     if (received > 0 && receivedHits) {
@@ -7607,16 +7613,29 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     paradise.prepareAttack(user, extra);
     paradiseCharacters.prepareAttack(user, stats, extra);
     paradiseMechanics.prepareAttack(user, stats, extra);
+    paradiseFeatures.call('prepareAttack', user, stats, extra);
     paradiseRoutes.prepareAttack(user, extra);
     const attackExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     const hit = calculateAttackHitResult(raw, Math.max(0, Number(targetStats.def || 0) - Number(stats.atkDefReduce || 0)), Number(extra.pnt ?? stats.pnt ?? 0) + Number(extra.pntBonus || 0), stats, slots, attackExtra, getCombatStats(targetStats));
     const multiplier = paradise.attackMultiplier(user, extra);
+    extra.paradiseAttackMultiplier = multiplier;
     hit.finalDamage = Math.max(0, Math.round(hit.finalDamage * multiplier));
     if (multiplier !== 1) for (const detail of hit.hitDetails || []) { detail.damage = Math.round(Number(detail.damage || 0) * multiplier); if (detail.fixedDamage) detail.fixedDamage = Math.round(detail.fixedDamage * multiplier); }
+    paradiseFeatures.call('prepareHit', user, stats, extra, hit);
     paradise.modifyHit(user, extra, hit);
     paradiseCharacters.modifyHit(user, extra, hit);
     paradiseMechanics.modifyHit(user, stats, extra, hit);
+    paradiseFeatures.call('modifyHit', user, stats, extra, hit);
     paradiseRoutes.modifyHit(user, stats, extra, hit);
+    // 증강이 부여한 적 보호막도 갈림길 기믹 유무와 관계없이 소모한다.
+    if (!enemy.mirror && extra.routeShieldAbsorbed == null) {
+        combatShields.expire(enemy, Date.now());
+        if (combatShields.summary(enemy, Date.now()).amount > 0) {
+            const result = combatShields.absorb(enemy, hit.finalDamage);
+            hit.finalDamage = result.damage;
+            extra.routeShieldAbsorbed = result.absorbed;
+        }
+    }
     let mirrorAbsorbed = [];
     if (enemy.mirror) {
         enemy.mirror.hp = enemy.hp;
@@ -7626,6 +7645,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         if (result.dodged) { hit.criticalCount = 0; hit.hitCount = 0; }
         if (result.reflectedDamage) resources.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, resources.hp, Math.max(0, resources.hp - result.reflectedDamage), Date.now()), stats.hp);
     }
+    const defeatedByReflection = resources.hp <= 0;
     paradise.afterAttack(user, extra, hit);
     applyNmmStackGain(user, extra, hit); applyTenthAtkCounter(user, extra, hit);
     queueBlackShadow(user, extra, hit.finalDamage); recordFieldJudgmentDamage(user, attackExtra, hit.finalDamage);
@@ -7635,6 +7655,8 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     randoCharacters.onHit(stats, field, hit.hitCount, extra, enemy.hp === 0 ? 1 : 0, Date.now());
     paradiseCharacters.afterHit(user, stats, extra, hit);
     paradiseMechanics.afterHit(user, stats, extra, hit);
+    extra.enemyShieldAbsorbed = Number(extra.routeShieldAbsorbed || 0) + mirrorAbsorbed.filter(detail => detail.type === 'absorbed').reduce((sum, detail) => sum + Number(detail.damage || 0), 0);
+    if (!defeatedByReflection) paradiseFeatures.call('afterHit', user, stats, extra, hit);
     if (run.effects.focus) run.focus = Math.min(.50, Number(run.focus || 0) + .05 * Number(hit.criticalCount || 0));
     const lines = ['⚔️ ' + enemy.name + '에게 ' + comma(hit.finalDamage) + ' 피해' + (hit.criticalCount ? ' · 치명타 ' + hit.criticalCount + '회' : '')];
     if (extra.notice) lines.push(extra.notice);
@@ -7663,7 +7685,8 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         resources.mp = Math.min(resources.mp, Number(extra.paradiseMpBefore ?? resources.mp));
     }
     run.combatLog = [...lines, ...(run.combatLog || [])].slice(0, 18);
-    const defeated = resources.hp <= 0;
+    const defeated = defeatedByReflection || resources.hp <= 0;
+    if (defeated) resources.hp = 0;
     if (defeated) { const result = paradise.finish(user, 'defeated'); lines.push(run.mode === 'hell' ? '지옥 탐험이 끝났습니다. 마지막 클리어 층의 보상 상자를 확인해주세요.' : result.message); }
     else if (enemy.hp <= 0) { paradise.victory(user); lines.push('전투 승리!'); }
     else if (manual) setNextFieldActionAt(user);
@@ -7686,6 +7709,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     const event = combatEffects.annotateEvent({
         id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId: enemy.id,
         action: manual ? extra.isBasic ? 'basic' : 'skill' : 'tick', skillName: extra.skillName || null,
+        ...(extra.stoneCast ? { stoneBranch: extra.stoneBranch || 'shared' } : {}),
         dot: !!extra.paradiseDot || !!extra.dotAttack && !extra.isBotAutoAttack,
         triggeredEffectIds: extra.triggeredEffectIds || [], effectElement: extra.attackElement || null,
         receivedEffectElement: enemy.element || null, hits, damage: hit.finalDamage,
@@ -7814,7 +7838,8 @@ function useSkillInField(user, skillName, channel) {
     }
     if (user.field.paradise) {
         const beforeHp = Number(resources.hp);
-        const gainedSkill = paradiseMechanics.skills(user).find(skill => skill.name === skillName);
+        const stone = paradiseStones.skill(user);
+        const gainedSkill = stone?.name === skillName ? stone : paradiseMechanics.skills(user).find(skill => skill.name === skillName);
         const result = gainedSkill ? executeParadiseSkillInField(user, gainedSkill) : executeMainCardSkillInField(user, skillName);
         if (paradise.active(user) && user.paradise.effects.noHealing) {
             resources.hp = Math.min(resources.hp, beforeHp);
@@ -7834,7 +7859,10 @@ function executeParadiseSkillInField(user, skill) {
     const context = getFieldCombatContext(user);
     if (context.error) return context.error;
     const stats = calculateUserStats(user), maxResource = stats.kino ? stats.mental : stats.mp;
-    const payment = paradiseMechanics.payment(user, stats, Math.ceil(maxResource * skill.ratio), skill.name);
+    const stone = skill.id === 'stoneThrow';
+    const synthetic = { name: skill.name, mp_cost: 0, cooltime: skill.cooldown, element: skill.element };
+    const equipmentSkill = stone ? prepareTranscendSkillEffects(user, synthetic, stats) : null;
+    const payment = paradiseMechanics.payment(user, stats, stone ? 0 : Math.ceil(maxResource * skill.ratio), skill.name);
     if (stats.kino) {
         if (!randoCharacters.spendMental(stats, field, payment.cost, now)) return '❌ 정신력이 부족합니다.';
     } else {
@@ -7842,13 +7870,24 @@ function executeParadiseSkillInField(user, skill) {
         resources.mp -= payment.cost;
     }
     resources.hp = Math.max(1, resources.hp - payment.hpCost - Math.floor(resources.hp * Number(skill.hpCost || 0)));
+    if (equipmentSkill) {
+        field.equipmentState = equipmentSkill.state;
+        if (equipmentSkill.hpAfter !== undefined) resources.hp = Math.max(1, Number(equipmentSkill.hpAfter));
+        if (equipmentSkill.selfShield) grantFieldShield(user, 'equipment:심해의 갑옷', equipmentSkill.selfShield);
+    }
     field.paradiseMpCeiling = resources.mp;
     paradise.onSkillUsed(user, stats.kino ? 0 : payment.cost, skill.name);
-    const extra = { isSkill: true, skillName: skill.name, mpCost: payment.cost, resourceLabel: stats.kino ? '정신력' : 'MP' };
+    const extra = { ...equipmentSkill?.extra, isSkill: true, skillName: skill.name, mpCost: payment.cost, resourceLabel: stats.kino ? '정신력' : 'MP' };
+    if (equipmentSkill?.shadowDamageRate) extra.shadowDamageRate = equipmentSkill.shadowDamageRate;
+    if (stone) paradiseCharacters.onSkill(user, synthetic, stats, extra);
     paradiseMechanics.onSkill(user, skill.name, stats, extra);
-    const damage = paradiseMechanics.activeSkill(user, skill, stats, extra);
-    const synthetic = { name: skill.name, cooltime: skill.cooldown, element: skill.element };
-    field.skillCooldowns[skill.name] = now + skill.cooldown * getSkillCooldownRate(stats) * paradise.cooldownMultiplier(user);
+    paradiseFeatures.call('onSkill', user, skill.name, stats, extra);
+    const damage = stone ? paradiseStones.cast(user, stats, extra) : paradiseMechanics.activeSkill(user, skill, stats, extra);
+    if (stone) commitFieldSkillCooldown(user, synthetic, stats, equipmentSkill, now);
+    else {
+        field.skillCooldowns[skill.name] = now + skill.cooldown * getSkillCooldownRate(stats) * paradise.cooldownMultiplier(user);
+        paradiseFeatures.call('afterCooldown', user, skill.name);
+    }
     return applyFieldDamageAction(user, context, damage, extra, 'skill', synthetic);
 }
 
@@ -8076,6 +8115,7 @@ function commitFieldSkillCooldown(user, skill, stats, equipmentSkill, now) {
     user.field.skillCooldowns[skill.name] = Math.max(now, now + duration);
     paradiseCharacters.afterCooldown(user, skill.name);
     paradiseMechanics.afterCooldown(user, skill.name);
+    paradiseFeatures.call('afterCooldown', user, skill.name);
     if (Number(equipmentSkill.ultimateCooldownReduction || 0) > 0) {
         const skills = getMainCardSkills(user);
         const ultimate = skills.length > 0 && skills[skills.length - 1].skill;
@@ -8147,6 +8187,7 @@ function executeMainCardSkillInField(user, skillName) {
     extra.receivedDamageMul = getActiveFieldDamageMultiplier(user);
     paradiseCharacters.onSkill(user, skillData.skill, stats, extra);
     paradiseMechanics.onSkill(user, skillData.skill.name, stats, extra);
+    paradiseFeatures.call('onSkill', user, skillData.skill.name, stats, extra);
     if (stats.wonyoddi && ['모드 전환', '원영적사고 모드 전환'].includes(skillData.skill.name)) {
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user); else setNextFieldActionAt(user);

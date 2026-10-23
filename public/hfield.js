@@ -357,6 +357,22 @@
             });
         }
         combatEffect(x, y, event, hit, originX) {
+            if (embedded && event.skillName === '돌 던지기' && !event.dot) {
+                const colors = { billiards:[.5,.82,.78,1], siege:[.79,.54,.29,1], tower:[.66,.71,.78,1], chance:[.9,.82,.54,1], element:[.95,.4,.19,1], orbit:[.62,.55,1,1], dig:[.55,.48,.37,1], guard:[.78,.8,.84,1], time:[.48,.69,1,1] };
+                const tint = colors[event.stoneBranch] || [.72,.75,.8,1], primary = !hit?.presentationIndex;
+                const impact = () => {
+                    this.particle({x,y,life:.22,maxLife:.22,width:.055,height:.055,grow:1.5,gravity:0,color:[...tint.slice(0,3),.5],mode:4});
+                    const count = reducedMotion ? 3 : primary ? event.stoneBranch === 'siege' ? 14 : 9 : 4;
+                    for (let i=0;i<count;i++) { const a=Math.random()*Math.PI*2,s=.12+Math.random()*.16; this.particle({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-.12,life:.36,maxLife:.36,width:.006+Math.random()*.009,height:.008+Math.random()*.012,spin:(Math.random()-.5)*12,gravity:.7,color:i%2?tint:[.42,.44,.49,1],mode:3}); }
+                };
+                if (!primary || reducedMotion) impact();
+                else {
+                    const from=this.playerEffectPoint('actor'), duration=.28, dx=x-from.x, dy=y-from.y;
+                    this.particle({x:from.x,y:from.y,vx:dx/duration,vy:dy/duration-.20,life:duration,maxLife:duration,width:event.stoneBranch==='siege'?.032:.02,height:event.stoneBranch==='siege'?.038:.025,spin:10.5,gravity:1.43,color:tint,mode:3});
+                    this.later(impact,280);
+                }
+                return;
+            }
             const effectIds = effectCatalog && effectCatalog.effectIdsFor
                 ? effectCatalog.effectIdsFor(event, 'target', hit)
                 : hit && hit.effectIds && hit.effectIds.length ? hit.effectIds : event && event.effectIds;
@@ -603,6 +619,7 @@
         animate(event, previous) {
             ultimateCutscene?.play(event, previous?.player?.cardName || this.state?.player?.cardName);
             const now = performance.now();
+            const flight = embedded && event.skillName === '돌 던지기' && !reducedMotion ? 280 : 0;
             const skillAudience = event.action === 'skill' && effectCatalog && effectCatalog.skillTarget ? effectCatalog.skillTarget(event) : event.action === 'skill' ? 'target' : null;
             const player = this.playerEffectPoint('actor');
             this.attackAt = now; this.attackKind = skillAudience === 'actor' ? 'buff' : event.action || 'attack';
@@ -617,8 +634,8 @@
             if (event.damage > 0 || outgoingHits.length || Number(event.killedCount || 0) > 0) {
                 const target = this.targetEffectPoint(previous, event, true);
                 this.targetHitUntil = now + (event.criticalCount ? 520 : 360);
-                this.impactStarted = now;
-                this.impactUntil = now + (event.action === 'skill' ? 520 : 390);
+                this.impactStarted = now + flight;
+                this.impactUntil = now + flight + (event.action === 'skill' ? 520 : 390);
                 this.impactCritical = Number(event.criticalCount || 0) > 0;
                 this.impactSkill = event.action === 'skill';
                 this.impactX = target.x;
@@ -627,13 +644,13 @@
                 if (event.criticalCount) this.burst(this.impactX,this.impactY,[1,.68,.12,.68],16);
                 outgoingHits.slice(1).forEach((hit, index) => {
                     const presentationHit = Object.assign({}, hit, { presentationIndex: index + 1 });
-                    this.later(() => this.tickHit(previous, Object.assign({},event,{hits:[presentationHit],damage:hit.damage,killedCount:0,eliteEncountered:false,eliteDefeated:false})), (index + 1) * 95);
+                    this.later(() => this.tickHit(previous, Object.assign({},event,{hits:[presentationHit],damage:hit.damage,killedCount:0,eliteEncountered:false,eliteDefeated:false})), flight + (index + 1) * 95);
                 });
             } else if (event.action === 'skill' && (skillAudience === 'target' || skillAudience === 'both')) {
                 const target = this.targetEffectPoint(previous, event, true);
                 this.castEffect(target.x,target.y,event,'target');
             }
-            const receivedDelay = Math.max(80, outgoingHits.length * 95 + 80);
+            const receivedDelay = flight + Math.max(80, outgoingHits.length * 95 + 80);
             if (receivedHits.length) receivedHits.forEach((hit, index) => this.later(() => this.receiveHit(hit,event), receivedDelay + index * 95));
             else if (event.received > 0) this.later(() => this.receiveHit({ damage: event.received },event), receivedDelay);
             if (event.pillarDestroyed != null) {
@@ -692,7 +709,7 @@
                 this.draw(null,playerX,.83,narrow?.4:.27,.11,{mode:1,color:[.08,.45,1,.25]});
                 this.draw(this.textures.player,playerX,playerY,playerFit.width,playerFit.height,{flash:time<this.playerHitUntil?.75:0});
             }
-            if(display.inField&&time<this.impactUntil){const p=clamp((time-this.impactStarted)/Math.max(1,this.impactUntil-this.impactStarted),0,1),pulse=Math.sin(p*Math.PI),fit=this.fit('impact',(this.impactSkill?.36:.3)*(.76+pulse*.28),this.impactSkill?.32:.26),alpha=Math.pow(1-p,.5)*.68;this.draw(this.textures.impact,this.impactX,this.impactY,fit.width,fit.height,{color:[1,1,1,alpha],rotation:(this.impactSkill?-.06:.06)+p*.035});if(this.impactCritical)this.draw(this.textures.impact,this.impactX-.008,this.impactY+.008,fit.width*.66,fit.height*.66,{color:[1,.86,.52,alpha*.55],rotation:-.75});}
+            if(display.inField&&time>=this.impactStarted&&time<this.impactUntil){const p=clamp((time-this.impactStarted)/Math.max(1,this.impactUntil-this.impactStarted),0,1),pulse=Math.sin(p*Math.PI),fit=this.fit('impact',(this.impactSkill?.36:.3)*(.76+pulse*.28),this.impactSkill?.32:.26),alpha=Math.pow(1-p,.5)*.68;this.draw(this.textures.impact,this.impactX,this.impactY,fit.width,fit.height,{color:[1,1,1,alpha],rotation:(this.impactSkill?-.06:.06)+p*.035});if(this.impactCritical)this.draw(this.textures.impact,this.impactX-.008,this.impactY+.008,fit.width*.66,fit.height*.66,{color:[1,.86,.52,alpha*.55],rotation:-.75});}
             this.drawEffectAssets(time);
             if (time>this.ambientAt) { this.ambientAt=time+(reducedMotion?500:170); this.particle({x:Math.random()<.5?.04:.96,y:.55+Math.random()*.4,vx:(Math.random()-.5)*.01,vy:-.025,life:3,maxLife:3,width:.005+Math.random()*.008,height:.005+Math.random()*.008,color:Math.random()<.5?[.4,.2,1,.55]:[1,.15,.25,.5]}); }
             this.particles=this.particles.filter(p=>{if(p.delay>0){p.delay-=dt;return true;}p.life-=dt;if(p.life<=0)return false;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=p.gravity*dt;p.rotation+=p.spin*dt;const progress=1-p.life/p.maxLife,scale=1+p.grow*progress,c=p.color.slice();c[3]*=clamp(p.life/p.maxLife*2.4,0,1);this.draw(null,p.x,p.y,p.width*scale,p.height*scale,{mode:p.mode,color:c,rotation:p.rotation});return true;});
@@ -902,7 +919,7 @@
         }
         bannerLayer(w,h){if(!this.banner||this.bannerUntil<=performance.now())return;const remain=this.bannerUntil-performance.now(),age=1-clamp(remain/1250,0,1),alpha=clamp(Math.min(age*5,remain/220),0,1),narrow=w<650,c=this.ctx,cx=w/2,y=h*(narrow?.3:.33),bw=Math.min(w-40,narrow?310:460);c.save();c.globalAlpha=alpha;const glow=c.createRadialGradient(cx,y,0,cx,y,bw*.58);glow.addColorStop(0,'rgba(232,176,75,.2)');glow.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=glow;c.fillRect(cx-bw*.7,y-70,bw*1.4,140);this.line(cx-bw/2,y-22,cx-72,y-22,'rgba(232,176,75,.8)',1);this.line(cx+72,y-22,cx+bw/2,y-22,'rgba(232,176,75,.8)',1);this.text(this.banner,cx,y,narrow?25:36,900,'center','#fff8e8');if(this.bannerSub)this.text(this.bannerSub,cx,y+29,narrow?10:12,800,'center','#e8b04b');c.restore();}
         addDamage(event,previous){
-            const now=performance.now(),narrow=innerWidth<700,phase=previous&&previous.phase;
+            const now=performance.now()+(embedded&&event.skillName==='돌 던지기'&&!reducedMotion?280:0),narrow=innerWidth<700,phase=previous&&previous.phase;
             const pillarIndex=event.pillarDestroyed===1?1:0;
             const target = embedded ? renderer.targetEffectPoint(previous, event, false) : null;
             const x=target?.x??(phase==='pillar'?(narrow?(pillarIndex?.78:.61):(pillarIndex?.81:.65)):regularMode&&phase==='normal'?.72:(narrow?.75:.74));

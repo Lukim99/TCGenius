@@ -224,7 +224,7 @@ test('82개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 �
     t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
     assert.equal(catalog.length, 82);
     assert.deepEqual(Object.fromEntries(['dot', 'combo', 'shield', 'ultimate', 'active', 'passive'].map(key => [key, catalog.filter(a => a.category === key).length])), { dot: 24, combo: 12, shield: 13, ultimate: 8, active: 10, passive: 13 });
-    assert.equal(new Set(corridor.AUGMENTS.map(a => a.id)).size, 306);
+    assert.equal(new Set(corridor.AUGMENTS.map(a => a.id)).size, 465);
     for (const augment of catalog) {
         assert.match(augment.desc, /니다\.$/);
         const user = fresh();

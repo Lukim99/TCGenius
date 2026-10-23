@@ -55,6 +55,13 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             const characters = require('./paradise_augments_characters'), blocked = characters.skillBlocked(user) || require('./paradise_routes').skillBlocked(user);
             const mechanics = require('./paradise_mechanics');
             view.battle.skills.push(...mechanics.skillView(user, stats));
+            const stones = require('./paradise_stones'), stoneSkills = stones.skillView(user, stats);
+            if (stoneSkills.length) {
+                const cards = require('./DB/RPGenius/CharacterCards.json'), skills = require('./DB/RPGenius/Skills.json');
+                const replacedName = skills[cards[user.main_card.id]?.skills?.[0]]?.name;
+                view.battle.skills = view.battle.skills.filter(skill => skill.name !== replacedName);
+                view.battle.skills.unshift(...stoneSkills);
+            }
             for (const skill of view.battle.skills) {
                 if (blocked) skill.disabledReason = blocked;
                 if (characters.freeSkill(user, skill.name)) skill.mpCost = 0;
