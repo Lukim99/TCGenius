@@ -360,6 +360,314 @@
             "plusStat": {
                 "damageBonus": 0.03
             }
+        },
+        {
+            "name": "요나 보주",
+            "series": "유의게임X-24",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "fireAtk": 90
+            },
+            "effect": "[화]속성 강화 +90"
+        },
+        {
+            "name": "한국인의밥상 보주",
+            "series": "유의게임X-24",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "fireAtk": 80
+            },
+            "effect": "[화]속성 강화 +80"
+        },
+        {
+            "name": "예수 보주",
+            "series": "유의게임X-24",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "fireAtk": 70
+            },
+            "effect": "[화]속성 강화 +70"
+        },
+        {
+            "name": "나화진 보주",
+            "series": "유의게임X-24",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "fireAtk": 60
+            },
+            "effect": "[화]속성 강화 +60"
+        },
+        {
+            "name": "펀쿨섹 보주",
+            "series": "유의게임X-25",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "waterAtk": 90
+            },
+            "effect": "[수]속성 강화 +90"
+        },
+        {
+            "name": "은채 보주",
+            "series": "유의게임X-25",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "waterAtk": 80
+            },
+            "effect": "[수]속성 강화 +80"
+        },
+        {
+            "name": "서출구 보주",
+            "series": "유의게임X-25",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "waterAtk": 70
+            },
+            "effect": "[수]속성 강화 +70"
+        },
+        {
+            "name": "리인카네이션 보주",
+            "series": "유의게임X-25",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "waterAtk": 60
+            },
+            "effect": "[수]속성 강화 +60"
+        },
+        {
+            "name": "겨울 보주",
+            "series": "유의게임X-26",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "lightAtk": 90
+            },
+            "effect": "[명]속성 강화 +90"
+        },
+        {
+            "name": "홍진호 보주",
+            "series": "유의게임X-26",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "lightAtk": 80
+            },
+            "effect": "[명]속성 강화 +80"
+        },
+        {
+            "name": "전술가 보주",
+            "series": "유의게임X-26",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "lightAtk": 70
+            },
+            "effect": "[명]속성 강화 +70"
+        },
+        {
+            "name": "내게팀은없다 보주",
+            "series": "유의게임X-26",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "lightAtk": 60
+            },
+            "effect": "[명]속성 강화 +60"
+        },
+        {
+            "name": "유리사 보주",
+            "series": "유의게임X-S",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "darkAtk": 90
+            },
+            "effect": "[암]속성 강화 +90"
+        },
+        {
+            "name": "동그라미 보주",
+            "series": "유의게임X-S",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "darkAtk": 80
+            },
+            "effect": "[암]속성 강화 +80"
+        },
+        {
+            "name": "흑자헬스 보주",
+            "series": "유의게임X-S",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "darkAtk": 70
+            },
+            "effect": "[암]속성 강화 +70"
+        },
+        {
+            "name": "김영광 보주",
+            "series": "유의게임X-S",
+            "parts": [
+                "accessory"
+            ],
+            "stat": {
+                "darkAtk": 60
+            },
+            "effect": "[암]속성 강화 +60"
+        },
+        {
+            "name": "씨잼 보주",
+            "series": "유의게임X-R",
+            "parts": [
+                "accessory"
+            ],
+            "plusStat": {
+                "nonElementDamage": 0.06
+            },
+            "effect": "[무]속성 공격 피해 +6%"
+        },
+        {
+            "name": "오타니 보주",
+            "series": "유의게임X-R",
+            "parts": [
+                "accessory"
+            ],
+            "plusStat": {
+                "nonElementDamage": 0.05
+            },
+            "effect": "[무]속성 공격 피해 +5%"
+        },
+        {
+            "name": "문철마삼 보주",
+            "series": "유의게임X-R",
+            "parts": [
+                "accessory"
+            ],
+            "plusStat": {
+                "nonElementDamage": 0.04
+            },
+            "effect": "[무]속성 공격 피해 +4%"
+        },
+        {
+            "name": "카즈토 보주",
+            "series": "유의게임X-R",
+            "parts": [
+                "accessory"
+            ],
+            "plusStat": {
+                "nonElementDamage": 0.03
+            },
+            "effect": "[무]속성 공격 피해 +3%"
+        },
+        {
+            "name": "범부의킬각 보주",
+            "series": "2026 DMC AUTUMN",
+            "parts": [
+                "support"
+            ],
+            "stat": {
+                "atk": 150
+            },
+            "effect": "공격력 +150"
+        },
+        {
+            "name": "조깡시파 보주",
+            "series": "2026 DMC AUTUMN",
+            "parts": [
+                "support"
+            ],
+            "stat": {
+                "atk": 120
+            },
+            "effect": "공격력 +120"
+        },
+        {
+            "name": "지미나이 보주",
+            "series": "2026 DMC AUTUMN",
+            "parts": [
+                "support"
+            ],
+            "stat": {
+                "atk": 100
+            },
+            "effect": "공격력 +100"
+        },
+        {
+            "name": "킹익 셋과 미필보이 보주",
+            "series": "2026 DMC AUTUMN",
+            "parts": [
+                "support"
+            ],
+            "stat": {
+                "atk": 100
+            },
+            "effect": "공격력 +100"
+        },
+        {
+            "name": "R.U.C.A 보주",
+            "series": "2026 DMC AUTUMN",
+            "parts": [
+                "support"
+            ],
+            "stat": {
+                "atk": 80
+            },
+            "effect": "공격력 +80"
+        },
+        {
+            "name": "콩나무리 보주",
+            "series": "2026 DMC AUTUMN",
+            "parts": [
+                "support"
+            ],
+            "stat": {
+                "atk": 80
+            },
+            "effect": "공격력 +80"
+        },
+        {
+            "name": "여우와깡통단 보주",
+            "series": "2026 DMC AUTUMN",
+            "parts": [
+                "support"
+            ],
+            "stat": {
+                "atk": 65
+            },
+            "effect": "공격력 +65"
+        },
+        {
+            "name": "수피아조씨와 리정현 기사단 보주",
+            "series": "2026 DMC AUTUMN",
+            "parts": [
+                "support"
+            ],
+            "stat": {
+                "atk": 65
+            },
+            "effect": "공격력 +65"
         }
     ]
 }

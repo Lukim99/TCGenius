@@ -175,6 +175,7 @@ if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
 const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '자물쇠': '자물쇠', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
 PAGE_LABELS.awakeningcombine = '각성조합';
+PAGE_LABELS['orb-fusion'] = '보주합성';
 PAGE_LABELS['낚시'] = '낚시';
 PAGE_LABELS.directtrade = '1:1거래';
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
@@ -194,7 +195,7 @@ const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'orb-fusion', 'equipment-synthesis', 'dex', '레벨보상'] },
     { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['포인트 광산', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder', 'directtrade'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -285,6 +286,7 @@ function navigatePage(pageId) {
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
     if (pageId === 'awakeningcombine') loadAwakeningCombine();
+    if (pageId === 'orb-fusion') window.OrbFusionUI.mount($('#orbFusionRoot'), { api, postApi }); else window.OrbFusionUI?.unmount();
     if (pageId === 'equipment-synthesis') loadEquipmentSynthesis();
     if (pageId === '레벨보상') loadLevelRewards();
     if (pageId === 'shop') loadShop(); else window.BlackMarketUI?.unmount();

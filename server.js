@@ -92,6 +92,7 @@ const BANNER_TARGET_TABS = [
     { value: 'combine', label: '콘텐츠 · 조합' },
     { value: 'jobcombine', label: '콘텐츠 · 전직조합' },
     { value: 'awakeningcombine', label: '콘텐츠 · 각성조합' },
+    { value: 'orb-fusion', label: '콘텐츠 / 보주합성' },
     { value: 'equipment-synthesis', label: '콘텐츠 · 장비합성' },
     { value: 'dex', label: '콘텐츠 · 도감' },
     { value: '레벨보상', label: '콘텐츠 · 레벨보상' },
@@ -1830,6 +1831,44 @@ server.post('/api/awakeningcombine', requireUser, async (req, res) => {
     } catch (e) {
         console.error('awakeningcombine error:', e);
         res.status(500).json({ error: '조합 결과를 확인하지 못했습니다. 같은 선택으로 다시 시도해주세요.' });
+    }
+});
+
+function buildOrbFusionItem(id) {
+    const item = rpgenius.getDataCache('Item', [])[id];
+    const orb = rpgenius.getOrbData().find(entry => entry.name === item.name);
+    return { id, name: item.name, description: item.desc || '', imageUrl: getItemIconUrl(item),
+        series: orb?.series || ORB_DEX_CATEGORIES.find(group => group.orbs.includes(item.name))?.name || '' };
+}
+
+function buildOrbFusionView(user) {
+    const items = rpgenius.getDataCache('Item', []);
+    return { revision: Number(user.orbFusionReceipt?.revision || 0), poolSize: items.filter(item => item?.use === '보주').length,
+        orbs: (user.inventory?.item || []).filter(entry => entry.count > 0 && items[entry.id]?.use === '보주')
+            .map(entry => ({ ...buildOrbFusionItem(entry.id), count: entry.count, boundCount: rpgenius.getBoundItemCount(user, entry.id) })) };
+}
+
+server.get('/api/orb-fusion', requireUser, async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json(buildOrbFusionView(user));
+    } catch (error) { console.error('orb fusion view:', error); res.status(500).json({ error: '보주를 불러오지 못했습니다.' }); }
+});
+
+server.post('/api/orb-fusion', requireUser, async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blocked = getEquipmentActionBlockedReason(user, '합성', '보주를');
+        if (blocked && user.orbFusionReceipt?.requestId !== req.body?.requestId) return res.status(409).json({ error: blocked });
+        const receipt = await rpgenius.fuseOrbs(user, req.body);
+        res.json({ ok: true, result: buildOrbFusionItem(receipt.resultId), ...buildOrbFusionView(user) });
+    } catch (error) {
+        if (!error.status) console.error('orb fusion:', error);
+        res.status(error.status || 500).json({ error: error.status ? error.message : '합성 결과를 확인하지 못했습니다. 같은 선택으로 다시 시도해주세요.' });
     }
 });
 
@@ -6785,7 +6824,7 @@ function buildOrbDex() {
             rarity: null,
             iconUrl: item ? getItemIconUrl(item) : null,
             frameUrl: getAuctionFrameUrl('item'),
-            category: category ? category.name : '기타',
+            category: orb.series || (category ? category.name : '기타'),
             categoryParts: (category ? category.parts : orb.parts || []).map(part => partLabels[part] || part),
             partLabels: (orb.parts || []).map(part => partLabels[part] || part),
             baseStatLines: dexStatLines(rpgenius.formatOrbLines(orb).slice(1).join('\n')),
@@ -9264,7 +9303,7 @@ function renderUserDashboard(sess, opts) {
 <html lang="ko"><head><meta charset="utf-8"><title>RPGenius</title>
 <script>window.__INITIAL_PAGE=${JSON.stringify(initialPage)};</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/black-market.css"></head><body>
+<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/black-market.css"><link rel="stylesheet" href="/static/orb-fusion.css"></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="otpBtn" style="padding:8px 12px;font-size:13px" title="2단계 인증 설정">OTP</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
@@ -9515,6 +9554,7 @@ function renderUserDashboard(sess, opts) {
       <div id="awakeningPool" class="card-grid fusion-card-grid"></div>
     </section>
   </div>
+  <div class="page" data-page="orb-fusion"><div id="orbFusionRoot"></div></div>
   <div class="page" data-page="equipment-synthesis">
     <section class="panel equipment-synthesis-board">
       <div class="equipment-synthesis-head"><div><span>EQUIPMENT SYNTHESIS</span><h2>장비 합성</h2><p>합성 가능한 장비를 선택해 상위 장비로 진화시키세요.</p></div><b id="equipmentSynthesisRule">재료 선택</b></div>
@@ -9584,6 +9624,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/pvp-lobby.js"></script>
 <script src="/static/enhance-effects.js"></script>
 <script src="/static/black-market.js"></script>
+<script src="/static/orb-fusion.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/direct-trade.js"></script>
 <script type="module" src="/static/chuseok.js"></script>

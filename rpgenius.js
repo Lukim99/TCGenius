@@ -9805,6 +9805,50 @@ function getTradableItemCount(user, itemId) {
     return getInventoryItemCount(user, itemId) - getBoundItemCount(user, itemId);
 }
 
+// 재료, 귀속 수량, 결과 영수증을 함께 조건부 저장하여 재전송과 동시 합성의 중복 소모를 막는다.
+async function fuseOrbs(user, body) {
+    const { requestId, revision, materialIds } = body || {};
+    const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
+    if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId) || !Number.isSafeInteger(revision) || revision < 0) fail('보주 합성 화면을 다시 열어주세요.');
+    const previousReceipt = user.orbFusionReceipt;
+    if (previousReceipt?.requestId === requestId) {
+        if (previousReceipt.revision !== revision + 1 || JSON.stringify(previousReceipt.materialIds) !== JSON.stringify(materialIds)) fail('같은 요청으로 합성 재료를 변경할 수 없습니다.', 409);
+        return previousReceipt;
+    }
+    if (revision !== Number(previousReceipt?.revision || 0)) fail('다른 합성이 처리되었습니다. 다시 불러와주세요.', 409);
+    const blocked = getWebGameActionBlock(user);
+    if (blocked) fail(blocked, 409);
+    const prepared = require('./orb_fusion').prepareFusion(user, getDataCache('Item', []), materialIds);
+    const receipt = { requestId, revision: revision + 1, materialIds, resultId: prepared.resultId };
+    const changes = { inventory: prepared.inventory, boundItems: prepared.boundItems, orbFusionReceipt: receipt };
+    const flushed = await flushCachedUser(user.id);
+    if (!flushed.success) throw flushed.result[0];
+    const names = {}, values = {}, conditions = ['attribute_exists(id)'];
+    for (const key of Object.keys(changes)) {
+        names['#' + key] = key; values[':new_' + key] = changes[key];
+        if (user.__loaded[key] === undefined) conditions.push('attribute_not_exists(#' + key + ')');
+        else { values[':old_' + key] = JSON.parse(user.__loaded[key]); conditions.push('#' + key + ' = :old_' + key); }
+    }
+    let saved = changes;
+    try {
+        await docClient.send(new UpdateCommand({ TableName: TABLE_NAME, Key: { id: user.id },
+            UpdateExpression: 'SET ' + Object.keys(changes).map(key => '#' + key + ' = :new_' + key).join(', '),
+            ConditionExpression: conditions.join(' AND '), ExpressionAttributeNames: names, ExpressionAttributeValues: values }));
+    } catch (error) {
+        const fresh = (await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { id: user.id }, ConsistentRead: true }))).Item;
+        if (fresh) putUserCacheEntry(fresh);
+        const confirmed = fresh?.orbFusionReceipt;
+        if (confirmed?.requestId !== requestId || confirmed.revision !== revision + 1 || JSON.stringify(confirmed.materialIds) !== JSON.stringify(materialIds)) {
+            if (error.name === 'ConditionalCheckFailedException') fail('보유 아이템이 변경되었습니다. 다시 불러와주세요.', 409);
+            throw error;
+        }
+        saved = Object.fromEntries(Object.keys(changes).map(key => [key, fresh[key]]));
+    }
+    applyDirectDbWriteToCache(user.id, saved);
+    for (const [key, value] of Object.entries(saved)) { user[key] = cloneUserRaw(value); user.__loaded[key] = JSON.stringify(value); }
+    return user.orbFusionReceipt;
+}
+
 function getIceCount(ices, size) {
     const entry = ices && ices[size];
     if (entry && typeof entry == 'object' && typeof entry.N != 'undefined') return Number(entry.N || 0);
@@ -17313,6 +17357,7 @@ module.exports = {
     getInventoryItemCount,
     getBoundItemCount,
     getTradableItemCount,
+    fuseOrbs,
     cleanupInventoryItems,
     PRESET_SLOT_COUNT,
     cardPresetSignature,
