@@ -390,41 +390,51 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
             HTMLMediaElement.prototype.play = function() { window.playedSounds.push(this.src); return play.call(this); };
         });
         await context.addCookies([{ name: 'rpg_admin', value: cookie('선입찰자').slice('rpg_admin='.length), url: origin }]);
+        const richUser = await rpg.getRPGUserByName('선입찰자'); richUser.gold = 10268277770; await richUser.save();
         const page = await context.newPage(), errors = [];
         page.on('pageerror', error => errors.push(error.message));
         await page.goto(origin, { waitUntil: 'domcontentloaded' });
-        await page.locator('#groupTabs [data-group="market"]').click();
-        await page.locator('.bm-root').getByText('오늘의 카드', { exact: true }).waitFor();
-        await page.locator('.bm-root').getByText('오늘의 아이템', { exact: true }).waitFor();
-        await page.locator('.bm-lot').first().waitFor();
-        assert.equal(await page.locator('.bm-lot').count(), 4);
-        assert.equal(await page.locator('.bm-root').getAttribute('data-webgl'), 'ready', '실제 WebGL 셰이더 초기화');
-        const lot = page.locator('[data-sector="card-garnet"]');
+        await page.locator('.group-tab[data-group="market"]:visible, .bottom-tab[data-group="market"]:visible').click();
+        const control = (action, id) => page.locator('.shop-game-controls [data-action="' + action + '"]' + (id ? '[data-id="' + id + '"]' : ''));
+        const ready = () => page.waitForFunction(() => document.querySelector('.shop-wrap')?.dataset.shopGl === 'ready');
+        const checkBounds = async label => {
+            assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), label + ' 가로 넘침 없음');
+            assert.deepEqual(await page.locator('.shop-game-controls button, .shop-game-controls input').evaluateAll(elements => elements.filter(el => {
+                const r = el.getBoundingClientRect();
+                return r.width && (r.left < -1 || r.top < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1);
+            }).map(el => el.getAttribute('aria-label'))), [], label + ' 조작이 화면 안에 표시');
+        };
+        await ready(); await control('market-select').first().waitFor();
+        assert.equal(await control('market-select').count(), 4);
+        assert.equal(await page.locator('.bm-root, .bm-atmosphere, .shop-tabs').count(), 0, '암시장도 공통 게임 캔버스로 렌더링');
         const initial = (await state()).balances.garnet;
-        await lot.locator('input').fill('321');
-        await lot.getByRole('button', { name: '입찰하기', exact: true }).click();
-        await page.screenshot({ path: path.join(__dirname, '../output/black-market/confirm-pc.png'), animations: 'disabled' });
-        await page.getByRole('dialog').getByRole('button', { name: '입찰 확정', exact: true }).click();
-        await page.getByText('입찰했습니다.', { exact: true }).waitFor();
+        await control('market-select', 'card-garnet').click();
+        const amount = control('market-amount', 'card-garnet');
+        await amount.fill('321');
+        await control('market-bid', 'card-garnet').click();
+        await page.screenshot({ path: path.join(__dirname, '../output/black-market/confirm-pc.png') });
+        await control('market-confirm').click();
+        await page.getByRole('status').getByText('입찰했습니다.', { exact: true }).waitFor();
+        await page.waitForFunction(() => playedSounds.at(-1)?.endsWith('/coins.ogg'));
+        assert.deepEqual((await page.evaluate(() => playedSounds)).slice(-2).map(src => src.split('/').at(-1)), ['seal.ogg', 'coins.ogg'], '기존 봉인음 뒤 동전 소리 유지');
+        await page.screenshot({ path: path.join(__dirname, '../output/black-market/bid-success-pc.png') });
+        await control('market-back').click();
         assert.equal((await state()).balances.garnet, initial - 321);
-        await lot.locator('input').fill('123');
-        await lot.getByRole('button', { name: '금액 변경', exact: true }).click();
-        await page.getByRole('dialog').getByText('즉시 돌려받을 금액', { exact: true }).waitFor();
-        await page.getByRole('dialog').getByRole('button', { name: '입찰 확정', exact: true }).click();
-        await page.waitForFunction(() => document.querySelector('[data-sector="card-garnet"] .bm-my-bid strong')?.textContent === '123 가넷');
+        await amount.fill('123');
+        await control('market-bid', 'card-garnet').click();
+        await control('market-confirm').click();
+        await page.waitForFunction(() => document.querySelector('.shop-game-live[role="status"]')?.textContent === '입찰했습니다.' && !!document.querySelector('[data-action="market-back"]'));
+        await control('market-back').click();
         assert.equal((await state()).balances.garnet, initial - 123);
         // 자동 조회가 작성 중인 입찰 금액을 지우면 안 된다.
-        await lot.locator('input').fill('456');
-        await page.getByRole('button', { name: '새로고침', exact: true }).click();
-        await page.waitForFunction(() => !document.querySelector('.bm-tools button:nth-child(2)').disabled);
-        assert.equal(await lot.locator('input').inputValue(), '456');
-        await lot.locator('input').fill('123');
+        await amount.fill('456');
+        await Promise.all([page.waitForResponse(r => r.url().endsWith('/api/black-market')), control('market-refresh').click()]);
+        await page.waitForFunction(() => !document.querySelector('[data-action="market-refresh"]').disabled);
+        assert.equal(await amount.inputValue(), '456');
+        await amount.fill('123');
         await page.mouse.move(0, 0);
         await page.evaluate(() => document.fonts.ready);
-        assert.equal(await page.evaluate(() => [...document.fonts].some(font => font.family === 'Black Market Pretendard' && font.status === 'loaded')), true, '로컬 Pretendard 글꼴 로드');
-        await page.waitForFunction(() => [...document.querySelectorAll('.bm-root img')].every(image => image.complete));
-        assert.deepEqual(await page.locator('.bm-root img').evaluateAll(images => images.filter(image => !image.naturalWidth).map(image => image.src)), [], '게임 이미지 로드');
-        // 실제 화면에서 긴 매물명, 닉네임과 큰 낙찰 금액을 생략 없이 표시한다.
+        assert.equal(await page.evaluate(() => [...document.fonts].some(font => font.family === 'Black Market Pretendard' && font.status === 'loaded')), true);
         const resultNames = ['[8성] 전직 딜러장', '[5성] 워뇨띠', '수피아조씨와 리정현 기사단 보주', '제타 각성 캐릭터 변환석 x7'];
         const resultAmounts = [301, 15000000, 100, 99999999999999];
         const resultsRoute = async route => {
@@ -435,32 +445,72 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
             await route.fulfill({ response, json: view });
         };
         await page.route('**/api/black-market', resultsRoute);
-        await page.getByRole('button', { name: '새로고침', exact: true }).click();
-        await page.getByText(resultNames[2], { exact: true }).waitFor();
-        for (const [label, width, height] of [['wide-pc', 1920, 1080], ['pc', 1440, 1000], ['small-pc', 1280, 900], ['tablet', 820, 1180], ['mobile', 390, 844], ['small-mobile', 360, 800]]) {
+        await Promise.all([page.waitForResponse(r => r.url().endsWith('/api/black-market')), control('market-refresh').click()]);
+        await page.waitForLoadState('networkidle');
+        await page.keyboard.press('Escape');
+        for (const [label, width, height] of [['wide-pc', 1920, 1080], ['pc', 1440, 1000], ['small-pc', 1280, 720], ['tablet', 820, 1180], ['small-tablet', 1024, 768], ['mobile', 390, 844], ['small-mobile', 360, 640]]) {
             await page.setViewportSize({ width, height });
-            await page.evaluate(() => scrollTo(0, 0));
-            await page.screenshot({ path: path.join(__dirname, '../output/black-market/' + label + '.png'), fullPage: true, animations: 'disabled' });
-            await page.locator('.bm-results').screenshot({ path: path.join(__dirname, '../output/black-market/results-' + label + '.png'), animations: 'disabled' });
-            assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), label + ' 가로 넘침 없음');
-            assert.ok(await page.locator('.shop-wrap').evaluate(el => el.getBoundingClientRect().width >= document.documentElement.clientWidth - 1), label + ' 상점 전체 화면 너비');
-            assert.deepEqual(await page.locator('.bm-result-name').allTextContents(), resultNames);
-            assert.deepEqual(await page.locator('.bm-result-amount').allTextContents(), resultAmounts.map(value => value.toLocaleString('ko-KR')));
-            assert.deepEqual(await page.locator('.bm-result-name, .bm-result-winner, .bm-result-price').evaluateAll(elements => elements.filter(el => {
-                const style = getComputedStyle(el), rect = el.getBoundingClientRect(), card = el.closest('.bm-result').getBoundingClientRect();
-                return style.textOverflow === 'ellipsis' || el.scrollWidth > el.clientWidth + 1 || rect.right > card.right || rect.bottom > card.bottom;
-            }).map(el => el.textContent)), [], label + ' 지난 결과 전체 텍스트가 카드 안에 표시');
+            await page.screenshot({ path: path.join(__dirname, '../output/black-market/' + label + '.png') });
+            await checkBounds(label);
+            await control('market-select', 'card-gold').click();
+            await control('market-amount', 'card-gold').fill('1026827777');
+            await page.screenshot({ path: path.join(__dirname, '../output/black-market/detail-' + label + '.png') });
+            await checkBounds(label + ' 입찰 상세');
+            await control('market-bid', 'card-gold').click();
+            await control('market-confirm').waitFor();
+            await page.screenshot({ path: path.join(__dirname, '../output/black-market/confirm-gold-' + label + '.png') });
+            await checkBounds(label + ' 입찰 확인');
+            await control('market-back').click();
+            await page.keyboard.press('Escape');
+            await control('market-results').click();
+            await page.screenshot({ path: path.join(__dirname, '../output/black-market/results-' + label + '.png') });
+            await checkBounds(label + ' 지난 결과');
+            if (await control('market-result-next').count() && await control('market-result-next').isEnabled()) {
+                await control('market-result-next').click();
+                await page.screenshot({ path: path.join(__dirname, '../output/black-market/results-last-' + label + '.png') });
+                await checkBounds(label + ' 지난 결과 다음 페이지');
+            }
+            const description = await page.locator('.shop-game-live:not([role])').textContent();
+            for (const name of resultNames) assert.ok(description.includes(name), '결과 이름 전체 제공');
+            for (const value of resultAmounts) assert.ok(description.includes(value.toLocaleString('ko-KR')), '결과 금액 전체 제공');
+            await control('market-back').click();
         }
         await page.unroute('**/api/black-market', resultsRoute);
-        await lot.getByRole('button', { name: /입찰 취소/ }).click();
-        await page.screenshot({ path: path.join(__dirname, '../output/black-market/confirm-mobile.png'), animations: 'disabled' });
-        await page.getByRole('dialog').getByRole('button', { name: '취소하고 반환', exact: true }).click();
-        await page.getByText('입찰을 취소하고 보관금을 돌려받았습니다.', { exact: true }).waitFor();
+        await control('market-select', 'item-gold').click();
+        await page.screenshot({ path: path.join(__dirname, '../output/black-market/item-detail-small-mobile.png') });
+        await page.keyboard.press('Escape');
+        await control('market-select', 'card-garnet').click();
+        // 확인 중 다른 창에서 입찰을 바꾸면 오래된 계약을 제출할 수 없어야 한다.
+        await amount.fill('400');
+        await control('market-bid', 'card-garnet').click();
+        assert.equal((await request('/api/black-market/bid', bidBody(await state(), 'card-garnet', 250))).status, 200);
+        await page.waitForResponse(r => r.url().endsWith('/api/black-market'), { timeout: 35000 });
+        await control('market-back').waitFor();
+        assert.equal(await control('market-confirm').count(), 0, '동시 변경 후 오래된 확인 창 폐기');
+        await control('market-back').click();
+        // 요청은 반영됐지만 응답이 유실된 경우 조회로 현재 보관금을 확인한다.
+        const lostBidResponse = async route => { await route.fetch(); await route.abort('failed'); };
+        await page.route('**/api/black-market/bid', lostBidResponse, { times: 1 });
+        await amount.fill('345');
+        await control('market-bid', 'card-garnet').click();
+        await control('market-confirm').click();
+        await page.waitForFunction(() => document.querySelector('.shop-game-live[role="status"]')?.textContent.includes('현재 보관금을 다시 확인했습니다.'));
+        await control('market-back').click();
+        assert.equal((await state()).balances.garnet, initial - 345, '응답 유실에도 차감은 한 번');
+        assert.equal(await amount.inputValue(), '345');
+
+        await control('market-cancel', 'card-garnet').click();
+        await page.screenshot({ path: path.join(__dirname, '../output/black-market/confirm-mobile.png') });
+        await control('market-confirm').click();
+        await page.getByRole('status').getByText('입찰을 취소하고 보관금을 돌려받았습니다.', { exact: true }).waitFor();
+        await page.waitForFunction(() => playedSounds.at(-1)?.endsWith('/coins.ogg'));
+        assert.deepEqual((await page.evaluate(() => playedSounds)).slice(-2).map(src => src.split('/').at(-1)), ['cancel.ogg', 'coins.ogg'], '기존 취소음 뒤 동전 소리 유지');
+        await control('market-back').click();
         assert.equal((await state()).balances.garnet, initial);
         assert.ok((await page.evaluate(() => playedSounds)).some(src => src.endsWith('/seal.ogg')));
         assert.ok((await page.evaluate(() => playedSounds)).some(src => src.endsWith('/cancel.ogg')));
-        await page.getByRole('button', { name: '효과음 끄기', exact: true }).click();
-        assert.equal(await page.evaluate(() => localStorage.getItem('blackMarketSound')), 'off');
+        assert.equal(await page.getByRole('button', { name: /효과음/ }).count(), 0, '효과음 버튼 없음');
+        await control('market-back').click();
         for (const [sector, first, second] of [['card-garnet', 200, 200], ['item-gold', 100000, 150000]]) {
             assert.equal((await request('/api/black-market/bid', bidBody(await state(), sector, first))).status, 200);
             assert.equal((await request('/api/black-market/bid', bidBody(await state('후입찰자'), sector, second), '후입찰자')).status, 200);
@@ -486,20 +536,21 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
         assert.deepEqual(await adminCards.nth(3).locator('tbody tr').allTextContents(), ['1선입찰자100,000']);
         await adminContext.close();
         clock = Date.parse('2026-10-26T20:50:00+09:00');
-        await page.getByRole('button', { name: '새로고침', exact: true }).click();
-        await page.getByText('정산 중', { exact: true }).waitFor();
-        assert.equal(await page.locator('.bm-amount:disabled').count(), 4, '정산 시간에는 입찰 불가');
+        await control('market-refresh').click();
+        await page.locator('.shop-game-live:not([role])').getByText(/정산 중/).waitFor();
+        await control('market-select', 'card-garnet').click();
+        assert.equal(await amount.isDisabled(), true, '정산 시간에는 입찰 불가');
         await page.emulateMedia({ reducedMotion: 'reduce' });
         await page.setViewportSize({ width: 1440, height: 1000 });
-        // WebGL 문맥 상실 후 복구와 정적 배경 대체를 확인한다.
-        await page.evaluate(() => { window.marketContextLoss = document.querySelector('.bm-atmosphere').getContext('webgl').getExtension('WEBGL_lose_context'); marketContextLoss.loseContext(); });
-        await page.waitForFunction(() => document.querySelector('.bm-root').dataset.webgl === 'fallback');
+        await page.evaluate(() => { window.marketContextLoss = document.querySelector('.shop-scene-canvas').getContext('webgl').getExtension('WEBGL_lose_context'); marketContextLoss.loseContext(); });
+        await page.waitForFunction(() => document.querySelector('.shop-wrap').dataset.shopGl === 'fallback');
         await page.evaluate(() => marketContextLoss.restoreContext());
-        await page.waitForFunction(() => document.querySelector('.bm-root').dataset.webgl === 'ready');
-        await page.evaluate(() => { window.previousMarketGL = document.querySelector('.bm-atmosphere').getContext('webgl'); });
-        await page.locator('.shop-tabs button').nth(1).click();
-        assert.equal(await page.evaluate(() => previousMarketGL.isContextLost()), true, '상점 이동 시 WebGL 해제');
-        await page.waitForFunction(() => document.querySelector('.shop-wrap').dataset.shopGl === 'ready');
+        await ready();
+        await page.screenshot({ path: path.join(__dirname, '../output/black-market/settling-pc.png') });
+        await page.evaluate(() => { window.previousMarketGL = document.querySelector('.shop-scene-canvas').getContext('webgl'); });
+        await control('category', '일반').click();
+        assert.equal(await page.evaluate(() => previousMarketGL.isContextLost()), true, '상점 이동 시 이전 WebGL 해제');
+        await ready();
         const shopView = (await request('/api/shop')).data;
         const normalShopTabs = shopView.tabs.filter(tab => tab !== '암시장');
         for (const tab of normalShopTabs) {
@@ -533,7 +584,21 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
                 await page.locator('.shop-game-controls [data-action="back"]').click();
             }
         }
+        // 실제 표시 가능한 최대 정수도 360px에서 재화 판이 넓어져 전체를 보여준다.
+        const goldBeforeStress = (await rpg.getRPGUserByName('선입찰자')).gold;
+        const stressUser = await rpg.getRPGUserByName('선입찰자'); stressUser.gold = Number.MAX_SAFE_INTEGER; await stressUser.save();
+        await page.reload(); await page.locator('.group-tab[data-group="market"]:visible, .bottom-tab[data-group="market"]:visible').click();
+        await ready(); await control('market-select').first().waitFor(); await page.waitForLoadState('networkidle');
+        await page.screenshot({ path: path.join(__dirname, '../output/black-market/max-gold-mobile.png') });
+        await checkBounds('암시장 최대 정수');
+        await control('categories').click(); await control('category', '일반').click();
+        await page.waitForLoadState('networkidle');
+        await page.screenshot({ path: path.join(__dirname, '../output/black-market/shop-max-gold-mobile.png') });
+        await checkBounds('일반 상점 최대 정수');
+        const restored = await rpg.getRPGUserByName('선입찰자'); restored.gold = goldBeforeStress; await restored.save();
         await page.setViewportSize({ width: 1440, height: 900 });
+        await page.reload(); await page.locator('.group-tab[data-group="market"]:visible, .bottom-tab[data-group="market"]:visible').click();
+        await ready(); await control('category', '일반').click();
         await page.locator('.shop-game-controls [data-action="product"]').first().click();
         await page.locator('.shop-game-controls [data-action="qty-plus"]').click();
         await page.waitForFunction(() => document.querySelector('[data-action="qty-value"]').value === '2');
@@ -552,6 +617,9 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
         assert.equal(users.get('1').gold, beforeGold - boughtItem.price.amount * 2, '실제 구매 API에서 수량만큼 차감');
         assert.equal(users.get('1').inventory.item.filter(entry => entry.id === boughtItem.item_id).reduce((sum, entry) => sum + entry.count, 0), beforeCount + boughtItem.count * 2, '실제 인벤토리에 지급');
         await page.screenshot({ path: path.join(__dirname, '../output/black-market/shop-success-pc.png') });
+        assert.ok((await page.evaluate(() => playedSounds)).some(src => src.endsWith('/click.ogg')));
+        assert.ok((await page.evaluate(() => playedSounds)).some(src => src.endsWith('/coins.ogg')));
+        assert.equal(await page.getByRole('button', { name: /효과음/ }).count(), 0);
         await page.keyboard.press('Escape');
         await page.locator('.shop-game-controls [data-action="category"][data-category="패키지"]').click();
         await page.locator('.shop-game-controls [data-action="product"][data-id="' + shopView.shop['패키지'][0].shopId + '"]').waitFor();
@@ -574,10 +642,10 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
         await page.evaluate(() => shopContextLoss.restoreContext());
         await page.waitForFunction(() => document.querySelector('.shop-wrap').dataset.shopGl === 'ready');
         await page.locator('.shop-game-controls [data-action="category"][data-category="암시장"]').click();
-        await page.locator('.bm-lot').first().waitFor();
+        await control('market-select').first().waitFor();
         assert.equal(await page.evaluate(() => previousShopGL.isContextLost()), true, '암시장 이동 시 일반 상점 WebGL 해제');
-        assert.equal(await page.locator('.shop-scene-canvas').count(), 0, '암시장은 기존 WebGL 장면 하나만 실행');
-        assert.equal(await page.getByRole('button', { name: '효과음 켜기', exact: true }).getAttribute('aria-pressed'), 'false');
+        assert.equal(await page.locator('.shop-scene-canvas').count(), 1, '암시장도 공통 WebGL 장면 하나만 실행');
+        assert.equal(await page.getByRole('button', { name: /효과음/ }).count(), 0);
         await context.addCookies([{ name: 'rpg_admin', value: cookie('선입찰자', true).slice('rpg_admin='.length), url: origin }]);
         await page.goto(origin + '/admin#blackmarket');
         await page.locator('#bmAdminResult .hd-prev-card').first().waitFor();
@@ -604,12 +672,12 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
         assert.equal(new URL(await adminItem.locator('img').getAttribute('src'), origin).searchParams.get('file'), '각성 캐릭터 변환석.png', '기존 각성 변환석 이미지 재사용');
         await page.screenshot({ path: path.join(__dirname, '../output/black-market/admin.png'), fullPage: true });
         clock = Date.parse('2026-10-27T21:00:00+09:00');
-        await page.goto(origin); await page.locator('#groupTabs [data-group="market"]').click();
-        await page.locator('[data-sector="card-garnet"] .bm-item-name').getByText('[𝛀] 각성 빵귤', { exact: true }).waitFor();
-        assert.equal(await page.locator('[data-sector="item-gold"] .bm-item-name').textContent(), '제타 각성 캐릭터 변환석 x7');
-        assert.equal(await page.locator('.bm-item-sub, .bm-quantity').count(), 0);
-        assert.ok(!(await page.locator('.bm-root').textContent()).includes('·'), '암시장 사이점 없음');
-        assert.equal(await page.locator('.bm-clock-note').textContent(), '08:50 마감 (한국 시간)');
+        await page.goto(origin); await page.locator('.group-tab[data-group="market"]:visible, .bottom-tab[data-group="market"]:visible').click();
+        await control('market-select', 'card-garnet').waitFor();
+        assert.ok((await control('market-select', 'card-garnet').getAttribute('aria-label')).includes('[𝛀] 각성 빵귤'));
+        assert.ok((await control('market-select', 'item-gold').getAttribute('aria-label')).includes('제타 각성 캐릭터 변환석 x7'));
+        assert.ok(!(await page.locator('.shop-game-live:not([role])').textContent()).includes('·'), '암시장 사이점 없음');
+        assert.ok((await page.locator('.shop-game-live:not([role])').textContent()).includes('08:50 마감 (한국 시간)'));
         await page.screenshot({ path: path.join(__dirname, '../output/black-market/configured-items.png'), fullPage: true });
         assert.deepEqual(errors, []);
         await context.close();

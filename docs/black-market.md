@@ -35,4 +35,4 @@
 
 `BLACK_MARKET_BROWSER=1` 환경 변수로 같은 테스트의 Playwright 브라우저 검사도 실행한다. Playwright 패키지와 Microsoft Edge가 필요하며, 실제 상점·암시장 API를 격리 DB와 연결한다. 화면 기록은 `output/black-market/`에 저장한다.
 
-배경과 봉인 이미지는 ImageGen으로 생성했고 효과음은 Kenney RPG Audio(CC0)를 사용한다. 생성 프롬프트와 출처는 `public/assets/black-market/CREDITS.md`에 기록한다.
+암시장도 일반 상점과 같은 WebGL 게임 화면을 사용한다. `public/black-market.js`는 입찰 계약과 자동 조회를 관리하고, 공통 상점 페인터가 매물, 입찰 확인, 지난 결과를 그린다. 기존 배경과 봉인 이미지, 안개와 입자 셰이더, 아래에서 위로 퍼지는 조명과 청동 받침대, 프레임 없는 아이템, 입찰 완료 연출 및 효과음 순서를 유지한다. 일반 상점 정적 배경과 공용 효과음 출처는 `public/assets/shop/CREDITS.md`에 기록한다. 암시장 원화 출처는 `public/assets/black-market/CREDITS.md`에 남겨 둔다.

@@ -289,7 +289,7 @@ function navigatePage(pageId) {
     if (pageId === 'orb-fusion') window.OrbFusionUI.mount($('#orbFusionRoot'), { api, postApi }); else window.OrbFusionUI?.unmount();
     if (pageId === 'equipment-synthesis') loadEquipmentSynthesis();
     if (pageId === '레벨보상') loadLevelRewards();
-    if (pageId === 'shop') loadShop(); else { window.BlackMarketUI?.unmount(); window.ShopSceneUI?.unmount(); }
+    if (pageId === 'shop') loadShop(); else { window.ShopSceneUI?.unmount(); }
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
     if (pageId === 'directtrade') window.DirectTradeUI?.open();
@@ -5806,51 +5806,21 @@ function buildLimitDetail(limitInfo) {
 }
 
 function renderShop(data, tab) {
-    window.BlackMarketUI?.unmount();
     window.ShopSceneUI?.unmount();
     shopData = data;
     shopTab = data.tabs.includes(tab) ? tab : data.tabs[0];
     const body = $('#shopBody');
-    const restoreFocus = body.contains(document.activeElement) && document.activeElement.classList.contains('shop-tab');
     body.replaceChildren();
-
-    if (shopTab !== '암시장') {
-        window.ShopSceneUI.mount(body.closest('.shop-wrap'), {
-            tab: shopTab, data, currencyIcons: SHOP_CURR_IMGS,
-            onCategory: tab => { shopTab = tab; },
-            onTab: tab => renderShop(shopData, tab),
-            onBuy: buyFromShopScene,
-            onSpecial: showShopSpecialReward
-        });
-        return;
-    }
-
-    const tabRow = el('nav', { class: 'shop-tabs', 'aria-label': '상점 종류' });
-    data.tabs.forEach(t => {
-        const isHot = t === '암시장';
-        tabRow.appendChild(el('button', {
-            type: 'button',
-            class: 'shop-tab' + (t === shopTab ? ' active' : '') + (isHot ? ' hotdeal' : ''),
-            'aria-pressed': t === shopTab,
-            onclick: () => { if (t !== shopTab) renderShop(data, t); }
-        }, t));
+    window.ShopSceneUI.mount(body.closest('.shop-wrap'), {
+        tab: shopTab, data, currencyIcons: SHOP_CURR_IMGS,
+        onCategory: tab => { shopTab = tab; },
+        onTab: tab => renderShop(shopData, tab),
+        onBuy: buyFromShopScene,
+        onSpecial: showShopSpecialReward,
+        request: (url, payload) => payload === undefined ? api(url) : postApi(url, payload),
+        onMail: () => activatePage('mail')
     });
-    body.appendChild(tabRow);
-    if (restoreFocus) tabRow.querySelector('.active')?.focus({ preventScroll: true });
-
-    if (shopTab === '암시장') {
-        const root = el('div'); body.appendChild(root);
-        window.BlackMarketUI.mount(root, {
-            request: (url, payload) => payload === undefined ? api(url) : postApi(url, payload),
-            onBalances: balances => Object.assign(shopData.currencies, balances),
-            onMail: () => activatePage('mail')
-        });
-        window.ShopSceneUI?.mount(body.closest('.shop-wrap'), { tab: shopTab });
-        return;
-    }
-
 }
-
 async function buyFromShopScene(item, count, tab) {
     const result = await postApi('/api/shop/buy', { shopType: tab, shopId: item.shopId, count });
     shopData.currencies = result.currencies;
