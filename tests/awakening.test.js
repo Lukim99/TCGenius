@@ -5,7 +5,7 @@ const path = require('node:path');
 const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const characters = require('../DB/RPGenius/CharacterCards.json');
 const awakening = require('../card_awakening');
-const items = [...require('../scripts/init_awakening_items').definitions, ...require('../DB/RPGenius/Item.json').filter(i => i.use === '변환' || ['캐릭터 변환석', '[7월]만능 캐릭터 변환석'].includes(i.name))];
+const items = [...require('../scripts/init_awakening_items').definitions, ...require('../scripts/init_black_market_items').definitions, ...require('../DB/RPGenius/Item.json').filter(i => i.use === '변환' || ['캐릭터 변환석', '[7월]만능 캐릭터 변환석'].includes(i.name))];
 const equipment = structuredClone(require('../DB/RPGenius/Equipment.json'));
 equipment.weapon.push(...require('../transcend_equipment').definitions.weapon.filter(i => ['초심권', '엘리멘탈 부스터'].includes(i.name)));
 const writes = [];
@@ -296,6 +296,23 @@ test('각성 카드 등급 상승 및 일반 변환석 차단·만능 변환석 
             assert.notEqual(u.inventory.card[0].id, card('빵귤').id);
             assert.equal(u.inventory.card[0].type, '각성'); assert.equal(u.inventory.card[0].star, 5);
         }
+    }
+});
+
+test('제타·시그마 각성 변환석은 등급 제한을 웹 선택과 실제 변환 모두에 적용한다', async () => {
+    for (const [tier, allowed] of [['제타', 9], ['시그마', 10]]) {
+        const u = user('빵귤');
+        u.inventory.card = [card('빵귤', allowed), card('빵귤', allowed + 1), card('빵귤', allowed, '전직')];
+        const name = tier + ' 각성 캐릭터 변환석', id = items.findIndex(item => item.name === name);
+        rpg.addInventoryItem(u, id, 1);
+        await rpg.useItem(u, name, 1);
+        assert.equal(rpg.getWebItemUsePending(u).options.length, 1);
+        assert.match(rpg.resolveWebItemUsePending(u, 2), /사용할 수 없습니다/);
+        assert.ok(u.pendingAction);
+        assert.match(rpg.resolveWebItemUsePending(u, 1), /변환되었습니다/);
+        assert.equal(u.inventory.card[0].star, allowed);
+        assert.equal(u.inventory.card[0].type, '각성');
+        assert.notEqual(u.inventory.card[0].id, card('빵귤').id);
     }
 });
 

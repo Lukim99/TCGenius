@@ -3048,125 +3048,60 @@ $('#rawSave').onclick = async () => {
 TAB_LOADERS.raw = () => rawLoad();
 
 // ============================================================================
-// 핫딜 미리보기
+// 암시장 매물 설정
 // ============================================================================
-const GOODS_LABEL = { gold: '골드', garnet: '가넷' };
-const SEG_LABEL = ['00:00–06:00', '06:00–12:00', '12:00–18:00', '18:00–24:00'];
-
-function renderHdSlot(slot, slotIdx) {
-    const wrap = el('div', { class: 'hd-prev-slot ' + (slotIdx === 0 ? 'fire' : 'lightning') });
-    if (slot.iconUrl) wrap.appendChild(el('img', { class: 'hd-prev-icon', src: slot.iconUrl, alt: '' }));
-    const nameRow = el('div', { class: 'hd-prev-name' }, slot.name + (slot.count > 1 ? ` ×${slot.count}` : ''));
-    const priceRow = el('div', { class: 'hd-prev-price' },
-        GOODS_LABEL[slot.goods] || slot.goods,
-        ' ',
-        Number(slot.amount).toLocaleString()
-    );
-    wrap.appendChild(nameRow);
-    wrap.appendChild(priceRow);
-    return wrap;
-}
-
-function renderHdPeriod(item) {
-    const seg = Number(item.periodKey.split('-')[3]);
-    const card = el('div', { class: 'hd-prev-card' });
-    card.appendChild(el('div', { class: 'hd-prev-header' },
-        el('span', { class: 'hd-prev-time' }, SEG_LABEL[seg] || item.periodKey),
-        el('span', { class: 'hd-prev-sector' }, item.sectorName),
-        item.edited ? el('span', { class: 'hd-prev-edited' }, '편집됨') : null
-    ));
-    const slots = el('div', { class: 'hd-prev-slots' });
-    item.slots.forEach((s, i) => slots.appendChild(renderHdSlot(s, i)));
-    card.appendChild(slots);
-    if (Array.isArray(item.options) && item.options.length) {
-        card.appendChild(el('button', { class: 'btn', style: 'width:100%;margin-top:8px', onclick: () => openHdEditModal(item) }, '편집'));
-    }
-    return card;
-}
-
-function hdOptionMatchesSlot(opt, slot) {
-    return opt.id === slot.itemId && opt.count === slot.count && opt.goods === slot.goods && opt.amount === slot.amount;
-}
-
-function openHdEditModal(item) {
-    const seg = Number(item.periodKey.split('-')[3]);
-    const bg = el('div', { class: 'modal-bg show' });
-    bg.onclick = e => { if (e.target === bg) bg.remove(); };
-    const modal = el('div', { class: 'modal' });
-    modal.appendChild(el('h3', null, '핫딜 편집 — ' + item.periodKey.slice(0, 10) + ' ' + (SEG_LABEL[seg] || '')));
-    const body = el('div', { class: 'body', style: 'padding:16px;display:flex;flex-direction:column;gap:14px' });
-    body.appendChild(el('div', { class: 'muted' }, '섹터: ' + item.sectorName + ' (변경 불가)'));
-    const selects = [];
-    [0, 1].forEach(slotIdx => {
-        const cur = item.slots[slotIdx];
-        const sel = el('select', { style: 'width:100%' });
-        item.options.forEach((opt, oi) => {
-            const o = el('option', { value: String(oi) }, opt.label);
-            if (cur && hdOptionMatchesSlot(opt, cur)) o.selected = true;
-            sel.appendChild(o);
+const BM_CURRENCY_LABEL = { gold: '골드', garnet: '가넷' };
+async function loadBlackMarketAdmin() {
+    const result = $('#bmAdminResult');
+    result.replaceChildren(el('div', { class: 'muted' }, '불러오는 중...'));
+    try {
+        const date = $('#bmAdminDate').value;
+        const data = await api('/api/admin/black-market' + (date ? '?date=' + encodeURIComponent(date) : ''));
+        $('#bmAdminDate').value = data.date;
+        $('#bmAdminDate').min = data.today;
+        result.replaceChildren();
+        if (data.missingItems.length) result.appendChild(el('p', { class: 'err' }, '운영 아이템에 없는 품목: ' + data.missingItems.join(', ')));
+        const grid = el('div', { class: 'hd-prev-grid' });
+        data.lots.forEach(lot => {
+            const section = el('div', { class: 'hd-prev-card' });
+            section.appendChild(el('h3', null, (lot.kind === 'card' ? '오늘의 카드' : '오늘의 아이템') + ' · ' + BM_CURRENCY_LABEL[lot.currency]));
+            const image = lot.display.imageUrl || lot.display.iconUrl;
+            if (image) section.appendChild(el('img', { src: image, alt: lot.display.name, style: 'height:130px;max-width:100%;object-fit:contain;display:block;margin:12px auto' }));
+            section.appendChild(el('p', null, lot.display.name + ' · ' + lot.display.sub + (lot.edited ? ' (관리자 지정)' : ' (랜덤)')));
+            const search = el('input', { placeholder: '캐릭터·아이템 검색', 'aria-label': '매물 검색', disabled: lot.locked });
+            const select = el('select', { style: 'width:100%;margin:8px 0', 'aria-label': '지정할 매물', disabled: lot.locked });
+            const matches = option => option.payload.id === lot.payload.id && option.count === lot.count && (lot.kind !== 'card' || option.payload.star === lot.payload.star && option.payload.type === lot.payload.type);
+            const fill = () => {
+                select.replaceChildren();
+                lot.options.forEach((option, index) => {
+                    const label = option.display.name + ' · ' + option.display.sub;
+                    if (search.value && !label.includes(search.value)) return;
+                    const entry = el('option', { value: String(index) }, label);
+                    entry.selected = matches(option); select.appendChild(entry);
+                });
+            };
+            search.oninput = fill; fill();
+            section.appendChild(search); section.appendChild(select);
+            const save = async reset => {
+                const option = lot.options[Number(select.value)];
+                if (!reset && (!option || select.value === '')) return showAlert('매물을 선택해주세요.');
+                if (!(await showConfirm(data.date + ' 매물을 ' + (reset ? '랜덤 로테이션으로 되돌릴까요?' : option.display.name + '(으)로 지정할까요?')))) return;
+                try {
+                    await api('/api/admin/black-market', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: data.date, sector: lot.sector, reset, ...(reset ? {} : { payload: option.payload, count: option.count }) }) });
+                    await loadBlackMarketAdmin();
+                } catch (error) { showAlert(error.message); }
+            };
+            section.appendChild(el('div', { class: 'bar' },
+                el('button', { class: 'btn primary', disabled: lot.locked, onclick: () => save(false) }, '매물 지정'),
+                el('button', { class: 'btn', disabled: lot.locked || !lot.edited, onclick: () => save(true) }, '랜덤으로 복원')));
+            if (lot.locked) section.appendChild(el('p', { class: 'muted' }, '입찰이 시작되었거나 마감된 매물입니다. 다음 날짜를 선택해주세요.'));
+            grid.appendChild(section);
         });
-        selects.push(sel);
-        body.appendChild(el('div', null, el('label', null, '슬롯 ' + (slotIdx + 1)), sel));
-    });
-    modal.appendChild(body);
-    const foot = el('div', { class: 'foot', style: 'display:flex;gap:8px;justify-content:flex-end' });
-    foot.appendChild(el('button', { class: 'btn', onclick: () => bg.remove() }, '취소'));
-    if (item.edited) foot.appendChild(el('button', { class: 'btn danger', onclick: () => hdResetOverride(item.periodKey, bg) }, '기본값으로 되돌리기'));
-    foot.appendChild(el('button', { class: 'btn primary', onclick: () => hdSaveOverride(item, selects, bg) }, '저장'));
-    modal.appendChild(foot);
-    bg.appendChild(modal);
-    document.body.appendChild(bg);
+        result.appendChild(grid);
+    } catch (error) { result.replaceChildren(el('div', { class: 'err' }, error.message)); }
 }
-
-async function hdSaveOverride(item, selects, bg) {
-    const picks = selects.map(sel => {
-        const opt = item.options[Number(sel.value)];
-        return { id: opt.id, count: opt.count, goods: opt.goods, amount: opt.amount };
-    });
-    try {
-        await api('/api/admin/hotdeal/override', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periodKey: item.periodKey, picks }) });
-        bg.remove();
-        loadHdPreview();
-    } catch (e) { showAlert(e.message); }
-}
-
-async function hdResetOverride(periodKey, bg) {
-    if (!(await showConfirm('이 핫딜을 기본값(시드 생성)으로 되돌릴까요?'))) return;
-    try {
-        await api('/api/admin/hotdeal/override/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periodKey }) });
-        bg.remove();
-        loadHdPreview();
-    } catch (e) { showAlert(e.message); }
-}
-
-async function loadHdPreview() {
-    const date = $('#hdDate').value;
-    const seg = $('#hdSeg').value;
-    const result = $('#hdResult');
-    result.innerHTML = '<div class="muted">불러오는 중...</div>';
-    try {
-        let url = '/api/admin/hotdeal/preview';
-        if (date) { url += '?date=' + encodeURIComponent(date); if (seg !== '') url += '&seg=' + seg; }
-        const data = await api(url);
-        result.innerHTML = '';
-        if (Array.isArray(data)) {
-            const grid = el('div', { class: 'hd-prev-grid' });
-            data.forEach(item => grid.appendChild(renderHdPeriod(item)));
-            result.appendChild(grid);
-        } else {
-            result.appendChild(renderHdPeriod(data));
-        }
-    } catch (e) {
-        result.innerHTML = '<div class="muted err">' + e.message + '</div>';
-    }
-}
-
-// set default date to today (local)
-const _hdTodayLocal = new Date();
-$('#hdDate').value = _hdTodayLocal.getFullYear() + '-' + String(_hdTodayLocal.getMonth() + 1).padStart(2, '0') + '-' + String(_hdTodayLocal.getDate()).padStart(2, '0');
-
-$('#hdPreviewBtn').onclick = loadHdPreview;
-TAB_LOADERS.hotdealpreview = () => loadHdPreview();
+$('#bmAdminReload').onclick = loadBlackMarketAdmin;
+TAB_LOADERS.blackmarket = loadBlackMarketAdmin;
 TAB_LOADERS.raw = () => rawLoad();
 
 // ============================================================================

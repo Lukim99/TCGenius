@@ -5,6 +5,7 @@ const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const { registerParadiseRoutes } = require('./paradise_web');
 const shopCatalog = require('./shop_catalog');
+const { createBlackMarket } = require('./black_market');
 const combatEffects = require('./public/combat-effects.js');
 const ilionCards = require('./ilion_cards');
 const randoCharacters = require('./rando_characters');
@@ -310,7 +311,22 @@ function requireUser(req, res, next) {
     const sess = getSession(req);
     if (!sess || !sess.name) return res.status(401).json({ error: '로그인이 필요합니다.' });
     req.session = sess;
-    next();
+    // 암시장 보관금과 다른 웹 구매/소비가 같은 계정의 오래된 잔액을 덮어쓰지 않게 한다.
+    // 암시장은 전체 정산 큐 → 계정 큐 순서를 유지해야 하므로 자체 큐에서 처리한다.
+    if (['GET', 'HEAD'].includes(req.method) || req.path.startsWith('/api/black-market') || ['/api/auction/buy', '/api/buyorder/fulfill'].includes(req.path)) return next();
+    if (shopPurchaseLocks.has(sess.name)) return res.status(409).json({ error: '아이템 또는 구매를 처리 중입니다. 잠시 후 다시 시도해주세요.' });
+    rpgenius.getRPGUserByName(sess.name).then(user => {
+        if (!user) return next();
+        return rpgenius.enqueueFieldAction(user, () => new Promise(resolve => {
+            if (res.destroyed) { resolve(); return; }
+            const end = res.end;
+            res.end = function(...args) {
+                try { return end.apply(this, args); }
+                finally { res.end = end; resolve(); }
+            };
+            next();
+        }));
+    }).catch(next);
 }
 
 function parseBannerUpload(req, res, next) {
@@ -1023,7 +1039,10 @@ server.post('/api/mail/claim', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const result = await rpgenius.claimMailGifts(user, String((req.body && req.body.id) || ''));
+        const id = String((req.body && req.body.id) || '');
+        const result = id.startsWith('black-market:')
+            ? await rpgenius.enqueueFieldAction(user, async () => rpgenius.claimMailGifts(await rpgenius.getUserByPrimaryId(user.id), id))
+            : await rpgenius.claimMailGifts(user, id);
         if (result.error) return res.status(400).json({ error: result.error });
         res.json({ ok: true, lines: result.lines || [] });
     } catch (e) { console.error('mail claim error:', e); res.status(500).json({ error: '서버 오류' }); }
@@ -4113,6 +4132,42 @@ function buildProtectOptions(user) {
     return opts;
 }
 
+// ===== 암시장 =====
+const blackMarket = createBlackMarket({
+    read: rpgenius.readBlackMarket,
+    commit: rpgenius.commitBlackMarket,
+    getItems: () => rpgenius.getDataCache('Item', []),
+    getUser: (name, id) => id == null ? rpgenius.getRPGUserByName(name) : rpgenius.getUserByPrimaryId(id),
+    withUser: async (name, task, id) => {
+        const user = id == null ? await rpgenius.getRPGUserByName(name) : await rpgenius.getUserByPrimaryId(id);
+        if (!user) throw Object.assign(new Error('유저를 찾을 수 없습니다.'), { status: 404 });
+        return rpgenius.enqueueFieldAction(user, task);
+    },
+    display: lot => lot.kind === 'card'
+        ? { name: lot.name, sub: `${lot.payload.star + 1}성 ${lot.payload.type}`, imageUrl: getCardImageUrl(lot.payload) }
+        : { name: lot.name, sub: `수량 ${lot.count}개`, ...getItemDisplayAssets(rpgenius.getDataCache('Item', [])[lot.payload.id]) }
+});
+
+function blackMarketRoute(method, route, auth, handle) {
+    server[method](route, auth, async (req, res) => {
+        res.setHeader('Cache-Control', 'no-store');
+        try {
+            await rpgenius.initRpgeniusData();
+            res.json(await handle(req));
+        } catch (error) {
+            if (!error.status) console.error('[암시장]', error);
+            res.status(error.status || 500).json({ error: error.status ? error.message : '암시장 처리에 실패했습니다. 새로고침 후 다시 시도해주세요.' });
+        }
+    });
+}
+blackMarketRoute('get', '/api/black-market', requireUser, req => blackMarket.get(req.session.name));
+blackMarketRoute('post', '/api/black-market/bid', requireUser, req => blackMarket.bid(req.session.name, req.body || {}));
+blackMarketRoute('get', '/api/admin/black-market', requireAdmin, async req => {
+    await rpgenius.loadRpgeniusDataEntry('Item', { consistentRead: true });
+    return blackMarket.admin(req.query.date);
+});
+blackMarketRoute('post', '/api/admin/black-market', requireAdmin, req => blackMarket.override(req.body || {}));
+
 // ===== 핫딜샵 =====
 
 const HOTDEAL_ENABLED = false;
@@ -4567,9 +4622,19 @@ server.post('/api/auction/register', requireUser, async (req, res) => {
     }
 });
 
+// 두 계정이 바뀌는 거래는 항상 같은 ID 순서로 잠근다. 판매 대금과 입찰 보관금도 서로 덮어쓰지 않는다.
+async function withMarketAccounts(names, task) {
+    const users = (await Promise.all([...new Set(names.filter(Boolean))].map(name => rpgenius.getRPGUserByName(name)))).filter(Boolean);
+    users.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const run = index => index === users.length ? task() : rpgenius.enqueueFieldAction(users[index], () => run(index + 1));
+    return run(0);
+}
+
 server.post('/api/auction/buy', requireUser, async (req, res) => {
     try {
-        const out = await buyAuction(req.session.name, String((req.body && req.body.id) || ''), req.body && req.body.count);
+        const id = String((req.body && req.body.id) || '');
+        const entry = (await getAuctionList()).find(item => item.id === id);
+        const out = await withMarketAccounts([req.session.name, entry?.sellerName], () => buyAuction(req.session.name, id, req.body && req.body.count));
         if (out.error) return res.status(400).json({ error: out.error });
         if (out.notice) sendAuctionKakaoNotice(out.notice);
         res.json({ ok: true });
@@ -4673,7 +4738,9 @@ server.post('/api/buyorder/register', requireUser, async (req, res) => {
 
 server.post('/api/buyorder/fulfill', requireUser, async (req, res) => {
     try {
-        const out = await fulfillBuyOrder(req.session.name, String((req.body && req.body.id) || ''), req.body || {});
+        const id = String((req.body && req.body.id) || '');
+        const entry = (await getBuyOrderList()).find(item => item.id === id);
+        const out = await withMarketAccounts([req.session.name, entry?.buyerName], () => fulfillBuyOrder(req.session.name, id, req.body || {}));
         if (out.error) return res.status(400).json({ error: out.error });
         if (out.notice) sendAuctionKakaoNotice(out.notice);
         res.json({ ok: true });
@@ -5869,6 +5936,7 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
+    if (['제타 각성 캐릭터 변환석', '시그마 각성 캐릭터 변환석'].includes(item.name)) return getItemImageUrl('사용', '각성 캐릭터 변환석.png');
     const paradiseRewardIcons = { '천상의 회랑 입장권': 'ticket', '천상의 증표': 'heaven-token', '지옥 열쇠': 'hell-key', '화려한 지옥 열쇠': 'hell-key-ornate', '찬란한 지옥 열쇠': 'hell-key-radiant' };
     if (paradiseRewardIcons[item.name]) {
         // 관리자 아이템 이미지를 우선하고, 아직 등록되지 않은 아이템만 기존 낙원 에셋을 사용한다.
@@ -7636,7 +7704,7 @@ function buildShopData(user) {
         });
     }
     return {
-        tabs: HOTDEAL_ENABLED ? ['핫딜샵', ...tabs] : tabs,
+        tabs: ['암시장', ...tabs.filter(tab => tab !== '핫딜샵' && tab !== '암시장')],
         shop,
         currencies: {
             gold: Number(user.gold || 0),
@@ -7684,7 +7752,6 @@ async function buyShopItem(userName, body) {
 // ===== 경매장 헬퍼 =====
 
 const AUCTION_FEE_RATE = 0.05;
-const AUCTION_MAX_PER_USER = 20;
 const AUCTION_MAX_PRICE = 1_000_000_000_000;
 
 function getAuctionFeeRate(user) {
@@ -8139,10 +8206,6 @@ function buildSellableAssets(user) {
     return { cards, equipment, items, pets, avatars };
 }
 
-function countUserAuctions(items, name) {
-    return items.filter(entry => entry.sellerName == name).length;
-}
-
 async function registerAuction(sellerName, body) {
     const kind = String(body.kind || '');
     const currency = String(body.currency || '');
@@ -8155,7 +8218,6 @@ async function registerAuction(sellerName, body) {
     if (!user) return { error: '유저를 찾을 수 없습니다.' };
     ensureInventoryShape(user);
     const list = await getAuctionList();
-    if (countUserAuctions(list, sellerName) >= AUCTION_MAX_PER_USER) return { error: '경매 등록은 최대 ' + AUCTION_MAX_PER_USER + '건까지 가능합니다.' };
 
     let payload, count = 1;
     if (kind == 'card') {
@@ -8400,7 +8462,6 @@ async function cancelAuction(userName, auctionId) {
 
 // ===== 삽니다 (구매 등록) 헬퍼 =====
 
-const BUY_ORDER_MAX_PER_USER = 20;
 
 async function getBuyOrderList() {
     let data = rpgenius.getDataCache('BuyOrder', null);
@@ -8537,10 +8598,6 @@ function serializeBuyOrderEntry(entry, currentUserName) {
     };
 }
 
-function countUserBuyOrders(items, name) {
-    return items.filter(entry => entry.buyerName == name).length;
-}
-
 async function registerBuyOrder(buyerName, body) {
     const kind = String(body.kind || '');
     const currency = String(body.currency || '');
@@ -8555,7 +8612,6 @@ async function registerBuyOrder(buyerName, body) {
     const buyer = await rpgenius.getRPGUserByName(buyerName);
     if (!buyer) return { error: '유저를 찾을 수 없습니다.' };
     const list = await getBuyOrderList();
-    if (countUserBuyOrders(list, buyerName) >= BUY_ORDER_MAX_PER_USER) return { error: '구매 등록은 최대 ' + BUY_ORDER_MAX_PER_USER + '건까지 가능합니다.' };
 
     let payload;
     let ticketCostPer = 0;
@@ -9208,7 +9264,7 @@ function renderUserDashboard(sess, opts) {
 <html lang="ko"><head><meta charset="utf-8"><title>RPGenius</title>
 <script>window.__INITIAL_PAGE=${JSON.stringify(initialPage)};</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"></head><body>
+<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/black-market.css"></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="otpBtn" style="padding:8px 12px;font-size:13px" title="2단계 인증 설정">OTP</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
@@ -9527,6 +9583,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/quest-board-effects.js"></script>
 <script src="/static/pvp-lobby.js"></script>
 <script src="/static/enhance-effects.js"></script>
+<script src="/static/black-market.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/direct-trade.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
@@ -9911,7 +9968,11 @@ function escapeHtml(s) {
 
 function keepAlive() {
     const port = Number(process.env.PORT || 3000);
-    return server.listen(port, () => console.log('서버 준비 완료! http://localhost:' + port));
+    const listener = server.listen(port, () => console.log('서버 준비 완료! http://localhost:' + port));
+    const timer = setInterval(() => rpgenius.initRpgeniusData().then(() => blackMarket.tick()).catch(error => console.error('[암시장 정산]', error.message)), 30000);
+    timer.unref();
+    listener.on('close', () => clearInterval(timer));
+    return listener;
 }
 
 if (require.main === module) keepAlive();

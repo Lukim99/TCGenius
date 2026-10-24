@@ -632,6 +632,7 @@ async function tickTrainingCombat(user) {
     await runFieldEquipmentDotTick(user.name, user);
 }
 const commandQueues = {};
+const userCommandContext = new (require('node:async_hooks').AsyncLocalStorage)();
 const petShortcutCache = {};
 const commandSpamStates = {};
 const COMMAND_SPAM_WINDOW_MS = 1000;
@@ -3706,10 +3707,11 @@ function convertJobCharacterCard(user, numberArg, can) {
     return '✅ 전직 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
 }
 
-function convertAwakeningCharacterCard(user, numberArg) {
+function convertAwakeningCharacterCard(user, numberArg, can) {
     const card = getCharacterInventoryCard(user, numberArg);
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
     if (card.type !== '각성') return '❌ 각성 카드만 각성 캐릭터 변환석으로 변환할 수 있습니다.';
+    if (can && Number(card.star || 0) >= CHARACTER_CONVERT_MAX_STAR[can]) return '❌ 해당 등급 카드는 이 각성 변환석을 사용할 수 없습니다.';
     const candidates = readJson(CHARACTER_CARDS_PATH, []).map((_, id) => id)
         .filter(id => id !== Number(card.id) && cardAwakening.getDefinition({ id, type: '각성' }));
     if (!candidates.length) return '❌ 변환할 수 있는 다른 각성 캐릭터가 없습니다.';
@@ -12855,7 +12857,7 @@ async function useItem(user, itemName, countArg, options = {}) {
         if (item.use == '전직캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use === '각성캐릭터변환') {
             if (useCount !== 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
-            if (!(user.inventory?.card || []).some(card => card.type === '각성')) return '❌ 변환할 각성 카드가 없습니다.';
+            if (!(user.inventory?.card || []).some(card => card.type === '각성' && (!item.can || Number(card.star || 0) < CHARACTER_CONVERT_MAX_STAR[item.can]))) return '❌ 변환할 각성 카드가 없습니다.';
         }
         if (item.use == '전직프레스티지' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -13216,6 +13218,7 @@ async function useItem(user, itemName, countArg, options = {}) {
         }
         if (item.use === '각성캐릭터변환') {
             user.pendingAction = { type: '각성캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
+            if (item.can) user.pendingAction.can = item.can;
             lines.push('변환할 각성 캐릭터 카드를 선택해주세요.', '/RPGenius 선택 [카드번호]', '/RPGenius 사용취소', '', formatCharacterInventory(user));
         }
     }
@@ -13304,7 +13307,7 @@ function getWebItemUsePending(user) {
     } else if (pending.type === '각성캐릭터변환') {
         title = '변환할 각성 카드 선택';
         description = '등급과 각성 상태를 유지하고 다른 각성 캐릭터로 변환합니다. 적용된 아바타는 제거됩니다.';
-        options = makeCardOptions(entry => entry.card.type === '각성');
+        options = makeCardOptions(entry => entry.card.type === '각성' && (!pending.can || Number(entry.card.star || 0) < CHARACTER_CONVERT_MAX_STAR[pending.can]));
     } else if (pending.type == '전직캐릭터변환') {
         const jobMaxStar = CHARACTER_CONVERT_MAX_STAR[pending.can] || 9;
         title = '변환할 전직 카드 선택';
@@ -13409,7 +13412,7 @@ function resolveWebItemUsePending(user, choice, confirmed) {
     if (pending.type == '캐릭터변환') return convertCharacterCard(user, pending.cardNumber || choice, confirmed === true, pending.can);
     if (pending.type == '만능캐릭터변환') return convertCharacterCardUniversal(user, pending.cardNumber || choice, confirmed === true);
     if (pending.type == '전직캐릭터변환') return convertJobCharacterCard(user, choice, pending.can);
-    if (pending.type === '각성캐릭터변환') return convertAwakeningCharacterCard(user, choice);
+    if (pending.type === '각성캐릭터변환') return convertAwakeningCharacterCard(user, choice, pending.can);
     if (pending.type == '무료장비강화') {
         return formatEquipmentUpgradePreview(user, choice, { free: true, consumedItemId: pending.consumedItemId, consumedItemCount: pending.consumedItemCount });
     }
@@ -14146,6 +14149,61 @@ function tradeVersionError(session, expected) {
 }
 
 // 보관 품목과 자산을 함께 저장한다. 거래 완료/취소는 양쪽 계정을 같은 트랜잭션으로 반영한다.
+async function readBlackMarket() {
+    const result = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: 'BlackMarket' }, ConsistentRead: true }));
+    return result.Item?.data || null;
+}
+
+// 보관금/환불/보상 메일과 정산 진행 상태를 함께 기록한다. 재시작해도 이미 처리한 입찰은 남지 않는다.
+async function commitBlackMarket(previous, next, user, mail) {
+    const changes = {}, names = {}, values = {}, conditions = ['attribute_exists(id)'];
+    if (user) {
+        const flushed = await flushCachedUser(user.id);
+        if (!flushed.success) throw flushed.result[0];
+        for (const key of ['gold', 'garnet', 'mail', 'mailNotified', ...(!next ? ['inventory'] : [])]) {
+            if (JSON.stringify(user[key]) === user.__loaded[key]) continue;
+            changes[key] = structuredClone(user[key]);
+            names['#' + key] = key;
+            values[':new_' + key] = changes[key];
+            if (user.__loaded[key] === undefined) conditions.push('attribute_not_exists(#' + key + ')');
+            else {
+                values[':old_' + key] = JSON.parse(user.__loaded[key]);
+                conditions.push('#' + key + ' = :old_' + key);
+            }
+        }
+    }
+    const items = next ? [{ Put: { TableName: DATA_TABLE_NAME, Item: { key: 'BlackMarket', data: next },
+        ConditionExpression: previous ? '#data = :previous' : 'attribute_not_exists(#key)',
+        ExpressionAttributeNames: previous ? { '#data': 'data' } : { '#key': 'key' },
+        ...(previous ? { ExpressionAttributeValues: { ':previous': previous } } : {}) } }] : [];
+    if (Object.keys(changes).length) items.push({ Update: { TableName: TABLE_NAME, Key: { id: user.id },
+        UpdateExpression: 'SET ' + Object.keys(changes).map(key => '#' + key + ' = :new_' + key).join(', '),
+        ConditionExpression: conditions.join(' AND '), ExpressionAttributeNames: names, ExpressionAttributeValues: values } });
+    if (mail) items.push({ Put: { TableName: MAIL_TABLE_NAME, Item: mail, ConditionExpression: 'attribute_not_exists(id)' } });
+    try {
+        await docClient.send(new TransactWriteCommand({ ClientRequestToken: crypto.randomUUID(), TransactItems: items }));
+    } catch (error) {
+        // 네트워크 응답만 유실된 경우 DB에 저장된 결과를 확인한다.
+        const stored = next ? await readBlackMarket() : null;
+        let freshUser;
+        if (user) {
+            const fresh = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { id: user.id }, ConsistentRead: true }));
+            freshUser = fresh.Item;
+            if (fresh.Item) putUserCacheEntry(fresh.Item);
+        }
+        const committed = next ? JSON.stringify(stored) === JSON.stringify(next)
+            : freshUser && Object.entries(changes).every(([key, value]) => JSON.stringify(freshUser[key]) === JSON.stringify(value));
+        if (!committed) {
+            if (error.name === 'TransactionCanceledException') throw Object.assign(new Error('입찰 또는 보유 재화가 변경되었습니다. 새로고침 후 다시 시도해주세요.'), { status: 409 });
+            throw error;
+        }
+    }
+    if (user) {
+        applyDirectDbWriteToCache(user.id, changes);
+        for (const key of Object.keys(changes)) user.__loaded[key] = JSON.stringify(changes[key]);
+    }
+}
+
 async function commitTradeUsers(users) {
     const updates = users.map(user => {
         const names = {}, values = {}, conditions = ['attribute_exists(id)'], sets = [], removes = [], changes = {};
@@ -14837,7 +14895,8 @@ async function claimMailGifts(user, id) {
     });
     e.claimed = true;
     if (!e.read) { e.read = true; e.readAt = Date.now(); }
-    await user.save();
+    if (id.startsWith('black-market:')) await commitBlackMarket(null, null, user);
+    else await user.save();
     return { ok: true, lines };
 }
 
@@ -15362,10 +15421,18 @@ function getCommandBlockMessage(senderId) {
 }
 
 function enqueueUserCommand(senderId, task) {
+    const activeContext = userCommandContext.getStore();
+    if (activeContext?.active && activeContext.key === senderId) return Promise.resolve().then(task);
     const previous = commandQueues[senderId] || Promise.resolve();
     const next = previous
         .catch(() => {})
-        .then(task)
+        .then(() => {
+            const context = { key: senderId, active: true };
+            return userCommandContext.run(context, async () => {
+                try { return await task(); }
+                finally { context.active = false; }
+            });
+        })
         .finally(() => {
             if (commandQueues[senderId] === next) delete commandQueues[senderId];
         });
@@ -15659,7 +15726,7 @@ async function handleRPGCommand(data, channel, context = {}) {
             reply('❌ 변환할 ' + cardType + ' 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
             return true;
         }
-        const result = user.pendingAction.type === '각성캐릭터변환' ? convertAwakeningCharacterCard(user, args[1]) : convertJobCharacterCard(user, args[1], user.pendingAction.can);
+        const result = user.pendingAction.type === '각성캐릭터변환' ? convertAwakeningCharacterCard(user, args[1], user.pendingAction.can) : convertJobCharacterCard(user, args[1], user.pendingAction.can);
         await user.save();
         reply(result);
         return true;
@@ -17298,6 +17365,9 @@ module.exports = {
     advanceParadiseMirror,
     advanceParadiseCombat,
     getFieldShieldView,
+    readBlackMarket,
+    commitBlackMarket,
+    getUserByPrimaryId,
     useBasicAttackInField,
     useSkillInField,
     getPendingFragmentInfo,

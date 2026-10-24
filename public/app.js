@@ -287,7 +287,7 @@ function navigatePage(pageId) {
     if (pageId === 'awakeningcombine') loadAwakeningCombine();
     if (pageId === 'equipment-synthesis') loadEquipmentSynthesis();
     if (pageId === '레벨보상') loadLevelRewards();
-    if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
+    if (pageId === 'shop') loadShop(); else window.BlackMarketUI?.unmount();
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
     if (pageId === 'directtrade') window.DirectTradeUI?.open();
@@ -5832,7 +5832,7 @@ function buildLimitDetail(limitInfo) {
 }
 
 function renderShop(data, tab) {
-    stopHotdealCountdown();
+    window.BlackMarketUI?.unmount();
     shopData = data;
     shopTab = data.tabs.includes(tab) ? tab : data.tabs[0];
     const body = $('#shopBody');
@@ -5841,7 +5841,7 @@ function renderShop(data, tab) {
 
     const tabRow = el('nav', { class: 'shop-tabs', 'aria-label': '상점 종류' });
     data.tabs.forEach(t => {
-        const isHot = t === '핫딜샵';
+        const isHot = t === '암시장';
         tabRow.appendChild(el('button', {
             type: 'button',
             class: 'shop-tab' + (t === shopTab ? ' active' : '') + (isHot ? ' hotdeal' : ''),
@@ -5852,7 +5852,15 @@ function renderShop(data, tab) {
     body.appendChild(tabRow);
     if (restoreFocus) tabRow.querySelector('.active')?.focus({ preventScroll: true });
 
-    if (shopTab === '핫딜샵') { loadHotDeal(body, tabRow); return; }
+    if (shopTab === '암시장') {
+        const root = el('div'); body.appendChild(root);
+        window.BlackMarketUI.mount(root, {
+            request: (url, payload) => payload === undefined ? api(url) : postApi(url, payload),
+            onBalances: balances => Object.assign(shopData.currencies, balances),
+            onMail: () => activatePage('mail')
+        });
+        return;
+    }
 
     const content = el('div', { class: 'shop-content', 'aria-label': shopTab + ' 상점' });
     const currBar = el('div', { class: 'shop-currency-bar', 'aria-label': '보유 재화' });
@@ -6203,173 +6211,6 @@ function openBundleGrantedModal(name, rewards) {
     $('#modalBg').classList.add('active');
 }
 
-let hotdealCountdownTimer = null;
-function stopHotdealCountdown() { if (hotdealCountdownTimer) { clearInterval(hotdealCountdownTimer); hotdealCountdownTimer = null; } }
-
-async function loadHotDeal(body, tabRow) {
-    stopHotdealCountdown();
-    const root = body.querySelector('.hd-root') || el('div', { class: 'hd-root' }, el('div', { class: 'loading', style: 'padding:40px 0;text-align:center' }, '불러오는 중...'));
-    if (!body.contains(root)) body.appendChild(root);
-    try {
-        const data = await api('/api/hotdeal');
-        if (shopTab !== '핫딜샵' || activePage !== 'shop' || !body.contains(root)) return;
-        renderHotDeal(data, body, tabRow);
-    } catch (e) {
-        if (shopTab !== '핫딜샵' || activePage !== 'shop' || !body.contains(root)) return;
-        root.replaceChildren(el('div', { class: 'empty err', style: 'padding:40px 0;text-align:center' }, e.message));
-    }
-}
-
-function renderHotDeal(data, body, tabRow) {
-    stopHotdealCountdown();
-
-    const currencyBar = el('div', { class: 'hd-currency-bar' }, el('span', { class: 'hd-currency-label' }, '보유 재화'));
-    [{ key: 'gold', label: '골드' }, { key: 'garnet', label: '가넷' }].forEach(({ key, label }) => {
-        if (data.currencies[key] == null) return;
-        const chip = el('div', { class: 'shop-currency-chip hd-currency-chip' });
-        chip.appendChild(shopCurrNode(key, 18));
-        chip.appendChild(el('span', { class: 'hd-currency-name' }, label));
-        chip.appendChild(el('span', {}, comma(data.currencies[key])));
-        currencyBar.appendChild(chip);
-    });
-
-    const countdownEl = el('span');
-    function updateCountdown() {
-        const rem = Math.max(0, data.nextRefreshAt - Date.now());
-        const h = String(Math.floor(rem / 3600000)).padStart(2, '0');
-        const m = String(Math.floor((rem % 3600000) / 60000)).padStart(2, '0');
-        const s = String(Math.floor((rem % 60000) / 1000)).padStart(2, '0');
-        countdownEl.replaceChildren('다음 교체까지 ', el('span', null, h + ':' + m + ':' + s));
-        if (rem <= 0) { stopHotdealCountdown(); loadHotDeal(body, tabRow); }
-    }
-    updateCountdown();
-    hotdealCountdownTimer = setInterval(updateCountdown, 1000);
-
-    const slots = el('div', { class: 'hd-slots' });
-    data.items.forEach(item => {
-        const isLightning = item.slot === 1;
-        const slot = el('div', { class: 'hd-slot ' + (isLightning ? 'lightning' : 'fire') });
-        slot.appendChild(el('div', { class: 'hd-corner top-left' }));
-        slot.appendChild(el('div', { class: 'hd-corner top-right' }));
-        slot.appendChild(el('div', { class: 'hd-corner bottom-left' }));
-        slot.appendChild(el('div', { class: 'hd-corner bottom-right' }));
-
-        // 불꽃/번개 파티클 요소
-        if (isLightning) {
-            for (let i = 0; i < 3; i++) slot.appendChild(el('div', { class: 'hd-slot-spark' }));
-        } else {
-            const embers = [['4px','-28px'], ['-3px','-35px'], ['5px','-30px']];
-            embers.forEach(([ex, ey]) => {
-                const e2 = el('div', { class: 'hd-slot-ember' });
-                e2.style.setProperty('--ex', ex);
-                e2.style.setProperty('--ey', ey);
-                slot.appendChild(e2);
-            });
-        }
-
-        const inner = el('div', { class: 'hd-slot-inner' });
-        // 썸네일
-        const thumbStage = el('div', { class: 'hd-thumb-stage' });
-        thumbStage.appendChild(el('div', { class: 'hd-thumb-aura' }));
-        const thumb = el('div', { class: 'hd-item-thumb auc-thumb square' });
-        if (item.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: item.frameUrl, alt: '' }));
-        if (item.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: item.iconUrl, alt: item.name }));
-        if (item.purchased) {
-            const sold = el('div', { class: 'hd-sold' });
-            sold.appendChild(el('div', { class: 'hd-sold-text' }, '구매 완료'));
-            thumb.appendChild(sold);
-        }
-        thumbStage.appendChild(thumb);
-        inner.appendChild(thumbStage);
-        inner.appendChild(el('div', { class: 'hd-product-copy' },
-            el('div', { class: 'hd-item-name' }, item.name),
-            el('div', { class: 'hd-item-sub' }, '이번 교체 전까지 구매 가능')
-        ));
-
-        const priceRow = el('div', { class: 'hd-price-row' });
-        priceRow.appendChild(el('span', { class: 'hd-price-label' }, 'SPECIAL PRICE'));
-        const priceValue = el('div', { class: 'hd-price-value' });
-        if (item.price.imgUrl) priceValue.appendChild(el('img', { class: 'hd-price-img', src: item.price.imgUrl, alt: item.price.goods }));
-        priceValue.appendChild(el('div', { class: 'hd-price-val' }, comma(item.price.amount)));
-        priceRow.appendChild(priceValue);
-        inner.appendChild(priceRow);
-
-        const btn = el('button', {
-            class: 'hd-buy-btn',
-            disabled: item.purchased,
-            onclick: item.purchased ? null : () => openHotDealBuyModal(item, data, body, tabRow)
-        }, item.purchased ? '구매 완료' : '구매');
-        inner.appendChild(btn);
-
-        slot.appendChild(inner);
-        slots.appendChild(slot);
-    });
-
-    const root = el('div', { class: 'hd-root' },
-        el('div', { class: 'hd-backdrop-lines', 'aria-hidden': 'true' }),
-        el('div', { class: 'hd-header' },
-            el('div', { class: 'hd-title' },
-                el('span', { class: 'hd-title-ko' }, '핫딜'),
-                el('span', { class: 'hd-title-shop' }, 'SHOP')
-            ),
-            el('div', { class: 'hd-meta' },
-                el('div', { class: 'hd-countdown' }, countdownEl)
-            )
-        ),
-        currencyBar,
-        slots
-    );
-
-    body.querySelector('.hd-root').replaceWith(root);
-}
-
-function openHotDealBuyModal(item, hdData, body, tabRow) {
-    const p = item.price;
-    const bal = hdData.currencies[p.goods] || 0;
-    const after = bal - p.amount;
-
-    const content = el('div', { class: 'shop-buy-modal' });
-    const itemRow = el('div', { class: 'shop-buy-item-row' });
-    const thumb = el('div', { class: 'shop-buy-thumb' });
-    if (item.frameUrl) thumb.appendChild(el('img', { class: 'shop-card-thumb-frame', src: item.frameUrl, alt: '' }));
-    if (item.iconUrl) thumb.appendChild(el('img', { class: 'shop-card-thumb-icon', src: item.iconUrl, alt: item.name }));
-    itemRow.appendChild(thumb);
-    const info = el('div', { style: 'flex:1;min-width:0' });
-    info.appendChild(el('div', { class: 'shop-buy-name' }, item.name));
-    info.appendChild(el('div', { class: 'shop-buy-meta' }, '핫딜 특가 상품'));
-    itemRow.appendChild(info);
-    content.appendChild(itemRow);
-
-    const receipt = el('div', { class: 'shop-receipt' });
-    const pFull = { goods: p.goods, amount: p.amount, imgUrl: p.imgUrl };
-    receipt.appendChild(buildReceiptRow('현재 보유', pFull, bal));
-    receipt.appendChild(buildReceiptRow('소모', pFull, p.amount, 'deduct'));
-    receipt.appendChild(el('div', { class: 'shop-receipt-divider' }));
-    receipt.appendChild(buildReceiptRow('구매 후 잔액', pFull, after, after < 0 ? 'neg' : 'result'));
-    content.appendChild(receipt);
-
-    const footer = el('div', { class: 'shop-buy-footer' });
-    footer.appendChild(el('button', { onclick: closeModal }, '취소'));
-    const buyBtn = el('button', { class: 'primary', onclick: async () => {
-        buyBtn.disabled = true; buyBtn.textContent = '처리 중...';
-        try {
-            const res = await postApi('/api/hotdeal/buy', { slot: item.slot });
-            closeModal();
-            renderHotDeal(res.hotdeal, body, tabRow);
-        } catch (e) {
-            buyBtn.disabled = false; buyBtn.textContent = '구매';
-            showAlert(e.message);
-        }
-    }}, '구매');
-    footer.appendChild(buyBtn);
-    content.appendChild(footer);
-
-    $('#modalTitle').textContent = item.name + ' 구매';
-    $('#modalSub').style.display = 'none';
-    $('#modalBody').replaceChildren(content);
-    $('#modalBg').classList.add('active');
-}
-
 async function loadShop() {
     const body = $('#shopBody');
     body.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
@@ -6377,6 +6218,7 @@ async function loadShop() {
         const r = await fetch('/api/shop');
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || '오류');
+        if (activePage !== 'shop') return;
         renderShop(data, shopTab);
     } catch (e) {
         body.replaceChildren(el('div', { class: 'empty err' }, e.message));
