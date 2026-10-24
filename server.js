@@ -1834,10 +1834,12 @@ server.post('/api/awakeningcombine', requireUser, async (req, res) => {
     }
 });
 
-function buildOrbFusionItem(id) {
+function buildOrbFusionItem(id, summaryOnly = false) {
     const item = rpgenius.getDataCache('Item', [])[id];
     const orb = rpgenius.getOrbData().find(entry => entry.name === item.name);
-    return { id, name: item.name, description: item.desc || '', imageUrl: getItemIconUrl(item),
+    const partLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조 장비', artifact: '아티팩트' };
+    const summary = orb ? ['부여 가능 부위: ' + (orb.parts || []).map(part => partLabels[part] || part).join(', '), ...rpgenius.formatOrbLines(orb).slice(1)].join('\n') : '';
+    return { id, name: item.name, description: summaryOnly ? summary : item.desc || '', imageUrl: getItemIconUrl(item),
         series: orb?.series || ORB_DEX_CATEGORIES.find(group => group.orbs.includes(item.name))?.name || '' };
 }
 
@@ -1865,7 +1867,7 @@ server.post('/api/orb-fusion', requireUser, async (req, res) => {
         const blocked = getEquipmentActionBlockedReason(user, '합성', '보주를');
         if (blocked && user.orbFusionReceipt?.requestId !== req.body?.requestId) return res.status(409).json({ error: blocked });
         const receipt = await rpgenius.fuseOrbs(user, req.body);
-        res.json({ ok: true, result: buildOrbFusionItem(receipt.resultId), ...buildOrbFusionView(user) });
+        res.json({ ok: true, result: buildOrbFusionItem(receipt.resultId, true), ...buildOrbFusionView(user) });
     } catch (error) {
         if (!error.status) console.error('orb fusion:', error);
         res.status(error.status || 500).json({ error: error.status ? error.message : '합성 결과를 확인하지 못했습니다. 같은 선택으로 다시 시도해주세요.' });
@@ -5940,7 +5942,7 @@ function getCardImageUrl(card, user, square = false) {
     if (!cardComposite.canCompose(spec)) return null;
     const params = ['name=' + encodeURIComponent(spec.name), 'star=' + spec.star, 'type=' + encodeURIComponent(spec.type)];
     if (square) params.push('square=1');
-    if (spec.skin) params.push('skin=' + encodeURIComponent(spec.skin));
+    if (spec.skin) params.push('skin=' + encodeURIComponent(spec.skin), 'skinArt=2');
     if (spec.prestige) params.push('prestige=1');
     if (card.specter) params.push('specter=1');
     if (rpgenius.getCardAwakeningSpecter(card)) params.push('awakeningSpecter=1');

@@ -106,6 +106,10 @@ test('API 인증, 보유 목록, 합성 비용 없음, 재료 3개 소모와 영
     assert.equal(view.cache, 'no-store'); assert.equal(view.data.poolSize, orbIds.length); assert.equal(view.data.orbs.length, 2);
     const body = payload(), result = await request(user, body);
     assert.equal(result.status, 200); assert.equal(result.data.revision, 1); assert.ok(result.data.result.name.endsWith('보주'));
+    assert.match(result.data.result.description, /^부여 가능 부위: /);
+    assert.doesNotMatch(result.data.result.description, /장비에 부여해 효과를 얻는 보주다/);
+    const definition = rpg.getOrbData().find(orb => orb.name === result.data.result.name);
+    for (const line of rpg.formatOrbLines(definition).slice(1)) assert.ok(result.data.result.description.includes(line));
     assert.equal(total(users.get(user.id)), 33); assert.equal(users.get(user.id).gold, 1234); assert.equal(users.get(user.id).garnet, 567);
     assert.equal(users.get(user.id).boundItems[a], 27);
     const saved = structuredClone(users.get(user.id));
@@ -138,6 +142,15 @@ test('아이돌 적용 대상과 카드 및 필드 원본 아트를 워뇨띠와
     const compositor = require('../card_composite');
     const characters = data.CharacterCards;
     for (const name of ['워뇨띠', '키노']) for (const skin of ['아이돌', '고급 아이돌']) {
+        for (const type of ['일반', '전직', '각성']) for (const prestige of [false, true]) for (const star of [6, 9, 10, 11]) {
+            const spec = { name, skin, type, prestige, star };
+            const selected = compositor.resolveCardLayers(spec);
+            assert.equal(path.basename(selected.character), `전직 ${skin} ${name}.png`, JSON.stringify(spec));
+            if (star === 11) {
+                const bytes = compositor.composeCardImage(spec);
+                assert.ok(bytes); assert.notDeepEqual(bytes, compositor.composeCardImage({ ...spec, skin: '' }));
+            }
+        }
         const layers = compositor.resolveCardLayers({ name, skin, type: '전직', star: 6 });
         assert.ok(layers); assert.equal(path.basename(layers.character), `전직 ${skin} ${name}.png`);
         const user = await seed(), saved = users.get(user.id);
@@ -190,6 +203,9 @@ test('PC/태블릿/모바일에서 WebGL, 선택, 합성, 재시도와 페이지
             await page.screenshot({ path: path.join(dir, label + '-viewport.png'), animations: 'disabled' });
             await page.locator('.of-fuse').click(); await page.getByRole('dialog').getByRole('button', { name: '합성', exact: true }).click();
             await page.locator('.of-core.is-revealed').waitFor();
+            assert.equal(await page.locator('.of-plate .of-tag').count(), 0);
+            assert.match(await page.locator('.of-plate-desc').innerText(), /^부여 가능 부위: /);
+            assert.doesNotMatch(await page.locator('.of-plate').innerText(), /거래 가능|장비에 부여해 효과를 얻는 보주다/);
             await page.waitForFunction(() => !document.querySelector('#orbFusionRoot').classList.contains('is-locked'));
             assert.equal(total(users.get(user.id)), initialCount - 2);
             await page.screenshot({ path: path.join(dir, label + '-result.png'), fullPage: true });
@@ -201,7 +217,7 @@ test('PC/태블릿/모바일에서 WebGL, 선택, 합성, 재시도와 페이지
             await page.unroute('**/api/orb-fusion'); await page.getByRole('button', { name: '같은 요청으로 다시 시도' }).click();
             await page.waitForFunction(() => !document.querySelector('#orbFusionRoot').classList.contains('is-locked'));
             assert.equal(total(users.get(user.id)), initialCount - 4);
-            for (const name of ['select', 'charge', 'reveal']) assert.ok((await page.evaluate(() => window.playedSounds)).some(src => src.endsWith('/' + name + '.ogg')));
+            for (const name of ['select', 'charge-v2', 'reveal-v2']) assert.ok((await page.evaluate(() => window.playedSounds)).some(src => src.endsWith('/' + name + '.ogg')));
             if (label === 'pc') {
                 await page.evaluate(() => { window.orbTestGL = document.querySelector('.of-canvas').getContext('webgl').getExtension('WEBGL_lose_context'); window.orbTestGL.loseContext(); });
                 await page.waitForFunction(() => document.querySelector('#orbFusionRoot').dataset.gl === 'off');

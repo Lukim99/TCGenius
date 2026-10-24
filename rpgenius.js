@@ -13607,7 +13607,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (typeof limits.weekly == 'number') rec.weekly = Number(rec.weekly || 0) + count;
     if (typeof limits.monthly == 'number') rec.monthly = Number(rec.monthly || 0) + count;
 
-    if (shopType === '레이드' || ['artifact-package', 'rando-release-package'].includes(shopItem.contentKey)) {
+    if (shopType === '레이드' || ['artifact-package', 'rando-release-package', '2026-autumn-release-package'].includes(shopItem.contentKey)) {
         try { await commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'point', 'mileage', 'shopPurchases']); }
         catch (error) { console.error('[raid shop] purchase:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 상점을 다시 불러와주세요.'; }
     } else await user.save();

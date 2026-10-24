@@ -1,0 +1,32 @@
+[
+  {
+    "category": "itemImage",
+    "file": "번들/유의게임X보주출시패키지.png",
+    "sha256": "0b28c65e40146d231a1137c9cfe2e04cc0442c4feb8de7f1e55b0babf64bad9d"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/낙원출시기념패키지.png",
+    "sha256": "2e9c0c603667bb04166586bb88bf8d964350206275afe021e683ba1275e0acb7"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/고급낙원출시기념패키지.png",
+    "sha256": "517f70bcd26442ddb220e936cf7ddb2c77fe21ec364a5c3660ad76b690ea9e47"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/2026할로윈330패키지.png",
+    "sha256": "ae174e3adbed71a92152b759a0638b8876ecca05797c6c8e41c678ff5d96987c"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/2026할로윈550패키지.png",
+    "sha256": "88a3c7d8aa7210fbe15c508d52e5a9af036e94a403fb1b98220a95a295e0166c"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/2026할로윈1100패키지.png",
+    "sha256": "33752bdd72d60e5cdd7d287f10f826928a4ef5d7800593d11a272ff8b341309b"
+  }
+]

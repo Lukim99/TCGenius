@@ -513,3 +513,79 @@ test('신규 패키지 저장이 다른 재화 변경과 충돌하면 포인트�
         assert.deepEqual(current.shopPurchases, snapshot.shopPurchases);
     } finally { packageData = null; }
 });
+
+const autumnPackages = require('../scripts/register_autumn_packages');
+function autumnSource() {
+    const source = packageSource();
+    for (const name of ['지옥 열쇠', '찬란한 지옥 열쇠', '천상의 회랑 입장권', '지니어스의 열쇠', '캐릭터 변환석', '전직 캐릭터 변환석', '헬 초대장', '보주 상자']) {
+        if (!source.Item.some(item => item.name === name)) source.Item.push({ name, type: '티켓' });
+    }
+    return source;
+}
+
+test('가을 패키지 6종을 추가하고 기존 운영 구성, 인덱스와 구매 기록용 상품 ID를 보존한다', () => {
+    const source = autumnSource(), snapshot = structuredClone(source), after = autumnPackages.prepare(source);
+    assert.deepEqual(source, snapshot);
+    for (const key of ['Item', 'Bundle', 'Pack']) assert.deepEqual(after[key].slice(0, source[key].length), source[key]);
+    for (const [group, items] of Object.entries(source.Shop)) assert.deepEqual(after.Shop[group].slice(0, items.length), items);
+    assert.deepEqual(autumnPackages.prepare(after), after);
+    const random = after.Item.find(item => item.name === autumnPackages.randomOrbName);
+    assert.equal(after.Pack[random.pack].length, 20);
+    assert.ok(after.Pack[random.pack].every(reward => reward.roll === .05 && reward.count === 1));
+    assert.deepEqual(after.Pack[random.pack].map(reward => after.Item[reward.item_id].name), autumnPackages.orbNames);
+    assert.ok(!autumnPackages.orbNames.includes('범부의킬각 보주'));
+    assert.deepEqual(autumnPackages.definitions.map(d => [d.price, d.max]), [[1990, 3], [330, 1], [2990, 1], [330, 3], [550, 3], [1100, 3]]);
+    const product = after.Shop['패키지'].at(-1);
+    after.Bundle[after.Item[product.item_id].pack] = []; product.price.amount = 17;
+    assert.deepEqual(autumnPackages.prepare(after), after);
+});
+
+test('가을 패키지 구매는 가격과 누적 제한, 정확한 구성품 및 즉시 보주 추첨을 적용한다', async t => {
+    packageData = autumnPackages.prepare(autumnSource());
+    t.mock.method(Math, 'random', () => .025);
+    try {
+        await Promise.all(Object.keys(packageData).map(key => rpg.loadRpgeniusDataEntry(key)));
+        const catalog = (await request('/api/shop')).data.shop['패키지'];
+        for (const def of autumnPackages.definitions) {
+            const itemId = packageData.Item.findIndex(item => item.name === def.name);
+            const product = catalog.find(item => item.display.name === def.name);
+            assert.equal(product.price.amount, def.price); assert.equal(product.limitInfo.limits.max, def.max);
+            await reset({ point: 50000, garnet: 0 });
+            const body = { shopType: '패키지', shopId: product.shopId, count: def.max };
+            const results = def.name === '낙원출시기념패키지' ? await Promise.all([request('/api/shop/buy', body), request('/api/shop/buy', body)]) : [await request('/api/shop/buy', body)];
+            assert.equal(results.filter(r => r.status === 200).length, 1, JSON.stringify(results));
+            const user = await rpg.getRPGUserByName(fixture.name);
+            assert.equal(user.point, 50000 - def.price * def.max); assert.equal(rpg.getInventoryItemCount(user, itemId), 0);
+            for (const reward of def.rewards) {
+                if (reward.autoUse) {
+                    assert.equal(rpg.getInventoryItemCount(user, packageData.Item.findIndex(item => item.name === autumnPackages.randomOrbName)), 0);
+                    assert.equal(rpg.getInventoryItemCount(user, packageData.Item.findIndex(item => item.name === '요나 보주')), def.max);
+                } else if (reward.type === '가넷') assert.equal(user.garnet, reward.count * def.max);
+                else assert.equal(rpg.getInventoryItemCount(user, packageData.Item.findIndex(item => item.name === reward.name)), reward.count * def.max);
+            }
+            const snapshot = JSON.stringify({ inventory: user.inventory, point: user.point, garnet: user.garnet, mileage: user.mileage });
+            assert.equal((await request('/api/shop/buy', { ...body, count: 1 })).status, 400);
+            assert.equal(JSON.stringify({ inventory: user.inventory, point: user.point, garnet: user.garnet, mileage: user.mileage }), snapshot);
+        }
+    } finally { packageData = null; }
+});
+
+test('가을 패키지 저장 충돌은 포인트와 구성품, 구매 한도를 함께 보존한다', async t => {
+    packageData = autumnPackages.prepare(autumnSource());
+    try {
+        const user = await reset({ point: 50000 });
+        const snapshot = JSON.parse(JSON.stringify(user));
+        const originalSend = DynamoDBDocumentClient.prototype.send;
+        t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function(command) {
+            const input = command.input;
+            if (command.constructor.name === 'UpdateCommand' && input.TableName === 'rpgenius_user' && input.ConditionExpression?.startsWith('attribute_exists(id) AND')) throw Object.assign(new Error('Concurrent purchase'), { name: 'ConditionalCheckFailedException' });
+            if (command.constructor.name === 'GetCommand' && input.TableName === 'rpgenius_user') return { Item: structuredClone(snapshot) };
+            return originalSend.call(this, command);
+        });
+        const itemId = packageData.Item.findIndex(item => item.name === '2026할로윈1100패키지');
+        const product = packageData.Shop['패키지'].find(item => item.item_id === itemId);
+        assert.equal((await request('/api/shop/buy', { shopType: '패키지', shopId: product.shopId, count: 1 })).status, 400);
+        const current = await rpg.getRPGUserByName(fixture.name);
+        for (const key of ['point', 'garnet', 'mileage', 'inventory', 'shopPurchases']) assert.deepEqual(current[key], snapshot[key]);
+    } finally { packageData = null; }
+});

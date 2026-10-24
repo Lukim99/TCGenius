@@ -186,15 +186,15 @@ function resolveCardLayers(card) {
     }
     const prestige = !isAwakening && card.prestige === true && !!greek; // 프레스티지 프레임/아트는 제타+ 전용
 
-    // 캐릭터 아트: 티어 폴백 체인 × (아바타 → 기본 외형)
+    // 아바타는 카드 유형과 무관하게 장착할 수 있다. 기본 외형보다 모든 아바타 레이어를 먼저 찾는다.
     const tiers = isAwakening ? ['각성'] : isJob
         ? (prestige ? ['프레스티지 전직', '전직'] : ['전직'])
         : (prestige ? ['프레스티지 일반', '일반'] : ['일반']);
-    const artNames = [];
-    tiers.forEach(tier => {
-        if (skin) artNames.push(tier + ' ' + skin + ' ' + card.name + '.png');
-        artNames.push(tier + ' ' + card.name + '.png');
-    });
+    const skinTiers = [...new Set([...tiers, '일반', '전직', '각성', '프레스티지 일반', '프레스티지 전직'])];
+    const artNames = [
+        ...(skin ? skinTiers.map(tier => tier + ' ' + skin + ' ' + card.name + '.png') : []),
+        ...tiers.map(tier => tier + ' ' + card.name + '.png')
+    ];
     const character = firstExisting(path.join(CHARACTER_DIR, card.name), artNames);
     if (!character) return null;
 

@@ -18,13 +18,15 @@
 
 ## 효과음
 
-모두 Kenney CC0 라이선스. 라이선스 원문은 같은 폴더에 보관한다.
+선택과 취소는 Kenney CC0 음원이다. 합성음은 아래 CC0 음원에 직접 합성한 바람 소리와 유리 공명음을 겹쳐 제작했다.
 
 | 사용 파일 | 원본 | 출처 |
 | --- | --- | --- |
 | `select.ogg` | `metalClick.ogg` | [RPG Audio](https://kenney.nl/assets/rpg-audio) |
 | `cancel.ogg` | `bookClose.ogg` | [RPG Audio](https://kenney.nl/assets/rpg-audio) |
-| `charge.ogg` | `forceField_000.ogg` | [Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
-| `reveal.ogg` | `forceField_003.ogg` | [Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| `charge-v2.ogg` | 역재생한 `fantasy_magic_button_1.mp3` + 상승하는 세 겹의 바람 소리 | Almitory, [Fantasy Magic Spell](https://opengameart.org/content/fantasy-magic-spell), CC0 |
+| `reveal-v2.ogg` | `magical_1_0.ogg` + 빠르게 흩어지는 유리 공명음 | JaggedStone, [Magic Spell SFX](https://opengameart.org/content/magic-spell-sfx), CC0 |
 
 음원은 사용자의 첫 조작 이후에만 재생하며 화면의 음소거 버튼으로 끌 수 있다.
+
+2026-10-24 수정: 충전 1.36초, 결과 2.25초. 48kHz 스테레오, 피크 -1.72dBFS. 원본을 필터링하고 속도/역재생/볼륨을 조절했으며, 공명음과 짧은 스테레오 잔향을 추가했다. [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)에 따라 사용한다. 결과 공개 시 남아 있는 충전음을 멈추고 결과음을 재생한다.

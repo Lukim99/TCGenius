@@ -3,6 +3,7 @@
     'use strict';
     const ASSETS = '/static/assets/orb-fusion/';
     const SOUND_KEY = 'orbFusionSound';
+    const SOUND_FILES = { charge: 'charge-v2', reveal: 'reveal-v2' };
     const VOLUME = { select: .3, charge: .42, reveal: .5, cancel: .26 };
     const MIN_CHARGE = 1100, RELEASE = 1300, REVEAL_AT = .18;
     const AETHER = [.56, .91, 1];
@@ -135,7 +136,7 @@
     function play(ctx, name) {
         if (!ctx.sound || !ctx.gestured || ctx.disposed || document.hidden) return;
         try {
-            const audio = ctx.audio[name] ||= new Audio(ASSETS + name + '.ogg');
+            const audio = ctx.audio[name] ||= new Audio(ASSETS + (SOUND_FILES[name] || name) + '.ogg');
             audio.volume = VOLUME[name]; audio.currentTime = 0;
             audio.play()?.catch(() => {});
         } catch { /* 소리 실패는 진행을 막지 않는다. */ }
@@ -316,7 +317,7 @@
         const out = node('div', 'of-dialog-out');
         const outText = node('div', 'of-dialog-out-text'); outText.append(node('strong', '', '무작위 보주 1개'));
         if (ctx.data.poolSize) outText.append(node('span', '', `${ctx.data.poolSize.toLocaleString('ko-KR')}종 중 하나`));
-        out.append(node('span', 'of-dialog-arrow'), outText, node('span', 'of-tag', '거래 가능'));
+        out.append(node('span', 'of-dialog-arrow'), outText);
         const warn = node('p', 'of-dialog-warn'); warn.id = 'of-dialog-warn'; warn.append(icon('warn'), node('span', '', '재료 3개가 소모되며 되돌릴 수 없습니다.'));
         const back = button('of-btn of-btn-ghost', '돌아가기', () => closeDialog(ctx, true));
         const confirm = button('of-btn of-btn-gold', '합성', () => { if (ctx.busy) return; closeDialog(ctx); startFusion(ctx); });
@@ -353,7 +354,7 @@
             if (!response || response.ok !== true || !response.result) throw Object.assign(new Error(response?.error || '합성 결과를 확인하지 못했습니다.'), { uncertain: true });
         } catch (error) {
             if (ctx.disposed) return;
-            ctx.busy = false; ctx.phase = 'idle'; ctx.root.classList.remove('is-charging'); ctx.fx?.charge(false); play(ctx, 'cancel');
+            ctx.busy = false; ctx.phase = 'idle'; ctx.root.classList.remove('is-charging'); ctx.fx?.charge(false); ctx.audio.charge?.pause(); play(ctx, 'cancel');
             const message = error?.message || '';
             const uncertain = error?.uncertain || error?.name === 'TypeError' || !message || /^HTTP 5|fetch|network|load failed/i.test(message);
             notice(ctx, uncertain ? '서버 응답을 확인하지 못했습니다. 다시 시도하면 같은 요청으로 확인합니다.' : message + ' 다시 시도하거나 선택을 초기화해주세요.', 'error');
@@ -392,7 +393,7 @@
             ctx.plateName.textContent = result.name; ctx.plateSeries.textContent = result.series; ctx.plateSeries.hidden = !result.series;
             ctx.plateDesc.textContent = result.description; ctx.plateDesc.hidden = !result.description;
             ctx.plate.hidden = false; ctx.core.classList.add('is-revealed');
-            play(ctx, 'reveal'); notice(ctx, `${result.name} 획득`, 'success');
+            ctx.audio.charge?.pause(); play(ctx, 'reveal'); notice(ctx, `${result.name} 획득`, 'success');
         }, reduced ? 0 : RELEASE * REVEAL_AT);
         later(ctx, () => {
             ctx.consumed = null; ctx.busy = false; ctx.phase = 'idle'; ctx.root.classList.remove('is-release');
@@ -483,7 +484,7 @@
         ctx.coreOrb = node('span', 'of-core-orb');
         const plate = ctx.plate = node('div', 'of-plate'); plate.hidden = true;
         ctx.plateName = node('strong', 'of-plate-name'); ctx.plateSeries = node('span', 'of-plate-series'); ctx.plateDesc = node('p', 'of-plate-desc');
-        const plateHead = node('div', 'of-plate-head'); plateHead.append(ctx.plateSeries, node('span', 'of-tag', '거래 가능'));
+        const plateHead = node('div', 'of-plate-head'); plateHead.append(ctx.plateSeries);
         plate.append(plateHead, ctx.plateName, ctx.plateDesc);
         core.append(node('span', 'of-core-rim'), node('span', 'of-core-well'), ctx.coreOrb, node('span', 'of-core-glass'));
         altar.append(core, plate); altarWrap.append(altar); stage.append(head, altarWrap);
