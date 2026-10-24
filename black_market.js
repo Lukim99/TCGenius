@@ -42,10 +42,11 @@ function itemPool(items, currency) {
     return pool;
 }
 
-function cardPool() {
+function cardPool(admin = false) {
     return characters.flatMap((character, id) => ['일반', '전직', '각성'].flatMap(type => {
         if (type === '전직' && !character.class || type === '각성' && !awakening.getDefinition({ id, type })) return [];
-        return [4, 5, 6, 7, 8].map(star => ({ payload: { id, star, type }, count: 1, name: character.name }));
+        const firstStar = admin && type === '일반' ? 0 : 4, lastStar = admin ? 11 : 8;
+        return Array.from({ length: lastStar - firstStar + 1 }, (_, index) => ({ payload: { id, star: firstStar + index, type }, count: 1, name: character.name }));
     }));
 }
 
@@ -57,7 +58,7 @@ function pick(pool, seed) {
 function createBlackMarket({ read, commit, getItems, getUser, withUser, display, now = () => Date.now() }) {
     let queue = Promise.resolve();
     const serial = task => { const next = queue.catch(() => {}).then(task); queue = next; return next; };
-    const options = sector => sector.kind === 'card' ? cardPool() : itemPool(getItems(), sector.currency).flatMap(entry => entry.orbs || [entry]);
+    const options = sector => sector.kind === 'card' ? cardPool(true) : itemPool(getItems(), sector.currency).flatMap(entry => entry.orbs || [entry]);
     const lotView = lot => ({ sector: lot.sector, lotId: lot.lotId, kind: lot.kind, currency: lot.currency,
         payload: lot.payload, count: lot.count, display: display(lot), edited: !!lot.edited });
     const resultView = lot => ({ ...lotView(lot), winner: lot.winner ? { name: lot.winner.name, amount: lot.winner.amount } : null });

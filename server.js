@@ -4144,7 +4144,7 @@ const blackMarket = createBlackMarket({
         return rpgenius.enqueueFieldAction(user, task);
     },
     display: lot => lot.kind === 'card'
-        ? { name: lot.name, sub: `${lot.payload.star + 1}성 ${lot.payload.type}`, imageUrl: getCardImageUrl(lot.payload) }
+        ? { name: lot.name, sub: `${['제타', '시그마', '오메가'][lot.payload.star - 9] || (lot.payload.star + 1) + '성'} ${lot.payload.type}`, imageUrl: getCardImageUrl(lot.payload) }
         : { name: lot.name, sub: `수량 ${lot.count}개`, ...getItemDisplayAssets(rpgenius.getDataCache('Item', [])[lot.payload.id]) }
 });
 

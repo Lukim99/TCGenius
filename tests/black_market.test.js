@@ -131,8 +131,19 @@ test('인증·관리자 권한, 4개 매물, 타인 입찰 비공개, 기존 상
 
 test('관리자 지정, 잘못된 매물 차단, 시작한 매물 변경 금지', async () => {
     const admin = (await request('/api/admin/black-market', undefined, '선입찰자', true)).data;
-    const lot = admin.lots[0], selected = lot.options.find(o => o.payload.star === 8 && o.payload.type === '각성');
-    assert.equal((await request('/api/admin/black-market', { date: admin.date, sector: lot.sector, payload: selected.payload, count: 1 }, '선입찰자', true)).status, 200);
+    for (const entry of admin.lots.filter(lot => lot.kind === 'card')) {
+        assert.deepEqual([...new Set(entry.options.filter(o => o.payload.type === '일반').map(o => o.payload.star))], Array.from({ length: 12 }, (_, star) => star));
+        for (const [star, type, label] of [[0, '일반', '1성'], [9, '일반', '제타'], [10, '전직', '시그마'], [11, '각성', '오메가']]) {
+            const choice = entry.options.find(o => o.payload.star === star && o.payload.type === type);
+            assert.equal(choice.display.sub, label + ' ' + type);
+            assert.equal((await request('/api/admin/black-market', { date: admin.date, sector: entry.sector, payload: choice.payload, count: 1 }, '선입찰자', true)).status, 200);
+            assert.deepEqual((await state()).lots.find(lot => lot.sector === entry.sector).payload, choice.payload);
+        }
+        for (const payload of [{ id: 0, star: -1, type: '일반' }, { id: 0, star: 12, type: '일반' }, { id: 0, star: 3, type: '각성' }]) {
+            assert.equal((await request('/api/admin/black-market', { date: admin.date, sector: entry.sector, payload, count: 1 }, '선입찰자', true)).status, 400);
+        }
+    }
+    const lot = admin.lots[0], selected = lot.options.find(o => o.payload.star === 11 && o.payload.type === '각성');
     const view = await state(); assert.deepEqual(view.lots[0].payload, selected.payload);
     const body = bidBody(view, lot.sector, 100);
     assert.equal((await request('/api/black-market/bid', body)).status, 200);
@@ -233,6 +244,7 @@ test('낙찰 메일 실제 수령: 저장 실패·동시 수령에도 보상을 
     assert.deepEqual(results.map(result => result.status).sort(), [200, 400]);
     assert.equal((await rpg.getRPGUserByName('선입찰자')).inventory.card.length, 1);
     assert.deepEqual((await rpg.getRPGUserByName('선입찰자')).inventory.card[0], mails.get(id).gifts[0].card);
+    assert.equal((await rpg.getRPGUserByName('선입찰자')).inventory.card[0].star, 11, '관리자 지정 오메가 카드 그대로 지급');
 });
 
 test('다른 구매 등록과 암시장 입찰이 겹쳐도 두 지출 모두 잔액에 반영', async () => {
@@ -340,6 +352,13 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
         assert.equal(await page.locator('#bmAdminResult .hd-prev-card').count(), 4);
         await page.locator('#bmAdminDate').fill('2026-10-27');
         await Promise.all([page.waitForResponse(response => response.url().includes('/api/admin/black-market?date=2026-10-27')), page.locator('#bmAdminReload').click()]);
+        for (const [index, label] of [[0, '빵귤 · 오메가 각성'], [1, '빵귤 · 1성 일반']]) {
+            const adminCard = page.locator('#bmAdminResult .hd-prev-card').nth(index);
+            await adminCard.locator('select').selectOption({ label });
+            await adminCard.getByRole('button', { name: '매물 지정', exact: true }).click();
+            await page.locator('.msg-modal').getByRole('button', { name: '확인', exact: true }).click();
+            await adminCard.getByText(label + ' (관리자 지정)', { exact: true }).waitFor();
+        }
         const adminItem = page.locator('#bmAdminResult .hd-prev-card').nth(3);
         await adminItem.locator('select').selectOption({ label: '제타 각성 캐릭터 변환석 · 수량 1개' });
         await adminItem.getByRole('button', { name: '매물 지정', exact: true }).click();
