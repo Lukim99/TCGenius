@@ -1,0 +1,16 @@
+.page[data-page="shop"]>.shop-game-shell{padding:0;min-height:0;background:#0b121a;overflow:hidden}
+main:has(.shop-game-shell){padding-bottom:0}
+.shop-game-shell #shopBody[hidden]{display:none}
+.shop-game{position:relative;width:100%;overflow:hidden;isolation:isolate;touch-action:manipulation}
+.shop-scene-canvas,.shop-game-fallback{position:absolute;inset:0;display:block;width:100%;height:100%}
+.shop-game canvas[hidden]{display:none}
+.shop-game-controls{position:absolute;inset:0;pointer-events:none}
+.shop-game-controls button,.shop-game-controls input{position:absolute;margin:0;padding:0;border:0;border-radius:0;opacity:0;pointer-events:auto;touch-action:manipulation;cursor:pointer}
+.shop-game-controls button:disabled{cursor:default}
+.shop-game-live{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;pointer-events:none}
+.page[data-page="shop"]>.shop-market-shell{padding:16px clamp(12px,1.4vw,24px);background:#090a0f}
+.shop-market-shell #shopBody{grid-template-columns:minmax(0,1fr);gap:16px}
+.shop-market-shell #shopBody>.shop-tabs{position:static;display:flex;flex-direction:row;flex-wrap:wrap;padding:0 0 12px;gap:6px;border:0;border-bottom:1px solid #30343e}
+.shop-market-shell #shopBody>.shop-tabs>.shop-tab{padding:10px 20px;border-radius:2px;border:1px solid #363a45;background:linear-gradient(#1d222c,#12171f);font-size:14px;color:#bac3ce}
+.shop-market-shell #shopBody>.shop-tabs>.shop-tab.active{border-color:#a58ac5;color:#efdcff;background:linear-gradient(#30273e,#1b1725)}
+@media(max-width:600px){.shop-market-shell #shopBody>.shop-tabs{flex-wrap:nowrap;overflow-x:auto}.shop-market-shell #shopBody>.shop-tabs>.shop-tab{flex-shrink:0;padding:10px 16px}}

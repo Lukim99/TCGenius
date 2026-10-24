@@ -127,10 +127,11 @@
             const entry = node('article', 'bm-result bm-' + lot.currency), info = node('div', 'bm-result-info');
             info.append(node('span', 'bm-result-sector', (lot.kind === 'card' ? '카드' : '아이템') + ' / ' + LABEL[lot.currency]),
                 node('strong', 'bm-result-name', lot.display.name),
-                node('span', 'bm-result-winner', lot.winner ? lot.winner.name + ' 낙찰' : '입찰 없이 종료'),
-                node('span', 'bm-result-price'));
-            info.lastChild.append(currencyArt(lot.currency), node('span', '', lot.winner ? number(lot.winner.amount) + ' ' + LABEL[lot.currency] : '—'));
-            entry.append(art(lot, true), info); ctx.resultGrid.append(entry);
+                node('span', 'bm-result-winner', lot.winner ? lot.winner.name + ' 낙찰' : '입찰 없이 종료'));
+            const price = node('div', 'bm-result-price');
+            if (lot.winner) price.append(currencyArt(lot.currency), node('span', 'bm-result-amount', number(lot.winner.amount)), node('span', 'bm-result-unit', LABEL[lot.currency]));
+            else price.append(node('span', '', '유찰'));
+            entry.append(art(lot, true), info, price); ctx.resultGrid.append(entry);
         }
     }
     function apply(ctx, data) {

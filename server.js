@@ -9305,7 +9305,7 @@ function renderUserDashboard(sess, opts) {
 <html lang="ko"><head><meta charset="utf-8"><title>RPGenius</title>
 <script>window.__INITIAL_PAGE=${JSON.stringify(initialPage)};</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/black-market.css"><link rel="stylesheet" href="/static/orb-fusion.css"></head><body>
+<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/black-market.css"><link rel="stylesheet" href="/static/shop-scene.css"><link rel="stylesheet" href="/static/orb-fusion.css"></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="otpBtn" style="padding:8px 12px;font-size:13px" title="2단계 인증 설정">OTP</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
@@ -9626,6 +9626,8 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/pvp-lobby.js"></script>
 <script src="/static/enhance-effects.js"></script>
 <script src="/static/black-market.js"></script>
+<script src="/static/shop-painter.js"></script>
+<script src="/static/shop-scene.js"></script>
 <script src="/static/orb-fusion.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/direct-trade.js"></script>

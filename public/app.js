@@ -289,7 +289,7 @@ function navigatePage(pageId) {
     if (pageId === 'orb-fusion') window.OrbFusionUI.mount($('#orbFusionRoot'), { api, postApi }); else window.OrbFusionUI?.unmount();
     if (pageId === 'equipment-synthesis') loadEquipmentSynthesis();
     if (pageId === '레벨보상') loadLevelRewards();
-    if (pageId === 'shop') loadShop(); else window.BlackMarketUI?.unmount();
+    if (pageId === 'shop') loadShop(); else { window.BlackMarketUI?.unmount(); window.ShopSceneUI?.unmount(); }
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
     if (pageId === 'directtrade') window.DirectTradeUI?.open();
@@ -5722,7 +5722,6 @@ const SHOP_CURR_IMGS = {
     garnet: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('가넷.png'),
     point:  '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('포인트.png'),
 };
-const SHOP_CURR_LABELS = { gold: '골드', garnet: '가넷', point: '포인트', mileage: '마일리지', item: '아이템' };
 
 let shopData = null;
 let shopTab = null;
@@ -5755,16 +5754,6 @@ function priceItemImg(price, size) {
     return el('img', { src: price.iconUrl, alt: '', style: 'width:' + sz + 'px;height:' + sz + 'px;object-fit:contain;display:block;flex-shrink:0' });
 }
 
-function buildPriceNode(price) {
-    const wrap = el('div', { class: 'shop-card-price' });
-    wrap.appendChild(el('span', { class: 'shop-card-price-label' }, price.goods === 'item' ? price.name : SHOP_CURR_LABELS[price.goods]));
-    wrap.appendChild(el('div', { class: 'shop-card-price-value' },
-        price.goods === 'item' ? priceItemImg(price, 18) : shopCurrNode(price.goods, 18),
-        el('span', {}, comma(price.amount))
-    ));
-    return wrap;
-}
-
 function buildReceiptRow(label, price, amount, variant) {
     const row = el('div', { class: 'shop-receipt-row' + (variant ? ' ' + variant : '') });
     row.appendChild(el('span', { class: 'shop-receipt-label' }, label));
@@ -5794,23 +5783,6 @@ function buildLimitRows(limitInfo) {
     return rows;
 }
 
-function buildLimitBadge(limitInfo) {
-    const rows = buildLimitRows(limitInfo);
-    if (rows.length === 0) return null;
-    const wrap = el('div', { class: 'shop-limit-badge', 'aria-label': '구매 제한' });
-    rows.forEach(r => {
-        const remaining = Math.max(0, r.limit - r.used);
-        const exhausted = remaining <= 0;
-        const row = el('div', { class: 'shop-limit-row' + (exhausted ? ' exhausted' : '') });
-        row.appendChild(el('span', { class: 'shop-limit-label' }, r.label));
-        row.appendChild(el('span', { class: 'shop-limit-val' },
-            comma(remaining) + ' / ' + comma(r.limit) + ' 남음'
-        ));
-        wrap.appendChild(row);
-    });
-    return wrap;
-}
-
 function buildLimitDetail(limitInfo) {
     const rows = buildLimitRows(limitInfo);
     if (rows.length === 0) return null;
@@ -5835,11 +5807,23 @@ function buildLimitDetail(limitInfo) {
 
 function renderShop(data, tab) {
     window.BlackMarketUI?.unmount();
+    window.ShopSceneUI?.unmount();
     shopData = data;
     shopTab = data.tabs.includes(tab) ? tab : data.tabs[0];
     const body = $('#shopBody');
     const restoreFocus = body.contains(document.activeElement) && document.activeElement.classList.contains('shop-tab');
     body.replaceChildren();
+
+    if (shopTab !== '암시장') {
+        window.ShopSceneUI.mount(body.closest('.shop-wrap'), {
+            tab: shopTab, data, currencyIcons: SHOP_CURR_IMGS,
+            onCategory: tab => { shopTab = tab; },
+            onTab: tab => renderShop(shopData, tab),
+            onBuy: buyFromShopScene,
+            onSpecial: showShopSpecialReward
+        });
+        return;
+    }
 
     const tabRow = el('nav', { class: 'shop-tabs', 'aria-label': '상점 종류' });
     data.tabs.forEach(t => {
@@ -5861,54 +5845,38 @@ function renderShop(data, tab) {
             onBalances: balances => Object.assign(shopData.currencies, balances),
             onMail: () => activatePage('mail')
         });
+        window.ShopSceneUI?.mount(body.closest('.shop-wrap'), { tab: shopTab });
         return;
     }
 
-    const content = el('div', { class: 'shop-content', 'aria-label': shopTab + ' 상점' });
-    const currBar = el('div', { class: 'shop-currency-bar', 'aria-label': '보유 재화' });
-    [{ key: 'gold', label: '골드' }, { key: 'garnet', label: '가넷' }, { key: 'point', label: '포인트' }, { key: 'mileage', label: '마일리지' }].forEach(({ key, label }) => {
-        if (data.currencies[key] == null) return;
-        const chip = el('div', { class: 'shop-currency-chip' });
-        chip.appendChild(shopCurrNode(key, 18));
-        chip.appendChild(el('span', { class: 'shop-currency-name' }, label));
-        chip.appendChild(el('span', { class: 'shop-currency-amount' }, comma(data.currencies[key])));
-        currBar.appendChild(chip);
-    });
-    const grid = el('div', { class: 'shop-grid' });
-    let products = data.shop[shopTab] || [];
-    if (shopTab === '레이드') {
-        const tabs = [...new Set(products.map(item => item.materialTab || item.price.name || '레이드 재료'))];
-        const selected = tabs.includes(renderShop.materialTab) ? renderShop.materialTab : tabs[0];
-        renderShop.materialTab = selected;
-        content.appendChild(el('div', { class: 'shop-tabs', role: 'tablist' }, ...tabs.map(tab => el('button', { class: 'shop-tab' + (tab === selected ? ' active' : ''), role: 'tab', 'aria-selected': tab === selected, onclick: () => { renderShop.materialTab = tab; renderShop(data, '레이드'); } }, tab))));
-        products = products.filter(item => (item.materialTab || item.price.name || '레이드 재료') === selected);
-    }
-    products.forEach(item => {
-        const unavailable = !!(item.soldOut || item.owned);
-        const status = item.owned ? '보유중' : item.soldOut ? '품절' : '구매';
-        const card = el('article', { class: 'shop-card' + (unavailable ? ' sold-out' : '') });
-        card.appendChild(el('div', { class: 'shop-card-main' },
-            buildShopThumb(item.display),
-            el('div', { class: 'shop-card-info' },
-                el('h3', { class: 'shop-card-name' }, item.display.name),
-                buildLimitBadge(item.limitInfo)
-            )
-        ));
-        card.appendChild(el('div', { class: 'shop-card-footer' },
-            buildPriceNode(item.price),
-            el('button', {
-                type: 'button', class: 'shop-card-btn', disabled: unavailable,
-                'aria-label': item.display.name + ' ' + status,
-                onclick: () => openShopBuyModal(item)
-            }, status)
-        ));
-        grid.appendChild(card);
-    });
-    if ((data.shop[shopTab] || []).length === 0) grid.appendChild(el('div', { class: 'empty' }, '상품이 없습니다.'));
+}
 
-    content.appendChild(currBar);
-    content.appendChild(grid);
-    body.appendChild(content);
+async function buyFromShopScene(item, count, tab) {
+    const result = await postApi('/api/shop/buy', { shopType: tab, shopId: item.shopId, count });
+    shopData.currencies = result.currencies;
+    setHeaderPoint(result.currencies.point);
+    try {
+        shopData = await api('/api/shop');
+    } catch (_) {
+        // 결제 성공 후 조회 실패를 구매 실패로 알리면 중복 구매를 유도한다.
+        // 새 목록을 불러올 때까지 방금 산 상품만 잠그고 성공 결과는 그대로 표시한다.
+        shopData = { ...shopData, shop: { ...shopData.shop, [tab]: shopData.shop[tab].map(entry =>
+            entry.shopId === item.shopId ? { ...entry, soldOut: true } : entry) } };
+    }
+    return { data: shopData, result };
+}
+
+async function showShopSpecialReward(result) {
+    try {
+        for (const card of (result.grantedCards || []).filter(card => card.type === '각성')) {
+            const effect = window.FusionEffects.begin(buildPackageAwakeningStage(), { awakening: true, title: '각성 카드 획득', loadingText: '각성 카드를 깨우는 중…' });
+            try { await effect.reveal({ success: true, resultCard: card, message: card.formatted + ' 획득! 캐릭터 카드 인벤토리에 지급되었습니다.' }); }
+            finally { effect.close(); }
+        }
+        if (result.choicePouch) await openChoicePouch(result.choicePouch.itemId, result.choicePouch.purchasedCount);
+    } catch (error) {
+        showAlert('구매가 완료되었습니다. 지급된 물품은 인벤토리에서 확인해주세요.\n' + error.message);
+    }
 }
 
 function shopChoicePortrait(option) {
