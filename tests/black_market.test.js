@@ -244,6 +244,24 @@ test('20:50 정산: 최고가·동액 선입찰, 유찰 환불, 수량 포함 �
     // 금액 변경 시 우선순위 갱신. 같은 금액 재전송은 갱신하지 않는다.
     await request('/api/black-market/bid', bidBody(await state(), 'item-garnet', 201));
     await request('/api/black-market/bid', bidBody(await state(), 'item-garnet', 200));
+    const adminResponse = await request('/api/admin/black-market', undefined, '선입찰자', true);
+    assert.equal(adminResponse.cache, 'no-store');
+    assert.equal(adminResponse.data.status, 'open');
+    assert.deepEqual(adminResponse.data.lots.map(lot => lot.bids), [
+        [{ name: '선입찰자', amount: 200 }, { name: '후입찰자', amount: 200 }],
+        [{ name: '선입찰자', amount: 500 }],
+        [{ name: '후입찰자', amount: 200 }, { name: '선입찰자', amount: 200 }],
+        [{ name: '후입찰자', amount: 300 }, { name: '선입찰자', amount: 200 }]
+    ], '관리자에게만 전체 입찰을 금액 내림차순, 동액 선입찰순으로 반환');
+    for (const name of [null, '선입찰자']) assert.equal((await request('/api/admin/black-market?date=2026-10-24&round=09', undefined, name)).status, 401);
+    for (const name of ['선입찰자', '후입찰자']) {
+        const publicView = await state(name);
+        assert.ok(publicView.lots.every(lot => !('bids' in lot)));
+        assert.ok(!JSON.stringify(publicView).includes(name === '선입찰자' ? '후입찰자' : '선입찰자'));
+    }
+    await request('/api/black-market/bid', bidBody(await state('후입찰자'), 'card-gold', 1), '후입찰자');
+    await request('/api/black-market/bid', bidBody(await state('후입찰자'), 'card-gold', 0), '후입찰자');
+    assert.deepEqual((await request('/api/admin/black-market', undefined, '선입찰자', true)).data.lots[1].bids, [{ name: '선입찰자', amount: 500 }], '취소한 입찰은 관리자 목록에서 제외');
     const closingBid = bidBody(await state(), 'item-gold', 999);
     clock = Date.parse('2026-10-24T20:49:59.999+09:00');
     assert.equal((await state()).status, 'open');
@@ -257,12 +275,18 @@ test('20:50 정산: 최고가·동액 선입찰, 유찰 환불, 수량 포함 �
     assert.equal([...mails.values()].filter(mail => mail.gifts[0].type === 'card').length, 2);
     assert.equal(mails.get('black-market:2026-10-24-09:item-garnet').gifts[0].count, 7);
     assert.equal(mails.get('black-market:2026-10-24-09:item-gold').gifts[0].count, 3);
+    const itemMail = mails.get('black-market:2026-10-24-09:item-garnet');
+    assert.equal(itemMail.fromName, '암시장'); assert.equal(itemMail.subject, '암시장 낙찰 보상');
+    assert.equal(itemMail.body, '2026-10-24 09:00 거래권 x7 낙찰을 축하합니다. 보관한 200 가넷으로 결제되었습니다.');
+    const settledAdmin = (await request('/api/admin/black-market', undefined, '선입찰자', true)).data;
+    assert.equal(settledAdmin.status, 'settled'); assert.ok(settledAdmin.lots.every(lot => lot.bids.length === 0));
     const snapshot = JSON.stringify([...users.values()]);
     await state(); await state(); assert.equal(mails.size, 4); assert.equal(JSON.stringify([...users.values()]), snapshot);
 });
 
 test('21시 새 로테이션과 관리자 지정, 같은 날짜의 이전 회차 요청 거부', async () => {
     const admin = (await request('/api/admin/black-market?date=2026-10-24&round=21', undefined, '선입찰자', true)).data;
+    assert.equal(admin.status, 'scheduled'); assert.ok(admin.lots.every(lot => lot.bids.length === 0));
     const lot = admin.lots[1], chosen = lot.options[0];
     await request('/api/admin/black-market', { date: admin.date, round: admin.round, sector: lot.sector, payload: chosen.payload, count: 1 }, '선입찰자', true);
     const stale = bidBody(await state(), 'card-gold', 10);
@@ -414,6 +438,30 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
         assert.ok((await page.evaluate(() => playedSounds)).some(src => src.endsWith('/cancel.ogg')));
         await page.getByRole('button', { name: '효과음 끄기', exact: true }).click();
         assert.equal(await page.evaluate(() => localStorage.getItem('blackMarketSound')), 'off');
+        for (const [sector, first, second] of [['card-garnet', 200, 200], ['item-gold', 100000, 150000]]) {
+            assert.equal((await request('/api/black-market/bid', bidBody(await state(), sector, first))).status, 200);
+            assert.equal((await request('/api/black-market/bid', bidBody(await state('후입찰자'), sector, second), '후입찰자')).status, 200);
+        }
+        const adminContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+        await adminContext.addCookies([{ name: 'rpg_admin', value: cookie('선입찰자', true).slice('rpg_admin='.length), url: origin }]);
+        const adminPage = await adminContext.newPage();
+        adminPage.on('pageerror', error => errors.push(error.message));
+        await adminPage.goto(origin + '/admin#blackmarket');
+        await adminPage.locator('.bm-admin-bids table').first().waitFor();
+        const adminCards = adminPage.locator('#bmAdminResult .hd-prev-card');
+        assert.deepEqual(await adminCards.nth(0).locator('tbody tr').allTextContents(), ['1선입찰자200', '2후입찰자200']);
+        assert.deepEqual(await adminCards.nth(3).locator('tbody tr').allTextContents(), ['1후입찰자150,000', '2선입찰자100,000']);
+        assert.equal(await adminCards.nth(2).locator('.bm-admin-bids p').textContent(), '현재 입찰이 없습니다.');
+        for (const [label, width, height] of [['pc', 1440, 1000], ['mobile', 390, 844]]) {
+            await adminPage.setViewportSize({ width, height });
+            await adminPage.screenshot({ path: path.join(__dirname, '../output/black-market/admin-bids-' + label + '.png'), fullPage: true });
+            assert.ok(await adminPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), '관리자 입찰 현황 ' + label + ' 가로 넘침 없음');
+        }
+        await request('/api/black-market/bid', bidBody(await state('후입찰자'), 'item-gold', 0), '후입찰자');
+        await adminPage.locator('#bmAdminReload').click();
+        await adminPage.waitForFunction(() => document.querySelectorAll('#bmAdminResult .hd-prev-card:nth-child(4) tbody tr').length === 1);
+        assert.deepEqual(await adminCards.nth(3).locator('tbody tr').allTextContents(), ['1선입찰자100,000']);
+        await adminContext.close();
         clock = Date.parse('2026-10-26T20:50:00+09:00');
         await page.getByRole('button', { name: '새로고침', exact: true }).click();
         await page.getByText('정산 중', { exact: true }).waitFor();
@@ -435,9 +483,11 @@ test('실제 상점 브라우저: PC·태블릿·모바일 배치와 입찰', { 
         await page.goto(origin + '/admin#blackmarket');
         await page.locator('#bmAdminResult .hd-prev-card').first().waitFor();
         assert.equal(await page.locator('#bmAdminResult .hd-prev-card').count(), 4);
+        assert.equal(await page.locator('.bm-admin-bids').getByText('정산이 완료되었습니다.', { exact: true }).count(), 4);
         await page.locator('#bmAdminDate').fill('2026-10-27');
         await page.locator('#bmAdminRound').selectOption('21');
         await Promise.all([page.waitForResponse(response => response.url().includes('/api/admin/black-market?date=2026-10-27')), page.locator('#bmAdminReload').click()]);
+        await page.locator('.bm-admin-bids').getByText('개장 전입니다.', { exact: true }).first().waitFor();
         for (const [index, label] of [[0, '[𝛀] 각성 빵귤'], [1, '[1성] 빵귤']]) {
             const adminCard = page.locator('#bmAdminResult .hd-prev-card').nth(index);
             await adminCard.locator('select').selectOption({ label });

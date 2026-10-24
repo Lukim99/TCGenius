@@ -3069,6 +3069,16 @@ async function loadBlackMarketAdmin() {
             const image = lot.display.imageUrl || lot.display.iconUrl;
             if (image) section.appendChild(el('img', { src: image, alt: lot.display.name, style: 'height:130px;max-width:100%;object-fit:contain;display:block;margin:12px auto' }));
             section.appendChild(el('p', null, lot.display.name + (lot.edited ? ' (관리자 지정)' : ' (랜덤)')));
+            const bids = el('div', { class: 'bm-admin-bids' }, el('h3', null, data.status === 'open' ? '현재 입찰 ' + lot.bids.length + '명' : '입찰 현황'));
+            if (lot.bids.length) {
+                bids.appendChild(el('table', { 'aria-label': lot.display.name + ' 입찰 현황' },
+                    el('thead', null, el('tr', null, ...['순위', '입찰자', '입찰금 (' + BM_CURRENCY_LABEL[lot.currency] + ')'].map(label => el('th', { scope: 'col' }, label)))),
+                    el('tbody', null, ...lot.bids.map((bid, index) => el('tr', null,
+                        el('td', null, index + 1), el('td', null, bid.name), el('td', null, bid.amount.toLocaleString('ko-KR')))))));
+            } else {
+                bids.appendChild(el('p', { class: 'muted' }, data.status === 'scheduled' ? '개장 전입니다.' : data.status === 'settled' ? '정산이 완료되었습니다.' : '현재 입찰이 없습니다.'));
+            }
+            section.appendChild(bids);
             const search = el('input', { placeholder: '캐릭터 또는 아이템 검색', 'aria-label': '매물 검색', disabled: lot.locked });
             const select = el('select', { style: 'width:100%;margin:8px 0', 'aria-label': '지정할 매물', disabled: lot.locked });
             const quantity = lot.kind === 'item' ? el('input', { id: 'bm-admin-count-' + lot.sector, type: 'number', min: 1, step: 1, max: Number.MAX_SAFE_INTEGER, value: lot.count, disabled: lot.locked, 'aria-label': '아이템 수량' }) : null;

@@ -216,6 +216,14 @@ details.collapsible .body{padding:12px}
 @media(max-width:1080px){.log-row{grid-template-columns:1fr 1fr;gap:8px}.log-row .col-time{grid-column:1/-1}.log-row .col-tags{grid-column:1/-1}.log-row .col-parties{grid-column:1/-1}}
 .hd-prev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
 .hd-prev-card{background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:10px}
+.bm-admin-bids{padding:12px 0;border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)}
+.bm-admin-bids table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px}
+.bm-admin-bids th,.bm-admin-bids td{padding:7px 4px;text-align:left;overflow-wrap:anywhere;border-bottom:1px solid var(--bd)}
+.bm-admin-bids th{color:var(--mut);font-weight:500}
+.bm-admin-bids th:first-child,.bm-admin-bids td:first-child{width:36px}
+.bm-admin-bids th:last-child,.bm-admin-bids td:last-child{width:46%;text-align:right;font-variant-numeric:tabular-nums}
+.bm-admin-bids tbody tr:first-child{color:var(--acc);font-weight:600}
+.bm-admin-bids tbody tr:last-child td{border-bottom:0}
 .hd-prev-header{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .hd-prev-time{font-size:13px;font-weight:700;color:var(--fg2)}
 .hd-prev-sector{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--acc-dim);color:var(--acc)}
@@ -565,8 +573,9 @@ details.collapsible .body{padding:12px}
 </div>
 
 <div class="panel" data-panel="blackmarket"><section>
-  <h2>암시장 매물 설정</h2>
+  <h2>암시장 매물 설정 및 입찰 현황</h2>
   <p class="muted">한국 시간 09:00와 21:00에 새 매물이 등장하며, 직전 10분간 정산합니다. 입찰이 시작된 매물은 변경할 수 없습니다.</p>
+  <p class="muted">현재 입찰은 높은 금액순, 동액은 먼저 입찰한 순서로 표시합니다. 불러오기를 누르면 최신 현황을 확인할 수 있습니다.</p>
   <div class="bar"><label for="bmAdminDate">날짜 (KST)</label><input type="date" id="bmAdminDate"><label for="bmAdminRound">회차</label><select id="bmAdminRound"><option value="09">09:00 시작</option><option value="21">21:00 시작</option></select><button class="btn primary" id="bmAdminReload">불러오기</button></div>
   <div id="bmAdminResult" style="margin-top:18px"></div>
 </section></div>

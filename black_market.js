@@ -205,7 +205,8 @@ function createBlackMarket({ read, commit, getItems, getUser, withUser, display,
             if (target.periodId < state.periodId) fail('현재 이후의 회차를 선택해주세요.');
             const current = target.periodId === state.periodId;
             const lots = current ? state.lots : makeLots(target.periodId, state.scheduled[target.periodId]);
-            return { ...target, today: state.date, lots: lots.map(lot => ({ ...lotView(lot),
+            return { ...target, today: state.date, status: current ? state.status : 'scheduled', lots: lots.map(lot => ({ ...lotView(lot),
+                bids: [...lot.bids].sort((a, b) => b.amount - a.amount || a.order - b.order).map(bid => ({ name: bid.name, amount: bid.amount })),
                 locked: current && (!!lot.started || state.status !== 'open'),
                 options: options(lot).map(option => ({ ...option, display: display({ ...lot, ...option }) })) })),
                 missingItems: [...new Set(Object.values(ITEM_NAMES).flat())].filter(name => !getItems().some(item => item?.name === name)) };
