@@ -69,13 +69,14 @@
     }
     function tick(ctx) {
         if (!ctx.data || ctx.disposed) return;
-        const isClosed = closed(ctx), target = isClosed ? ctx.data.nextDayAt : ctx.data.closesAt;
+        const isClosed = closed(ctx), target = isClosed ? ctx.data.nextOpensAt : ctx.data.closesAt;
         const seconds = Math.max(0, Math.ceil((target - Date.now() - ctx.offset) / 1000));
         ctx.countdown.textContent = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(n => String(n).padStart(2, '0')).join(':');
         ctx.status.textContent = isClosed ? '정산 중' : '비공개 입찰';
-        ctx.clockNote.textContent = isClosed ? '다음 개장까지' : '23:50 마감 · 한국 시간';
+        const closingTime = new Date(ctx.data.closesAt).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        ctx.clockNote.textContent = isClosed ? '다음 개장까지' : closingTime + ' 마감 (한국 시간)';
         updateControls(ctx);
-        const boundary = ctx.data.date + (seconds === 0 ? ':next' : isClosed ? ':closed' : ':open');
+        const boundary = ctx.data.periodId + (seconds === 0 ? ':next' : isClosed ? ':closed' : ':open');
         if (ctx.boundary && ctx.boundary !== boundary && !ctx.busy) refresh(ctx);
         ctx.boundary = boundary;
     }
@@ -83,7 +84,6 @@
         const wrap = node('div', small ? 'bm-result-art' : 'bm-art');
         const display = lot.display || {}, url = display.imageUrl || display.iconUrl;
         if (url) wrap.append(picture(url, lot.kind === 'card' ? 'bm-card-image' : 'bm-item-image', display.name));
-        if (!small && lot.count > 1) wrap.append(node('span', 'bm-quantity', '×' + number(lot.count)));
         return wrap;
     }
     function makeLot(ctx, lot) {
@@ -92,7 +92,7 @@
         const top = node('div', 'bm-lot-top');
         const currencyLabel = node('span', 'bm-currency-label'); currencyLabel.append(currencyArt(lot.currency), node('span', '', LABEL[lot.currency] + ' 입찰')); top.append(currencyLabel);
         const display = node('div', 'bm-display'); display.append(art(lot), node('div', 'bm-pedestal'));
-        const title = node('div', 'bm-item-title'); title.append(node('h4', 'bm-item-name', lot.display.name), node('p', 'bm-item-sub', lot.display.sub));
+        const title = node('div', 'bm-item-title'); title.append(node('h4', 'bm-item-name', lot.display.name));
         const mine = node('div', 'bm-my-bid'), amount = node('strong');
         mine.append(node('span', '', '내 보관금'), amount);
         const form = node('form', 'bm-bid-form'), label = node('label', 'bm-input-label', '입찰 금액');
@@ -120,12 +120,12 @@
     function renderResults(ctx, previous) {
         const key = JSON.stringify(previous);
         if (ctx.previousKey === key) return;
-        ctx.previousKey = key; ctx.resultGrid.replaceChildren(); ctx.resultDate.textContent = previous?.date || '';
+        ctx.previousKey = key; ctx.resultGrid.replaceChildren(); ctx.resultDate.textContent = previous ? previous.date + (previous.round ? ' ' + previous.round + ':00 회차' : '') : '';
         if (!previous) { ctx.resultGrid.append(node('p', 'bm-empty', '아직 낙찰 결과가 없습니다.')); return; }
         for (const sector of SECTORS) {
             const lot = previous.lots.find(entry => entry.sector === sector); if (!lot) continue;
             const entry = node('article', 'bm-result bm-' + lot.currency), info = node('div', 'bm-result-info');
-            info.append(node('span', 'bm-result-sector', (lot.kind === 'card' ? '카드' : '아이템') + ' · ' + LABEL[lot.currency]),
+            info.append(node('span', 'bm-result-sector', (lot.kind === 'card' ? '카드' : '아이템') + ' / ' + LABEL[lot.currency]),
                 node('strong', 'bm-result-name', lot.display.name),
                 node('span', 'bm-result-winner', lot.winner ? lot.winner.name + ' 낙찰' : '입찰 없이 종료'),
                 node('span', 'bm-result-price'));
@@ -165,7 +165,7 @@
     }
     function sameContract(ctx, contract) {
         const lot = ctx.lots.get(contract.sector)?.lot;
-        return ctx.data?.date === contract.date && lot?.lotId === contract.lotId && (lot.myBid?.version || null) === contract.bidVersion && !closed(ctx);
+        return ctx.data?.periodId === contract.periodId && lot?.lotId === contract.lotId && (lot.myBid?.version || null) === contract.bidVersion && !closed(ctx);
     }
     function closeDialog(ctx) {
         if (!ctx.dialog) return;
@@ -177,11 +177,11 @@
         const lot = view.lot, current = lot.myBid?.amount || 0;
         if (amount === current) { notice(ctx, '현재 보관금과 같은 금액입니다. 입찰 순서는 유지됩니다.'); return; }
         play(ctx, 'click');
-        const contract = { date: ctx.data.date, sector: lot.sector, lotId: lot.lotId, amount, bidVersion: lot.myBid?.version || null };
+        const contract = { date: ctx.data.date, periodId: ctx.data.periodId, sector: lot.sector, lotId: lot.lotId, amount, bidVersion: lot.myBid?.version || null };
         const overlay = node('div', 'bm-overlay'), dialog = node('section', 'bm-dialog');
         dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'bm-confirm-title');
         const heading = node('h3', 'bm-dialog-title', amount ? '입찰 확인' : '입찰 취소'); heading.id = 'bm-confirm-title';
-        dialog.append(picture(ASSETS + 'seal.webp', 'bm-stamp'), heading, node('p', 'bm-dialog-item', lot.display.name + ' · ' + lot.display.sub));
+        dialog.append(picture(ASSETS + 'seal.webp', 'bm-stamp'), heading, node('p', 'bm-dialog-item', lot.display.name));
         const detail = node('dl', 'bm-contract'), delta = amount - current;
         [['현재 보관금', current], ['변경 후 입찰금', amount], [delta >= 0 ? '추가로 맡길 금액' : '즉시 돌려받을 금액', Math.abs(delta)], ['변경 후 보유 재화', ctx.data.balances[lot.currency] - delta]].forEach(([label, value]) => {
             const row = node('div'); row.append(node('dt', '', label), node('dd', '', number(value) + ' ' + LABEL[lot.currency])); detail.append(row);
@@ -232,7 +232,7 @@
         const canvas = node('canvas', 'bm-atmosphere'); canvas.setAttribute('aria-hidden', 'true');
         const scene = ctx.scene = node('div', 'bm-scene'), header = node('header', 'bm-header'), brand = node('div', 'bm-brand'), brandText = node('div');
         brandText.append(node('h2', 'bm-title', '암시장')); brand.append(picture(ASSETS + 'seal.webp', 'bm-emblem'), brandText);
-        const clock = node('div', 'bm-clock'); ctx.status = node('span', 'bm-status', '경매장에 입장하는 중'); ctx.countdown = node('strong', 'bm-countdown', '--:--:--'); ctx.clockNote = node('span', 'bm-clock-note', '한국 표준시 · KST'); clock.append(ctx.status, ctx.countdown, ctx.clockNote);
+        const clock = node('div', 'bm-clock'); ctx.status = node('span', 'bm-status', '경매장에 입장하는 중'); ctx.countdown = node('strong', 'bm-countdown', '--:--:--'); ctx.clockNote = node('span', 'bm-clock-note', '한국 시간'); clock.append(ctx.status, ctx.countdown, ctx.clockNote);
         const tools = node('div', 'bm-tools'), sound = button('bm-icon-button', '', () => {
             ctx.sound = !ctx.sound; try { localStorage.setItem('blackMarketSound', ctx.sound ? 'on' : 'off'); } catch {}
             updateSound(); if (ctx.sound) play(ctx, 'click'); else silence(ctx);
@@ -249,7 +249,7 @@
         for (const kind of ['card', 'item']) { const wing = node('section', 'bm-wing'); ctx.groups[kind] = node('div', 'bm-lots'); wing.append(sectionHeading(kind === 'card' ? '오늘의 카드' : '오늘의 아이템'), ctx.groups[kind]); market.append(wing); }
         const results = node('section', 'bm-results'), resultHeading = sectionHeading('지난 결과'); ctx.resultDate = node('span', 'bm-result-date'); resultHeading.append(ctx.resultDate); ctx.resultGrid = node('div', 'bm-result-grid'); results.append(resultHeading, ctx.resultGrid);
         const rules = node('details', 'bm-rules'), rulesBody = node('div', 'bm-rules-body'); rules.append(node('summary', '', '거래 규칙'), rulesBody);
-        ['매일 네 매물에 비공개로 입찰합니다. 다른 사람의 입찰금은 마감 전까지 공개되지 않습니다.', '입찰금은 즉시 보관합니다. 마감 전 금액 변경·취소가 가능하며, 취소·유찰 시 전액 반환합니다.', '최고 금액을 제시한 사람이 낙찰받습니다. 같은 금액이면 해당 금액을 먼저 입찰한 사람이 우선합니다. 금액을 바꾸면 순서도 새로 적용됩니다.', '낙찰자는 본인의 입찰금으로 결제하며 보상은 메일함에서 수령합니다. 매일 23:50부터 자정까지 정산하고 00:00에 새 매물이 등장합니다.'].forEach(text => rulesBody.append(node('p', '', text)));
+        ['매일 09:00와 21:00에 네 매물이 등장합니다. 다른 사람의 입찰금은 마감 전까지 공개되지 않습니다.', '입찰금은 즉시 보관합니다. 마감 전 금액 변경이나 취소가 가능하며, 취소하거나 유찰되면 전액 반환합니다.', '최고 금액을 제시한 사람이 낙찰받습니다. 같은 금액이면 해당 금액을 먼저 입찰한 사람이 우선합니다. 금액을 바꾸면 순서도 새로 적용됩니다.', '낙찰자는 본인의 입찰금으로 결제하며 보상은 메일함에서 수령합니다. 08:50~09:00와 20:50~21:00는 정산 시간입니다.'].forEach(text => rulesBody.append(node('p', '', text)));
         scene.append(header, wallet, ctx.notice, market, results, rules);
         root.append(canvas, scene); ctx.atmosphere = atmosphere(canvas, root);
         document.addEventListener('visibilitychange', () => { if (document.hidden) silence(ctx); else { tick(ctx); refresh(ctx); } }, { signal: ctx.abort.signal });

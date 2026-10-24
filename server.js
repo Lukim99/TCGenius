@@ -5,7 +5,7 @@ const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const { registerParadiseRoutes } = require('./paradise_web');
 const shopCatalog = require('./shop_catalog');
-const { createBlackMarket } = require('./black_market');
+const { createBlackMarket, lotTitle } = require('./black_market');
 const combatEffects = require('./public/combat-effects.js');
 const ilionCards = require('./ilion_cards');
 const randoCharacters = require('./rando_characters');
@@ -4144,8 +4144,8 @@ const blackMarket = createBlackMarket({
         return rpgenius.enqueueFieldAction(user, task);
     },
     display: lot => lot.kind === 'card'
-        ? { name: lot.name, sub: `${['제타', '시그마', '오메가'][lot.payload.star - 9] || (lot.payload.star + 1) + '성'} ${lot.payload.type}`, imageUrl: getCardImageUrl(lot.payload) }
-        : { name: lot.name, sub: `수량 ${lot.count}개`, ...getItemDisplayAssets(rpgenius.getDataCache('Item', [])[lot.payload.id]) }
+        ? { baseName: lot.name || lot.display?.baseName || lot.display?.name, name: lotTitle(lot), imageUrl: getCardImageUrl(lot.payload) }
+        : { ...getItemDisplayAssets(rpgenius.getDataCache('Item', [])[lot.payload.id]), baseName: lot.name || lot.display?.baseName || lot.display?.name, name: lotTitle(lot) }
 });
 
 function blackMarketRoute(method, route, auth, handle) {
@@ -4164,7 +4164,7 @@ blackMarketRoute('get', '/api/black-market', requireUser, req => blackMarket.get
 blackMarketRoute('post', '/api/black-market/bid', requireUser, req => blackMarket.bid(req.session.name, req.body || {}));
 blackMarketRoute('get', '/api/admin/black-market', requireAdmin, async req => {
     await rpgenius.loadRpgeniusDataEntry('Item', { consistentRead: true });
-    return blackMarket.admin(req.query.date);
+    return blackMarket.admin(req.query.date, req.query.round);
 });
 blackMarketRoute('post', '/api/admin/black-market', requireAdmin, req => blackMarket.override(req.body || {}));
 

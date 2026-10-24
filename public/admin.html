@@ -566,8 +566,8 @@ details.collapsible .body{padding:12px}
 
 <div class="panel" data-panel="blackmarket"><section>
   <h2>암시장 매물 설정</h2>
-  <p class="muted">매일 00:00~23:50 비공개 입찰 · 23:50~23:59 정산 (한국 시간). 입찰이 시작된 당일 매물은 변경할 수 없습니다. 미래 날짜를 지정하면 그날 자동 반영됩니다.</p>
-  <div class="bar"><label for="bmAdminDate">날짜 (KST)</label><input type="date" id="bmAdminDate"><button class="btn primary" id="bmAdminReload">불러오기</button></div>
+  <p class="muted">한국 시간 09:00와 21:00에 새 매물이 등장하며, 직전 10분간 정산합니다. 입찰이 시작된 매물은 변경할 수 없습니다.</p>
+  <div class="bar"><label for="bmAdminDate">날짜 (KST)</label><input type="date" id="bmAdminDate"><label for="bmAdminRound">회차</label><select id="bmAdminRound"><option value="09">09:00 시작</option><option value="21">21:00 시작</option></select><button class="btn primary" id="bmAdminReload">불러오기</button></div>
   <div id="bmAdminResult" style="margin-top:18px"></div>
 </section></div>
 <div class="panel" data-panel="raw"><section>

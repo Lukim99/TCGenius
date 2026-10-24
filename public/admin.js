@@ -3056,25 +3056,27 @@ async function loadBlackMarketAdmin() {
     result.replaceChildren(el('div', { class: 'muted' }, '불러오는 중...'));
     try {
         const date = $('#bmAdminDate').value;
-        const data = await api('/api/admin/black-market' + (date ? '?date=' + encodeURIComponent(date) : ''));
+        const data = await api('/api/admin/black-market' + (date ? '?date=' + encodeURIComponent(date) + '&round=' + $('#bmAdminRound').value : ''));
         $('#bmAdminDate').value = data.date;
         $('#bmAdminDate').min = data.today;
+        $('#bmAdminRound').value = data.round;
         result.replaceChildren();
         if (data.missingItems.length) result.appendChild(el('p', { class: 'err' }, '운영 아이템에 없는 품목: ' + data.missingItems.join(', ')));
         const grid = el('div', { class: 'hd-prev-grid' });
         data.lots.forEach(lot => {
             const section = el('div', { class: 'hd-prev-card' });
-            section.appendChild(el('h3', null, (lot.kind === 'card' ? '오늘의 카드' : '오늘의 아이템') + ' · ' + BM_CURRENCY_LABEL[lot.currency]));
+            section.appendChild(el('h3', null, (lot.kind === 'card' ? '카드' : '아이템') + ' / ' + BM_CURRENCY_LABEL[lot.currency]));
             const image = lot.display.imageUrl || lot.display.iconUrl;
             if (image) section.appendChild(el('img', { src: image, alt: lot.display.name, style: 'height:130px;max-width:100%;object-fit:contain;display:block;margin:12px auto' }));
-            section.appendChild(el('p', null, lot.display.name + ' · ' + lot.display.sub + (lot.edited ? ' (관리자 지정)' : ' (랜덤)')));
-            const search = el('input', { placeholder: '캐릭터·아이템 검색', 'aria-label': '매물 검색', disabled: lot.locked });
+            section.appendChild(el('p', null, lot.display.name + (lot.edited ? ' (관리자 지정)' : ' (랜덤)')));
+            const search = el('input', { placeholder: '캐릭터 또는 아이템 검색', 'aria-label': '매물 검색', disabled: lot.locked });
             const select = el('select', { style: 'width:100%;margin:8px 0', 'aria-label': '지정할 매물', disabled: lot.locked });
-            const matches = option => option.payload.id === lot.payload.id && option.count === lot.count && (lot.kind !== 'card' || option.payload.star === lot.payload.star && option.payload.type === lot.payload.type);
+            const quantity = lot.kind === 'item' ? el('input', { id: 'bm-admin-count-' + lot.sector, type: 'number', min: 1, step: 1, max: Number.MAX_SAFE_INTEGER, value: lot.count, disabled: lot.locked, 'aria-label': '아이템 수량' }) : null;
+            const matches = option => option.payload.id === lot.payload.id && (lot.kind !== 'card' || option.payload.star === lot.payload.star && option.payload.type === lot.payload.type);
             const fill = () => {
                 select.replaceChildren();
                 lot.options.forEach((option, index) => {
-                    const label = option.display.name + ' · ' + option.display.sub;
+                    const label = option.display.name;
                     if (search.value && !label.includes(search.value)) return;
                     const entry = el('option', { value: String(index) }, label);
                     entry.selected = matches(option); select.appendChild(entry);
@@ -3082,19 +3084,27 @@ async function loadBlackMarketAdmin() {
             };
             search.oninput = fill; fill();
             section.appendChild(search); section.appendChild(select);
+            if (quantity) {
+                section.appendChild(el('label', { for: quantity.id }, '수량'));
+                section.appendChild(quantity);
+                select.onchange = () => { quantity.value = '1'; };
+            }
             const save = async reset => {
                 const option = lot.options[Number(select.value)];
                 if (!reset && (!option || select.value === '')) return showAlert('매물을 선택해주세요.');
-                if (!(await showConfirm(data.date + ' 매물을 ' + (reset ? '랜덤 로테이션으로 되돌릴까요?' : option.display.name + '(으)로 지정할까요?')))) return;
+                const count = quantity ? Number(quantity.value) : 1;
+                if (!reset && (!Number.isSafeInteger(count) || count < 1)) return showAlert('수량은 1 이상의 정수로 입력해주세요.');
+                const title = option && option.display.name + (count > 1 ? ' x' + count : '');
+                if (!(await showConfirm(data.date + ' ' + data.round + ':00 회차 매물을 ' + (reset ? '랜덤 로테이션으로 되돌릴까요?' : title + '(으)로 지정할까요?')))) return;
                 try {
-                    await api('/api/admin/black-market', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: data.date, sector: lot.sector, reset, ...(reset ? {} : { payload: option.payload, count: option.count }) }) });
+                    await api('/api/admin/black-market', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: data.date, round: data.round, sector: lot.sector, reset, ...(reset ? {} : { payload: option.payload, count }) }) });
                     await loadBlackMarketAdmin();
                 } catch (error) { showAlert(error.message); }
             };
             section.appendChild(el('div', { class: 'bar' },
                 el('button', { class: 'btn primary', disabled: lot.locked, onclick: () => save(false) }, '매물 지정'),
                 el('button', { class: 'btn', disabled: lot.locked || !lot.edited, onclick: () => save(true) }, '랜덤으로 복원')));
-            if (lot.locked) section.appendChild(el('p', { class: 'muted' }, '입찰이 시작되었거나 마감된 매물입니다. 다음 날짜를 선택해주세요.'));
+            if (lot.locked) section.appendChild(el('p', { class: 'muted' }, '입찰이 시작되었거나 마감된 매물입니다. 다음 회차를 선택해주세요.'));
             grid.appendChild(section);
         });
         result.appendChild(grid);
