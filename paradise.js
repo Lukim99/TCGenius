@@ -183,9 +183,9 @@ function addEffect(user, effects) {
     for (const [key, n] of Object.entries(effects)) run.effects[key] = Number(run.effects[key] || 0) + n;
     clampResources(user);
 }
-function move(user, floors, dangerous = false) {
+function move(user, floors, dangerous = false, isAugment = false) {
     const run = user.paradise;
-    floors = progression.movement(run, floors);
+    floors = isAugment ? progression.augmentMovement(run, floors) : progression.movement(run, floors);
     const before = run.floor;
     // 이동을 선택할 수 있는 방은 통과한 것으로 확정한다. 도착한 전투 층은 승리해야 기록한다.
     recordFloor(user);
@@ -726,12 +726,12 @@ function chooseAugment(user, id, random = Math.random) {
         else startCombat(user, 'normal', null, random);
     } else {
         const floors = progression.augmentMovement(run, choice.floors);
-        move(user, floors, choice.dangerous);
+        move(user, choice.floors, choice.dangerous, true);
         log(run, `${choice.name}, ${floors > 0 ? '+' : ''}${floors}층`);
         if (choice.encounter) (run.pendingAugmentEvents ||= []).push(choice.encounter);
         if (choice.floors < 0 && progression.has(run, 'halfSteps')) {
             offerAugments(user, random);
-            message += '\n후퇴란 없다, 증강을 하나 더 선택합니다.';
+            message += '\n느린 순례, 증강을 하나 더 선택합니다.';
         } else if (id === 'stoneThrow') {
             run.stoneEntryResume = 'routes';
             if (!forcedEncounter(user, random)) offerAugments(user, random, 'silver');
@@ -1235,8 +1235,9 @@ function previewRewards(run) {
     return run.outcome === 'defeated' ? rewards.filter(reward => reward.type === '아이템' && reward.name === progression.TOKEN).map(reward => ({ ...reward, count: Math.floor(reward.count * .50) })).filter(reward => reward.count > 0) : rewards;
 }
 
-function powerWarning(user, floors, enemyKind = 'normal', conditional = false, playerPower = rpg().calculateCombatPower(user).total) {
-    const floor = clamp(user.paradise.floor + progression.movement(user.paradise, floors), 1, MAX_FLOOR);
+function powerWarning(user, floors, enemyKind = 'normal', conditional = false, playerPower = rpg().calculateCombatPower(user).total, isAugment = false) {
+    const movement = isAugment ? progression.augmentMovement(user.paradise, floors) : progression.movement(user.paradise, floors);
+    const floor = clamp(user.paradise.floor + movement, 1, MAX_FLOOR);
     const kind = floor === MAX_FLOOR && enemyKind === 'normal' ? 'final' : enemyKind;
     const power = Math.round(recommendedPower(floor) * enemyPowerMultiplier(kind));
     return power * 10 >= playerPower * 11 ? { floor, recommendedPower: power, playerPower, conditional, enemyKind: kind } : null;
@@ -1333,8 +1334,8 @@ function view(user, stats = rpg().calculateUserStats(user), slotEffects) {
         for (const choice of result.run.choices) {
             choice.starting = result.run.startingAugment;
             choice.canReroll = canReroll && !run.rerolled?.[run.choices.indexOf(choice.id)];
-            choice.floors = result.run.startingAugment ? 0 : progression.augmentMovement(run, choice.floors);
-            choice.powerWarning = result.run.startingAugment ? null : powerWarning(user, choice.floors, choice.id === 'rewind' || AUGMENTS.find(a => a.id === choice.id)?.acquire?.forceElite || AUGMENTS.find(a => a.id === choice.id)?.quest?.forceElite || run.forceElite ? 'elite' : 'normal', false, playerPower);
+            choice.powerWarning = result.run.startingAugment ? null : powerWarning(user, choice.floors, choice.id === 'rewind' || AUGMENTS.find(a => a.id === choice.id)?.acquire?.forceElite || AUGMENTS.find(a => a.id === choice.id)?.quest?.forceElite || run.forceElite ? 'elite' : 'normal', false, playerPower, true);
+            choice.floors = result.run.startingAugment ? 0 : choice.floors < 0 ? choice.floors : progression.augmentMovement(run, choice.floors);
         }
         for (const choice of result.run.event?.choices || []) choice.powerWarning = eventPowerWarning(user, choice.id, playerPower);
     }

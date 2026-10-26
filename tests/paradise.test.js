@@ -1029,7 +1029,7 @@ test('천상 도감은 유물과 모든 증강을 제공하되 등장 조건 안
     assert.equal(result.status, 200);
     assert.equal(result.data.augments.length, 465);
     assert.equal(result.data.traits.length, 47);
-    assert.equal(result.data.traits.find(trait => trait.id === 'halfSteps').name, '후퇴란 없다');
+    assert.equal(result.data.traits.find(trait => trait.id === 'halfSteps').name, '느린 순례');
     assert.equal(result.data.augments.filter(a => a.category === 'stone').length, 109);
     assert.equal(result.data.augments.filter(a => a.equipment).length, 72);
     // 효과가 발동하는 조건은 설명하되 선택지의 등장 조건은 효과 문구에서 숨긴다.
@@ -2266,11 +2266,11 @@ test('회복·층수·뒤틀림·제한시간 특수능력이 실제 천상 전�
     const env = progressionEnvironment(t); let user = await env.user(['woundedAscent','halfSteps']); corridor.enter(user, () => .99);
     let stats = rpg.calculateUserStats(user), resources = corridor.getResources(user), start = resources.hp;
     assert.equal(start, Math.max(1, Math.round(stats.hp * .05)));
-    corridor.move(user, 5); assert.equal(user.paradise.floor, 6); assert.equal(resources.hp, start + Math.round(stats.hp * .25));
-    corridor.move(user, 3); assert.equal(user.paradise.floor, 9);
-    corridor.move(user, 1); assert.equal(user.paradise.floor, 10);
-    corridor.move(user, 20); assert.equal(user.paradise.floor, 30);
-    user.paradise.celestial.traits = ['upwardFate','halfSteps']; corridor.move(user, -10); assert.equal(user.paradise.floor, 31);
+    corridor.move(user, 5); assert.equal(user.paradise.floor, 3); assert.equal(resources.hp, start + Math.round(stats.hp * .10));
+    corridor.move(user, 3); assert.equal(user.paradise.floor, 4);
+    corridor.move(user, 1); assert.equal(user.paradise.floor, 5);
+    corridor.move(user, 20); assert.equal(user.paradise.floor, 22);
+    user.paradise.celestial.traits = ['upwardFate','halfSteps']; corridor.move(user, -10); assert.equal(user.paradise.floor, 23);
     user = await env.user(['augmentHp','augmentMp']); corridor.enter(user, () => .99); stats = rpg.calculateUserStats(user); resources = corridor.getResources(user); resources.hp = resources.mp = 1;
     buff(user, 'firstStrike'); assert.equal(resources.hp, 1 + Math.round(stats.hp * .02)); assert.equal(resources.mp, 1 + Math.round(stats.mp * .02));
     user = await env.user(['distortedEdge','chaosCrown']); corridor.enter(user, () => .99);
@@ -2282,31 +2282,47 @@ test('회복·층수·뒤틀림·제한시간 특수능력이 실제 천상 전�
     user.paradise.distortion = 1; assert.equal(rpg.calculateUserStats(user).atk, stats.atk);
 });
 
-test('후퇴란 없다는 하강 증강을 상승과 추가 선택으로 바꾸며 재접속에도 예약을 보존한다', async t => {
+test('느린 순례는 하강 표시를 유지하며 절반 상승과 추가 선택 뒤 예약을 보존한다', async t => {
     t.mock.method(Math, 'random', () => .99);
     const env = progressionEnvironment(t), user = await env.user(['halfSteps', 'upwardFate']); corridor.enter(user, () => .99);
     user.paradise.floor = 40; user.paradise.phase = 'augment'; user.paradise.choices = ['future'];
-    assert.equal(corridor.view(user).run.choices[0].floors, 10);
+    assert.equal(corridor.view(user).run.choices[0].floors, -10);
     assert.equal(buff(user, 'future').error, undefined);
-    assert.equal(user.paradise.floor, 50); assert.equal(user.paradise.phase, 'augment');
+    assert.equal(user.paradise.floor, 45); assert.equal(user.paradise.phase, 'augment');
     assert.equal(user.paradise.choices.length, 3); assert.equal(user.paradise.clock.paused, true);
     assert.equal(new Set(corridor.view(user).run.choices.map(a => a.rarity)).size, 1);
-    assert.ok(corridor.chooseAugment(user, 'future').error); assert.equal(user.paradise.floor, 50);
-    buff(user, 'puzzleInvite'); assert.equal(user.paradise.floor, 53); assert.equal(user.paradise.phase, 'augment');
+    assert.ok(corridor.chooseAugment(user, 'future').error); assert.equal(user.paradise.floor, 45);
+    buff(user, 'puzzleInvite'); assert.equal(user.paradise.floor, 47); assert.equal(user.paradise.phase, 'augment');
     assert.deepEqual(user.paradise.pendingAugmentEvents, ['puzzle']);
     await user.save(); const state = (await request('/api/paradise')).data;
-    assert.equal(state.run.phase, 'augment'); assert.equal(state.run.floor, 53);
+    assert.equal(state.run.phase, 'augment'); assert.equal(state.run.floor, 47);
     const resumed = await rpg.getRPGUserByName(account.name);
     buff(resumed, 'firstStrike'); assert.equal(resumed.paradise.event.id, 'puzzle');
+    assert.equal(resumed.paradise.floor, 54, '상승 증강의 3층 감소는 한 번만 적용');
     assert.equal(resumed.paradise.pendingAugmentEvents.length, 0);
     buff(resumed, 'rewind'); assert.equal(resumed.paradise.phase, 'augment'); assert.equal(resumed.paradise.forceElite, true);
+    assert.equal(resumed.paradise.floor, 62, '15층 하강은 8층 상승으로 전환');
     const floor = resumed.paradise.floor;
     buff(resumed, 'execution'); assert.equal(resumed.paradise.phase, 'combat'); assert.equal(resumed.paradise.enemy.kind, 'elite');
-    assert.equal(resumed.paradise.floor, floor + corridor.AUGMENTS.find(a => a.id === 'execution').floors);
+    assert.equal(resumed.paradise.floor, floor + corridor.AUGMENTS.find(a => a.id === 'execution').floors - 3);
     assert.equal(resumed.paradise.forceElite, false);
     const starting = await env.user(['halfSteps', 'silverAugment']); corridor.enter(starting, () => .99);
     buff(starting, 'rest');
     assert.equal(starting.paradise.floor, 1); assert.equal(starting.paradise.phase, 'combat', '시작 증강은 이동하거나 추가 선택을 주지 않음');
+});
+
+test('느린 순례의 위험 표시는 하강 문구가 아닌 실제 상승 목적층을 기준으로 한다', async t => {
+    const env = progressionEnvironment(t), user = await env.user(['halfSteps']); corridor.enter(user, () => .99);
+    Object.assign(user.paradise, { floor: 40, phase: 'augment', choices: ['future', 'firstStrike', 'puzzleInvite'] });
+    let playerPower = 1;
+    t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
+    const choices = corridor.view(user).run.choices;
+    assert.deepEqual(choices.map(choice => choice.floors), [-10, 7, -3]);
+    assert.deepEqual(choices.map(choice => choice.powerWarning.floor), [45, 47, 42]);
+    assert.deepEqual(choices.map(choice => choice.powerWarning.recommendedPower), [45, 47, 42].map(corridor.recommendedPower));
+    playerPower = corridor.recommendedPower(45);
+    assert.equal(corridor.view(user).run.choices[0].powerWarning, null);
+    corridor.move(user, -3); assert.equal(user.paradise.floor, 37, '증강 이외의 하강은 그대로 유지');
 });
 
 test('마지막 은총은 사망 시 증표만 50% 지급하고 계약·골드는 제외하며 재입장 전에 정산한다', async t => {
