@@ -9,6 +9,7 @@ const MIN_LEVEL = 141;
 const JUDGE_MIN_FLOOR = 150;
 const ADVANCED_RELIC_CHANCE = .08;
 const TIME_LIMIT_MS = 20 * 60 * 1000;
+const ULTIMATE_START_COOLDOWN_MS = 10000;
 const progression = require('./paradise_progression');
 const routeMechanics = require('./paradise_routes');
 const cardContracts = require('./paradise_contracts');
@@ -260,8 +261,8 @@ function contractChallenge(user, choice, playerPower = rpg().calculateCombatPowe
     if (run.startingAugments?.length) return false;
     const elite = choice.quest?.forceElite || run.forceElite;
     if (elite && progression.has(run, 'fragileElites') && run.celestial.elites < 2) return false;
-    const floor = clamp(run.floor + progression.movement(run, choice.floors), 1, MAX_FLOOR);
-    const power = recommendedPower(floor) * (elite && floor < MAX_FLOOR ? 1.2 : 1);
+    const floor = clamp(run.floor + progression.augmentMovement(run, choice.floors), 1, MAX_FLOOR);
+    const power = recommendedPower(floor) * enemyPowerMultiplier(floor === MAX_FLOOR ? 'final' : elite ? 'elite' : 'normal');
     return playerPower > 0 && power >= playerPower * .80 && power <= playerPower * 1.30;
 }
 function eligibleAugment(user, choice, equipped = equipmentOptions(user).map(e => e.name), playerPower) {
@@ -385,10 +386,16 @@ function continueExploration(user, random = Math.random) {
     move(user, 5); offerRoutes(user, random);
     return { message: '새로운 증강이 없어 5층을 올라갔습니다.' };
 }
+function enemyPowerMultiplier(kind) {
+    return { elite: 1.2, boss: 1.5, judge: 1.5, rift: 1.5, final: 1.5, moonDuel: 1.8 }[kind] || 1;
+}
+function enemyAttackInterval(kind) {
+    return kind === 'normal' ? 3500 : kind === 'elite' ? 3000 : 2500;
+}
 function heavenMonsterStats(floor, kind) {
-    const power = recommendedPower(floor) * (kind === 'elite' ? 1.2 : kind === 'judge' ? 3.5 : kind === 'rift' ? 4 : 1);
+    const power = recommendedPower(floor) * enemyPowerMultiplier(kind);
     const def = Math.round(Math.sqrt(power) * .5);
-    const stats = { hp: Math.round(power * .5), def, pnt: Math.round(def * .4), crit: .05, critMul: 1.5, cmb: .05, maxCmb: 0, statVersion: 4 };
+    const stats = { hp: Math.round(power * .5), def, pnt: Math.round(def * .4), crit: .05, critMul: 1.5, cmb: .05, maxCmb: 0, statVersion: 5 };
     // HP를 전투력에 비례시킨 뒤 공격력으로 맞춘다. 정수 공격력의 오차만 HP로 보정한다.
     let low = 0, high = Math.ceil(power);
     while (high - low > 1) {
@@ -407,7 +414,7 @@ function heavenMonsterStats(floor, kind) {
 function rebalanceEnemy(user) {
     const run = user?.paradise, enemy = run?.enemy;
     if (!active(user) || run.mode === 'hell' || run.phase !== 'combat' || !enemy) return false;
-    if (enemy.mirror || ['mirror', 'moonDuel'].includes(enemy.kind) || enemy.statVersion === 4) return false;
+    if (enemy.mirror || ['mirror', 'moonDuel'].includes(enemy.kind) || enemy.statVersion === 5) return false;
     const hpRatio = clamp(enemy.hp / enemy.maxHp, 0, 1);
     Object.assign(enemy, heavenMonsterStats(run.floor, enemy.kind));
     for (const savedTrait of enemy.traits) {
@@ -435,7 +442,7 @@ function createMonster(user, kind = 'normal', random = Math.random) {
     const source = fields[Math.min(fields.length - 1, index + offset)];
     const sourceIndex = rpg().getRegularFieldDungeons().findIndex(d => d.name === source.name);
     const base = kind === 'normal' ? source : source.elite || source;
-    const power = run.mode === 'hell' ? require('./paradise_hell').recommendedPower(run.floor) : recommendedPower(run.floor) * (kind === 'elite' ? 1.2 : kind === 'judge' ? 3.5 : kind === 'rift' ? 4 : 1);
+    const power = run.mode === 'hell' ? require('./paradise_hell').recommendedPower(run.floor) : recommendedPower(run.floor) * enemyPowerMultiplier(kind);
     // 지옥은 기존 공격·방어 수치를 구한 뒤 HP만 10배로 늘린다. 천상은 자체 전투력으로 보정한다.
     const defense = Math.max(0, Math.round(Math.sqrt(power) / 18));
     const template = { atk: Math.max(1, Number(base.atk || 1)), hp: Math.max(1, Number(base.hp || 1)), def: defense, pnt: Math.round(defense * .4), crit: Number(base.crit || .05), critMul: Number(base.critMul || 1.5), cmb: Number(base.cmb || .05), maxCmb: Number(base.maxCmb || 0) };
@@ -513,20 +520,22 @@ function startCombat(user, kind = 'normal', sequence = null, random = Math.rando
     run.combatLog = [];
     if (run.mode === 'hell') recordFloor(user);
     run.insurance = false;
-    user.field = { name: run.mode === 'hell' ? '지옥' : '천상의 회랑', paradise: true, enteredAt: Date.now(), nextActionAt: 0, nextEnemyAttackAt: Date.now() + 4000, skillCooldowns: {}, equipmentState: {}, elite: kind === 'normal' ? null : { hp: enemy.hp, encounteredAt: Date.now() } };
+    const enteredAt = Date.now();
+    user.field = { name: run.mode === 'hell' ? '지옥' : '천상의 회랑', paradise: true, enteredAt, nextActionAt: 0, nextEnemyAttackAt: enteredAt + (run.mode === 'hell' ? 4000 : enemyAttackInterval(kind)), skillCooldowns: {}, equipmentState: {}, elite: kind === 'normal' ? null : { hp: enemy.hp, encounteredAt: enteredAt } };
+    if (run.mode !== 'hell') for (const { skill } of rpg().getUltimateSkills(user)) user.field.skillCooldowns[skill.name] = enteredAt + ULTIMATE_START_COOLDOWN_MS;
     if (has(run, 'orb')) heal(user, 0, .15);
     require('./paradise_mechanics').onBattle(user);
     features.call('onBattle', user, random);
     routeMechanics.onBattle(user);
     log(run, `${enemy.name} 조우`);
 }
-function startEvent(user, random = Math.random) {
+function startEvent(user, random = Math.random, eventId) {
     const run = user.paradise;
     const pool = Object.keys(EVENTS).filter(id => id !== 'collapse' && (id !== 'judge' || run.floor >= JUDGE_MIN_FLOOR) && (id !== 'forge' || equipmentOptions(user).length));
     if (run.distortion >= 50) pool.push('mirror', 'chests', ...(run.floor >= JUDGE_MIN_FLOOR ? ['judge'] : []));
-    const id = progression.has(run, 'firstTreasure') && !run.celestial.firstEvent ? 'chests' : pick(pool, random);
+    const id = progression.has(run, 'firstTreasure') && !run.celestial.firstEvent ? 'chests' : eventId || pick(pool, random);
     if (run.celestial) run.celestial.firstEvent = true;
-    setPhase(user, 'event'); run.event = { id }; run.routes = [];
+    setPhase(user, 'event'); run.event = { id }; run.routes = []; run.choices = [];
     if (id === 'forge') run.event.equipment = pick(equipmentOptions(user), random).name;
     log(run, EVENTS[id].title);
 }
@@ -560,6 +569,9 @@ function nextEncounter(user, random = Math.random) {
     else startCombat(user, roll < .15 + eliteChance ? 'elite' : 'normal', null, random);
 }
 function offerRoutes(user, random = Math.random) {
+    if (user.paradise.pendingAugmentEvents?.length && user.paradise.distortion < 100 && user.paradise.floor < MAX_FLOOR) {
+        startEvent(user, random, user.paradise.pendingAugmentEvents.shift()); return;
+    }
     if (forcedEncounter(user, random)) return;
     const run = user.paradise, elite = run.distortion >= 25 ? .30 : .15;
     run.routes = [];
@@ -713,18 +725,16 @@ function chooseAugment(user, id, random = Math.random) {
         else if (run.startingAugments.length) offerAugments(user, random, run.startingAugments[0]);
         else startCombat(user, 'normal', null, random);
     } else {
-        const floors = progression.movement(run, choice.floors);
-        move(user, choice.floors, choice.dangerous);
+        const floors = progression.augmentMovement(run, choice.floors);
+        move(user, floors, choice.dangerous);
         log(run, `${choice.name}, ${floors > 0 ? '+' : ''}${floors}층`);
-        if (id === 'stoneThrow') {
+        if (choice.encounter) (run.pendingAugmentEvents ||= []).push(choice.encounter);
+        if (choice.floors < 0 && progression.has(run, 'halfSteps')) {
+            offerAugments(user, random);
+            message += '\n후퇴란 없다, 증강을 하나 더 선택합니다.';
+        } else if (id === 'stoneThrow') {
             run.stoneEntryResume = 'routes';
             if (!forcedEncounter(user, random)) offerAugments(user, random, 'silver');
-        } else if (choice.encounter && run.distortion < 100 && run.floor < MAX_FLOOR) {
-            const id = progression.has(run, 'firstTreasure') && !run.celestial.firstEvent ? 'chests' : choice.encounter;
-            if (run.celestial) run.celestial.firstEvent = true;
-            setPhase(user, 'event'); run.event = { id }; run.choices = [];
-            if (id === 'forge') run.event.equipment = pick(equipmentOptions(user), random).name;
-            log(run, EVENTS[id].title);
         } else offerRoutes(user, random);
     }
     run.lastOutcome = message;
@@ -1228,7 +1238,7 @@ function previewRewards(run) {
 function powerWarning(user, floors, enemyKind = 'normal', conditional = false, playerPower = rpg().calculateCombatPower(user).total) {
     const floor = clamp(user.paradise.floor + progression.movement(user.paradise, floors), 1, MAX_FLOOR);
     const kind = floor === MAX_FLOOR && enemyKind === 'normal' ? 'final' : enemyKind;
-    const power = Math.round(recommendedPower(floor) * ({ elite: 1.2, judge: 3.5, rift: 4, moonDuel: 1.8 }[kind] || 1));
+    const power = Math.round(recommendedPower(floor) * enemyPowerMultiplier(kind));
     return power * 10 >= playerPower * 11 ? { floor, recommendedPower: power, playerPower, conditional, enemyKind: kind } : null;
 }
 function routePowerWarning(user, route, playerPower) {
@@ -1323,11 +1333,11 @@ function view(user, stats = rpg().calculateUserStats(user), slotEffects) {
         for (const choice of result.run.choices) {
             choice.starting = result.run.startingAugment;
             choice.canReroll = canReroll && !run.rerolled?.[run.choices.indexOf(choice.id)];
+            choice.floors = result.run.startingAugment ? 0 : progression.augmentMovement(run, choice.floors);
             choice.powerWarning = result.run.startingAugment ? null : powerWarning(user, choice.floors, choice.id === 'rewind' || AUGMENTS.find(a => a.id === choice.id)?.acquire?.forceElite || AUGMENTS.find(a => a.id === choice.id)?.quest?.forceElite || run.forceElite ? 'elite' : 'normal', false, playerPower);
-            choice.floors = result.run.startingAugment ? 0 : progression.movement(run, choice.floors);
         }
         for (const choice of result.run.event?.choices || []) choice.powerWarning = eventPowerWarning(user, choice.id, playerPower);
     }
     return require('./paradise_hell').decorateView(result, user);
 }
-module.exports = { TICKET, MAX_FLOOR, MIN_LEVEL, TIME_LIMIT_MS, CP_ANCHORS, AUGMENTS, RELICS, EVENTS, active, getResources, validateConfig, recommendedPower, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, rerollAugment, normalizeAugmentOffer, normalizeRelicOffer, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerRoutes, chooseRoute, offerRelics, chooseRelic, offerAugments, availableAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, dismiss, view, weeklyInfo, recordFloor, buildWeeklyRanking, remainingTime, isTimedOut, advanceTime };
+module.exports = { TICKET, MAX_FLOOR, MIN_LEVEL, TIME_LIMIT_MS, ULTIMATE_START_COOLDOWN_MS, CP_ANCHORS, AUGMENTS, RELICS, EVENTS, active, getResources, validateConfig, recommendedPower, enemyAttackInterval, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, rerollAugment, normalizeAugmentOffer, normalizeRelicOffer, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerRoutes, chooseRoute, offerRelics, chooseRelic, offerAugments, availableAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, dismiss, view, weeklyInfo, recordFloor, buildWeeklyRanking, remainingTime, isTimedOut, advanceTime };

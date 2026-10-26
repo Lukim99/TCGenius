@@ -121,7 +121,7 @@ test('도시락과 포장 음식은 다음 전투에만 운반되고 바깥 자�
 test('신발끈과 초인종은 행동 시간을 조정하고 반격은 한 번만 준비한다', t => {
     const now = Date.now(); t.mock.method(Date, 'now', () => now); t.mock.method(Math, 'random', () => .99);
     const user = fresh('shoeLaces', 'doorbell');
-    assert.equal(user.field.nextEnemyAttackAt, now + 6000);
+    assert.equal(user.field.nextEnemyAttackAt, now + 5500);
     hit(user); assert.equal(playful.incomingMultiplier(user, 100), .7);
     assert.ok(hit(user).damage > 100); assert.equal(hit(user).damage, 100);
 });
@@ -361,7 +361,9 @@ test('천장 확률은 보장 당첨에 도달하며 한 전투 다섯 번으로
 
 test('궁극기 투척은 실제 궁극기 경로에서 MP와 보호막을 소비하고 명장면을 한 번 재생한다', async t => {
     t.mock.method(Math, 'random', () => .99);
+    let now = Date.now(); t.mock.method(Date, 'now', () => now);
     const user = fresh('kitchenSink', 'cutsceneCoupon'); const st = stats(user);
+    now += 10000;
     spell(user, 100, '테스트 주문', { disableCritical: false, forceCritical: true }); assert.ok(s(user).cutsceneDamage > 0);
     ward(user, st.hp * .30); res(user).mp = st.mp; user.field.nextActionAt = 0;
     const ultimate = rpg.getUltimateSkills(user)[0]?.skill?.name; assert.ok(ultimate);

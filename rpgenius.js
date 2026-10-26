@@ -7556,11 +7556,12 @@ function advanceParadiseCombat(user, at = Date.now()) {
     if (run.enemy?.mirror) return advanceParadiseMirror(user, at);
     const enemy = run.enemy, field = user.field, resources = paradise.getResources(user);
     // 시각을 저장하므로 새로고침하거나 공격해도 몬스터의 공격 주기가 밀리지 않는다.
-    field.nextEnemyAttackAt ||= Number(field.enteredAt || at) + 4000;
+    const interval = paradise.enemyAttackInterval(enemy.kind);
+    field.nextEnemyAttackAt ||= Number(field.enteredAt || at) + interval;
     let changed = false;
     while (field.nextEnemyAttackAt <= at && paradise.active(user) && run.phase === 'combat' && run.enemy === enemy) {
         const time = field.nextEnemyAttackAt;
-        field.nextEnemyAttackAt += 4000;
+        field.nextEnemyAttackAt += interval;
         const stats = calculateUserStats(user), slots = calculateCardSlotEffects(user), lines = [];
         const avoided = Math.random() < Number(stats.avd || 0);
         const hit = avoided ? null : calculateMonsterAttackHitResult(enemy, stats, slots, {});

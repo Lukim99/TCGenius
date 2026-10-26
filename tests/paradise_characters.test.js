@@ -250,8 +250,9 @@ test('제우스: 백억이요 처치 3회마다 7성 계약을 최대 2장 얻�
 
 test('제우스: 강제 대박은 교촌 주머니의 실패 효과와 겹치지 않고 시전 실패로 소모되지 않는다', async t => {
     t.mock.method(Math, 'random', () => .99);
-    const now = Date.now(); t.mock.method(Date, 'now', () => now);
+    let now = Date.now(); t.mock.method(Date, 'now', () => now);
     const user = fresh(7, 'riggedJackpot');
+    now += 10000;
     user.equipments.weapon = { id: data.Equipment.weapon.findIndex(e => e.name === '교촌 주머니'), level: 0, transcendStage: 1 };
     user.equipments.support = { id: data.Equipment.support.findIndex(e => e.name === '행운의 복주머니'), level: 0, transcendStage: 1 };
     corridor.getResources(user).mp = 0;

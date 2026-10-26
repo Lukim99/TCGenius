@@ -68,8 +68,8 @@ test('전투 카드 계약은 증강 이동 후 적의 전투력이 내 전투�
     assert.ok(!corridor.availableAugments(user).some(a => cardContracts.isCombatReward(a)), '시작 증강에서는 전투 계약 제외');
     delete user.paradise.startingAugments;
     user.paradise.celestial.traits = ['halfSteps'];
-    playerPower = corridor.recommendedPower(97) * 1.2;
-    assert.ok(corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), '3층 덜 이동 적용');
+    playerPower = corridor.recommendedPower(100) * 1.2;
+    assert.ok(corridor.availableAugments(user).some(a => a.id === 'deathHandshake'), '양수 이동량은 그대로 적용');
     user.paradise.phase = 'augment'; user.paradise.choices = ['deathHandshake']; playerPower = 1e8;
     const resources = { ...corridor.getResources(user) };
     assert.ok(corridor.chooseAugment(user, 'deathHandshake').error, '저장된 선택지도 선택 시 재검증');

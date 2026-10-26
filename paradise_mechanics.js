@@ -176,7 +176,7 @@ function onSkill(user, name, stats, extra) {
     if (has(user, 'pilferTurn') && s.enemyActionAt && Date.now() - s.enemyActionAt <= 1500 && s.pilferedAt !== s.enemyActionAt) {
         s.pilferedAt = s.enemyActionAt;
         if (user.paradise.enemy.mirror) user.paradise.enemy.mirror.nextActionAt += 2000;
-        else user.field.nextEnemyAttackAt = Number(user.field.nextEnemyAttackAt || Date.now() + 4000) + 2000;
+        else user.field.nextEnemyAttackAt = Number(user.field.nextEnemyAttackAt || Date.now() + corridor().enemyAttackInterval(user.paradise.enemy.kind)) + 2000;
         corridor().heal(user, 0, .10); notice(extra, '찰나의 소매치기 · 적의 다음 행동 +2초');
     }
     if (has(user, 'ultimateReservoir') && !isUltimate) s.reservoir = Number(s.reservoir || 0) + Number(extra.mpCost || 0);

@@ -2456,11 +2456,13 @@ function resolveSideHp(side, stats, nextHp, t) {
     return cardAwakening.resolveSurvival(stats.awakening, survival, side.hp, nextHp, t, false);
 }
 function createCorridorMirror(user) {
+    const corridor = require('./paradise');
     const side = makeSide(user, buildSideSnapshot(user, equippedDeck(user)), DEFAULT_RULES);
     side.name = '거울 속의 ' + user.name;
     side.maxHp = side.hp = Number(side.snapshot.stats.hp);
     side.enteredAt = Date.now();
-    side.nextActionAt = side.enteredAt + 4000;
+    side.nextActionAt = side.enteredAt + corridor.enemyAttackInterval('mirror');
+    for (const { skill } of rpgenius.getUltimateSkills(user)) side.skillCooldowns[skill.name] = side.enteredAt + corridor.ULTIMATE_START_COOLDOWN_MS;
     side.corridorMirror = true;
     return side;
 }
@@ -2508,7 +2510,7 @@ function corridorMirrorTurn(side, user, stats, hp, receiveDamage, t = Date.now()
         else if (item.kind === 'kinoSpray') doKinoSprayTick(battle, item.side, item.t);
         else if (item.kind === 'action') {
             doAiAction(battle, item.t);
-            side.nextActionAt = item.t + 4000;
+            side.nextActionAt = item.t + require('./paradise').enemyAttackInterval('mirror');
         }
         else if (item.kind === 'summon') doSummonTick(battle, item.side, item.t);
         else if (item.kind === 'mark') doMarkTick(battle, item.side, item.t);

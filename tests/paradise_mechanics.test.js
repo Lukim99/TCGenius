@@ -753,7 +753,7 @@ test('찰나의 소매치기는 피격 후 1.5초 이내에만 적 주기를 늦
     let now = Date.now(); t.mock.method(Date, 'now', () => now); t.mock.method(Math, 'random', () => .99);
     const user = fresh('pilferTurn', 'skillBloodAuction');
     user.paradise.enemy.atk = 100;
-    now += 4000; rpg.advanceParadiseCombat(user);
+    now += 3500; rpg.advanceParadiseCombat(user);
     const next = user.field.nextEnemyAttackAt;
     now += 1500; await skill(user, '생명 경매');
     assert.equal(user.field.nextEnemyAttackAt, next + 2000);

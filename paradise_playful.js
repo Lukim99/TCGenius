@@ -28,8 +28,9 @@ function shield(user, id, amount, seconds, stats) {
     shields.grant(user.field, { source: 'playful:' + id, caster: user.name, amount: Math.round(amount), expiresAt: Date.now() + seconds * 1000 });
 }
 function delay(user, ms) {
-    if (user.paradise.enemy.mirror) user.paradise.enemy.mirror.nextActionAt = Math.max(Date.now(), Number(user.paradise.enemy.mirror.nextActionAt || Date.now() + 4000)) + ms;
-    else user.field.nextEnemyAttackAt = Math.max(Date.now(), Number(user.field.nextEnemyAttackAt || Date.now() + 4000)) + ms;
+    const interval = corridor().enemyAttackInterval(user.paradise.enemy.kind);
+    if (user.paradise.enemy.mirror) user.paradise.enemy.mirror.nextActionAt = Math.max(Date.now(), Number(user.paradise.enemy.mirror.nextActionAt || Date.now() + interval)) + ms;
+    else user.field.nextEnemyAttackAt = Math.max(Date.now(), Number(user.field.nextEnemyAttackAt || Date.now() + interval)) + ms;
 }
 function normalCooldowns(user) {
     return Object.entries(user.field.skillCooldowns || {}).filter(([name]) => !isUltimate(user, name));
