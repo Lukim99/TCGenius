@@ -3,9 +3,10 @@ const { DynamoDBDocumentClient, ScanCommand, GetCommand, PutCommand, UpdateComma
 const rpg = () => require('./rpgenius');
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'ap-northeast-2', credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_KEY_ID } }));
 let work = null, checkedWeek = null, timer = null;
+const PARTICIPATION_FROM_RANK = 6;
 
-function rewardsForRank(config, rank) {
-    return [...(config.ranks.find(r => rank >= r.from && rank <= r.to)?.rewards || []), ...config.participation];
+function rewardsForRank(config, rank, participationFromRank = PARTICIPATION_FROM_RANK) {
+    return [...(config.ranks.find(r => rank >= r.from && rank <= r.to)?.rewards || []), ...(rank >= participationFromRank ? config.participation : [])];
 }
 async function settle(date = new Date()) {
     const currentWeek = rpg().getKoreanWeekKey(date), config = rpg().getDataCache('Paradise', null)?.weeklyRewards;
@@ -31,7 +32,7 @@ async function settle(date = new Date()) {
         if (snapshot?.completedAt) continue;
         if (!snapshot) {
             const ranked = weeks.get(week).sort((a, b) => b.floor - a.floor || a.reachedAt - b.reachedAt || a.name.localeCompare(b.name, 'ko'));
-            snapshot = { week, createdAt: Date.now(), config: structuredClone(config), rows: ranked.map((r, index) => ({ ...r, rank: index + 1 })) };
+            snapshot = { week, createdAt: Date.now(), participationFromRank: PARTICIPATION_FROM_RANK, config: structuredClone(config), rows: ranked.map((r, index) => ({ ...r, rank: index + 1 })) };
             try { await db.send(new PutCommand({ TableName: 'rpgenius_data', Item: { key, data: snapshot }, ConditionExpression: 'attribute_not_exists(#key)', ExpressionAttributeNames: { '#key': 'key' } })); }
             catch (error) {
                 if (error.name !== 'ConditionalCheckFailedException') throw error;
@@ -41,7 +42,8 @@ async function settle(date = new Date()) {
         }
         const items = rpg().getDataCache('Item', []);
         // 모든 지급 항목을 먼저 확인한다. 미등록 아이템이 있으면 주차를 완료 처리하지 않고 재시도한다.
-        const deliveries = snapshot.rows.map(row => ({ row, gifts: rewardsForRank(snapshot.config, row.rank).map(reward => {
+        // 이미 정산을 시작한 주차는 당시 확정한 참가상 규칙으로 재시도한다.
+        const deliveries = snapshot.rows.map(row => ({ row, gifts: rewardsForRank(snapshot.config, row.rank, snapshot.participationFromRank ?? 1).map(reward => {
             if (reward.type === '가넷') return { type: 'garnet', amount: reward.count };
             const id = items.findIndex(item => item?.name === reward.name);
             if (id < 0) throw new Error('주간 회랑 보상 아이템 미등록: ' + reward.name);
@@ -50,7 +52,7 @@ async function settle(date = new Date()) {
         for (const { row, gifts } of deliveries) {
             const result = await rpg().sendSystemMailToUser(row.name, { recipientId: row.id, deliveryKey: 'paradise:' + week,
                 gmName: '천상의 회랑', subject: '천상의 회랑 ' + week + ' 주간 보상',
-                body: `${row.floor}층 · ${row.rank}위\n주간 랭킹 보상과 참가상을 지급합니다.`, gifts });
+                body: `${row.floor}층 ${row.rank}위\n천상 주간 보상을 지급합니다.`, gifts });
             if (result.error) throw new Error(result.error);
         }
         await db.send(new UpdateCommand({ TableName: 'rpgenius_data', Key: { key }, UpdateExpression: 'SET #data.completedAt = :now', ExpressionAttributeNames: { '#data': 'data' }, ExpressionAttributeValues: { ':now': Date.now() } }));

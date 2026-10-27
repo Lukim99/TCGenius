@@ -139,10 +139,10 @@
         stone(x, y, w, h); let by = y + 10;
         if (!B.list.length) A.text(C, '보상 정보가 없습니다', x + w / 2, y + h / 2, 13, DIM, 'center', 600);
         B.list.forEach((b, i) => {
-            if (b.join) { A.chamfer(C, x + 8, by + 2, w - 16, b.h - 4, 6); C.fillStyle = 'rgba(120,210,220,.08)'; C.fill(); C.strokeStyle = 'rgba(166,230,232,.3)'; C.lineWidth = 1; C.stroke(); if (i) { gem(x + w / 2, by + 1, 9, 'rgba(18,30,36,.95)'); A.text(C, '+', x + w / 2, by + 1, 14, CYAN, 'center', 800); } }
+            if (b.join) { A.chamfer(C, x + 8, by + 2, w - 16, b.h - 4, 6); C.fillStyle = 'rgba(120,210,220,.08)'; C.fill(); C.strokeStyle = 'rgba(166,230,232,.3)'; C.lineWidth = 1; C.stroke(); }
             else if (i) A.line(C, x + 16, by, x + w - 16, by, 'rgba(236,212,160,.12)');
             const mid = by + b.h / 2, color = b.join ? CYAN : b.rank <= 3 ? RANK_COLOR[Math.min(2, b.rank - 1)] : IVORY;
-            A.text(C, b.label, x + 18, b.join ? mid - 8 : mid, 16, color, 'left', 800, B.lw - 8); if (b.join) A.text(C, '전 순위 추가', x + 18, mid + 12, 11, CYAN, 'left', 600, B.lw - 6);
+            A.text(C, b.label, x + 18, b.join ? mid - 8 : mid, 16, color, 'left', 800, B.lw - 8); if (b.join) A.text(C, '6위 이하', x + 18, mid + 12, 11, CYAN, 'left', 600, B.lw - 6);
             b.rewards.forEach((r, j) => {
                 const ix = x + 14 + B.lw + (j % B.per) * B.iw, iy = by + 6 + Math.floor(j / B.per) * 72, icx = ix + B.iw / 2;
                 A.iconAt(r.iconUrl, icx - 19, iy, 38); A.text(C, `×${A.fmt(r.count)}`, icx + 22, iy + 34, 12, IVORY, 'right', 800);

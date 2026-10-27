@@ -273,7 +273,7 @@ function modifyHit(user, stats, extra, hit) {
         const limit = user.paradise.enemy.maxHp * .08, excess = Math.max(0, hit.finalDamage - limit);
         if (excess > 0) {
             const old = mechanics().dots(user).find(dot => dot.key === 'playfulDiet');
-            const total = Math.min(stats.atk * 15, (old ? old.damage * old.ticks : 0) + excess * 1.2);
+            const total = (old ? old.damage * old.ticks : 0) + excess * 1.2;
             scaleHit(hit, limit / hit.finalDamage);
             mechanics().addDot(user, 'playfulDiet', '한입 크기', total / 3, 3, 2000, true);
             notice(extra, '한입 크기로 나눠 담았습니다.');

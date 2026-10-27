@@ -322,13 +322,26 @@ test('앙숙은 엘리트 공격력을 다음 전투 세 번에 나눠 쓰고 �
     assert.equal(spell(user).damage, 100);
 });
 
-test('큰 피해는 한입 지속 피해로 바뀌며 생성된 지속 피해가 다시 분할되지 않는다', t => {
+test('한입 지속 피해는 공격력 상한 없이 누적하고 남은 피해만 합산하며 다시 분할하지 않는다', t => {
     t.mock.method(Math, 'random', () => .99);
-    const user = fresh('damageDiet'); Object.assign(user.paradise.enemy, { maxHp: 10000, hp: 10000 });
-    const result = hit(user, {}, 3000); assert.equal(result.damage, 800);
-    const stored = mechanics.dots(user).find(d => d.key === 'playfulDiet'); assert.ok(stored.damage * stored.ticks <= stats(user).atk * 15 + 2);
-    const before = mechanics.dots(user).length; hit(user, { dotAttack: true, paradiseDot: true, summonAttack: true, isBasic: false }, 900);
-    assert.equal(mechanics.dots(user).length, before);
+    let now = Date.now(); t.mock.method(Date, 'now', () => now);
+    const user = fresh('damageDiet'); Object.assign(user.paradise.enemy, { maxHp: 1e6, hp: 1e6 });
+    const excess = Math.round(stats(user).atk * 100), raw = 80000 + excess;
+    assert.equal(hit(user, {}, raw).damage, 80000);
+    let stored = mechanics.dots(user).find(d => d.key === 'playfulDiet');
+    assert.ok(Math.abs(stored.damage * stored.ticks - excess * 1.2) <= 2);
+    assert.ok(stored.damage * stored.ticks > stats(user).atk * 15);
+    hit(user, {}, raw); stored = mechanics.dots(user).find(d => d.key === 'playfulDiet');
+    assert.ok(Math.abs(stored.damage * stored.ticks - excess * 2.4) <= 4);
+    now += 2000; const firstTick = mechanics.takeTicks(user, now); assert.equal(firstTick.length, 1);
+    const remaining = stored.damage * 2;
+    hit(user, {}, raw); stored = mechanics.dots(user).find(d => d.key === 'playfulDiet');
+    assert.ok(Math.abs(stored.damage * stored.ticks - remaining - excess * 1.2) <= 2);
+    const before = structuredClone(user.paradise.battle.mechanics.dots.playfulDiet);
+    hit(user, { dotAttack: true, paradiseDot: true, summonAttack: true, isBasic: false }, 900);
+    assert.deepEqual(user.paradise.battle.mechanics.dots.playfulDiet, before);
+    const ticks = mechanics.takeTicks(user, now + 6000); assert.equal(ticks.length, 3);
+    assert.equal(ticks.reduce((sum, tick) => sum + tick.rawDamage, 0), stored.damage * stored.ticks);
 });
 
 test('구급차는 큰 피격 이후 세 번만 회복하고 경매는 세 번째 피격 뒤에 정산한다', t => {

@@ -1770,7 +1770,7 @@ test('달성 보상은 최고 도달 구간 한 개만 정산하며 하락·재�
     }
 });
 
-test('주간 순위 보상은 참가상을 더해 우편 발송하고 재시작·동시 재시도에도 한 번만 지급한다', async t => {
+test('주간 상위 5명은 참가상을 제외하고 6위부터 지급하며 재시작·동시 재시도에도 한 번만 지급한다', async t => {
     const { weeklyRewards, rewardItems } = require('../scripts/register_paradise_content');
     const get = rpg.getDataCache, items = [...data.Item, ...rewardItems];
     t.mock.method(rpg, 'getDataCache', (key, fallback) => key === 'Paradise' ? { enabled: true, baseRewards: [], weeklyRewards } : key === 'Item' ? items : get(key, fallback));
@@ -1783,12 +1783,14 @@ test('주간 순위 보상은 참가상을 더해 우편 발송하고 재시작�
     await assert.rejects(rewards.settleWeekly(new Date('2026-11-02T00:00:00+09:00')), /simulated mail outage/);
     assert.equal(persisted.get('weekly-1').mail.length, 1);
     assert.equal(data['ParadiseSettlement:' + week].completedAt, undefined);
+    assert.equal(data['ParadiseSettlement:' + week].participationFromRank, 6);
     await Promise.all([rewards.settleWeekly(new Date('2026-11-02T00:00:00+09:00')), rewards.settleWeekly(new Date('2026-11-02T00:00:00+09:00'))]);
     for (let i = 1; i <= 6; i++) {
         const user = persisted.get('weekly-' + i); assert.equal(user.mail.length, 1);
         const gifts = mailRecords.get(user.mail[0].id).gifts;
         assert.equal(gifts.filter(g => g.type === 'garnet').reduce((sum,g)=>sum+g.amount,0), i === 1 ? 2000 : i === 2 ? 1000 : i <= 5 ? 500 : 0);
-        assert.equal(gifts.filter(g => g.type === 'item' && items[g.id].name === '지옥 열쇠').reduce((sum,g)=>sum+g.count,0), i >= 3 && i <= 5 ? 6 : 3);
+        assert.equal(gifts.filter(g => g.type === 'item' && items[g.id].name === '지옥 열쇠').reduce((sum,g)=>sum+g.count,0), i >= 3 ? 3 : 0);
+        if (i <= 2) assert.equal(gifts.filter(g => g.type === 'item' && items[g.id].name === (i === 1 ? '찬란한 지옥 열쇠' : '화려한 지옥 열쇠')).reduce((sum, g) => sum + g.count, 0), 3);
     }
     delete data['ParadiseSettlement:' + week].completedAt; // 우편 발송 후 완료 표식 저장 전에 재시작된 경우
     delete require.cache[require.resolve('../paradise_rewards')];
@@ -1800,6 +1802,23 @@ test('주간 순위 보상은 참가상을 더해 우편 발송하고 재시작�
     assert.equal((await rpg.claimMailGifts(winner, id)).error, '이미 선물을 수령했습니다.');
     assert.equal(winner.garnet, 2000);
     for (let i = 1; i <= 6; i++) persisted.delete('weekly-' + i);
+});
+
+test('변경 전에 확정한 주간 정산은 기존 참가상과 운영 보상 설정을 보존한다', async t => {
+    const { weeklyRewards, rewardItems } = require('../scripts/register_paradise_content');
+    const get = rpg.getDataCache, items = [...data.Item, ...rewardItems], week = '2026-W43', name = 'legacy-weekly';
+    t.mock.method(rpg, 'getDataCache', (key, fallback) => key === 'Paradise' ? { enabled: true, baseRewards: [], weeklyRewards } : key === 'Item' ? items : get(key, fallback));
+    const config = structuredClone(weeklyRewards); config.ranks[0].rewards[1].count = 1234;
+    const row = { id: name, name, rank: 1, floor: 100, reachedAt: 1 };
+    persisted.set(name, { ...structuredClone(account), id: name, name, paradiseWeekly: { week, bestFloor: 100, reachedAt: 1 }, mail: [] });
+    data['ParadiseSettlement:' + week] = { week, createdAt: 1, config, rows: [row] };
+    delete require.cache[require.resolve('../paradise_rewards')];
+    await require('../paradise_rewards').settleWeekly(new Date('2026-11-02T00:02:00+09:00'));
+    const gifts = mailRecords.get(persisted.get(name).mail[0].id).gifts;
+    assert.equal(gifts.find(g => g.type === 'garnet').amount, 1234);
+    assert.equal(gifts.find(g => g.type === 'item' && items[g.id].name === '지옥 열쇠').count, 3);
+    assert.deepEqual(data['ParadiseSettlement:' + week].config, config);
+    persisted.delete(name); delete data['ParadiseSettlement:' + week];
 });
 
 test('20분은 전투와 퍼즐에서 흐르고 증강, 길, 이벤트 선택과 재접속 중에는 멈춘다', async t => {
