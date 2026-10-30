@@ -2277,6 +2277,10 @@ function parseFieldIncomingHits(message) {
 function mapFieldTickReward(reward) {
     const mapped = Object.assign({}, reward || {});
     if (mapped.kind == 'card') return Object.assign(mapped, { iconUrl: getCardIconUrl(mapped.card), frameUrl: null });
+    if (mapped.kind == 'equipment') {
+        const data = mapped.equipment && rpgenius.getEquipmentData(mapped.equipment.type, mapped.equipment.id);
+        return data ? Object.assign(mapped, { iconUrl: getEquipmentIconUrl(data), frameUrl: getAuctionFrameUrl('equipment', data.rarity) }) : mapped;
+    }
     if (mapped.kind != 'item') return mapped;
     const items = rpgenius.getDataCache('Item', []);
     const item = Number.isInteger(Number(mapped.itemId)) ? items[Number(mapped.itemId)] : items.find(entry => entry && entry.name == mapped.name);
@@ -2531,7 +2535,7 @@ function getGeneralFieldDescriptor(dungeon, index, user, entryBlocked, combatPow
     const configurationError = rpgenius.getDungeonConfigurationError(dungeon, dungeon.webDaily === true);
     const levelAvailable = !configurationError && level >= minLevel && (dungeon.webDaily || maxLevel == null || level <= maxLevel);
     const recommendedCP = configurationError ? 0 : Number(rpgenius.getDungeonRecommendedCP(dungeon) || 0);
-    const atlas = dungeon.name == '인트리그미션' ? { atlasUrl: getGeneralFieldAssetUrl(path.join('필드', '몬스터', '인트리그미션.png')), row: 0, rows: 1 } : getGeneralFieldAtlas(index);
+    const atlas = ['인트리그미션', '란도랜드1'].includes(dungeon.name) ? { atlasUrl: getGeneralFieldAssetUrl(path.join('필드', '몬스터', dungeon.name + '.png')), row: 0, rows: 1 } : getGeneralFieldAtlas(index);
     const spriteBase = atlas || { atlasUrl: null, row: 0, rows: 1 };
     const normalName = dungeon.name + ' 몬스터';
     const eliteName = dungeon.elite && dungeon.elite.name || '엘리트 몬스터';
@@ -3918,18 +3922,46 @@ server.post('/api/artifact/reroll', requireUser, async (req, res) => {
         res.json({ ok: true, cost: out.cost, artifact: out.artifact, equipment: buildInventoryEquipment(out.user), profile: buildUserProfile(out.user) });
     } catch (error) { console.error('[artifact]', error); res.status(500).json({ error: '아티팩트 재설정에 실패했습니다.' }); }
 });
+function buildPotentialRerollInfo(user, number) {
+    const auto = rpgenius.getPotentialAutoView(user);
+    const pending = user.pendingAction?.type === '잠재능력재설정확인' ? user.pendingAction : null;
+    // 다른 화면에서 장비가 이동·제거되어도 보관된 결과를 확인하고 이전 유지를 선택할 수 있다.
+    if (auto && !auto.number) {
+        number = Number.isInteger(number) && number > 0 ? number : 1;
+        return { ok: true, number, auto, gold: auto.gold, current: auto.current,
+            targetOptions: auto.targetOptions, equipment: { number, name: '대상 장비를 찾을 수 없음' } };
+    }
+    if (auto?.number) number = auto.number;
+    else if (pending) number = pending.targetUid ? rpgenius.getAllUserEquipments(user).findIndex(entry => entry.equip.uid === pending.targetUid) + 1 : pending.number;
+    const target = rpgenius.getAllUserEquipments(user)[number - 1];
+    const original = target?.equip.potential;
+    let out;
+    try {
+        if (auto && target && user.potentialAuto.candidate) target.equip.potential = user.potentialAuto.candidate;
+        out = rpgenius.getPotentialRerollInfo(user, number);
+    } finally { if (target) target.equip.potential = original; }
+    if (out.error && !auto) return out;
+    if (out.error) out = { ok: true, gold: auto.gold, current: auto.current };
+    if (auto) out.targetOptions = auto.targetOptions;
+    const items = rpgenius.getDataCache('Item', []) || [];
+    const iconByName = name => { const d = items.find(it => it && it.name === name); return d ? getItemIconUrl(d) : null; };
+    out.jewelIcons = { jewel: iconByName('쥬얼'), white: iconByName('화이트 쥬얼') };
+    out.goldIcon = SHOP_CURR_IMG.gold;
+    out.number = number;
+    out.equipment = buildInventoryEquipment(user).find(entry => entry.number === number);
+    out.auto = auto;
+    out.pendingResult = pending ? rpgenius.getPotentialRerollResult(user, pending) : null;
+    return out;
+}
+
 server.get('/api/potential/reroll-info/:number', requireUser, async (req, res) => {
     try {
         const number = Number(req.params.number);
         if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const out = rpgenius.getPotentialRerollInfo(user, number);
+        const out = buildPotentialRerollInfo(user, number);
         if (out.error) return res.status(400).json({ error: out.error });
-        const items = rpgenius.getDataCache('Item', []) || [];
-        const iconByName = name => { const d = items.find(it => it && it.name === name); return d ? getItemIconUrl(d) : null; };
-        out.jewelIcons = { jewel: iconByName('쥬얼'), white: iconByName('화이트 쥬얼') };
-        out.goldIcon = SHOP_CURR_IMG.gold;
         res.json(out);
     } catch (e) {
         console.error('potential reroll-info error:', e);
@@ -3948,7 +3980,7 @@ server.post('/api/potential/reroll', requireUser, async (req, res) => {
         if (blocked) return res.status(400).json({ error: blocked });
         const out = rpgenius.webRerollPotential(user, number, jewel);
         if (out.error) return res.status(400).json({ error: out.error });
-        await user.save();
+        await rpgenius.commitProtectedUserChange(user, ['gold', 'inventory', 'equipments', 'pendingAction']);
         res.json(out);
     } catch (e) {
         console.error('potential reroll error:', e);
@@ -3960,9 +3992,11 @@ server.post('/api/potential/reroll/confirm', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blocked = getEquipmentActionBlockedReason(user, '변경');
+        if (blocked) return res.status(400).json({ error: blocked });
         const result = rpgenius.confirmPotentialReroll(user);
         if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
-        await user.save();
+        await rpgenius.commitProtectedUserChange(user, ['inventory', 'equipments', 'pendingAction']);
         res.json({ ok: true, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
     } catch (e) {
         console.error('potential reroll confirm error:', e);
@@ -3977,11 +4011,34 @@ server.post('/api/potential/reroll/cancel', requireUser, async (req, res) => {
         // 웹은 비교 화면에서 명시적으로 '이전 유지'를 선택하므로 강제 취소
         const result = rpgenius.cancelPotentialReroll(user, true);
         if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
-        await user.save();
+        await rpgenius.commitProtectedUserChange(user, ['pendingAction']);
         res.json({ ok: true, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
     } catch (e) {
         console.error('potential reroll cancel error:', e);
         res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+for (const action of ['start', 'step', 'stop', 'finish']) server.post('/api/potential/auto/' + action, requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const input = req.body || {};
+        const blocked = getEquipmentActionBlockedReason(user, '변경');
+        if (blocked && (action === 'start' || action === 'finish' && input.choice === 'apply')) return res.status(400).json({ error: blocked });
+        const number = rpgenius.getPotentialAutoView(user)?.number || Number(input.number);
+        let out;
+        if (action === 'start') out = rpgenius.startPotentialAuto(user, input);
+        if (action === 'step') out = blocked ? rpgenius.stopPotentialAuto(user, input.id, 'error') : rpgenius.stepPotentialAuto(user, input.id, input.expectedRolls);
+        if (action === 'stop') out = rpgenius.stopPotentialAuto(user, input.id);
+        if (action === 'finish') out = rpgenius.finishPotentialAuto(user, input.id, input.choice);
+        if (out.error) return res.status(400).json(out);
+        await rpgenius.commitProtectedUserChange(user, ['gold', 'inventory', 'equipments', 'potentialAuto']);
+        if (action === 'finish') return res.json({ ok: true, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
+        res.json({ ...out, info: buildPotentialRerollInfo(user, number) });
+    } catch (error) {
+        console.error('[potential auto]', error.name);
+        res.status(409).json({ error: '재설정 결과를 저장하지 못했거나 보유 정보가 변경되었습니다. 다시 불러와주세요.' });
     }
 });
 
@@ -9305,7 +9362,7 @@ function renderUserDashboard(sess, opts) {
 <html lang="ko"><head><meta charset="utf-8"><title>RPGenius</title>
 <script>window.__INITIAL_PAGE=${JSON.stringify(initialPage)};</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/black-market.css"><link rel="stylesheet" href="/static/shop-scene.css"><link rel="stylesheet" href="/static/orb-fusion.css"></head><body>
+<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/potential-forge.css"><link rel="stylesheet" href="/static/black-market.css"><link rel="stylesheet" href="/static/shop-scene.css"><link rel="stylesheet" href="/static/orb-fusion.css"></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="otpBtn" style="padding:8px 12px;font-size:13px" title="2단계 인증 설정">OTP</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
@@ -9622,6 +9679,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/game-actions.js"></script>
 <script src="/static/artifact-effects.js"></script>
 <script src="/static/artifact-ui.js"></script>
+<script src="/static/potential-forge-ui.js"></script>
 <script src="/static/quest-board-effects.js"></script>
 <script src="/static/pvp-lobby.js"></script>
 <script src="/static/enhance-effects.js"></script>

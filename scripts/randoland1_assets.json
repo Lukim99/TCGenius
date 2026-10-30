@@ -1,0 +1,27 @@
+[
+  {
+    "category": "ui",
+    "file": "필드/란도랜드1.png",
+    "sha256": "15e45c69e2209c85142b25816a05c73e05544ccc7b27575ca351317645b84947"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/고유 장충동왕족발보쌈.png",
+    "sha256": "96b13708dcaf4c7aa34c992223e26e58bad5000058410336715091117822e30b"
+  },
+  {
+    "category": "ui",
+    "file": "필드/몬스터/란도랜드1.png",
+    "sha256": "847e81c000869bb0c63bd220e943ada69d684e4aaff6799d713453c4c8e5ee66"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/6성 각성 카드팩.png",
+    "sha256": "e27389cfbf040eeb1ac2c78259f037c1a5bd886c6dbef372994b78566f5ef684"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/7성 각성 카드팩.png",
+    "sha256": "f21455f0d8384d3f94ca01eeacf3fa8293b5a42a3c41ecb1b946fd8c886b085a"
+  }
+]

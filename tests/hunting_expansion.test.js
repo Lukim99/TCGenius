@@ -8,6 +8,7 @@ const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const AWS = require('aws-sdk');
 const { appendContent } = require('../scripts/init_intrigue_content');
 const { appendPackages } = require('../scripts/init_chuseok_packages');
+const { prepare: prepareRandoland1, accessory: randolandAccessory } = require('../scripts/register_randoland1_content');
 
 // 실제 엔진·캐시·인증·Express API를 사용하되 AWS 전송은 메모리 데이터로 격리한다.
 const data = {};
@@ -75,6 +76,7 @@ async function reset(name = accounts[0].name) {
     user.hp = 1000000000;
     user.mp = 1000000000;
     user.field = null;
+    user.fieldCooldowns = { nextActionAt: 0, skillCooldowns: {} };
     user.dailyDungeonDaily = null;
     user.quests = {};
     user.unlockedRaids = [];
@@ -152,6 +154,154 @@ test('인트리그미션 일일 보상은 문서 수량 범위와 6성 80%·7성
     assert.deepEqual(upper.items, { '일반 떡밥': 2500, '강화석': 2500, '상급 강화석': 13, '7성 카드팩': 1, '헬 도전장': 90 });
     assert.equal(rpg.rollDailyDungeonClearReward(dungeon, () => .799999).items['6성 카드팩'], 1);
     assert.equal(rpg.rollDailyDungeonClearReward(dungeon, () => .8).items['7성 카드팩'], 1);
+});
+
+test('란도랜드1 등록은 운영 스탯·꾸러미 연결·빈 구성을 보존하고 누락된 항목만 추가한다', () => {
+    const before = { Equipment: { accessory: [{ name: '기존 장신구' }] }, Item: [{ name: '기존 아이템' }], Bundle: [[]] };
+    const after = prepareRandoland1(before);
+    assert.deepEqual(before.Equipment.accessory, [{ name: '기존 장신구' }]);
+    assert.deepEqual(after.Equipment.accessory[1], randolandAccessory);
+    assert.deepEqual(after.Bundle[0], []);
+    assert.equal(after.Item[1].pack, 1);
+    assert.equal(after.Item[2].pack, 2);
+    after.Equipment.accessory[1].stat.hp = -777;
+    after.Item[1].pack = 0;
+    after.Bundle[2] = [];
+    assert.deepEqual(prepareRandoland1(after), after);
+    assert.throws(() => prepareRandoland1({}), /초기화하지 않습니다/);
+});
+
+test('란도랜드1 일반·일던은 171레벨부터 입장하며 배경·신규 몬스터 에셋을 제공한다', async () => {
+    for (const route of ['/api/field', '/api/daily-dungeon']) {
+        const user = await reset(); user.level = 170; await user.save();
+        assert.equal((await request(route)).data.fields.find(field => field.name === '란도랜드1').locked, true);
+        assert.equal((await request(route + '/enter', { fieldName: '란도랜드1', confirmed: true })).data.ok, false);
+        user.level = 171; await user.save();
+        const entered = (await request(route + '/enter', { fieldName: '란도랜드1', confirmed: true })).data;
+        assert.equal(entered.ok, true, entered.message);
+        assert.equal(entered.state.activeField.monster.eliteName, '심플한 우니');
+        const current = await rpg.getRPGUserByName(user.name);
+        assert.equal(rpg.getFieldCombatContext(current).dungeon.hp, route === '/api/field' ? Math.round(9915 * .9) : 9915 / 20);
+        for (const url of [entered.state.activeField.backgroundUrl, entered.state.activeField.monster.atlasUrl]) {
+            assert.match(decodeURIComponent(url), /란도랜드1\.png/);
+            const response = await fetch(base + url, { headers: { Cookie: cookie() } });
+            assert.equal(response.status, 200);
+            assert.match(response.headers.get('content-type'), /image\/png/);
+        }
+    }
+});
+
+test('란도랜드1 엘리트는 레벨에 관계없이 5% 경계에서 고유 장신구를 직접 지급한다', async t => {
+    for (const level of [171, 300]) for (const roll of [.049999, .05]) {
+        const user = await reset(); user.level = level; user.statPointStats.atk = 10000000;
+        const dungeon = rpg.getRegularFieldDungeons().find(field => field.name === '란도랜드1');
+        user.field = { name: dungeon.name, nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: { hp: dungeon.elite.hp } };
+        await user.save();
+        const random = t.mock.method(Math, 'random', () => roll);
+        const result = (await request('/api/field/attack', {})).data;
+        random.mock.restore();
+        assert.equal(result.ok, true, result.message);
+        assert.equal(result.event.eliteDefeated, true);
+        const current = await rpg.getRPGUserByName(user.name);
+        const equipment = current.inventory.equipment.filter(item => rpg.getEquipmentData(item.type, item.id)?.name === randolandAccessory.name);
+        assert.equal(equipment.length, roll < .05 ? 1 : 0);
+        const shown = result.event.rewards.find(reward => reward.name === randolandAccessory.name);
+        assert.equal(!!shown, roll < .05);
+        if (shown) {
+            assert.equal(shown.kind, 'equipment');
+            assert.equal((await fetch(base + shown.iconUrl, { headers: { Cookie: cookie() } })).status, 200);
+            const before = rpg.calculateUserStats(current);
+            current.equipments.accessory = { 0: equipment[0] };
+            const after = rpg.calculateUserStats(current);
+            assert.equal(after.hp - before.hp, -1500);
+            assert.equal(after.mp - before.mp, 300);
+        }
+    }
+});
+
+test('란도랜드1 일던 보상 범위와 6/7성·일반/전직/각성 확률을 적용한다', () => {
+    const dungeon = rpg.findDailyDungeonByName('란도랜드1');
+    assert.deepEqual([dungeon.atk, dungeon.pnt, dungeon.def, dungeon.hp], [4500, 330, 305, 9915]);
+    assert.deepEqual([dungeon.elite.atk, dungeon.elite.pnt, dungeon.elite.def, dungeon.elite.hp], [14150, 720, 820, 175000]);
+    const lower = rpg.rollDailyDungeonClearReward(dungeon, () => 0);
+    assert.equal(lower.exp, 65000000);
+    assert.equal(lower.gold, 13500000);
+    assert.deepEqual(lower.items, { '일반 떡밥': 2500, '강화석': 2500, '상급 강화석': 10, '6성 카드팩': 1, '헬 초대장': 150 });
+    const upper = rpg.rollDailyDungeonClearReward(dungeon, () => 1 - Number.EPSILON);
+    assert.equal(upper.gold, 15000000);
+    assert.deepEqual(upper.items, { '일반 떡밥': 3000, '강화석': 3000, '상급 강화석': 20, '7성 각성 카드팩': 1, '헬 도전장': 110 });
+    const counts = {};
+    for (let i = 0; i < 10000; i++) {
+        const name = Object.keys(rpg.rollDailyDungeonClearReward(dungeon, () => (i + .5) / 10000).items).find(name => name.endsWith('카드팩'));
+        counts[name] = (counts[name] || 0) + 1;
+    }
+    assert.deepEqual(counts, { '6성 카드팩': 4680, '6성 전직 카드팩': 1200, '6성 각성 카드팩': 120, '7성 카드팩': 3120, '7성 전직 카드팩': 800, '7성 각성 카드팩': 80 });
+    assert.equal(rpg.rollDailyDungeonClearReward(dungeon, () => .6).items['7성 카드팩'], 1);
+    assert.equal(rpg.rollDailyDungeonClearReward(dungeon, () => .5).items['헬 도전장'], 110);
+});
+
+test('란도랜드1 클리어는 여섯 카드 종류와 럭키 2배 보상을 실제 인벤토리에 지급한다', async t => {
+    const dungeon = rpg.findDailyDungeonByName('란도랜드1');
+    for (const [roll, star, type] of [[.2, 5, '일반'], [.5, 5, '전직'], [.59, 5, '각성'], [.7, 6, '일반'], [.95, 6, '전직'], [.995, 6, '각성']]) {
+        for (const lucky of [false, true]) {
+            const user = await reset(); user.level = 171;
+            user.field = { name: dungeon.name, dailyDungeon: true, killCount: 5000, nextActionAt: 0, skillCooldowns: {} };
+            const values = [0, 0, 0, roll, 0, 0, lucky ? 0 : .99];
+            const random = t.mock.method(Math, 'random', () => .5);
+            const result = rpg.grantDailyDungeonClearReward(user, dungeon, {}, {}, {}, () => values.shift());
+            random.mock.restore();
+            assert.equal(result.error, undefined);
+            assert.equal(result.exp, 65000000 * (lucky ? 2 : 1));
+            assert.equal(result.gold, 13500000 * (lucky ? 2 : 1));
+            assert.equal(user.inventory.card.length, lucky ? 2 : 1);
+            assert.ok(user.inventory.card.every(card => card.star === star && card.type === type));
+            assert.equal(rpg.getInventoryItemCount(user, data.Item.findIndex(item => item.name === '일반 떡밥')), 2500 * (lucky ? 2 : 1));
+            assert.equal(user.field, null);
+            assert.equal(user.dailyDungeonDaily.outcome, 'cleared');
+        }
+    }
+});
+
+test('란도랜드1 웹 일던은 5000마리 처치 후 각성 카드를 지급하고 당일 재입장을 막는다', async t => {
+    let user = await reset(); user.level = 171; await user.save();
+    assert.equal((await request('/api/daily-dungeon/enter', { fieldName: '란도랜드1' })).data.ok, true);
+    user = await rpg.getRPGUserByName(user.name);
+    user.statPointStats.atk = 10000000; user.field.killCount = 4999; await user.save();
+    t.mock.method(Math, 'random', () => .995);
+    const result = (await request('/api/daily-dungeon/attack', {})).data;
+    assert.equal(result.event.cleared, true, result.message);
+    assert.equal(result.state.inField, false);
+    user = await rpg.getRPGUserByName(user.name);
+    assert.equal(user.inventory.card.length, 1);
+    assert.equal(user.inventory.card[0].type, '각성');
+    assert.equal(user.inventory.card[0].star, 6);
+    assert.ok(result.event.rewards.some(reward => reward.kind === 'card' && reward.card.type === '각성'));
+    const recovery = (await request('/api/daily-dungeon')).data;
+    assert.equal(recovery.daily.outcome, 'cleared');
+    for (const reward of recovery.clearRewards.filter(reward => reward.iconUrl)) {
+        assert.equal((await fetch(base + reward.iconUrl, { headers: { Cookie: cookie() } })).status, 200, reward.name);
+    }
+    assert.equal((await request('/api/daily-dungeon/enter', { fieldName: '란도랜드1' })).data.ok, false);
+    assert.equal((await request('/api/daily-dungeon/attack', {})).data.ok, false);
+    assert.equal((await rpg.getRPGUserByName(user.name)).inventory.card.length, 1);
+});
+
+test('란도랜드1 소환수 처치도 장신구와 웹 보상 아이콘을 지급한다', async t => {
+    const user = await reset(); user.level = 171; user.main_card.id = 11; user.statPointStats.atk = 10000000;
+    user.field = { name: '란도랜드1', nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: { hp: 1 } };
+    await user.save();
+    t.mock.method(Math, 'random', () => 0);
+    const summon = (await request('/api/field/skill', { skillName: '익테봇 소환' })).data;
+    assert.equal(summon.ok, true, summon.message);
+    await new Promise(resolve => setTimeout(resolve, 4200));
+    const state = (await request('/api/field')).data;
+    const event = state.events.find(event => event.eliteDefeated);
+    assert.ok(event, JSON.stringify(state.events));
+    const reward = event.rewards.find(reward => reward.name === randolandAccessory.name);
+    assert.equal(reward.kind, 'equipment');
+    assert.equal((await fetch(base + reward.iconUrl, { headers: { Cookie: cookie() } })).status, 200);
+    assert.equal((await rpg.getRPGUserByName(user.name)).inventory.equipment.length, 1);
+    rpg.clearFieldRuntimeTimers(user.name);
 });
 
 test('일일 던전 웹 API는 기존 전투·타임 중첩·하루 한 번 입장 규칙과 클리어 보상 복구를 제공한다', async t => {

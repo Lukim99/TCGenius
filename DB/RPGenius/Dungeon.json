@@ -2351,5 +2351,148 @@
                 }
             ]
         }
+    },
+    {
+        "name": "란도랜드1",
+        "enabled": true,
+        "requireLevel": 171,
+        "reward": {
+            "exp": 23000,
+            "gold": {
+                "min": 10500,
+                "max": 13000
+            }
+        },
+        "dailyDungeon": {
+            "enabled": true,
+            "exp": 65000000,
+            "gold": {
+                "min": 13500000,
+                "max": 15000000
+            },
+            "items": [
+                {
+                    "name": "일반 떡밥",
+                    "count": {
+                        "min": 2500,
+                        "max": 3000
+                    }
+                },
+                {
+                    "name": "강화석",
+                    "count": {
+                        "min": 2500,
+                        "max": 3000
+                    }
+                },
+                {
+                    "name": "상급 강화석",
+                    "count": {
+                        "min": 10,
+                        "max": 20
+                    }
+                }
+            ],
+            "itemChoices": [
+                [
+                    {
+                        "name": "6성 카드팩",
+                        "weight": 4680,
+                        "count": 1
+                    },
+                    {
+                        "name": "6성 전직 카드팩",
+                        "weight": 1200,
+                        "count": 1
+                    },
+                    {
+                        "name": "6성 각성 카드팩",
+                        "weight": 120,
+                        "count": 1
+                    },
+                    {
+                        "name": "7성 카드팩",
+                        "weight": 3120,
+                        "count": 1
+                    },
+                    {
+                        "name": "7성 전직 카드팩",
+                        "weight": 800,
+                        "count": 1
+                    },
+                    {
+                        "name": "7성 각성 카드팩",
+                        "weight": 80,
+                        "count": 1
+                    }
+                ],
+                [
+                    {
+                        "name": "헬 초대장",
+                        "weight": 50,
+                        "count": 150
+                    },
+                    {
+                        "name": "헬 도전장",
+                        "weight": 50,
+                        "count": 110
+                    }
+                ]
+            ]
+        },
+        "atk": 4500,
+        "pnt": 330,
+        "pntPercent": 0,
+        "def": 305,
+        "hp": 9915,
+        "crit": 0.15,
+        "critMul": 1.6,
+        "critDef": 0,
+        "cmb": 0.15,
+        "maxCmb": 0,
+        "elite": {
+            "name": "심플한 우니",
+            "atk": 14150,
+            "pnt": 720,
+            "pntPercent": 0.1,
+            "def": 820,
+            "hp": 175000,
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0,
+            "reward": [
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 310000,
+                        "max": 340000
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 45000,
+                        "max": 65000
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_name": "일반 떡밥",
+                    "count": {
+                        "min": 350,
+                        "max": 450
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "장신구",
+                    "accessory_name": "장충동왕족발보쌈",
+                    "count": 1,
+                    "roll": 0.05
+                }
+            ]
+        }
     }
 ]

@@ -1700,309 +1700,193 @@ async function awakenPotential(eq, event) {
     }
 }
 
-// ===== 잠재능력 재설정 모달 (강화 모달 스타일) =====
-let potentialState = { eq: null, info: null, jewel: 'none', busy: false };
-
-const JEWEL_META = {
-    none:  { cls: 'none',     name: '쥬얼 미사용' },
-    jewel: { cls: 'advanced', name: '쥬얼' },
-    white: { cls: 'blessed',  name: '화이트 쥬얼' }
-};
-
-// 쥬얼 아이콘 노드 (none은 빈 표시, jewel/white는 실제 이미지)
-function jewelIconNode(key) {
-    const info = potentialState.info || {};
-    const icons = info.jewelIcons || {};
-    const url = key === 'jewel' ? icons.jewel : key === 'white' ? icons.white : null;
-    if (url) return el('img', { class: 'jewel-icon-img', src: url, alt: '' });
-    return el('span', { class: 'jewel-icon-none' }, '–');
+// ===== 잠재능력 각인 공방 (시각 디자인: Claude Opus 5.5) =====
+let potentialState = null;
+function potentialModel(state) {
+    return { equipment: state.eq, info: state.info, jewel: state.jewel, targets: state.targets,
+        goldLimit: state.goldLimit, busy: state.busy, error: state.error,
+        run: state.auto && state.auto.run, result: state.lastResult };
 }
-
-// 모바일에서 스크롤 없이 화면에 맞도록 zoom으로 자동 축소 (reflow)
-function potAvailHeight() {
-    const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-    return vh * 0.92;
-}
-function potFitZoom(elem, reservedHeight = 0) {
-    if (!elem) return { z: 1, natural: 0 };
-    elem.style.zoom = '1';
-    const natural = elem.scrollHeight;
-    const avail = Math.max(0, potAvailHeight() - reservedHeight);
-    const z = natural > avail ? avail / natural : 1;
-    elem.style.zoom = String(z);
-    return { z, natural };
-}
-function refitPotential() {
-    const ov = $('#potentialOverlay');
-    if (!ov || !ov.classList.contains('active')) return;
-    const wrap = ov.querySelector('.enhance-wrap');
-    if (!wrap) return;
-    if ($('#potentialResultOverlay').classList.contains('active')) {
-        const inner = $('#potentialResultOverlay').querySelector('.pot-result-inner');
-        if (inner) {
-            const resultPadding = 40;
-            const { z, natural } = potFitZoom(inner, resultPadding);
-            wrap.style.height = (natural * z + resultPadding) + 'px';
-        }
-    } else {
-        wrap.style.height = '';
-        potFitZoom($('#potentialContent'));
-    }
-}
-window.addEventListener('resize', refitPotential);
-if (window.visualViewport) window.visualViewport.addEventListener('resize', refitPotential);
-
-function potEntriesNode(data, label, cls) {
-    const tierKey = data && data.tierKey || 'rare';
-    const block = el('div', { class: 'pot-block tier-' + tierKey + ' ' + (cls || '') });
-    block.style.setProperty('--pot-tier', POTENTIAL_TIER_COLORS[tierKey] || '#94a3b8');
-    block.appendChild(el('div', { class: 'pot-title' },
-        el('span', null, label),
-        el('span', { class: 'pot-tier-label' }, (data && data.tierLabel) || '')
-    ));
-    (data && data.entries || []).forEach(entry => {
-        block.appendChild(el('div', { class: 'pot-row' },
-            el('span', { class: 'pot-grade ' + (entry.grade || 'bronze') }, entry.gradeLabel || ''),
-            el('span', { class: 'pot-text' }, entry.text || '')
-        ));
+function renderRerollSetup() {
+    const state = potentialState;
+    if (!state || state.closed || !state.info) return;
+    PotentialForge.renderSetup($('#potentialContent'), potentialModel(state), {
+        onJewel: key => { if (state.busy) return; state.jewel = key; renderRerollSetup(); },
+        onTarget: (index, target) => { state.targets[index] = target; },
+        onBudget: value => { state.goldLimit = value; },
+        onSingle: doReroll, onAuto: startPotentialAutoClient, onClose: closeRerollModal
     });
-    return block;
 }
-
+function renderPotentialRunning(state) {
+    if (state !== potentialState || state.closed) return;
+    PotentialForge.renderRunning($('#potentialContent'), potentialModel(state), { onStop: stopPotentialAutoClient });
+}
+function showRerollResult(data) {
+    const state = potentialState;
+    if (!state || state.closed) return;
+    state.lastResult = data;
+    PotentialForge.renderResult($('#potentialContent'), potentialModel(state), {
+        onKeep: () => finishReroll('cancel'), onApply: () => finishReroll('confirm'), onClose: closeRerollModal,
+        onAgain: () => state.auto ? finishReroll('cancel') : loadRerollInfo()
+    });
+}
 function openRerollModal(eq) {
-    potentialState = { eq, info: null, jewel: 'none', busy: false };
-    $('#potentialOverlay').classList.add('active');
+    if (potentialState && !potentialState.closed) return;
+    potentialState = { eq, info: null, jewel: 'none', targets: [null, null, null], goldLimit: '', busy: false, auto: null, lastResult: null, closed: false };
+    const overlay = $('#potentialOverlay');
+    overlay.classList.add('active');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '잠재능력 각인 공방');
+    $('#potentialResultOverlay').classList.remove('active');
+    $('#potentialResultOverlay').replaceChildren();
+    const wrap = overlay.querySelector('.enhance-wrap');
+    wrap.style.height = ''; wrap.classList.remove('result-mode');
+    $('#potentialContent').style.zoom = '1';
     document.body.style.overflow = 'hidden';
     loadRerollInfo();
 }
-
 function closeRerollModal() {
+    const state = potentialState;
+    if (!state) return;
+    state.closed = true; state.stopRequested = true;
+    if (state.auto && state.auto.run.status === 'running' && !state.busy) {
+        postApi('/api/potential/auto/stop', { id: state.auto.run.id }).catch(() => {});
+    }
+    PotentialForge.destroy($('#potentialContent'));
     $('#potentialOverlay').classList.remove('active');
     document.body.style.overflow = '';
-    const wrap = $('#potentialOverlay').querySelector('.enhance-wrap');
-    if (wrap) { wrap.style.height = ''; wrap.classList.remove('result-mode'); }
-    const c = $('#potentialContent'); if (c) c.style.zoom = '1';
-    potentialState = { eq: null, info: null, jewel: 'none', busy: false };
     if (pageIsActive('inventory')) loadInventory('equipment').catch(() => {});
 }
-
+function acceptPotentialAutoResponse(state, data) {
+    state.auto = data;
+    state.lastResult = data.result;
+    if (data.info && !data.info.error) state.info = data.info;
+    if (state.info && state.info.equipment) state.eq = state.info.equipment;
+    if (data.jewel) state.jewel = data.jewel;
+    if (data.targets) state.targets = data.targets;
+    state.goldLimit = data.run.goldLimit == null ? '' : String(data.run.goldLimit);
+}
 async function loadRerollInfo() {
-    $('#potentialContent').replaceChildren(el('div', { class: 'loading', style: 'padding:60px 0;text-align:center' }, '불러오는 중...'));
-    $('#potentialResultOverlay').classList.remove('active');
-    const wrap = $('#potentialOverlay').querySelector('.enhance-wrap');
-    if (wrap) wrap.classList.remove('result-mode');
+    const state = potentialState;
+    if (!state || state.closed) return;
     try {
-        const data = await api('/api/potential/reroll-info/' + potentialState.eq.number);
-        potentialState.info = data;
-        if (potentialState.jewel === 'jewel' && !data.options.jewel.available) potentialState.jewel = 'none';
-        if (potentialState.jewel === 'white' && !data.options.white.available) potentialState.jewel = 'none';
+        const data = await api('/api/potential/reroll-info/' + state.eq.number);
+        if (state !== potentialState || state.closed) return;
+        state.info = data; state.eq = data.equipment || state.eq; state.busy = false; state.error = null;
+        if (data.auto) {
+            acceptPotentialAutoResponse(state, { ...data.auto, info: data });
+            // 닫기·재접속 시 자동으로 지출을 재개하지 않고 마지막 후보를 복구한다.
+            if (state.auto.run.status === 'running') {
+                acceptPotentialAutoResponse(state, await postApi('/api/potential/auto/stop', { id: state.auto.run.id }));
+            }
+            return showRerollResult(state.lastResult);
+        }
+        state.auto = null;
+        if (data.pendingResult) return showRerollResult(data.pendingResult);
+        state.lastResult = null;
+        if (state.jewel !== 'none' && !data.options[state.jewel].available) state.jewel = 'none';
         renderRerollSetup();
-    } catch (e) {
+    } catch (error) {
+        if (state !== potentialState || state.closed) return;
         $('#potentialContent').replaceChildren(el('div', { class: 'enhance-error-wrap' },
-            el('div', { class: 'empty err' }, e.message),
-            el('button', { class: 'enhance-cancel-btn', style: 'margin-top:12px;width:100%', onclick: closeRerollModal }, '닫기')
-        ));
+            el('div', { class: 'empty err' }, error.message),
+            el('button', { class: 'primary', onclick: loadRerollInfo }, '결과 다시 불러오기'),
+            el('button', { onclick: closeRerollModal }, '닫기')));
     }
 }
-
-function buildJewelCard() {
-    const { info, jewel } = potentialState;
-    const meta = JEWEL_META[jewel];
-    const opt = info.options[jewel];
-    const card = el('div', { class: 'enhance-protect ' + meta.cls + ' clickable', onclick: openJewelPicker });
-    card.appendChild(el('div', { class: 'enhance-protect-icon' }, jewelIconNode(jewel)));
-    const detail = jewel === 'none' ? '할인 없음 · 클릭하여 쥬얼 선택' : ('골드 -' + opt.discountPct + '% · 승급 확률/카운트 2배');
-    card.appendChild(el('div', { class: 'enhance-protect-text' },
-        el('div', { class: 'enhance-protect-name' }, meta.name),
-        el('div', { class: 'enhance-protect-detail' }, detail)
-    ));
-    if (jewel !== 'none') card.appendChild(el('div', { class: 'enhance-protect-badge' }, '보유 ' + (jewel === 'white' ? info.jewels.white : info.jewels.jewel) + '개'));
-    card.appendChild(el('div', { class: 'enhance-protect-pick-arrow' }, '▾'));
-    return card;
-}
-
-function openJewelPicker() {
-    const { info, jewel } = potentialState;
-    const body = el('div', { class: 'protect-picker' });
-    const makeRow = (key, detail, count, available) => {
-        const row = el('div', {
-            class: 'protect-pick-row' + (jewel === key ? ' selected' : '') + (available ? '' : ' disabled'),
-            onclick: available ? () => { potentialState.jewel = key; closeModal(); renderRerollSetup(); } : null
-        });
-        row.appendChild(el('div', { class: 'protect-pick-icon' }, jewelIconNode(key)));
-        row.appendChild(el('div', { class: 'protect-pick-text' },
-            el('div', { class: 'protect-pick-name' }, JEWEL_META[key].name),
-            el('div', { class: 'protect-pick-detail' }, detail)));
-        if (count != null) row.appendChild(el('div', { class: 'protect-pick-count' }, count + '개'));
-        if (jewel === key) row.appendChild(el('div', { class: 'protect-pick-check' }, '✓'));
-        return row;
-    };
-    body.appendChild(makeRow('none', '쥬얼을 사용하지 않습니다', null, true));
-    body.appendChild(makeRow('jewel', '골드 -' + info.options.jewel.discountPct + '% · 승급 2배', info.jewels.jewel, info.options.jewel.available));
-    body.appendChild(makeRow('white', '골드 -' + info.options.white.discountPct + '% · 승급 2배', info.jewels.white, info.options.white.available));
-    $('#modalTitle').textContent = '쥬얼 선택';
-    $('#modalSub').style.display = 'none';
-    $('#modalBody').replaceChildren(body);
-    $('#modalBg').classList.add('active');
-}
-
-function buildCostBox() {
-    const { info, jewel } = potentialState;
-    const opt = info.options[jewel];
-    const lack = info.gold < opt.cost;
-    const box = el('div', { class: 'pot-cost-box' });
-    const goldImg = info.goldIcon ? el('img', { class: 'pot-gold-icon', src: info.goldIcon, alt: '' }) : null;
-    box.appendChild(el('div', { class: 'pot-cost-line' + (lack ? ' lack' : '') },
-        '소모 ', goldImg, ' ' + comma(opt.cost) + (lack ? ' (보유 ' + comma(info.gold) + ')' : ' / ' + comma(info.gold))));
-    if (info.upgrade) {
-        const jewelBonus = jewel !== 'none' && info.currentTier !== 'unique';
-        box.appendChild(el('div', { class: 'pot-upg-line' },
-            '승급 ' + info.currentTierLabel + ' → ' + info.upgrade.next + ' · 확정까지 ' + comma(info.upgrade.failCount) + '/' + comma(info.upgrade.guarantee) + (jewelBonus ? ' (쥬얼 2배)' : '')));
-    }
-    return box;
-}
-
-function renderRerollSetup() {
-    const { eq, info, jewel } = potentialState;
-    const opt = info.options[jewel];
-    const lack = info.gold < opt.cost;
-
-    const thumbParts = [];
-    if (eq.frameUrl) thumbParts.push(el('img', { class: 'auc-frame', src: eq.frameUrl, alt: '' }));
-    if (eq.iconUrl) thumbParts.push(el('img', { class: 'auc-item-img', src: eq.iconUrl, alt: eq.name }));
-    const header = el('div', { class: 'pot-mod-head tier-' + info.currentTier },
-        el('button', { class: 'enhance-close-btn', onclick: closeRerollModal }, '✕'),
-        el('div', { class: 'auc-thumb square' }, ...thumbParts),
-        el('div', { class: 'pot-mod-title' }, eq.name + (eq.level > 0 ? ' +' + eq.level : '')),
-        el('div', { class: 'pot-mod-tier' }, info.currentTierLabel)
-    );
-    header.style.setProperty('--pot-tier', POTENTIAL_TIER_COLORS[info.currentTier] || '#94a3b8');
-
-    const confirmBtn = el('button', { class: 'pot-confirm-btn', disabled: lack ? true : false, onclick: e => doReroll(e) }, '재설정');
-
-    $('#potentialContent').replaceChildren(
-        header,
-        el('div', { class: 'enhance-info' },
-            el('div', { class: 'enhance-section-label' }, '현재 잠재능력'),
-            potEntriesNode(info.current, '현재', 'cur'),
-            el('div', { class: 'enhance-section-label' }, '쥬얼'),
-            buildJewelCard(),
-            el('div', { class: 'enhance-section-label' }, '소모 / 승급'),
-            buildCostBox()
-        ),
-        el('div', { class: 'enhance-footer' },
-            el('button', { class: 'enhance-cancel-btn', onclick: closeRerollModal }, '닫기'),
-            confirmBtn
-        )
-    );
-    requestAnimationFrame(refitPotential);
-}
-
-async function doReroll(event) {
-    if (potentialState.busy) return;
-    potentialState.busy = true;
-    const btn = event && event.currentTarget;
-    if (btn) btn.disabled = true;
+async function doReroll() {
+    const state = potentialState;
+    if (!state || state.busy) return;
+    state.busy = true; state.error = null; renderRerollSetup();
     try {
-        const data = await postApi('/api/potential/reroll', { number: potentialState.eq.number, jewel: potentialState.jewel });
-        potentialState.busy = false;
+        const data = await postApi('/api/potential/reroll', { number: state.eq.number, jewel: state.jewel });
+        state.busy = false;
+        if (state !== potentialState || state.closed) return;
+        state.info.gold -= data.cost;
         showRerollResult(data);
-    } catch (e) {
-        potentialState.busy = false;
-        if (btn) btn.disabled = false;
-        showAlert(e.message);
+    } catch (error) {
+        state.busy = false;
+        if (state !== potentialState || state.closed) return;
+        await showAlert(error.message);
+        loadRerollInfo();
     }
 }
-
-function showRerollResult(data) {
-    const ov = $('#potentialResultOverlay');
-    const wrap = $('#potentialOverlay').querySelector('.enhance-wrap');
-    if (wrap) wrap.classList.add('result-mode');
-    const eq = potentialState.eq;
-    const kind = data.upgraded ? 'great' : 'success';
-    potentialState.lastResult = data;
-
-    const thumbParts = [];
-    if (eq.frameUrl) thumbParts.push(el('img', { class: 'auc-frame', src: eq.frameUrl, alt: '' }));
-    if (eq.iconUrl) thumbParts.push(el('img', { class: 'auc-item-img', src: eq.iconUrl, alt: '' }));
-    const weapon = el('div', { class: 'enh-fx-weapon' }, el('div', { class: 'auc-thumb square' }, ...thumbParts));
-    const fxLayers = [el('div', { class: 'enh-fx-aura' })];
-    if (data.upgraded) {
-        fxLayers.push(buildRayLayer(16, '#fde68a'));
-        fxLayers.push(weapon);
-        fxLayers.push(buildSparkleLayer(16, ['#fde68a', '#c4b5fd', '#86efac', '#93c5fd', '#f0abfc', '#fbbf24']));
-    } else {
-        fxLayers.push(buildRayLayer(12, 'rgba(196,181,253,.7)'));
-        fxLayers.push(weapon);
-        fxLayers.push(buildSparkleLayer(11, ['#e9d5ff', '#c4b5fd', '#ffffff']));
-    }
-    const fxStage = el('div', { class: 'enh-fx ' + kind }, ...fxLayers);
-
-    const FX = 0.25;
-    const headline = el('div', { class: 'enh-result-headline ' + kind, style: 'animation-delay:' + FX + 's' },
-        data.upgraded ? ('티어 승급! ' + data.currentTierLabel + ' → ' + data.nextTierLabel + (data.guaranteed ? ' (확정)' : '')) : '잠재능력 재설정');
-
-    const power = data.combatPower;
-    const powerDiff = power ? Number(power.diff || 0) : 0;
-    const powerClass = powerDiff > 0 ? 'up' : powerDiff < 0 ? 'down' : 'same';
-    const powerNode = power ? el('div', { class: 'pot-power-compare pot-result-reveal ' + powerClass, style: 'animation-delay:' + (FX + 0.07).toFixed(2) + 's' },
-        el('div', { class: 'pot-power-value old' }, el('span', null, '이전 전투력'), el('strong', null, comma(power.old))),
-        el('div', { class: 'pot-power-delta' },
-            el('span', null, '전투력 변화'),
-            el('strong', null, powerDiff > 0 ? '+' + comma(powerDiff) : comma(powerDiff))
-        ),
-        el('div', { class: 'pot-power-value new' }, el('span', null, '신규 전투력'), el('strong', null, comma(power.new)))
-    ) : null;
-
-    const cmp = el('div', { class: 'pot-compare pot-result-reveal', style: 'animation-delay:' + (FX + 0.1).toFixed(2) + 's' },
-        potEntriesNode(data.old, '이전', 'old'),
-        potEntriesNode(data.new, '신규', 'new'));
-
-    const warn = data.upgraded ? el('div', { class: 'pot-warn pot-result-reveal', style: 'animation-delay:' + (FX + 0.18).toFixed(2) + 's' },
-        '이전 유지를 선택하면 승급도 사라집니다. 골드/쥬얼은 반환되지 않습니다.') : null;
-
-    const btnRow = el('div', { class: 'pot-result-actions pot-result-reveal', style: 'animation-delay:' + (FX + 0.25).toFixed(2) + 's' },
-        el('button', { class: 'enhance-cancel-btn', onclick: e => data.upgraded ? showRerollKeepWarning() : finishReroll('cancel', e) }, '이전 유지'),
-        el('button', { class: 'pot-confirm-btn', onclick: e => finishReroll('confirm', e) }, '새 잠재능력 적용'));
-
-    const inner = el('div', { class: 'pot-result-inner' }, fxStage, headline, ...(powerNode ? [powerNode] : []), cmp, ...(warn ? [warn] : []), btnRow);
-    ov.replaceChildren(inner);
-    ov.classList.add('active');
-    requestAnimationFrame(refitPotential);
-}
-
-function showRerollKeepWarning() {
-    const ov = $('#potentialResultOverlay');
-    const inner = el('div', { class: 'pot-result-inner' },
-        el('div', { class: 'enh-warn-title' }, '승급을 포기하시겠습니까?'),
-        el('div', { class: 'enh-warn-sub' }, '이전 잠재능력으로 되돌리면 티어 승급도 함께 사라집니다. 소모한 골드/쥬얼은 반환되지 않습니다.'),
-        el('div', { class: 'enh-warn-actions' },
-            el('button', { class: 'enhance-cancel-btn', onclick: () => showRerollResult(potentialState.lastResult) }, '돌아가기'),
-            el('button', { class: 'enh-warn-confirm', onclick: e => finishReroll('cancel', e) }, '승급 포기')
-        )
-    );
-    ov.replaceChildren(inner);
-    ov.classList.add('active');
-    requestAnimationFrame(refitPotential);
-}
-
-async function finishReroll(kind, event) {
-    if (potentialState.busy) return;
-    potentialState.busy = true;
-    const btn = event && event.currentTarget;
-    if (btn) btn.disabled = true;
+async function startPotentialAutoClient() {
+    const state = potentialState;
+    if (!state || state.busy) return;
+    state.busy = true; state.error = null; state.stopRequested = false; renderRerollSetup();
     try {
-        const data = await postApi('/api/potential/reroll/' + (kind === 'confirm' ? 'confirm' : 'cancel'), {});
-        potentialState.busy = false;
-        if (data.profile) renderProfile(data.profile);
-        $('#potentialResultOverlay').classList.remove('active');
-        loadRerollInfo(); // 모달은 유지하고 재설정 화면 갱신
-    } catch (e) {
-        potentialState.busy = false;
-        if (btn) btn.disabled = false;
-        showAlert(e.message);
+        const data = await postApi('/api/potential/auto/start', { number: state.eq.number, jewel: state.jewel,
+            targets: state.targets, goldLimit: state.goldLimit, requestId: crypto.randomUUID() });
+        acceptPotentialAutoResponse(state, data); state.busy = false;
+        await pumpPotentialAuto(state);
+    } catch (error) {
+        state.busy = false;
+        if (state !== potentialState || state.closed) return;
+        await showAlert(error.message);
+        loadRerollInfo();
     }
 }
+async function pumpPotentialAuto(state) {
+    const runId = state.auto.run.id;
+    while (state.auto && state.auto.run.id === runId && state.auto.run.status === 'running') {
+        if (state.closed || state.stopRequested || state !== potentialState) {
+            const data = await postApi('/api/potential/auto/stop', { id: state.auto.run.id });
+            acceptPotentialAutoResponse(state, data);
+            break;
+        }
+        renderPotentialRunning(state);
+        state.busy = true;
+        try {
+            const data = await postApi('/api/potential/auto/step', { id: state.auto.run.id, expectedRolls: state.auto.run.rolls });
+            acceptPotentialAutoResponse(state, data);
+        } finally { state.busy = false; }
+        if (state.auto.run.status !== 'running') break;
+        renderPotentialRunning(state);
+        await new Promise(resolve => setTimeout(resolve, 650));
+    }
+    if (state === potentialState && !state.closed && state.auto && state.auto.run.id === runId) showRerollResult(state.lastResult);
+}
+async function stopPotentialAutoClient() {
+    const state = potentialState;
+    if (!state || !state.auto) return;
+    const runId = state.auto.run.id;
+    state.stopRequested = true;
+    // 진행 중인 한 회차는 저장을 마친 뒤 멈추며, 다음 회차 대기 중에도 즉시 중단한다.
+    try {
+        const data = await postApi('/api/potential/auto/stop', { id: runId });
+        if (!state.auto || state.auto.run.id !== runId) return;
+        acceptPotentialAutoResponse(state, data);
+        if (state === potentialState && !state.closed && !state.busy) showRerollResult(state.lastResult);
+    } catch (error) { if (!state.closed) { await showAlert(error.message); loadRerollInfo(); } }
+}
+async function finishReroll(kind) {
+    const state = potentialState;
+    if (!state || state.busy) return;
+    if (kind === 'cancel' && state.lastResult && state.lastResult.upgraded
+        && !await showConfirm('이전 잠재능력을 유지하면 이번 승급도 포기합니다. 소모한 골드와 쥬얼은 반환되지 않습니다. 이전 잠재능력을 유지할까요?')) return;
+    state.busy = true; showRerollResult(state.lastResult);
+    try {
+        const data = state.auto
+            ? await postApi('/api/potential/auto/finish', { id: state.auto.run.id, choice: kind === 'confirm' ? 'apply' : 'keep' })
+            : await postApi('/api/potential/reroll/' + (kind === 'confirm' ? 'confirm' : 'cancel'), {});
+        state.busy = false;
+        if (data.profile) renderProfile(data.profile);
+        if (state !== potentialState || state.closed) return;
+        state.auto = null; state.lastResult = null;
+        loadRerollInfo();
+    } catch (error) {
+        state.busy = false;
+        if (state !== potentialState || state.closed) return;
+        await showAlert(error.message);
+        loadRerollInfo();
+    }
+}
+window.addEventListener('pagehide', () => {
+    const state = potentialState;
+    if (!state || !state.auto || state.auto.run.status !== 'running') return;
+    state.stopRequested = true;
+    navigator.sendBeacon('/api/potential/auto/stop', new Blob([JSON.stringify({ id: state.auto.run.id })], { type: 'application/json' }));
+});
 
 async function handleEquipmentAction(eq, action, event) {
     const btn = event && event.currentTarget;

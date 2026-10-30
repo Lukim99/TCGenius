@@ -3515,5 +3515,21 @@
       "item_id": 25,
       "type": "아이템"
     }
+  ],
+  [
+    {
+      "type": "캐릭터카드",
+      "card_type": "각성",
+      "display_star": 6,
+      "count": 1
+    }
+  ],
+  [
+    {
+      "type": "캐릭터카드",
+      "card_type": "각성",
+      "display_star": 7,
+      "count": 1
+    }
   ]
 ]

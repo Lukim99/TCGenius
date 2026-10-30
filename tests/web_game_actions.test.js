@@ -75,6 +75,292 @@ after(async () => {
     await new Promise(resolve => server.close(resolve));
 });
 
+async function potentialUser(tier = '레전더리', gold = 1000000000, items = []) {
+    return reset({ gold, pendingAction: null, potentialAuto: null,
+        inventory: { item: items, card: [], pet: [], equipment: [{ type: 'accessory', id: 0, level: 0,
+            potential: { rarity: tier, failCount: 0, option: Array.from({ length: 3 }, () => ({ grade: 'gold', stat: { hp: 150 } })) } }] }
+    });
+}
+async function startAuto(extra = {}) {
+    return request('/api/potential/auto/start', { number: 1, jewel: 'none', targets: [{ key: 'plusStat:itemDropChance', grade: 'platinum' }, null, null], requestId: require('crypto').randomUUID(), ...extra });
+}
+
+test('잠재 자동 재설정은 인증·자리별 목표·골드 한도를 차감 전에 검증한다', async () => {
+    await potentialUser();
+    assert.equal((await request('/api/potential/auto/start', {}, false)).status, 401);
+    assert.equal((await startAuto({ targets: [null, null, null] })).status, 400);
+    assert.equal((await startAuto({ targets: [{ key: 'plusStat:fake', grade: 'gold' }, null, null] })).status, 400);
+    assert.equal((await startAuto({ goldLimit: -1 })).status, 400);
+    assert.equal((await startAuto({ goldLimit: 1.5 })).status, 400);
+    assert.equal((await startAuto({ goldLimit: true })).status, 400);
+    assert.equal((await startAuto({ goldLimit: [1] })).status, 400);
+    const current = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(current.gold, 1000000000); assert.equal(current.potentialAuto, null);
+    const info = (await request('/api/potential/reroll-info/1')).data;
+    assert.ok(info.targetOptions.some(option => option.key === 'plusStat:itemDropChance' && option.grades.includes('platinum')));
+});
+
+test('잠재 자동 재설정은 자리별 최소 등급을 모두 만족하면 멈추고 비포/애프터를 선택한다', async t => {
+    const user = await potentialUser(), original = structuredClone(user.inventory.equipment[0].potential);
+    const started = await startAuto({ targets: [{ key: 'plusStat:itemDropChance', grade: 'platinum' }, { key: 'plusStat:itemDropChance', grade: 'gold' }, null] });
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const potentialPath = path.join(__dirname, '../DB/RPGenius/Potential.json');
+    const read = fs.readFileSync;
+    const potentialData = JSON.parse(read(potentialPath, 'utf8'));
+    for (const grade of ['gold', 'platinum']) {
+        const option = potentialData.accessory[grade].flatMap(group => group.roll).find(option => option.plusStat?.itemDropChance);
+        potentialData.accessory[grade] = [{ rate: 1, roll: [option] }];
+    }
+    t.mock.method(fs, 'readFileSync', (file, ...args) => file === potentialPath ? JSON.stringify(potentialData) : read(file, ...args));
+    const random = t.mock.method(Math, 'random', () => 0);
+    const stepped = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 0 });
+    random.mock.restore();
+    assert.equal(stepped.status, 200, JSON.stringify(stepped.data));
+    assert.equal(stepped.data.run.stopReason, 'matched');
+    assert.deepEqual(stepped.data.run.matched, [true, true, true]);
+    assert.equal(stepped.data.result.new.entries[1].grade, 'platinum', '골드 목표도 플레티넘이면 충족한다');
+    let current = await rpg.getRPGUserByName(fixture.name);
+    assert.deepEqual(current.inventory.equipment[0].potential, original, '자동 결과를 먼저 적용하면 안 된다');
+    const spent = stepped.data.run.spent;
+    assert.equal(current.gold, 1000000000 - spent);
+    const recovered = (await request('/api/potential/reroll-info/1')).data.auto;
+    assert.equal(recovered.run.stopReason, 'matched');
+    assert.deepEqual(recovered.result.new, stepped.data.result.new);
+    assert.equal((await request('/api/potential/auto/finish', { id: started.data.run.id, choice: 'keep' })).status, 200);
+    current = await rpg.getRPGUserByName(fixture.name);
+    assert.deepEqual(current.inventory.equipment[0].potential, original);
+    assert.equal(current.gold, 1000000000 - spent);
+    assert.equal(current.potentialAuto, null);
+});
+
+test('잠재 자동 재설정은 골드 한도 직전까지만 차감하고 미달성 마지막 후보를 남긴다', async t => {
+    await potentialUser();
+    const cost = (await request('/api/potential/reroll-info/1')).data.options.none.cost;
+    const started = await startAuto({ goldLimit: cost * 2 + 1 });
+    t.mock.method(Math, 'random', () => 0);
+    for (let i = 0; i < 2; i++) {
+        const response = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: i });
+        assert.equal(response.data.run.rolls, i + 1);
+        assert.equal(response.data.run.status, 'running');
+    }
+    const stopped = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 2 });
+    assert.equal(stopped.data.run.stopReason, 'budget'); assert.equal(stopped.data.run.spent, cost * 2);
+    assert.equal(stopped.data.run.matched[0], false);
+    assert.ok(stopped.data.result.new.entries.length === 3);
+    const applied = await request('/api/potential/auto/finish', { id: started.data.run.id, choice: 'apply' });
+    assert.equal(applied.status, 200);
+    const current = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(current.inventory.equipment[0].potential.option[0].grade, 'platinum');
+    assert.equal(current.gold, 1000000000 - cost * 2);
+    assert.equal((await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 2 })).status, 400);
+});
+
+test('잠재 자동 재설정의 중복 시작·동시 회차·중단 재전송은 중복 차감하지 않는다', async t => {
+    await potentialUser();
+    const requestId = require('crypto').randomUUID();
+    const starts = await Promise.all([startAuto({ requestId }), startAuto({ requestId })]);
+    assert.equal(starts[0].data.run.id, starts[1].data.run.id);
+    const id = starts[0].data.run.id;
+    t.mock.method(Math, 'random', () => 0);
+    const replies = await Promise.all([request('/api/potential/auto/step', { id, expectedRolls: 0 }), request('/api/potential/auto/step', { id, expectedRolls: 0 })]);
+    assert.ok(replies.every(reply => reply.status === 200 && reply.data.run.rolls === 1));
+    const cost = replies[0].data.run.spent;
+    await request('/api/potential/auto/stop', { id });
+    const stale = await request('/api/potential/auto/step', { id, expectedRolls: 1 });
+    assert.equal(stale.data.run.stopReason, 'manual'); assert.equal(stale.data.run.rolls, 1);
+    assert.equal((await rpg.getRPGUserByName(fixture.name)).gold, 1000000000 - cost);
+    assert.equal((await request('/api/potential/reroll', { number: 1, jewel: 'none' })).status, 400);
+});
+
+test('잠재 자동 재설정은 쥬얼 부족·골드 부족 때 결제 수단을 바꾸지 않고 중단한다', async t => {
+    const jewel = rpg.getDataCache('Item').findIndex(item => item.name === '쥬얼');
+    await potentialUser('레전더리', 1000000000, [{ id: jewel, count: 1 }]);
+    const started = await startAuto({ jewel: 'jewel' });
+    t.mock.method(Math, 'random', () => 0);
+    const one = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 0 });
+    const stopped = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 1 });
+    assert.equal(stopped.data.run.stopReason, 'jewel');
+    assert.equal(stopped.data.run.spent, one.data.run.spent); assert.equal(stopped.data.run.jewelUsed, 1);
+    await potentialUser('레전더리', 1);
+    const poor = await startAuto();
+    const noRoll = await request('/api/potential/auto/step', { id: poor.data.run.id, expectedRolls: 0 });
+    assert.equal(noRoll.data.run.stopReason, 'gold'); assert.equal(noRoll.data.run.rolls, 0); assert.equal(noRoll.data.result, null);
+});
+
+test('잠재 자동 재설정은 승급 후보에서 계속 뽑지만 원본은 보존하고 장비 UID로 적용한다', async t => {
+    const originalUser = await potentialUser('레어');
+    const originalOptions = structuredClone(originalUser.inventory.equipment[0].potential.option);
+    const started = await startAuto();
+    t.mock.method(Math, 'random', () => 0);
+    const first = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 0 });
+    assert.equal(first.data.result.new.tierKey, 'epic');
+    let current = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(current.inventory.equipment[0].potential.rarity, '레어');
+    const uid = current.inventory.equipment[0].uid;
+    current.inventory.equipment.unshift({ type: 'weapon', id: 0, level: 0 }); await current.save();
+    const second = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 1 });
+    assert.equal(second.data.result.new.tierKey, 'unique');
+    assert.equal(second.data.number, 2);
+    assert.ok(second.data.info.targetOptions.find(option => option.key === 'stat:hp').grades.includes('bronze'), '승급해도 시작할 때 정한 최소 등급 표시를 보존한다');
+    current = await rpg.getRPGUserByName(fixture.name);
+    assert.deepEqual(current.inventory.equipment[1].potential.option, originalOptions);
+    await request('/api/potential/auto/stop', { id: started.data.run.id });
+    assert.equal((await request('/api/potential/auto/finish', { id: started.data.run.id, choice: 'apply' })).status, 200);
+    current = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(current.inventory.equipment[1].uid, uid);
+    assert.equal(current.inventory.equipment[1].potential.rarity, '유니크');
+    assert.equal(current.inventory.equipment[0].potential, undefined);
+});
+
+test('잠재 자동 재설정 저장 실패는 비용·후보·회차를 함께 되돌린다', async t => {
+    await potentialUser(); const started = await startAuto();
+    const snapshot = JSON.parse(JSON.stringify(await rpg.getRPGUserByName(fixture.name)));
+    const send = DynamoDBDocumentClient.prototype.send;
+    t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function(command) {
+        if (command.constructor.name === 'UpdateCommand' && command.input.ConditionExpression?.startsWith('attribute_exists(id) AND')) throw Object.assign(new Error('Conflict'), { name: 'ConditionalCheckFailedException' });
+        if (command.constructor.name === 'GetCommand' && command.input.TableName === 'rpgenius_user') return { Item: snapshot };
+        return send.call(this, command);
+    });
+    const response = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 0 });
+    assert.equal(response.status, 409);
+    const current = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(current.gold, snapshot.gold);
+    assert.deepEqual(current.potentialAuto, snapshot.potentialAuto);
+    assert.deepEqual(current.inventory, snapshot.inventory);
+});
+
+test('잠재 수동 재설정도 기존 비교 결과 복구·적용·중복 차감 방지를 유지한다', async t => {
+    await potentialUser(); t.mock.method(Math, 'random', () => 0);
+    const rolled = await request('/api/potential/reroll', { number: 1, jewel: 'none' });
+    assert.equal(rolled.status, 200);
+    const gold = (await rpg.getRPGUserByName(fixture.name)).gold;
+    assert.equal((await request('/api/potential/reroll', { number: 1, jewel: 'none' })).status, 400);
+    const restored = (await request('/api/potential/reroll-info/1')).data;
+    assert.deepEqual(restored.pendingResult.new, rolled.data.new);
+    assert.equal((await request('/api/potential/reroll/confirm', {})).status, 200);
+    assert.equal((await rpg.getRPGUserByName(fixture.name)).gold, gold);
+});
+
+test('잠재 자동 재설정은 대상 장비 변경·제거 후 차감과 적용을 막고 보관 결과를 정리할 수 있다', async t => {
+    t.mock.method(Math, 'random', () => 0);
+    for (const removed of [false, true]) {
+        await potentialUser();
+        const started = await startAuto(), id = started.data.run.id;
+        await request('/api/potential/auto/step', { id, expectedRolls: 0 });
+        const current = await rpg.getRPGUserByName(fixture.name), gold = current.gold;
+        if (removed) current.inventory.equipment = [];
+        else current.inventory.equipment[0].potential.option[0].stat.hp = 999;
+        await current.save();
+        const stopped = await request('/api/potential/auto/step', { id, expectedRolls: 1 });
+        assert.equal(stopped.data.run.stopReason, 'error');
+        assert.equal(stopped.data.run.rolls, 1);
+        assert.equal((await request('/api/potential/auto/finish', { id, choice: 'apply' })).status, 400);
+        const recovered = await request('/api/potential/reroll-info/1');
+        assert.equal(recovered.status, 200);
+        assert.equal(recovered.data.auto.run.id, id);
+        assert.ok(recovered.data.auto.result.new);
+        assert.equal((await request('/api/potential/auto/finish', { id, choice: 'keep' })).status, 200);
+        const after = await rpg.getRPGUserByName(fixture.name);
+        assert.equal(after.gold, gold);
+        assert.equal(after.potentialAuto, null);
+        if (!removed) assert.equal(after.inventory.equipment[0].potential.option[0].stat.hp, 999);
+    }
+});
+
+test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택을 데스크톱과 모바일에서 제공한다', { skip: !process.env.POTENTIAL_BROWSER_CHECK }, async t => {
+    const initial = await potentialUser();
+    const original = structuredClone(initial.inventory.equipment[0].potential);
+    const cost = (await request('/api/potential/reroll-info/1')).data.options.none.cost;
+    t.mock.method(Math, 'random', () => 0);
+    const browser = await require('puppeteer-core').launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+    try {
+        const page = await browser.newPage(), errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+        await page.setViewport({ width: 1440, height: 1000 });
+        const split = cookie.indexOf('=');
+        await page.setCookie({ name: cookie.slice(0, split), value: cookie.slice(split + 1), url: base });
+        await page.goto(base, { waitUntil: 'networkidle0' });
+        await page.evaluate(async () => {
+            const info = await (await fetch('/api/potential/reroll-info/1')).json();
+            openRerollModal(info.equipment);
+        });
+        const setup = '#potentialContent[data-pf-view="setup"]';
+        const running = '#potentialContent[data-pf-view="running"]';
+        const result = '#potentialContent[data-pf-view="result"]';
+        await page.waitForSelector(setup);
+        await page.select('[data-pf-focus="topt0"]', 'plusStat:itemDropChance');
+        await page.select('[data-pf-focus="tgrade0"]', 'platinum');
+        await page.select('[data-pf-focus="topt1"]', 'plusStat:itemDropChance');
+        await page.select('[data-pf-focus="tgrade1"]', 'gold');
+        await page.type('[data-pf-focus="budget"]', String(cost * 3));
+        const dir = path.join(__dirname, '../output/potential-forge'); fs.mkdirSync(dir, { recursive: true });
+        await page.screenshot({ path: path.join(dir, 'setup-desktop.png') });
+        await page.setViewport({ width: 390, height: 844 });
+        await page.screenshot({ path: path.join(dir, 'setup-mobile.png') });
+        assert.ok(await page.evaluate(() => document.querySelector('.pot-wrap').getBoundingClientRect().right <= innerWidth));
+        await page.click('[data-pf-focus="auto"]');
+        await page.waitForSelector(running);
+        await page.screenshot({ path: path.join(dir, 'running-mobile.png') });
+        await page.waitForSelector(result);
+        await new Promise(resolve => setTimeout(resolve, 2200));
+        assert.match(await page.$eval(result, element => element.textContent), /골드 한도 도달/);
+        await page.screenshot({ path: path.join(dir, 'budget-result-mobile.png') });
+        await page.click('[data-pf-focus="keep"]');
+        await page.waitForSelector(setup);
+        let user = await rpg.getRPGUserByName(fixture.name);
+        assert.deepEqual(user.inventory.equipment[0].potential, original);
+        assert.equal(user.gold, initial.gold - cost * 3);
+        await page.setViewport({ width: 1440, height: 1000 });
+        await page.select('[data-pf-focus="topt0"]', 'stat:hp');
+        await page.select('[data-pf-focus="tgrade0"]', 'platinum');
+        await page.select('[data-pf-focus="topt1"]', '');
+        await page.click('[data-pf-focus="auto"]');
+        await page.waitForSelector(result);
+        await new Promise(resolve => setTimeout(resolve, 2200));
+        assert.match(await page.$eval(result, element => element.textContent), /목표 달성/);
+        await page.screenshot({ path: path.join(dir, 'success-desktop.png') });
+        await page.click('[data-pf-focus="apply"]');
+        await page.waitForSelector(setup);
+        user = await rpg.getRPGUserByName(fixture.name);
+        assert.equal(user.inventory.equipment[0].potential.option[0].grade, 'platinum');
+        assert.equal(user.inventory.equipment[0].potential.option[0].stat.hp, 200);
+        await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+        await page.setViewport({ width: 360, height: 740 });
+        await page.click('[data-pf-focus="single"]');
+        await page.waitForSelector(result);
+        await page.click('[data-pf-focus="keep"]');
+        await page.waitForSelector(setup);
+        // 멈춤 직후 선택을 끝내도 이전 실행 루프가 결과 화면을 다시 열지 않는다.
+        await page.select('[data-pf-focus="topt0"]', 'plusStat:itemDropChance');
+        await page.$eval('[data-pf-focus="budget"]', input => { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); });
+        await page.click('[data-pf-focus="auto"]');
+        await page.waitForFunction(() => potentialState.auto?.run.rolls >= 1);
+        await page.click('[data-pf-focus="stop"]');
+        await page.waitForSelector(result);
+        assert.match(await page.$eval(result, element => element.textContent), /각인 중단/);
+        await page.click('[data-pf-focus="keep"]');
+        await page.waitForSelector(setup);
+        await new Promise(resolve => setTimeout(resolve, 800));
+        assert.ok(await page.$(setup));
+        // 새로고침은 자동 지출을 재개하지 않고 마지막 비교 결과를 복구한다.
+        await page.click('[data-pf-focus="auto"]');
+        await page.waitForFunction(() => potentialState.auto?.run.rolls >= 1);
+        await page.reload({ waitUntil: 'networkidle0' });
+        await page.evaluate(async () => {
+            const info = await (await fetch('/api/potential/reroll-info/1')).json();
+            openRerollModal(info.equipment);
+        });
+        await page.waitForSelector(result);
+        const recoveredGold = (await rpg.getRPGUserByName(fixture.name)).gold;
+        await new Promise(resolve => setTimeout(resolve, 800));
+        assert.equal((await rpg.getRPGUserByName(fixture.name)).gold, recoveredGold);
+        assert.match(await page.$eval(result, element => element.textContent), /각인 중단/);
+        await page.click('[data-pf-focus="keep"]');
+        await page.waitForSelector(setup);
+        assert.deepEqual(errors, []);
+    } finally { await browser.close(); }
+});
+
 test('인증 없는 상태에서 플레이 API에 접근할 수 없다', async () => {
     assert.equal((await request('/api/game/state', undefined, false)).status, 401);
     assert.equal((await request('/api/inventory/actions/confirm', {}, false)).status, 401);

@@ -4,6 +4,7 @@ const fs = require('fs');
 const tcgEquipment = require('./tcg_equipment_effects');
 const path = require('path');
 const crypto = require('crypto');
+const { isDeepStrictEqual } = require('node:util');
 const ragbot = require('./ragbot');
 const transcendEquipment = require('./transcend_equipment');
 const armorExpansion = require('./armor_expansion');
@@ -243,6 +244,7 @@ function captureFieldTickState(user) {
         killCount: getRegularFieldKillCountForTick(user),
         gold: Number(user && user.gold || 0),
         cardCount: (user && user.inventory && user.inventory.card || []).length,
+        equipmentCount: (user && user.inventory && user.inventory.equipment || []).length,
         itemCounts: new Map(user && user.inventory && Array.isArray(user.inventory.item)
             ? user.inventory.item.map(item => [Number(item.id), Number(item.count || 0)]) : [])
     };
@@ -267,6 +269,10 @@ function getFieldTickRewards(user, before, message) {
     });
     (user.inventory && user.inventory.card || []).slice(before.cardCount || 0).forEach(card => {
         rewards.push({ kind: 'card', card: { ...card }, name: formatUserCard(card), count: 1 });
+    });
+    (user.inventory && user.inventory.equipment || []).slice(before.equipmentCount || 0).forEach(equipment => {
+        const data = getEquipmentData(equipment.type, equipment.id);
+        if (data) rewards.push({ kind: 'equipment', equipment: { ...equipment }, name: data.name, rarity: data.rarity, count: 1 });
     });
     return rewards;
 }
@@ -2134,6 +2140,7 @@ function getItemIdByName(name) {
 }
 
 function rerollEquipmentPotential(user, numberArg, jewelChoice) {
+    if (user.potentialAuto || user.pendingAction) return '❌ 진행 중인 재설정 또는 선택을 먼저 완료해주세요.';
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 잠재능력 재설정 [장비번호]';
     const selected = getAllUserEquipments(user)[number - 1];
@@ -2191,6 +2198,7 @@ function rerollEquipmentPotential(user, numberArg, jewelChoice) {
     user.pendingAction = {
         type: '잠재능력재설정확인',
         number: number,
+        targetUid: ensureEquipmentUid(selected.equip),
         oldPotential: oldPotential,
         newPotential: potential,
         cost: cost,
@@ -2225,10 +2233,11 @@ function rerollEquipmentPotential(user, numberArg, jewelChoice) {
 function confirmPotentialReroll(user) {
     const pending = user.pendingAction;
     if (!pending || pending.type != '잠재능력재설정확인') return '❌ 진행 중인 잠재능력 재설정이 없습니다.';
-    const selected = getAllUserEquipments(user)[Number(pending.number) - 1];
+    const selected = pending.targetUid ? getAllUserEquipments(user).find(entry => entry.equip.uid === pending.targetUid) : getAllUserEquipments(user)[Number(pending.number) - 1];
     if (!selected) { user.pendingAction = null; return '❌ 대상 장비를 찾을 수 없습니다.'; }
     const equipment = getEquipmentData(selected.equip.type || selected.type, selected.equip.id);
     if (!equipment) { user.pendingAction = null; return '❌ 잘못된 장비 데이터입니다.'; }
+    if (!isDeepStrictEqual(selected.equip.potential, pending.oldPotential)) return '❌ 대상 잠재능력이 변경되었습니다. 이전 유지를 선택해주세요.';
     selected.equip.potential = pending.newPotential;
     const lvl = Number(selected.equip.level || 0);
     const lines = [
@@ -2266,6 +2275,7 @@ function equipmentTypeSupportsPotential(type) {
 
 // 웹: 돋보기를 소모해 잠재능력 부여
 function webAwakenPotential(user, number) {
+    if (user.potentialAuto || user.pendingAction) return { error: '진행 중인 재설정 또는 선택을 먼저 완료해주세요.' };
     const idx = Number(number);
     if (!Number.isInteger(idx) || idx < 1) return { error: '잘못된 장비 번호입니다.' };
     const selected = getAllUserEquipments(user)[idx - 1];
@@ -2314,6 +2324,7 @@ function getPotentialRerollInfo(user, number) {
             white: { cost: costOf(POTENTIAL_WHITE_JEWEL_DISCOUNT), discountPct: Math.round(POTENTIAL_WHITE_JEWEL_DISCOUNT * 100), available: whiteCount > 0 }
         },
         upgrade: upgrade ? { next: getPotentialRarityLabel(upgrade.next), guarantee: Number(upgrade.guarantee || 0), failCount } : null,
+        targetOptions: getPotentialTargetOptions(getPotentialEquipmentType(type), currentTier),
         gold: Number(user.gold || 0)
     };
 }
@@ -2322,9 +2333,12 @@ function getPotentialRerollInfo(user, number) {
 function webRerollPotential(user, number, jewelChoice) {
     const msg = rerollEquipmentPotential(user, number, jewelChoice);
     if (typeof msg === 'string' && msg.startsWith('❌')) return { error: msg.replace(/^❌\s*/, '') };
-    const p = user.pendingAction;
+    return getPotentialRerollResult(user, user.pendingAction);
+}
+
+function getPotentialRerollResult(user, p) {
     if (!p || p.type !== '잠재능력재설정확인') return { error: '재설정에 실패했습니다.' };
-    const selected = getAllUserEquipments(user)[Number(p.number) - 1];
+    const selected = p.targetUid ? getAllUserEquipments(user).find(entry => entry.equip.uid === p.targetUid) : getAllUserEquipments(user)[Number(p.number) - 1];
     let combatPower = null;
     if (selected && selected.equip) {
         const currentPotential = selected.equip.potential;
@@ -2350,6 +2364,148 @@ function webRerollPotential(user, number, jewelChoice) {
         new: { tierKey: getPotentialRarityKey(p.newPotential.rarity), tierLabel: getPotentialRarityLabel(p.newPotential.rarity), entries: formatPotentialOptionEntries(p.newPotential) },
         combatPower
     };
+}
+
+const POTENTIAL_GOAL_GRADES = ['bronze', 'silver', 'gold', 'platinum'];
+function potentialOptionKey(option) {
+    return ['stat', 'plusStat'].flatMap(group => Object.keys(option && option[group] || {}).sort().map(key => group + ':' + key)).join('|');
+}
+
+function getPotentialTargetOptions(type, tier) {
+    const data = getPotentialData()[type] || {}, options = new Map();
+    const minGrade = { rare: 0, epic: 0, unique: 1, legendary: 2 }[tier] || 0;
+    for (const grade of POTENTIAL_GOAL_GRADES.slice(minGrade)) for (const group of data[grade] || []) {
+        if (!(group.rate > 0)) continue;
+        for (const roll of group.roll || []) {
+            const key = potentialOptionKey(roll);
+            if (!key) continue;
+            if (!options.has(key)) options.set(key, { key, label: key.split('|').map(part => {
+                const [kind, stat] = part.split(':');
+                return (kind === 'stat' ? EQUIP_STAT_LABELS : EQUIP_PLUSSTAT_LABELS)[stat] || stat;
+            }).join(' / '), grades: [] });
+            if (!options.get(key).grades.includes(grade)) options.get(key).grades.push(grade);
+        }
+    }
+    return [...options.values()];
+}
+
+function potentialGoalsMatched(potential, targets) {
+    return targets.map((target, index) => !target || potentialOptionKey(potential?.option?.[index]) === target.key
+        && POTENTIAL_GOAL_GRADES.indexOf(potential.option[index].grade || getPotentialDefaultGradeKey(potential.rarity)) >= POTENTIAL_GOAL_GRADES.indexOf(target.grade));
+}
+
+function getPotentialAutoTarget(user) {
+    return getAllUserEquipments(user).find(entry => entry.equip.uid === user.potentialAuto?.targetUid);
+}
+
+function getPotentialAutoView(user) {
+    const run = user.potentialAuto;
+    if (!run) return null;
+    const target = getPotentialAutoTarget(user);
+    const number = target ? getAllUserEquipments(user).findIndex(entry => entry.equip.uid === run.targetUid) + 1 : null;
+    return {
+        ok: true, number, jewel: run.jewel, targets: run.targets, gold: Number(user.gold || 0),
+        current: { tierKey: getPotentialRarityKey(run.original.rarity), tierLabel: getPotentialRarityLabel(run.original.rarity), entries: formatPotentialOptionEntries(run.original) },
+        targetOptions: getPotentialTargetOptions(run.type, getPotentialRarityKey(run.original.rarity)),
+        run: { id: run.id, rolls: run.rolls, spent: run.spent, goldLimit: run.goldLimit, jewelUsed: run.jewelUsed,
+            matched: run.candidate ? potentialGoalsMatched(run.candidate, run.targets) : run.targets.map(target => !target), status: run.status, stopReason: run.stopReason },
+        result: run.candidate ? getPotentialRerollResult(user, { type: '잠재능력재설정확인', targetUid: run.targetUid,
+            oldPotential: run.original, newPotential: run.candidate, cost: run.lastCost, useJewel: run.jewel !== 'none',
+            currentTier: getPotentialRarityKey(run.original.rarity), nextTier: getPotentialRarityKey(run.candidate.rarity),
+            upgraded: getPotentialRarityKey(run.original.rarity) !== getPotentialRarityKey(run.candidate.rarity), guaranteed: run.guaranteed }) : null
+    };
+}
+
+function startPotentialAuto(user, input) {
+    if (user.potentialAuto) return user.potentialAuto.requestId === input.requestId ? getPotentialAutoView(user) : { error: '진행 중인 자동 재설정 결과를 먼저 선택해주세요.' };
+    if (user.pendingAction) return { error: '진행 중인 선택을 먼저 완료해주세요.' };
+    if (typeof input.requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(input.requestId)) return { error: '재설정 요청 번호가 올바르지 않습니다.' };
+    if (!['none', 'jewel', 'white'].includes(input.jewel)) return { error: '쥬얼 선택이 올바르지 않습니다.' };
+    const info = getPotentialRerollInfo(user, input.number);
+    if (info.error) return info;
+    const targets = input.targets;
+    if (!Array.isArray(targets) || targets.length !== 3 || !targets.some(Boolean)) return { error: '목표 옵션을 한 자리 이상 선택해주세요.' };
+    const target = getAllUserEquipments(user)[Number(input.number) - 1];
+    const type = getPotentialEquipmentType(target.equip.type || target.type);
+    const table = getPotentialData()[type];
+    for (let i = 0; i < targets.length; i++) {
+        const goal = targets[i];
+        if (goal === null) continue;
+        if (!goal || !info.targetOptions.some(option => option.key === goal.key && option.grades.includes(goal.grade))) return { error: '선택할 수 없는 목표 옵션입니다.' };
+        const minFirst = { rare: 0, epic: 1, unique: 2, legendary: 3 }[info.currentTier];
+        const reachable = POTENTIAL_GOAL_GRADES.filter((grade, rank) => rank >= POTENTIAL_GOAL_GRADES.indexOf(goal.grade) && (i > 0 || rank >= minFirst));
+        if (!reachable.some(grade => (table[grade] || []).some(group => group.rate > 0 && (group.roll || []).some(roll => potentialOptionKey(roll) === goal.key)))) {
+            return { error: (i + 1) + '번째 자리에서 나올 수 없는 목표 옵션입니다.' };
+        }
+    }
+    const limit = input.goldLimit == null || input.goldLimit === '' ? null : Number(input.goldLimit);
+    if (limit !== null && (!['number', 'string'].includes(typeof input.goldLimit) || !Number.isSafeInteger(limit) || limit < 1)) return { error: '골드 한도는 1 이상의 정수로 입력해주세요.' };
+    user.potentialAuto = {
+        id: crypto.randomUUID(), requestId: input.requestId, targetUid: ensureEquipmentUid(target.equip), type,
+        original: clonePlain(target.equip.potential), candidate: null, targets: targets.map(goal => goal ? { key: goal.key, grade: goal.grade } : null),
+        jewel: input.jewel, goldLimit: limit, spent: 0, rolls: 0, jewelUsed: 0, status: 'running', stopReason: null
+    };
+    return getPotentialAutoView(user);
+}
+
+function stopPotentialAuto(user, id, reason = 'manual') {
+    if (!user.potentialAuto || user.potentialAuto.id !== id) return { error: '진행 중인 자동 재설정을 찾을 수 없습니다.' };
+    if (user.potentialAuto.status === 'running') { user.potentialAuto.status = 'stopped'; user.potentialAuto.stopReason = reason; }
+    return getPotentialAutoView(user);
+}
+
+function stepPotentialAuto(user, id, expectedRolls) {
+    const run = user.potentialAuto;
+    if (!run || run.id !== id) return { error: '진행 중인 자동 재설정을 찾을 수 없습니다.' };
+    if (!Number.isSafeInteger(expectedRolls) || expectedRolls < 0 || expectedRolls > run.rolls) return { error: '재설정 진행 번호가 올바르지 않습니다.' };
+    // 같은 회차를 재전송하거나 여러 탭에서 보내도 한 번만 차감한다.
+    if (expectedRolls < run.rolls || run.status !== 'running') return getPotentialAutoView(user);
+    const target = getPotentialAutoTarget(user);
+    if (!target || !isDeepStrictEqual(target.equip.potential, run.original) || user.pendingAction) return stopPotentialAuto(user, id, 'error');
+    const number = getAllUserEquipments(user).findIndex(entry => entry.equip.uid === run.targetUid) + 1;
+    const original = target.equip.potential;
+    target.equip.potential = clonePlain(run.candidate || run.original);
+    const info = getPotentialRerollInfo(user, number), option = info.options?.[run.jewel];
+    let result, rolled;
+    try {
+        if (!option) return stopPotentialAuto(user, id, 'error');
+        if (run.goldLimit !== null && run.spent + option.cost > run.goldLimit) return stopPotentialAuto(user, id, 'budget');
+        if (Number(user.gold || 0) < option.cost) return stopPotentialAuto(user, id, 'gold');
+        if (run.jewel !== 'none' && !option.available) return stopPotentialAuto(user, id, 'jewel');
+        user.potentialAuto = null;
+        result = webRerollPotential(user, number, run.jewel);
+        rolled = user.pendingAction;
+    } finally {
+        target.equip.potential = original;
+        user.potentialAuto = run;
+        user.pendingAction = null;
+    }
+    if (result.error || !rolled) return stopPotentialAuto(user, id, 'error');
+    // 승급 전 실패 누적은 기존 취소 규칙처럼 보존하고, 승급 이후에는 원본 티어에 누적하지 않는다.
+    if (getPotentialRarityKey(run.original.rarity) === rolled.currentTier) {
+        run.original.failCount = rolled.oldPotential.failCount;
+        original.failCount = rolled.oldPotential.failCount;
+    }
+    run.candidate = rolled.newPotential;
+    run.spent += rolled.cost; run.lastCost = rolled.cost; run.rolls++;
+    if (run.jewel !== 'none') run.jewelUsed++;
+    run.guaranteed = run.guaranteed || rolled.guaranteed;
+    if (potentialGoalsMatched(run.candidate, run.targets).every(Boolean)) return stopPotentialAuto(user, id, 'matched');
+    return getPotentialAutoView(user);
+}
+
+function finishPotentialAuto(user, id, choice) {
+    const run = user.potentialAuto;
+    if (!run || run.id !== id) return { error: '진행 중인 자동 재설정을 찾을 수 없습니다.' };
+    if (!['keep', 'apply'].includes(choice)) return { error: '이전 유지 또는 새 잠재능력 적용을 선택해주세요.' };
+    if (run.status === 'running') return { error: '자동 재설정을 중단한 뒤 결과를 선택해주세요.' };
+    if (choice === 'apply') {
+        const target = getPotentialAutoTarget(user);
+        if (!run.candidate || !target || !isDeepStrictEqual(target.equip.potential, run.original)) return { error: '대상 잠재능력이 변경되어 적용할 수 없습니다. 이전 유지를 선택해주세요.' };
+        target.equip.potential = clonePlain(run.candidate);
+    }
+    user.potentialAuto = null;
+    return { ok: true };
 }
 
 function formatPotentialLines(potential) {
@@ -6168,7 +6324,8 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
     let levelUps = 0;
     const levelMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
     (dungeon.elite.reward || []).forEach(reward => {
-        if (reward.roll != null && Math.random() >= Number(reward.roll || 0) * levelMultiplier) return;
+        const dropMultiplier = reward.type == '장신구' ? 1 : levelMultiplier;
+        if (reward.roll != null && Math.random() >= Number(reward.roll || 0) * dropMultiplier) return;
         const count = rollCount(reward.count);
         if (reward.type == '경험치') {
             const amount = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(count * levelMultiplier * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0) + getExpPotionBonus(user)))));
@@ -6186,6 +6343,13 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
             const itemId = Number.isInteger(reward.item_id) ? reward.item_id : items.findIndex(item => item && item.name == reward.item_name);
             if (!items[itemId]) { rewardLines.push('- 보상 아이템 설정 필요: ' + String(reward.item_name || reward.item_id)); return; }
             rewardLines.push(...formatItemReward(grantItemReward(user, itemId, count)));
+        }
+        if (reward.type == '장신구') {
+            const accessories = getDataCache('Equipment', {}).accessory || [];
+            const id = accessories.findIndex(item => item && item.name == reward.accessory_name);
+            if (id < 0) { rewardLines.push('- 보상 장신구 설정 필요: ' + reward.accessory_name); return; }
+            for (let i = 0; i < count; i++) addEquipmentInventory(user, 'accessory', id);
+            rewardLines.push('- <' + accessories[id].rarity + '> ' + accessories[id].name + ' x' + comma(count));
         }
     });
     lines.push('', '[ 엘리트 처치 보상 ]');
@@ -13993,6 +14157,7 @@ class RPGUser {
         this.fishingNet = {};
         this.fishingNetLimit = 200;
         this.pendingAction = null;
+        this.potentialAuto = null;
         this.pendingFragment = null;
         this.fragmentCounts = {};
         this.dailyDungeonDaily = null;
@@ -17334,6 +17499,8 @@ module.exports = {
     webAwakenPotential,
     getPotentialRerollInfo,
     webRerollPotential,
+    getPotentialRerollResult,
+    getPotentialAutoView, startPotentialAuto, stepPotentialAuto, stopPotentialAuto, finishPotentialAuto,
     confirmPotentialReroll,
     cancelPotentialReroll,
     getPotentialRarityKey,
