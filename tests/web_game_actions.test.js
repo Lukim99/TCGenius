@@ -276,6 +276,21 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
     try {
         const page = await browser.newPage(), errors = [];
         page.on('pageerror', error => errors.push(error.message));
+        const audioResponses = new Map();
+        page.on('response', response => {
+            if (response.url().includes('/assets/potential-forge/') && response.url().endsWith('.mp3')) audioResponses.set(response.url().split('/').pop(), response.status());
+        });
+        await page.evaluateOnNewDocument(() => {
+            window.__forgeAudio = { starts: 0, durations: [], live: 0 };
+            const start = AudioBufferSourceNode.prototype.start;
+            AudioBufferSourceNode.prototype.start = function(...args) {
+                window.__forgeAudio.starts++;
+                window.__forgeAudio.durations.push(this.buffer?.duration || 0);
+                window.__forgeAudio.live++;
+                this.addEventListener('ended', () => window.__forgeAudio.live--, { once: true });
+                return start.apply(this, args);
+            };
+        });
         await page.setViewport({ width: 1440, height: 1000 });
         const split = cookie.indexOf('=');
         await page.setCookie({ name: cookie.slice(0, split), value: cookie.slice(split + 1), url: base });
@@ -287,16 +302,43 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
         const setup = '#potentialContent[data-pf-view="setup"]';
         const running = '#potentialContent[data-pf-view="running"]';
         const result = '#potentialContent[data-pf-view="result"]';
+        const chooseTarget = async (index, key, grade) => {
+            await page.click('[data-pf-focus="target' + index + '"]');
+            await page.waitForSelector('.pf-picker-overlay');
+            await page.click('[data-pf-option="' + key + '"]');
+            if (grade) await page.click('[data-pf-grade="' + grade + '"]');
+            await page.click('[data-pf-focus="target-confirm"]');
+            await page.waitForSelector('.pf-picker-overlay', { hidden: true });
+        };
         await page.waitForSelector(setup);
-        await page.select('[data-pf-focus="topt0"]', 'plusStat:itemDropChance');
-        await page.select('[data-pf-focus="tgrade0"]', 'platinum');
-        await page.select('[data-pf-focus="topt1"]', 'plusStat:itemDropChance');
-        await page.select('[data-pf-focus="tgrade1"]', 'gold');
+        assert.equal(await page.$$eval('#potentialContent select', elements => elements.length), 0);
+        assert.doesNotMatch(await page.$eval(setup, element => element.textContent), /[·•ⅠⅡⅢ]/);
+        await chooseTarget(0, 'plusStat:itemDropChance', 'platinum');
+        await chooseTarget(1, 'plusStat:itemDropChance', 'gold');
         await page.type('[data-pf-focus="budget"]', String(cost * 3));
         const dir = path.join(__dirname, '../output/potential-forge'); fs.mkdirSync(dir, { recursive: true });
         await page.screenshot({ path: path.join(dir, 'setup-desktop.png') });
+        await page.click('[data-pf-focus="target0"]');
+        await page.waitForSelector('.pf-picker-overlay');
+        await page.$eval('.pf-picker-overlay', async element => { await Promise.all(element.getAnimations({ subtree: true }).filter(animation => animation.effect.getTiming().iterations !== Infinity).map(animation => animation.finished)); });
+        await page.screenshot({ path: path.join(dir, 'picker-desktop.png') });
+        await page.click('[data-pf-option="stat:hp"]');
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('.pf-picker-overlay', { hidden: true });
+        assert.equal(await page.evaluate(() => document.activeElement.dataset.pfFocus), 'target0');
+        assert.equal(await page.evaluate(() => potentialState.targets[0].key), 'plusStat:itemDropChance');
         await page.setViewport({ width: 390, height: 844 });
         await page.screenshot({ path: path.join(dir, 'setup-mobile.png') });
+        await page.click('[data-pf-focus="target1"]');
+        await page.waitForSelector('.pf-picker-overlay');
+        await page.$eval('.pf-picker-overlay', async element => { await Promise.all(element.getAnimations({ subtree: true }).filter(animation => animation.effect.getTiming().iterations !== Infinity).map(animation => animation.finished)); });
+        await page.screenshot({ path: path.join(dir, 'picker-mobile.png') });
+        assert.ok(await page.$eval('[data-pf-focus="target-confirm"]', element => { const r = element.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
+        await page.keyboard.press('Tab');
+        assert.ok(await page.evaluate(() => !!document.activeElement.closest('.pf-picker-overlay')));
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('.pf-picker-overlay', { hidden: true });
+        await page.waitForFunction(() => window.__forgeAudio.starts > 0);
         assert.ok(await page.evaluate(() => document.querySelector('.pot-wrap').getBoundingClientRect().right <= innerWidth));
         await page.click('[data-pf-focus="auto"]');
         await page.waitForSelector(running);
@@ -311,13 +353,16 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
         assert.deepEqual(user.inventory.equipment[0].potential, original);
         assert.equal(user.gold, initial.gold - cost * 3);
         await page.setViewport({ width: 1440, height: 1000 });
-        await page.select('[data-pf-focus="topt0"]', 'stat:hp');
-        await page.select('[data-pf-focus="tgrade0"]', 'platinum');
-        await page.select('[data-pf-focus="topt1"]', '');
+        await chooseTarget(0, 'stat:hp', 'platinum');
+        await chooseTarget(1, '');
         await page.click('[data-pf-focus="auto"]');
         await page.waitForSelector(result);
         await new Promise(resolve => setTimeout(resolve, 2200));
         assert.match(await page.$eval(result, element => element.textContent), /목표 달성/);
+        assert.doesNotMatch(await page.$eval(result, element => element.textContent), /[·•ⅠⅡⅢ]/);
+        await page.waitForFunction(() => window.__forgeAudio.durations.some(duration => duration > 6));
+        assert.equal(audioResponses.size, 6);
+        assert.ok([...audioResponses.values()].every(status => status === 200));
         await page.screenshot({ path: path.join(dir, 'success-desktop.png') });
         await page.click('[data-pf-focus="apply"]');
         await page.waitForSelector(setup);
@@ -331,7 +376,7 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
         await page.click('[data-pf-focus="keep"]');
         await page.waitForSelector(setup);
         // 멈춤 직후 선택을 끝내도 이전 실행 루프가 결과 화면을 다시 열지 않는다.
-        await page.select('[data-pf-focus="topt0"]', 'plusStat:itemDropChance');
+        await chooseTarget(0, 'plusStat:itemDropChance', 'platinum');
         await page.$eval('[data-pf-focus="budget"]', input => { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); });
         await page.click('[data-pf-focus="auto"]');
         await page.waitForFunction(() => potentialState.auto?.run.rolls >= 1);
@@ -357,6 +402,16 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
         assert.match(await page.$eval(result, element => element.textContent), /각인 중단/);
         await page.click('[data-pf-focus="keep"]');
         await page.waitForSelector(setup);
+        await page.click('[data-pf-focus="sound"]');
+        assert.equal(await page.$eval('[data-pf-focus="sound"]', element => element.getAttribute('aria-pressed')), 'false');
+        const beforeMute = await page.evaluate(() => window.__forgeAudio.starts);
+        await chooseTarget(0, 'stat:hp', 'platinum');
+        await page.click('[data-pf-focus="single"]');
+        await page.waitForSelector(result);
+        await new Promise(resolve => setTimeout(resolve, 2200));
+        assert.equal(await page.evaluate(() => window.__forgeAudio.starts), beforeMute);
+        await page.click('[data-pf-focus="close"]');
+        await page.waitForFunction(() => window.__forgeAudio.live === 0);
         assert.deepEqual(errors, []);
     } finally { await browser.close(); }
 });

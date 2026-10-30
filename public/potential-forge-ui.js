@@ -1,6 +1,6 @@
 // 잠재능력 각인로 UI. app.js가 #potentialContent를 root로 넘겨
 // PotentialForge.renderSetup/renderRunning/renderResult(root, model, actions)를 호출한다.
-// 서버 통신·순서 제어·확정 처리는 app.js 몫이고, 이 파일은 화면과 콜백 연결만 맡는다.
+// 서버 통신, 순서 제어, 확정 처리는 app.js 몫이고, 이 파일은 화면과 콜백 연결만 맡는다.
 (() => {
     'use strict';
 
@@ -8,7 +8,7 @@
     const GRADES = ['bronze', 'silver', 'gold', 'platinum'];
     const GRADE_LABEL = { bronze: '브론즈', silver: '실버', gold: '골드', platinum: '플레티넘' };
     const TIERS = ['rare', 'epic', 'unique', 'legendary'];
-    const SLOT_NO = ['Ⅰ', 'Ⅱ', 'Ⅲ'];
+    const SLOT_SR = ['첫 번째 줄', '두 번째 줄', '세 번째 줄'];
     const JEWEL_NAME = { none: '촉매 없음', jewel: '쥬얼', white: '화이트 쥬얼' };
     const STOP_TEXT = {
         matched: { tone: 'win', title: '목표 달성!', sub: '정한 목표 줄이 한꺼번에 새겨졌습니다.' },
@@ -22,6 +22,8 @@
     const LINE_AT = 700;
     const LINE_GAP = 420;
     const FINALE_AT = LINE_AT + LINE_GAP * 3;
+    const IMPACT_AT = 620;
+    const REVEAL_END = FINALE_AT + 1300;
 
     const states = new WeakMap();
     let uidSeq = 0;
@@ -41,7 +43,8 @@
     function button(cls, onClick, text) {
         const b = h('button', 'pf-btn ' + cls, text);
         b.type = 'button';
-        if (onClick) b.addEventListener('click', () => { if (!b.disabled) onClick(); });
+        // 효과음 잠금 해제는 사용자 입력 안에서, 콜백보다 먼저
+        if (onClick) b.addEventListener('click', () => { if (b.disabled) return; unlock(); onClick(); });
         return b;
     }
     function img(cls, src, alt) {
@@ -62,7 +65,7 @@
     function stateOf(root) {
         let st = states.get(root);
         if (!st) {
-            st = { view: '', timers: [], run: null, revealKey: '' };
+            st = { view: '', timers: [], run: null, revealKey: '', revealAt: 0, wonRun: null };
             states.set(root, st);
         }
         return st;
@@ -72,7 +75,16 @@
         st.timers = [];
     }
     function later(st, ms, fn) {
-        st.timers.push(setTimeout(fn, ms));
+        const id = setTimeout(() => {
+            st.timers = st.timers.filter(t => t !== id);
+            fn();
+        }, ms);
+        st.timers.push(id);
+    }
+    // 예약된 효과음이 남은 화면을 떠날 때만 소리를 끊는다
+    function leaveView(st) {
+        if (st.timers.length) stopSound();
+        clearTimers(st);
     }
 
     // 다시 그려도 초점과 스크롤 위치를 유지한다 (쥬얼 선택 등 app.js 재렌더 대비)
@@ -81,6 +93,7 @@
         const focusKey = active && root.contains(active) && active.dataset ? active.dataset.pfFocus : '';
         const scroller = root.closest('.pot-wrap');
         const keepScroll = scroller && st.view === view ? scroller.scrollTop : 0;
+        if (scroller) scroller.classList.remove('pf-locked');
         st.view = view;
         root.classList.add('potential-forge');
         root.dataset.pfView = view;
@@ -112,7 +125,7 @@
     function targetText(t, optMap) {
         if (!t) return '조건 없음';
         const o = optMap.get(t.key);
-        return (o ? o.label : t.key) + ' · ' + GRADE_LABEL[t.grade] + ' 이상';
+        return (o ? o.label : t.key) + ' ' + GRADE_LABEL[t.grade] + ' 이상';
     }
     function affordability(info, jewel) {
         const opt = (info.options || {})[jewel] || {};
@@ -126,63 +139,42 @@
         return (eq.name || '장비') + (Number(eq.level) > 0 ? ' +' + eq.level : '');
     }
 
-    // ---------- 효과음 (사용자가 켰을 때만, WebAudio 합성) ----------
-    const sound = { on: false, ctx: null };
-    function audio() {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return null;
-        if (!sound.ctx) sound.ctx = new AC();
-        if (sound.ctx.state === 'suspended') sound.ctx.resume();
-        return sound.ctx;
+    // ---------- 효과음: /static/potential-forge-audio.js(외부 음원)에 위임 ----------
+    const audio = () => window.PotentialForgeAudio || null;
+    function unlock() {
+        const a = audio();
+        if (a && typeof a.unlock === 'function') { try { a.unlock(); } catch (_) { } }
     }
-    function tone(c, { f, f2, t = 0, d = 0.12, type = 'sine', g = 0.05 }) {
-        const at = c.currentTime + t;
-        const o = c.createOscillator();
-        const v = c.createGain();
-        o.type = type;
-        o.frequency.setValueAtTime(f, at);
-        if (f2) o.frequency.exponentialRampToValueAtTime(f2, at + d);
-        v.gain.setValueAtTime(0.0001, at);
-        v.gain.exponentialRampToValueAtTime(g, at + 0.012);
-        v.gain.exponentialRampToValueAtTime(0.0001, at + d);
-        o.connect(v).connect(c.destination);
-        o.start(at);
-        o.stop(at + d + 0.03);
-    }
-    const SFX = {
-        tick: c => {
-            tone(c, { f: 1480, d: 0.035, type: 'square', g: 0.012 });
-            tone(c, { f: 540, f2: 360, t: 0.01, d: 0.08, type: 'triangle', g: 0.04 });
-        },
-        line: (c, grade) => {
-            const f = { bronze: 392, silver: 494, gold: 587, platinum: 784 }[grade] || 392;
-            tone(c, { f, d: 0.2, type: 'triangle', g: 0.05 });
-            if (gradeIdx(grade) >= 2) tone(c, { f: f * 2, t: 0.07, d: 0.45, type: 'sine', g: 0.035 });
-        },
-        lamp: c => tone(c, { f: 880, f2: 1320, d: 0.16, type: 'sine', g: 0.035 }),
-        win: c => [523, 659, 784, 1047].forEach((f, i) => tone(c, { f, t: i * 0.09, d: 0.55, type: 'triangle', g: 0.045 })),
-        tier: c => {
-            tone(c, { f: 196, f2: 784, d: 0.55, type: 'sawtooth', g: 0.02 });
-            [784, 988, 1175, 1568].forEach((f, i) => tone(c, { f, t: 0.32 + i * 0.07, d: 0.6, type: 'sine', g: 0.035 }));
-        },
-        halt: c => tone(c, { f: 330, f2: 196, d: 0.35, type: 'triangle', g: 0.045 })
-    };
     function play(name, arg) {
-        if (!sound.on) return;
-        const c = audio();
-        if (c) SFX[name](c, arg);
+        const a = audio();
+        if (a && typeof a.play === 'function') { try { a.play(name, arg); } catch (_) { } }
+    }
+    function stopSound() {
+        const a = audio();
+        if (a && typeof a.stop === 'function') { try { a.stop(); } catch (_) { } }
     }
     function soundToggle() {
         const b = h('button', 'pf-sound');
         b.type = 'button';
         b.dataset.pfFocus = 'sound';
+        const ico = h('i', 'pf-sound-ico');
+        ico.setAttribute('aria-hidden', 'true');
+        const label = h('span');
+        b.append(ico, label);
         const sync = () => {
-            b.setAttribute('aria-pressed', String(sound.on));
-            b.textContent = sound.on ? '효과음 켬' : '효과음 끔';
+            const a = audio();
+            const on = !!(a && a.enabled);
+            b.disabled = !a;
+            b.setAttribute('aria-pressed', String(on));
+            label.textContent = on ? '효과음 켬' : '효과음 끔';
         };
         b.addEventListener('click', () => {
-            sound.on = !sound.on;
-            if (sound.on) { audio(); play('lamp'); }
+            const a = audio();
+            if (!a) return;
+            unlock();
+            let on = false;
+            try { on = !!a.toggle(); } catch (_) { }
+            if (on) play('select');
             sync();
         });
         sync();
@@ -252,7 +244,6 @@
             const g = h('span', 'pf-gem');
             g.setAttribute('aria-hidden', 'true');
             g.style.setProperty('--ang', (i * 120) + 'deg');
-            g.append(h('i', null, SLOT_NO[i]));
             core.append(g);
             return g;
         });
@@ -279,23 +270,23 @@
         ln.grade.textContent = entry ? (entry.gradeLabel || GRADE_LABEL[entry.grade] || '') : '—';
         ln.text.textContent = entry ? (entry.text || '') : '비어 있음';
     }
-    function lineNode(i, entry, goal) {
+    function lineNode(entry, goal) {
         const el = h('li', 'pf-line');
-        const no = h('span', 'pf-line-no', SLOT_NO[i]);
-        no.setAttribute('aria-hidden', 'true');
         const grade = h('span', 'pf-grade');
         const body = h('span', 'pf-line-body');
         const reel = h('span', 'pf-reel');
         reel.setAttribute('aria-hidden', 'true');
         const text = h('span', 'pf-line-text');
         body.append(reel, text);
-        el.append(no, grade, body);
+        el.append(grade, body);
         const ln = { el, grade, body, text, lamp: null };
         if (goal) {
             const lamp = h('span', 'pf-lamp');
             const lampText = h('span', 'pf-lamp-t');
             lamp.append(h('i', 'pf-lamp-orb'), lampText);
-            body.append(h('span', 'pf-line-goal', '목표 · ' + goal.text));
+            const goalLine = h('span', 'pf-line-goal');
+            goalLine.append(h('em', null, '목표'), document.createTextNode(goal.text));
+            body.append(goalLine);
             el.classList.add('has-goal');
             el.append(lamp);
             ln.lamp = lamp;
@@ -323,7 +314,7 @@
         const list = h('ol', 'pf-lines');
         const entries = (data && data.entries) || [];
         const lines = [0, 1, 2].map(i => {
-            const ln = lineNode(i, entries[i], goals ? (goals[i] || { text: '조건 없음' }) : null);
+            const ln = lineNode(entries[i], goals ? (goals[i] || { text: '조건 없음' }) : null);
             list.append(ln.el);
             return ln;
         });
@@ -383,7 +374,7 @@
     // ---------- 설정 화면 ----------
     function renderSetup(root, model, actions) {
         const st = stateOf(root);
-        clearTimers(st);
+        leaveView(st);
         st.run = null;
         st.revealKey = '';
         const info = model.info || {};
@@ -443,57 +434,40 @@
         const tgtSec = section('목표 각인');
         tgtSec.append(h('p', 'pf-note', '줄마다 원하는 옵션과 최소 등급을 고르세요. 비워 둔 줄은 무엇이 나와도 괜찮습니다.'));
         const tgtList = h('div', 'pf-targets');
-        const tgtOptions = info.targetOptions || [];
         targets.forEach((_, i) => {
-            const row = h('div', 'pf-target');
-            const no = h('span', 'pf-target-no', SLOT_NO[i]);
-            no.setAttribute('aria-hidden', 'true');
-            const optSel = h('select', 'pf-select');
-            optSel.dataset.pfFocus = 'topt' + i;
-            optSel.setAttribute('aria-label', (i + 1) + '번째 줄 목표 옵션');
-            optSel.append(new Option('조건 없음', ''));
-            tgtOptions.forEach(o => optSel.append(new Option(String(o.label), String(o.key))));
-            optSel.value = targets[i] ? targets[i].key : '';
-            const gradeSel = h('select', 'pf-select pf-select-grade');
-            gradeSel.dataset.pfFocus = 'tgrade' + i;
-            gradeSel.setAttribute('aria-label', (i + 1) + '번째 줄 최소 등급');
+            const trigger = button('pf-rune', () => openPicker({
+                root, shell, slot: i, current: targets[i], optMap, trigger,
+                onConfirm: picked => {
+                    targets[i] = picked;
+                    syncRow();
+                    refresh();
+                    call(actions.onTarget, i, picked ? { key: picked.key, grade: picked.grade } : null);
+                }
+            }));
+            trigger.dataset.pfFocus = 'target' + i;
+            trigger.setAttribute('aria-haspopup', 'dialog');
+            trigger.disabled = busy;
+            const socket = h('span', 'pf-rune-socket');
+            socket.setAttribute('aria-hidden', 'true');
+            const name = h('strong', 'pf-rune-name');
+            const sub = h('span', 'pf-rune-sub');
+            const text = h('span', 'pf-rune-text');
+            text.append(name, sub);
+            const act = h('span', 'pf-rune-act');
+            act.setAttribute('aria-hidden', 'true');
+            trigger.append(socket, text, act);
             const syncRow = () => {
                 const t = targets[i];
-                row.dataset.grade = t ? t.grade : '';
-                row.classList.toggle('is-set', !!t);
-                gradeSel.replaceChildren();
-                if (!t) {
-                    gradeSel.append(new Option('등급 무관', ''));
-                    gradeSel.disabled = true;
-                    return;
-                }
-                gradesOf(optMap.get(t.key)).forEach(g => gradeSel.append(new Option(GRADE_LABEL[g] + ' 이상', g)));
-                gradeSel.value = t.grade;
-                gradeSel.disabled = busy;
+                const o = t && optMap.get(t.key);
+                trigger.dataset.grade = t ? t.grade : '';
+                trigger.classList.toggle('is-set', !!t);
+                name.textContent = t ? (o ? o.label : t.key) : '조건 없음';
+                sub.textContent = t ? GRADE_LABEL[t.grade] + ' 이상' : '무엇이 나와도 통과';
+                act.textContent = t ? '바꾸기' : '정하기';
+                trigger.setAttribute('aria-label', SLOT_SR[i] + ' 목표, ' + name.textContent + (t ? ' ' + sub.textContent : '') + '. 눌러서 고르기');
             };
-            optSel.disabled = busy;
-            optSel.addEventListener('change', () => {
-                const o = optMap.get(optSel.value);
-                if (!o) targets[i] = null;
-                else {
-                    const grades = gradesOf(o);
-                    const prev = targets[i] && targets[i].grade;
-                    targets[i] = { key: String(o.key), grade: grades.includes(prev) ? prev : grades[0] };
-                }
-                syncRow();
-                refresh();
-                call(actions.onTarget, i, targets[i] ? { key: targets[i].key, grade: targets[i].grade } : null);
-            });
-            gradeSel.addEventListener('change', () => {
-                if (!targets[i]) return;
-                targets[i] = { key: targets[i].key, grade: gradeSel.value };
-                syncRow();
-                refresh();
-                call(actions.onTarget, i, { key: targets[i].key, grade: targets[i].grade });
-            });
             syncRow();
-            row.append(no, optSel, gradeSel);
-            tgtList.append(row);
+            tgtList.append(trigger);
         });
         tgtSec.append(tgtList);
 
@@ -548,10 +522,11 @@
         const autoHint = h('p', 'pf-auto-hint');
         autoHint.id = hintId;
         autoHint.setAttribute('aria-live', 'polite');
-        const singleBtn = button('pf-btn-iron', () => call(actions.onSingle), busy ? '각인 중…' : '1회 각인');
+        // 새 실행을 시작하는 입력에서만 충전음을 한 번 낸다
+        const singleBtn = button('pf-btn-iron', () => { play('charge'); call(actions.onSingle); }, busy ? '각인 중…' : '1회 각인');
         singleBtn.dataset.pfFocus = 'single';
         singleBtn.disabled = busy || !aff.ok;
-        const autoBtn = button('pf-btn-brass', () => call(actions.onAuto));
+        const autoBtn = button('pf-btn-brass', () => { play('charge'); call(actions.onAuto); });
         autoBtn.dataset.pfFocus = 'auto';
         autoBtn.setAttribute('aria-describedby', hintId);
         autoBtn.append(h('span', 'pf-btn-sigil'), h('span', null, busy ? '각인 중…' : '자동 각인'));
@@ -571,7 +546,7 @@
         function refresh() {
             const limit = budget === '' ? null : Number(budget);
             budgetNote.textContent = limit == null
-                ? '한도 없음 · 보유 골드 ' + fmt(aff.gold) + ' 전부 사용 가능'
+                ? '한도 없음, 보유 골드 ' + fmt(aff.gold) + ' 전부 사용 가능'
                 : fmt(limit) + ' 골드까지 사용' + (limit > aff.gold ? ' (보유 ' + fmt(aff.gold) + ')' : '');
             budgetNote.classList.toggle('is-open', limit == null);
             if (aff.cost > 0) {
@@ -617,17 +592,218 @@
         return box;
     }
 
+    // ---------- 목표 각인판 (브라우저 드롭다운 대신 각인로 위에 뜨는 석판) ----------
+    // 옵션 타일과 등급 보석을 고른 뒤 '목표 새기기'로 확정한다. 취소하면 바뀌지 않는다.
+    function openPicker({ root, shell, slot, current, optMap, trigger, onConfirm }) {
+        if (shell.querySelector('.pf-picker-overlay')) return;
+        let pending = current ? { key: current.key, grade: current.grade } : null;
+        const scroller = root.closest('.pot-wrap');
+        const keepScroll = scroller ? scroller.scrollTop : 0;
+
+        const overlay = h('div', 'pf-picker-overlay');
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        const titleId = uid();
+        overlay.setAttribute('aria-labelledby', titleId);
+        const panel = h('div', 'pf-picker');
+        panel.tabIndex = -1;
+        overlay.append(panel);
+
+        const head = h('header', 'pf-picker-head');
+        const heading = h('div', 'pf-picker-heading');
+        const title = h('h4', 'pf-picker-title', '목표 각인');
+        title.id = titleId;
+        heading.append(h('span', 'pf-picker-kicker', SLOT_SR[slot]), title);
+        const x = button('pf-x pf-picker-x', () => close(false), '✕');
+        x.setAttribute('aria-label', '닫기');
+        x.dataset.pfFocus = 'target-close';
+        head.append(heading, x);
+
+        // 지금 고른 각인 미리보기
+        const seal = h('div', 'pf-picker-seal');
+        seal.setAttribute('aria-live', 'polite');
+        const sealGem = h('span', 'pf-picker-seal-gem');
+        sealGem.setAttribute('aria-hidden', 'true');
+        const sealName = h('strong', 'pf-picker-seal-name');
+        const sealGrade = h('span', 'pf-picker-seal-grade');
+        const sealText = h('span', 'pf-picker-seal-text');
+        sealText.append(sealName, sealGrade);
+        seal.append(sealGem, sealText);
+
+        const optLabel = h('div', 'pf-picker-label');
+        const optLabelId = uid();
+        optLabel.id = optLabelId;
+        optLabel.append(h('span', null, '옵션'));
+        const grid = h('div', 'pf-picker-grid');
+        grid.setAttribute('role', 'group');
+        grid.setAttribute('aria-labelledby', optLabelId);
+        const tiles = [];
+        const addTile = (key, labelText, opt) => {
+            const tile = button('pf-tile' + (opt ? '' : ' is-blank'), () => pickOption(key));
+            tile.dataset.pfOption = key;
+            tile.append(h('span', 'pf-tile-name', labelText));
+            if (opt) {
+                const ok = gradesOf(opt);
+                const pips = h('span', 'pf-tile-pips');
+                pips.setAttribute('aria-hidden', 'true');
+                GRADES.forEach(g => {
+                    const p = h('i', ok.includes(g) ? null : 'is-off');
+                    p.dataset.grade = g;
+                    pips.append(p);
+                });
+                tile.append(pips);
+            } else tile.append(h('span', 'pf-tile-sub', '무엇이 나와도 통과'));
+            tiles.push(tile);
+            grid.append(tile);
+        };
+        addTile('', '조건 없음', null);
+        optMap.forEach((o, key) => addTile(key, String(o.label), o));
+
+        const gradeLabel = h('div', 'pf-picker-label');
+        const gradeLabelId = uid();
+        gradeLabel.id = gradeLabelId;
+        const gradeHint = h('span', 'pf-picker-hint');
+        gradeLabel.append(h('span', null, '최소 등급'), gradeHint);
+        const gradeRow = h('div', 'pf-picker-grades');
+        gradeRow.setAttribute('role', 'group');
+        gradeRow.setAttribute('aria-labelledby', gradeLabelId);
+        const facets = GRADES.map(g => {
+            const f = button('pf-facet', () => pickGrade(g));
+            f.dataset.pfGrade = g;
+            f.dataset.grade = g;
+            const gem = h('span', 'pf-facet-gem');
+            gem.setAttribute('aria-hidden', 'true');
+            f.append(gem, h('span', 'pf-facet-name', GRADE_LABEL[g]), h('span', 'pf-facet-sub', '이상'));
+            gradeRow.append(f);
+            return f;
+        });
+
+        const foot = h('footer', 'pf-picker-foot');
+        const cancel = button('pf-btn-iron', () => close(false), '취소');
+        cancel.dataset.pfFocus = 'target-cancel';
+        const confirm = button('pf-btn-brass', () => close(true));
+        confirm.dataset.pfFocus = 'target-confirm';
+        confirm.append(h('span', 'pf-btn-sigil'), h('span', null, '목표 새기기'));
+        foot.append(cancel, confirm);
+
+        panel.append(head, seal, optLabel, grid, gradeLabel, gradeRow, foot);
+
+        function sync() {
+            const key = pending ? pending.key : '';
+            const opt = pending && optMap.get(pending.key);
+            const ok = opt ? gradesOf(opt) : [];
+            tiles.forEach(t => t.setAttribute('aria-pressed', String(t.dataset.pfOption === key)));
+            facets.forEach(f => {
+                const g = f.dataset.pfGrade;
+                f.disabled = !pending || !ok.includes(g);
+                f.setAttribute('aria-pressed', String(!!pending && pending.grade === g));
+            });
+            seal.dataset.grade = pending ? pending.grade : '';
+            seal.classList.toggle('is-set', !!pending);
+            sealName.textContent = opt ? String(opt.label) : '조건 없음';
+            sealGrade.textContent = pending ? GRADE_LABEL[pending.grade] + ' 이상이면 충족' : '이 줄은 무엇이 나와도 통과';
+            gradeHint.textContent = pending ? '' : '조건 없음은 등급을 고르지 않습니다';
+        }
+        function pickOption(key) {
+            const o = optMap.get(key);
+            if (!o) pending = null;
+            else {
+                const ok = gradesOf(o);
+                const prev = pending && pending.grade;
+                pending = { key, grade: ok.includes(prev) ? prev : ok[0] };
+            }
+            sync();
+            play('select');
+        }
+        function pickGrade(g) {
+            if (!pending) return;
+            pending = { key: pending.key, grade: g };
+            sync();
+            play('select', g);
+        }
+        function close(commit) {
+            overlay.remove();
+            if (scroller) {
+                scroller.classList.remove('pf-locked');
+                scroller.scrollTop = keepScroll;
+            }
+            if (commit) {
+                play('lamp');
+                onConfirm(pending);
+            }
+            if (trigger.isConnected) trigger.focus({ preventScroll: true });
+        }
+        function keepVisible(el) {
+            if (el.parentNode !== grid) return;
+            const top = el.offsetTop;
+            const bottom = top + el.offsetHeight;
+            if (top < grid.scrollTop) grid.scrollTop = top - 6;
+            else if (bottom > grid.scrollTop + grid.clientHeight) grid.scrollTop = bottom - grid.clientHeight + 6;
+        }
+        // 방향키: 타일 격자는 칸 단위, 등급 줄은 좌우 한 칸씩
+        function arrowNav(e) {
+            const inGrid = tiles.includes(document.activeElement);
+            const list = inGrid ? tiles : facets.filter(f => !f.disabled);
+            const i = list.indexOf(document.activeElement);
+            if (i < 0) return false;
+            let cols = 1;
+            if (inGrid) {
+                const top = list[0].offsetTop;
+                cols = list.findIndex(n => n.offsetTop !== top);
+                if (cols < 1) cols = list.length;
+            }
+            const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[e.key];
+            let j;
+            if (e.key === 'Home') j = 0;
+            else if (e.key === 'End') j = list.length - 1;
+            else if (step != null) j = Math.max(0, Math.min(list.length - 1, i + step));
+            else return false;
+            list[j].focus({ preventScroll: true });
+            keepVisible(list[j]);
+            return true;
+        }
+        overlay.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                close(false);
+                return;
+            }
+            if (e.key === 'Tab') {
+                const items = [...panel.querySelectorAll('button')].filter(b => !b.disabled && b.getClientRects().length);
+                if (!items.length) return;
+                const first = items[0];
+                const last = items[items.length - 1];
+                const inside = panel.contains(document.activeElement);
+                if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); last.focus(); }
+                else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
+                return;
+            }
+            if (arrowNav(e)) e.preventDefault();
+        });
+        // 석판 바깥(어두운 막)을 누르면 취소
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+
+        sync();
+        shell.append(overlay);
+        if (scroller) scroller.classList.add('pf-locked');
+        play('select');
+        const start = tiles.find(t => t.getAttribute('aria-pressed') === 'true') || tiles[0];
+        start.focus({ preventScroll: true });
+        grid.scrollTop = Math.max(0, start.offsetTop - (grid.clientHeight - start.offsetHeight) / 2);
+    }
+
     // ---------- 자동 각인 진행 화면 ----------
     function renderRunning(root, model, actions) {
         const st = stateOf(root);
         const run = model.run || {};
         if (st.view !== 'running' || !st.run || st.run.id !== run.id) buildRunning(root, st, model);
         st.run.actions = actions;
-        patchRunning(st.run, model);
+        patchRunning(st, st.run, model);
     }
 
     function buildRunning(root, st, model) {
-        clearTimers(st);
+        leaveView(st);
         const info = model.info || {};
         const eq = model.equipment || {};
         const run = model.run || {};
@@ -708,7 +884,7 @@
         mount(root, st, 'running', shell);
     }
 
-    function patchRunning(r, model) {
+    function patchRunning(st, r, model) {
         const info = model.info || {};
         const run = model.run || {};
         const res = model.result;
@@ -775,7 +951,7 @@
         if (limit) r.barFill.style.width = Math.min(100, spent / limit * 100).toFixed(1) + '%';
         r.remain.v.textContent = limit == null ? '제한 없음' : fmt(Math.max(0, limit - spent));
         r.gold.v.textContent = fmt(info.gold);
-        if (r.jewel) r.jewel.v.textContent = fmt(run.jewelUsed) + '개 · 남은 ' + fmt((info.jewels || {})[model.jewel]);
+        if (r.jewel) r.jewel.v.textContent = fmt(run.jewelUsed) + '개 (남은 ' + fmt((info.jewels || {})[model.jewel]) + '개)';
 
         const stopInfo = STOP_TEXT[run.stopReason];
         r.status.dataset.state = running ? 'running' : (stopInfo ? stopInfo.tone : 'halt');
@@ -791,6 +967,7 @@
             seal.append(h('span', null, '목표 달성'));
             r.core.append(seal);
             r.fx.append(sparks(16, 'pf-burst is-win'));
+            st.wonRun = r.id;
             play('win');
         }
     }
@@ -798,7 +975,6 @@
     // ---------- 결과 화면 ----------
     function renderResult(root, model, actions) {
         const st = stateOf(root);
-        clearTimers(st);
         st.run = null;
         const info = model.info || {};
         const eq = model.equipment || {};
@@ -809,14 +985,22 @@
         const targets = normTargets(model.targets, optMap);
 
         if (!res || !res.new) {
+            clearTimers(st);
             renderEmptyResult(root, st, model, actions, run);
             return;
         }
 
         const newEntries = res.new.entries || [];
         const key = [run ? run.id : 'single', res.new.tierKey].concat(newEntries.map(e => (e.grade || '') + ':' + (e.text || ''))).join('|');
-        const settled = st.revealKey === key;
-        st.revealKey = key;
+        // 같은 결과를 연출 도중 다시 그리면 처음부터 다시 하지 않고 이어서 재생한다 (소리 예약도 유지)
+        const fresh = st.revealKey !== key;
+        if (fresh) {
+            clearTimers(st);
+            st.revealKey = key;
+            st.revealAt = Date.now();
+        }
+        const elapsed = fresh ? 0 : Date.now() - st.revealAt;
+        const settled = elapsed >= REVEAL_END;
 
         const stop = run && STOP_TEXT[run.stopReason];
         const tone = stop ? stop.tone : (res.upgraded ? 'win' : 'plain');
@@ -825,20 +1009,29 @@
         const best = newEntries.reduce((m, e) => Math.max(m, gradeIdx(e.grade)), 0);
         const big = res.upgraded || tone === 'win' || best >= 3;
 
-        const shell = h('div', 'pf-shell is-result' + (settled ? ' pf-settled' : ''));
+        const shell = h('div', 'pf-shell is-result' + (settled ? ' pf-settled' : '') + (res.upgraded ? ' is-tier' : '') + (big ? ' is-big' : ''));
         shell.setAttribute('role', 'region');
         shell.setAttribute('aria-label', '각인 결과');
         shell.dataset.tone = tone;
+        if (!settled && elapsed > 0) shell.style.setProperty('--t0', -Math.round(elapsed) + 'ms');
         shell.append(header('각인 결과', eqTitle(eq), actions.onClose, '닫기 (결과는 보관됩니다)'));
 
-        // 무대: 에너지 수렴 → 섬광 → 줄별 공개
+        // 무대: 에너지 수렴(예비 동작) → 금속 타격과 충격파 → 꽃피는 빛 → 줄별 공개
         const c = coreNode(eq, newEntries, 'result');
         const s = stageNode(eq, res.new.tierKey, res.new.tierLabel, c.core);
         s.stage.classList.add('is-reveal');
         s.stage.dataset.burst = res.upgraded ? 'tier' : GRADES[best];
+        s.stage.style.setProperty('--impact', IMPACT_AT + 'ms');
         if (big) c.fx.append(h('span', 'pf-rays pf-fx'));
-        c.fx.append(sparks(18, 'pf-converge pf-fx'), h('span', 'pf-bloom pf-fx'));
-        if (big) c.fx.append(sparks(16, 'pf-burst pf-fx is-late'));
+        c.fx.append(
+            h('span', 'pf-gather pf-fx'),
+            sparks(18, 'pf-converge pf-fx'),
+            h('span', 'pf-shock pf-fx'),
+            h('span', 'pf-shock pf-fx is-echo'),
+            h('span', 'pf-clang pf-fx'),
+            h('span', 'pf-bloom pf-fx')
+        );
+        if (big) c.fx.append(h('span', 'pf-shock pf-fx is-final'), sparks(16, 'pf-burst pf-fx is-late'));
         c.gems.forEach((g, i) => {
             g.classList.add('pf-intro');
             g.style.setProperty('--d', (LINE_AT + LINE_GAP * i) + 'ms');
@@ -865,9 +1058,9 @@
 
         // 이전 / 이후 비교
         const cmp = h('div', 'pf-compare');
-        const before = tablet(res.old, '이전 · 원래 잠재', 'is-before');
+        const before = tablet(res.old, '이전 잠재', 'is-before');
         const goals = run && targets.some(Boolean) ? targets.map(t => ({ text: targetText(t, optMap) })) : null;
-        const after = tablet(res.new, '이후 · 새 잠재', 'is-after', goals);
+        const after = tablet(res.new, '새 잠재', 'is-after', goals);
         const matched = run && Array.isArray(run.matched) ? run.matched : [];
         after.lines.forEach((ln, i) => {
             ln.el.classList.add('pf-intro', 'pf-reveal');
@@ -889,8 +1082,8 @@
         const right = h('div', 'pf-col');
         right.append(cmp);
         right.append(h('p', 'pf-warn' + (res.upgraded ? ' is-strong' : ''), res.upgraded
-            ? '원래 잠재를 유지하면 이번 티어 승급도 함께 사라집니다. 쓴 골드·쥬얼은 돌아오지 않습니다.'
-            : '어느 쪽을 골라도 쓴 골드·쥬얼은 돌아오지 않습니다.'));
+            ? '원래 잠재를 유지하면 이번 티어 승급도 함께 사라집니다. 쓴 골드와 쥬얼은 돌아오지 않습니다.'
+            : '어느 쪽을 골라도 쓴 골드와 쥬얼은 돌아오지 않습니다.'));
         body.append(lead, right);
         shell.append(body);
 
@@ -910,9 +1103,11 @@
 
         mount(root, st, 'result', shell);
 
-        if (!settled) {
+        // 소리는 처음 공개할 때 한 번만 예약한다. 진행 화면에서 이미 승리음을 냈다면 다시 끊고 틀지 않는다.
+        if (fresh) {
             newEntries.slice(0, 3).forEach((e, i) => later(st, LINE_AT + LINE_GAP * i, () => play('line', e.grade)));
-            later(st, FINALE_AT, () => play(res.upgraded ? 'tier' : tone === 'win' ? 'win' : tone === 'plain' ? 'lamp' : 'halt'));
+            const finale = res.upgraded ? 'tier' : tone === 'win' ? 'win' : tone === 'plain' ? 'lamp' : 'halt';
+            if (!(finale === 'win' && run && st.wonRun === run.id)) later(st, FINALE_AT, () => play(finale));
         }
     }
 
@@ -1007,10 +1202,9 @@
         root.replaceChildren();
         root.classList.remove('potential-forge');
         delete root.dataset.pfView;
-        if (sound.ctx) {
-            sound.ctx.close().catch(() => {});
-            sound.ctx = null;
-        }
+        const scroller = root.closest('.pot-wrap');
+        if (scroller) scroller.classList.remove('pf-locked');
+        stopSound();
     }
 
     window.PotentialForge = { renderSetup, renderRunning, renderResult, destroy };

@@ -1,11 +1,12 @@
 /* 잠재능력 각인로 — potential-forge-ui.js 전용. #potentialOverlay / .potential-forge 범위로만 적용한다. */
 
-/* ===== 컨테이너: 기존 .pot-wrap(!important) 크기·스크롤 제한 해제 ===== */
+/* ===== 컨테이너: 기존 .pot-wrap(!important) 크기와 스크롤 제한 해제 ===== */
 #potentialOverlay .pot-wrap{width:min(900px,100%)!important;max-height:calc(100vh - 24px)!important;max-height:calc(100dvh - 24px)!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#5a4520 transparent;background:#0b0c0f;border:1px solid #4a3a1f;border-radius:14px;box-shadow:0 30px 90px rgba(0,0,0,.75),0 0 0 1px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,214,140,.12)}
 #potentialOverlay .pot-wrap::-webkit-scrollbar{width:8px}
 #potentialOverlay .pot-wrap::-webkit-scrollbar-thumb{background:#4a3a1f;border-radius:8px}
 #potentialContent.potential-forge{flex:1 0 auto;display:flex;flex-direction:column;zoom:1!important}
 #potentialContent.potential-forge~#potentialResultOverlay{display:none!important}
+#potentialOverlay .pot-wrap.pf-locked{overflow-y:hidden!important}
 @media (max-width:560px){
   #potentialOverlay{padding:0!important}
   #potentialOverlay .pot-wrap{width:100%!important;height:100vh;height:100dvh;max-height:100vh!important;max-height:100dvh!important;border:0;border-radius:0}
@@ -31,7 +32,7 @@
 .potential-forge [data-grade=gold]{--grade:#f2c960}
 .potential-forge [data-grade=platinum]{--grade:#8eeef4}
 .potential-forge h2,.potential-forge h3,.potential-forge p,.potential-forge ul,.potential-forge ol,.potential-forge dl,.potential-forge dd{margin:0}
-.potential-forge :is(button,select,input):focus-visible{outline:2px solid var(--pf-brass-hi);outline-offset:2px}
+.potential-forge :is(button,input):focus-visible{outline:2px solid var(--pf-brass-hi);outline-offset:2px}
 
 /* ===== 셸 ===== */
 .potential-forge .pf-shell{position:relative;flex:1 0 auto;display:flex;flex-direction:column;
@@ -52,9 +53,15 @@
   linear-gradient(var(--pf-brass),var(--pf-brass)) center/100% 1px no-repeat,
   linear-gradient(45deg,transparent 35%,var(--pf-brass) 36% 64%,transparent 65%) center/8px 8px no-repeat;opacity:.75}
 .potential-forge .pf-title-sub{margin-top:3px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--pf-text-2);font-size:12px;font-weight:700}
-.potential-forge .pf-sound{justify-self:start;min-height:34px;padding:0 11px;border:1px solid #33363f;border-radius:999px;background:var(--pf-iron-2);color:var(--pf-text-3);font-size:11px;font-weight:800}
-.potential-forge .pf-sound:hover{background:var(--pf-iron-3);color:var(--pf-text-2)}
+.potential-forge .pf-sound{justify-self:start;display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 12px 0 9px;border:1px solid #33363f;border-radius:999px;background:var(--pf-iron-2);color:var(--pf-text-3);font-size:11px;font-weight:800;cursor:pointer}
+.potential-forge .pf-sound:hover:not(:disabled){background:var(--pf-iron-3);color:var(--pf-text-2)}
+.potential-forge .pf-sound:disabled{opacity:.45;cursor:not-allowed}
 .potential-forge .pf-sound[aria-pressed=true]{border-color:var(--pf-brass-lo);color:var(--pf-brass-hi);box-shadow:0 0 12px rgba(232,176,75,.18)}
+/* 작은 종 모양: 켜면 금빛, 끄면 빗금 */
+.potential-forge .pf-sound-ico{position:relative;width:12px;height:12px;flex:0 0 auto;border-radius:6px 6px 2px 2px;background:currentColor;opacity:.8}
+.potential-forge .pf-sound-ico::after{content:'';position:absolute;left:50%;bottom:-3px;width:4px;height:3px;margin-left:-2px;border-radius:0 0 3px 3px;background:currentColor}
+.potential-forge .pf-sound[aria-pressed=false] .pf-sound-ico::before{content:'';position:absolute;left:-2px;top:50%;width:16px;height:2px;margin-top:-1px;background:var(--pf-iron-2);box-shadow:0 1px 0 currentColor;transform:rotate(-40deg)}
+.potential-forge .pf-sound[aria-pressed=true] .pf-sound-ico{opacity:1;filter:drop-shadow(0 0 4px rgba(232,176,75,.7))}
 .potential-forge .pf-x{justify-self:end;width:44px;height:44px;min-height:0;padding:0;border:1px solid #3a3d47;border-radius:50%;background:radial-gradient(circle at 50% 35%,#2b2e37,#15171c);color:var(--pf-text-2);font-size:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 3px 0 #07080a}
 .potential-forge .pf-x:hover{background:radial-gradient(circle at 50% 35%,#363a45,#1a1c22);color:#fff}
 .potential-forge .pf-x-spacer{width:44px}
@@ -94,12 +101,11 @@
 .potential-forge .pf-item .auc-item-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:2;filter:none}
 .potential-forge .pf-core[data-mode=running] .pf-item{animation:pf-hover 1.6s ease-in-out infinite}
 
-/* 줄 보석 소켓(Ⅰ·Ⅱ·Ⅲ) */
+/* 줄 보석 소켓: 세 줄의 등급을 각인로 둘레에 표시 */
 .potential-forge .pf-gem{position:absolute;left:50%;top:50%;z-index:4;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;
   transform:rotate(var(--ang)) translateY(calc(var(--core) * -.425)) rotate(calc(var(--ang) * -1));
   background:radial-gradient(circle at 38% 32%,#fff8 0 8%,transparent 22%),conic-gradient(from 20deg,color-mix(in srgb,var(--grade) 60%,#000),var(--grade),color-mix(in srgb,var(--grade) 45%,#000),var(--grade),color-mix(in srgb,var(--grade) 60%,#000));
   box-shadow:0 0 0 3px #17140f,0 0 0 4px var(--pf-brass-lo),0 0 14px color-mix(in srgb,var(--grade) 50%,transparent);transition:background .2s,box-shadow .2s}
-.potential-forge .pf-gem i{position:absolute;left:50%;top:calc(100% + 6px);transform:translateX(-50%);font-style:normal;font-family:var(--pf-display);font-size:10px;color:var(--pf-brass);opacity:.75;text-shadow:0 1px 2px #000}
 .potential-forge .pf-gem:not([data-grade]),.potential-forge .pf-gem[data-grade='']{background:radial-gradient(circle,#0b0b0d 55%,#211d16);box-shadow:0 0 0 3px #17140f,0 0 0 4px var(--pf-brass-lo),inset 0 2px 5px #000}
 .potential-forge .pf-gem[data-grade=platinum]{animation:pf-gem-glint 2.4s ease-in-out infinite}
 
@@ -126,24 +132,24 @@
 .potential-forge .pf-tier{padding:2px 10px;border:1px solid color-mix(in srgb,var(--tier) 60%,transparent);border-radius:999px;background:color-mix(in srgb,var(--tier) 10%,#121318);color:var(--tier);font-size:11px;font-weight:850}
 .potential-forge .pf-tier:empty{display:none}
 .potential-forge .pf-lines{list-style:none;padding:0;display:flex;flex-direction:column;gap:6px}
-.potential-forge .pf-line{position:relative;display:grid;grid-template-columns:22px 66px minmax(0,1fr);align-items:center;gap:10px;min-height:48px;padding:6px 12px 6px 8px;
+.potential-forge .pf-line{position:relative;display:grid;grid-template-columns:66px minmax(0,1fr);align-items:center;gap:12px;min-height:48px;padding:6px 12px 6px 10px;
   background:linear-gradient(90deg,color-mix(in srgb,var(--grade) 13%,#111216),#101115 65%);border:1px solid #24262d;border-left:3px solid var(--grade);border-radius:3px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.03),inset 0 -1px 0 rgba(0,0,0,.55)}
-.potential-forge .pf-line.has-goal{grid-template-columns:22px 66px minmax(0,1fr) 46px}
-.potential-forge .pf-line-no{font-family:var(--pf-display);font-size:15px;color:#9a7d45;text-align:center}
+.potential-forge .pf-line.has-goal{grid-template-columns:66px minmax(0,1fr) 46px}
 .potential-forge .pf-grade{display:grid;place-items:center;min-height:26px;padding:3px 4px;border:1px solid color-mix(in srgb,var(--grade) 60%,transparent);border-radius:3px;
   background:linear-gradient(180deg,color-mix(in srgb,var(--grade) 26%,#1b1d23),color-mix(in srgb,var(--grade) 8%,#111216));color:var(--grade);font-size:12px;font-weight:850;letter-spacing:.02em;text-shadow:0 1px 0 #000;box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 1px 0 #000}
 .potential-forge .pf-line[data-grade=platinum] .pf-grade{background:linear-gradient(110deg,color-mix(in srgb,var(--grade) 14%,#111216) 30%,color-mix(in srgb,var(--grade) 38%,#1b1d23) 50%,color-mix(in srgb,var(--grade) 14%,#111216) 70%) 0 0/250% 100%;animation:pf-sheen 3s linear infinite}
 .potential-forge .pf-line-body{position:relative;display:flex;flex-direction:column;justify-content:center;min-width:0;min-height:30px;overflow:hidden}
 .potential-forge .pf-line-text{position:relative;z-index:1;display:block;color:#e8ecf2;font-size:14px;font-weight:700;line-height:1.4;overflow-wrap:anywhere}
-.potential-forge .pf-line-goal{position:relative;z-index:1;margin-top:2px;color:var(--pf-text-3);font-size:11px;font-weight:700}
+.potential-forge .pf-line-goal{position:relative;z-index:1;display:flex;align-items:center;gap:6px;margin-top:3px;color:var(--pf-text-3);font-size:11px;font-weight:700}
+.potential-forge .pf-line-goal em{flex:0 0 auto;padding:0 5px;border:1px solid #4a3d24;border-radius:2px;background:#17140e;color:#c9a865;font-style:normal;font-size:10px;font-weight:850;line-height:15px}
 .potential-forge .pf-reel{position:absolute;inset:-8px -4px;opacity:0;background:repeating-linear-gradient(180deg,transparent 0 7px,rgba(232,176,75,.08) 7px 8px);
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);transition:opacity .3s}
 .potential-forge .pf-tablet.is-rolling .pf-reel{opacity:1;animation:pf-reel .5s linear infinite}
 .potential-forge .pf-land{animation:pf-land .34s cubic-bezier(.2,.9,.3,1.15) both}
 
 .potential-forge .pf-tablet.is-compact{padding:10px}
-.potential-forge .pf-tablet.is-compact .pf-line{min-height:36px;padding:4px 10px 4px 6px;gap:8px;grid-template-columns:20px 56px minmax(0,1fr)}
+.potential-forge .pf-tablet.is-compact .pf-line{min-height:36px;padding:4px 10px 4px 8px;gap:10px;grid-template-columns:56px minmax(0,1fr)}
 .potential-forge .pf-tablet.is-compact .pf-grade{min-height:22px;font-size:11px}
 .potential-forge .pf-tablet.is-compact .pf-line-text{font-size:13px}
 .potential-forge .pf-tablet.is-kept,.potential-forge .pf-tablet.is-before{filter:saturate(.7);opacity:.86}
@@ -191,16 +197,100 @@
 .potential-forge .pf-socket-sub{color:var(--pf-text-2);font-size:11px;font-weight:700}
 .potential-forge .pf-socket-count{color:#f0cd87;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums}
 
-/* 목표 줄 */
+/* 목표 각인석: 줄마다 넓은 돌판 버튼 */
 .potential-forge .pf-targets{display:flex;flex-direction:column;gap:8px}
-.potential-forge .pf-target{display:grid;grid-template-columns:30px minmax(0,1.45fr) minmax(0,1fr);align-items:center;gap:8px;padding:6px;border:1px solid #23252c;border-left:3px solid var(--grade);border-radius:4px;background:#101115;transition:border-color .2s,background .2s}
-.potential-forge .pf-target.is-set{background:linear-gradient(90deg,color-mix(in srgb,var(--grade) 10%,#101115),#101115 70%)}
-.potential-forge .pf-target-no{font-family:var(--pf-display);font-size:17px;color:#b08f50;text-align:center}
-.potential-forge .pf-select,.potential-forge .pf-input{width:100%;min-height:44px;border:1px solid #363a44;border-radius:4px;color:var(--pf-text);font:inherit;font-size:15px;font-weight:700;box-shadow:inset 0 2px 4px rgba(0,0,0,.55)}
-.potential-forge .pf-select{-webkit-appearance:none;appearance:none;padding:0 30px 0 11px;text-overflow:ellipsis;cursor:pointer;
-  background:linear-gradient(45deg,transparent 50%,var(--pf-brass) 50%) calc(100% - 17px) 52%/6px 6px no-repeat,linear-gradient(135deg,var(--pf-brass) 50%,transparent 50%) calc(100% - 11px) 52%/6px 6px no-repeat,linear-gradient(180deg,#1b1d23,#14151a)}
-.potential-forge .pf-select:disabled{opacity:.5;cursor:not-allowed}
-.potential-forge .pf-select option{background:#16181d;color:#eceef2}
+.potential-forge .pf-rune{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;justify-content:stretch;gap:12px;width:100%;min-height:64px;padding:9px 12px 9px 10px;text-align:left;
+  border:1px solid #3a3528;border-radius:5px;color:var(--pf-text);font-size:15px;font-weight:700;
+  background:
+    radial-gradient(circle at 7px 7px,#8a6a35 1.3px,transparent 2.3px),
+    radial-gradient(circle at calc(100% - 7px) 7px,#8a6a35 1.3px,transparent 2.3px),
+    radial-gradient(circle at 7px calc(100% - 7px),#8a6a35 1.3px,transparent 2.3px),
+    radial-gradient(circle at calc(100% - 7px) calc(100% - 7px),#8a6a35 1.3px,transparent 2.3px),
+    linear-gradient(90deg,color-mix(in srgb,var(--grade) 13%,transparent),transparent 62%),
+    repeating-linear-gradient(115deg,rgba(255,255,255,.016) 0 3px,transparent 3px 9px),
+    linear-gradient(180deg,#23252c,#17181d 58%,#121318);
+  box-shadow:inset 0 1px 0 rgba(255,226,163,.1),inset 0 -2px 0 rgba(0,0,0,.5),inset 0 0 0 3px rgba(0,0,0,.22),0 3px 0 #060708,0 8px 16px rgba(0,0,0,.35)}
+.potential-forge .pf-rune.is-set{border-color:color-mix(in srgb,var(--grade) 38%,#3a3528);box-shadow:inset 3px 0 0 var(--grade),inset 0 1px 0 rgba(255,226,163,.1),inset 0 -2px 0 rgba(0,0,0,.5),0 3px 0 #060708,0 8px 16px rgba(0,0,0,.35),0 0 18px color-mix(in srgb,var(--grade) 10%,transparent)}
+.potential-forge .pf-rune:hover:not(:disabled){border-color:var(--pf-brass-lo);filter:brightness(1.08)}
+.potential-forge .pf-rune:active:not(:disabled){transform:translateY(2px);box-shadow:inset 0 2px 6px rgba(0,0,0,.6),0 1px 0 #060708}
+.potential-forge .pf-rune-socket{position:relative;width:40px;height:40px;border-radius:50%;background:radial-gradient(circle,#09090b 50%,#2a2620 52%,#14120e 64%,var(--pf-brass-lo) 66%,#1a160f 75%,#0d0c0a);box-shadow:0 2px 5px rgba(0,0,0,.6)}
+.potential-forge .pf-rune-socket::after{content:'';position:absolute;inset:11px;border-radius:50%;
+  background:radial-gradient(circle at 38% 32%,#fff9 0 10%,transparent 26%),conic-gradient(from 20deg,color-mix(in srgb,var(--grade) 55%,#000),var(--grade),color-mix(in srgb,var(--grade) 40%,#000),var(--grade),color-mix(in srgb,var(--grade) 55%,#000));
+  box-shadow:0 0 10px color-mix(in srgb,var(--grade) 65%,transparent)}
+.potential-forge .pf-rune:not(.is-set) .pf-rune-socket::after{inset:13px;background:transparent;border:1px dashed #5a5f6b;box-shadow:none}
+.potential-forge .pf-rune-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.potential-forge .pf-rune-name{color:#f3e6c8;font-size:15px;font-weight:850;line-height:1.3;overflow-wrap:anywhere}
+.potential-forge .pf-rune:not(.is-set) .pf-rune-name{color:var(--pf-text-2)}
+.potential-forge .pf-rune-sub{color:var(--grade);font-size:12px;font-weight:800}
+.potential-forge .pf-rune:not(.is-set) .pf-rune-sub{color:var(--pf-text-3);font-weight:700}
+.potential-forge .pf-rune-act{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #5c4521;border-radius:3px;background:linear-gradient(180deg,#2a2317,#16120c);color:#e8c27a;font-size:12px;font-weight:850;letter-spacing:.06em;white-space:nowrap;box-shadow:inset 0 1px 0 rgba(255,226,163,.14),0 2px 0 #050505}
+/* 끌 자국 같은 마름모 표식 (드롭다운 화살표 아님) */
+.potential-forge .pf-rune-act::before{content:'';width:6px;height:6px;transform:rotate(45deg);border:1px solid currentColor;background:rgba(232,176,75,.25)}
+.potential-forge .pf-input{width:100%;min-height:44px;border:1px solid #363a44;border-radius:4px;color:var(--pf-text);font:inherit;font-size:15px;font-weight:700;box-shadow:inset 0 2px 4px rgba(0,0,0,.55)}
+
+/* ===== 목표 각인판 (선택 석판) ===== */
+.potential-forge .pf-picker-overlay{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:16px;
+  background:radial-gradient(ellipse 70% 60% at 50% 48%,rgba(60,36,8,.5),rgba(3,3,5,.88) 72%);animation:pf-veil .2s ease-out both}
+.potential-forge .pf-picker{position:relative;display:flex;flex-direction:column;width:min(600px,100%);max-height:min(720px,calc(100vh - 32px));max-height:min(720px,calc(100dvh - 32px));overflow:hidden;outline:0;
+  border:1px solid #6b5126;border-radius:10px;
+  background:
+    radial-gradient(ellipse 80% 30% at 50% 0,rgba(255,138,61,.12),transparent 70%),
+    repeating-linear-gradient(135deg,rgba(255,255,255,.012) 0 2px,transparent 2px 7px),
+    linear-gradient(180deg,#16171c,#0e0f12);
+  box-shadow:0 0 0 3px #0a0a0c,0 0 0 4px rgba(232,176,75,.32),0 0 60px rgba(232,176,75,.12),0 30px 80px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,226,163,.12);
+  animation:pf-tablet-in .3s cubic-bezier(.2,1.25,.4,1) both}
+.potential-forge .pf-picker::before{content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:2;background:
+  radial-gradient(circle at 10px 10px,#b38a45 1.8px,transparent 2.8px),
+  radial-gradient(circle at calc(100% - 10px) 10px,#b38a45 1.8px,transparent 2.8px),
+  radial-gradient(circle at 10px calc(100% - 10px),#b38a45 1.8px,transparent 2.8px),
+  radial-gradient(circle at calc(100% - 10px) calc(100% - 10px),#b38a45 1.8px,transparent 2.8px)}
+.potential-forge .pf-picker-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 10px 20px;border-bottom:1px solid rgba(232,176,75,.18)}
+.potential-forge .pf-picker-heading{display:flex;flex-direction:column;min-width:0}
+.potential-forge .pf-picker-kicker{color:var(--pf-text-3);font-size:11px;font-weight:800;letter-spacing:.08em}
+.potential-forge .pf-picker-title{margin:0;font-family:var(--pf-display);font-weight:400;font-size:22px;line-height:1.2;letter-spacing:.04em;color:var(--pf-brass-hi);text-shadow:0 1px 0 #5b3d0d,0 0 16px rgba(232,176,75,.35)}
+.potential-forge .pf-picker-x{flex:0 0 auto;width:40px;height:40px}
+.potential-forge .pf-picker-seal{flex:0 0 auto;display:flex;align-items:center;gap:12px;margin:12px 16px 2px;padding:10px 14px;border:1px solid #2f2a20;border-radius:5px;background:linear-gradient(90deg,color-mix(in srgb,var(--grade) 14%,#0d0e11),#0d0e11 70%);box-shadow:inset 0 2px 8px rgba(0,0,0,.7),inset 3px 0 0 var(--grade)}
+.potential-forge .pf-picker-seal-gem{flex:0 0 auto;width:30px;height:30px;border-radius:50%;
+  background:radial-gradient(circle at 38% 32%,#fff9 0 10%,transparent 26%),conic-gradient(from 20deg,color-mix(in srgb,var(--grade) 55%,#000),var(--grade),color-mix(in srgb,var(--grade) 40%,#000),var(--grade),color-mix(in srgb,var(--grade) 55%,#000));
+  box-shadow:0 0 0 3px #17140f,0 0 0 4px var(--pf-brass-lo),0 0 16px color-mix(in srgb,var(--grade) 55%,transparent)}
+.potential-forge .pf-picker-seal:not(.is-set) .pf-picker-seal-gem{background:radial-gradient(circle,#0b0b0d 55%,#211d16);box-shadow:0 0 0 3px #17140f,0 0 0 4px var(--pf-brass-lo),inset 0 2px 5px #000}
+.potential-forge .pf-picker-seal-text{display:flex;flex-direction:column;gap:1px;min-width:0}
+.potential-forge .pf-picker-seal-name{color:#f6ead0;font-size:17px;font-weight:850;line-height:1.3;overflow-wrap:anywhere}
+.potential-forge .pf-picker-seal-grade{color:var(--grade);font-size:12px;font-weight:800}
+.potential-forge .pf-picker-seal:not(.is-set) .pf-picker-seal-grade{color:var(--pf-text-3)}
+.potential-forge .pf-picker-label{flex:0 0 auto;display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:12px 20px 6px;color:#d9bd84;font-size:12px;font-weight:850;letter-spacing:.06em}
+.potential-forge .pf-picker-hint{color:var(--pf-text-3);font-size:11px;font-weight:700;letter-spacing:0}
+.potential-forge .pf-picker-grid{position:relative;flex:1 1 auto;min-height:104px;overflow-y:auto;overscroll-behavior:contain;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));align-content:start;gap:6px;margin:0 6px;padding:2px 10px 10px;scrollbar-width:thin;scrollbar-color:#5a4520 transparent;
+  -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(180deg,#000 calc(100% - 14px),transparent)}
+.potential-forge .pf-picker-grid::-webkit-scrollbar{width:6px}
+.potential-forge .pf-picker-grid::-webkit-scrollbar-thumb{background:#4a3a1f;border-radius:6px}
+.potential-forge .pf-tile{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:6px;min-height:58px;padding:8px 11px;text-align:left;
+  border:1px solid #2e3139;border-radius:4px;background:linear-gradient(180deg,#1c1e24,#131418);color:var(--pf-text);font-size:13px;font-weight:750;letter-spacing:0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 2px 0 #060708}
+.potential-forge .pf-tile:hover:not(:disabled){border-color:#5c4b2c;background:linear-gradient(180deg,#22242b,#16171c)}
+.potential-forge .pf-tile:active:not(:disabled){transform:translateY(2px)}
+.potential-forge .pf-tile.is-blank{border-style:dashed;border-color:#454a55;background:linear-gradient(180deg,#15161a,#0f1013)}
+.potential-forge .pf-tile[aria-pressed=true]{border:1px solid var(--pf-brass);background:linear-gradient(180deg,#2e2516,#17130c);color:#fff2d6;box-shadow:inset 0 0 0 1px rgba(255,226,163,.22),0 0 16px rgba(232,176,75,.24),0 2px 0 #3b2a0e}
+/* 고른 타일 오른쪽 위에 새겨지는 인장 */
+.potential-forge .pf-tile[aria-pressed=true]::after{content:'';position:absolute;top:7px;right:8px;width:8px;height:8px;transform:rotate(45deg);background:var(--pf-brass-hi);box-shadow:0 0 8px rgba(255,226,163,.8)}
+.potential-forge .pf-tile-name{line-height:1.3;overflow-wrap:anywhere;padding-right:12px}
+.potential-forge .pf-tile-sub{color:var(--pf-text-3);font-size:11px;font-weight:700}
+.potential-forge .pf-tile-pips{display:flex;gap:5px}
+.potential-forge .pf-tile-pips i{width:7px;height:7px;transform:rotate(45deg);background:var(--grade);box-shadow:0 0 4px color-mix(in srgb,var(--grade) 60%,transparent)}
+.potential-forge .pf-tile-pips i.is-off{background:transparent;box-shadow:inset 0 0 0 1px #3a3d47}
+.potential-forge .pf-picker-grades{flex:0 0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:0 16px 14px}
+.potential-forge .pf-facet{flex-direction:column;gap:5px;min-height:74px;padding:9px 4px 8px;border:1px solid #2e3139;border-radius:5px;background:linear-gradient(180deg,#1b1d23,#121318);color:var(--pf-text);font-size:13px;letter-spacing:0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 3px 0 #060708}
+.potential-forge .pf-facet:hover:not(:disabled){border-color:color-mix(in srgb,var(--grade) 50%,#2e3139)}
+.potential-forge .pf-facet-gem{width:20px;height:20px;margin:2px 0 3px;transform:rotate(45deg);border-radius:3px;
+  background:radial-gradient(circle at 35% 30%,#fffb 0 12%,transparent 30%),conic-gradient(from 45deg,color-mix(in srgb,var(--grade) 55%,#000),var(--grade),color-mix(in srgb,var(--grade) 40%,#000),var(--grade),color-mix(in srgb,var(--grade) 55%,#000));
+  box-shadow:0 0 0 2px #17140f,0 0 0 3px color-mix(in srgb,var(--grade) 45%,var(--pf-brass-lo)),0 0 10px color-mix(in srgb,var(--grade) 40%,transparent)}
+.potential-forge .pf-facet-name{color:var(--grade);font-size:13px;font-weight:850}
+.potential-forge .pf-facet-sub{color:var(--pf-text-3);font-size:10px;font-weight:700}
+.potential-forge .pf-facet[aria-pressed=true]{border-color:var(--grade);background:linear-gradient(180deg,color-mix(in srgb,var(--grade) 20%,#1b1d23),#121318);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--grade) 45%,transparent),0 0 18px color-mix(in srgb,var(--grade) 30%,transparent),0 3px 0 #060708}
+.potential-forge .pf-facet[aria-pressed=true] .pf-facet-gem{animation:pf-gem-glint 2.4s ease-in-out infinite}
+.potential-forge .pf-facet:disabled{filter:grayscale(1) brightness(.6);opacity:.45}
+.potential-forge .pf-picker-foot{flex:0 0 auto;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(232,176,75,.22);background:linear-gradient(180deg,#101114,#0b0c0f)}
 .potential-forge .pf-field{display:flex;align-items:center;gap:8px;padding:0 12px;min-height:48px;border:1px solid #363a44;border-radius:4px;background:#121318;box-shadow:inset 0 2px 4px rgba(0,0,0,.55)}
 .potential-forge .pf-field:focus-within{border-color:var(--pf-brass);box-shadow:inset 0 2px 4px rgba(0,0,0,.55),0 0 0 2px rgba(232,176,75,.25)}
 .potential-forge .pf-input{flex:1;min-width:0;padding:0;border:0;background:transparent;box-shadow:none;font-variant-numeric:tabular-nums;font-size:16px}
@@ -286,31 +376,56 @@
 .potential-forge .pf-stage.is-reveal[data-burst=gold]{--burst:#f4cc66}
 .potential-forge .pf-stage.is-reveal[data-burst=platinum]{--burst:#9ff0f5}
 .potential-forge .pf-stage.is-reveal[data-burst=tier]{--burst:#ffd56a}
-.potential-forge .pf-stage.is-reveal .pf-item{animation:pf-charge 1.1s cubic-bezier(.3,.7,.3,1) both}
+/* --t0: 같은 결과를 연출 도중 다시 그릴 때 이미 지난 시간만큼 앞당긴다 */
+.potential-forge .pf-shell:not(.pf-settled) .pf-stage.is-reveal .pf-item{animation:pf-charge 1.1s cubic-bezier(.3,.7,.3,1) var(--t0,0ms) both}
+/* 예비 동작: 화로가 숨을 들이켜듯 조여들며 달아오른다 */
+.potential-forge .pf-shell:not(.pf-settled) .pf-stage.is-reveal .pf-hearth{animation:pf-gather-hearth var(--impact) cubic-bezier(.5,0,.9,.5) var(--t0,0ms) backwards,pf-breathe 4.5s ease-in-out calc(var(--impact) + var(--t0,0ms)) infinite}
+.potential-forge .pf-shell:not(.pf-settled) .pf-stage.is-reveal .pf-ring-star{filter:drop-shadow(0 0 4px var(--burst))}
+/* 금속 타격: 각인로가 짧게 흔들린다 (화면 전체가 아닌 코어만) */
+.potential-forge .pf-shell:not(.pf-settled) .pf-stage.is-reveal .pf-core{animation:pf-quake .38s linear calc(var(--impact) + var(--t0,0ms)) both}
+.potential-forge .pf-gather{position:absolute;left:50%;top:50%;width:96%;height:96%;margin:-48% 0 0 -48%;border-radius:50%;opacity:0;border:2px solid color-mix(in srgb,var(--burst) 70%,#fff);box-shadow:0 0 22px color-mix(in srgb,var(--burst) 55%,transparent),inset 0 0 22px color-mix(in srgb,var(--burst) 35%,transparent);animation:pf-gather var(--impact) cubic-bezier(.55,0,.9,.4) var(--t0,0ms) forwards}
 .potential-forge .pf-converge{position:absolute;inset:0}
-.potential-forge .pf-converge i{width:5px;height:5px;margin:-2.5px 0 0 -2.5px;background:var(--burst);box-shadow:0 0 10px var(--burst);animation:pf-converge .7s cubic-bezier(.5,0,.8,.4) var(--t) forwards}
-.potential-forge .pf-bloom{position:absolute;left:50%;top:50%;width:60%;height:60%;margin:-30% 0 0 -30%;border-radius:50%;opacity:0;background:radial-gradient(circle,rgba(255,255,255,.95),color-mix(in srgb,var(--burst) 70%,transparent) 30%,transparent 68%);animation:pf-bloom .9s ease-out .6s forwards}
-.potential-forge .pf-rays{position:absolute;inset:-16%;border-radius:50%;opacity:0;background:repeating-conic-gradient(from 0deg,color-mix(in srgb,var(--burst) 55%,transparent) 0 4deg,transparent 4deg 22deg);
-  -webkit-mask-image:radial-gradient(circle,transparent 18%,#000 30%,transparent 70%);mask-image:radial-gradient(circle,transparent 18%,#000 30%,transparent 70%);animation:pf-rays-in 1.2s ease-out .65s forwards,pf-spin 24s linear infinite}
+.potential-forge .pf-converge i{width:5px;height:5px;margin:-2.5px 0 0 -2.5px;background:var(--burst);box-shadow:0 0 10px var(--burst);animation:pf-converge .62s cubic-bezier(.5,0,.8,.4) calc(var(--t) + var(--t0,0ms)) forwards}
+.potential-forge .pf-shock{position:absolute;left:50%;top:50%;width:64%;height:64%;margin:-32% 0 0 -32%;border-radius:50%;opacity:0;
+  border:4px solid color-mix(in srgb,var(--burst) 55%,#ffcf7a);box-shadow:0 0 30px color-mix(in srgb,var(--burst) 60%,rgba(255,138,61,.8)),inset 0 0 24px color-mix(in srgb,var(--burst) 45%,rgba(255,138,61,.6));
+  animation:pf-shock 1.05s cubic-bezier(.12,.8,.3,1) calc(var(--impact) + var(--t0,0ms)) forwards}
+.potential-forge .pf-shock.is-echo{border-width:2px;animation-duration:1.35s;animation-delay:calc(var(--impact) + 140ms + var(--t0,0ms))}
+.potential-forge .pf-shock.is-final{border-width:3px;animation-duration:1.4s;animation-delay:calc(1960ms + var(--t0,0ms))}
+/* 쇠가 부딪힐 때 튀는 십자 섬광 */
+.potential-forge .pf-clang{position:absolute;left:50%;top:50%;width:150%;height:5px;margin:-2.5px 0 0 -75%;opacity:0;border-radius:50%;
+  background:radial-gradient(ellipse at center,#fff 0,color-mix(in srgb,var(--burst) 85%,#fff) 18%,transparent 70%);
+  animation:pf-clang .55s ease-out calc(var(--impact) + var(--t0,0ms)) forwards}
+.potential-forge .pf-clang::after{content:'';position:absolute;left:50%;top:50%;width:5px;height:min(var(--core) * .9, 230px);margin:calc(min(var(--core) * .9, 230px) / -2) 0 0 -2.5px;border-radius:50%;background:radial-gradient(ellipse at center,#fff 0,color-mix(in srgb,var(--burst) 85%,#fff) 18%,transparent 70%)}
+.potential-forge .pf-bloom{position:absolute;left:50%;top:50%;width:92%;height:92%;margin:-46% 0 0 -46%;border-radius:50%;opacity:0;background:radial-gradient(circle,rgba(255,250,235,.95),color-mix(in srgb,var(--burst) 70%,rgba(255,138,61,.6)) 26%,rgba(255,138,61,.12) 52%,transparent 70%);animation:pf-bloom 1.1s ease-out calc(var(--impact) - 30ms + var(--t0,0ms)) forwards}
+.potential-forge .pf-rays{position:absolute;inset:-22%;border-radius:50%;opacity:0;background:repeating-conic-gradient(from 0deg,color-mix(in srgb,var(--burst) 55%,transparent) 0 4deg,transparent 4deg 22deg);
+  -webkit-mask-image:radial-gradient(circle,transparent 18%,#000 30%,transparent 70%);mask-image:radial-gradient(circle,transparent 18%,#000 30%,transparent 70%);animation:pf-rays-in 1.2s ease-out calc(var(--impact) + 40ms + var(--t0,0ms)) forwards,pf-spin 24s linear infinite}
 .potential-forge .pf-stage.is-reveal[data-burst=tier] .pf-rays{background:repeating-conic-gradient(from 0deg,rgba(255,213,106,.6) 0 4deg,transparent 4deg 15deg,rgba(201,155,255,.45) 15deg 19deg,transparent 19deg 30deg)}
-.potential-forge .pf-burst.is-late i{animation-delay:calc(var(--t) + 2s)}
-.potential-forge .pf-intro{opacity:0;animation:pf-rise .5s cubic-bezier(.2,.8,.3,1) var(--d,0ms) forwards}
-.potential-forge .pf-gem.pf-intro{opacity:1;animation:pf-gem-lit .5s ease-out var(--d,0ms) both}
+.potential-forge .pf-burst.is-late i{animation-delay:calc(var(--t) + 1960ms + var(--t0,0ms))}
+.potential-forge .pf-intro{opacity:0;animation:pf-rise .5s cubic-bezier(.2,.8,.3,1) calc(var(--d,0ms) + var(--t0,0ms)) forwards}
+.potential-forge .pf-gem.pf-intro{opacity:1;animation:pf-gem-lit .5s ease-out calc(var(--d,0ms) + var(--t0,0ms)) both}
 .potential-forge .pf-line.pf-reveal{animation-name:pf-engrave;animation-duration:.55s}
-.potential-forge .pf-line.pf-reveal[data-grade=gold]::after,.potential-forge .pf-line.pf-reveal[data-grade=platinum]::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--grade) 45%,transparent) 50%,transparent 70%) -100% 0/50% 100% no-repeat;animation:pf-sweep .9s ease-out calc(var(--d) + 150ms) both}
+.potential-forge .pf-line.pf-reveal[data-grade=gold]::after,.potential-forge .pf-line.pf-reveal[data-grade=platinum]::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--grade) 45%,transparent) 50%,transparent 70%) -100% 0/50% 100% no-repeat;animation:pf-sweep .9s ease-out calc(var(--d) + 150ms + var(--t0,0ms)) both}
 .potential-forge .pf-line.pf-reveal[data-grade=platinum]{box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 0 18px color-mix(in srgb,var(--grade) 25%,transparent)}
-.potential-forge .pf-line-sparks{position:absolute;left:44px;top:50%;width:0;height:0;pointer-events:none}
-.potential-forge .pf-line-sparks i{background:var(--grade);box-shadow:0 0 6px var(--grade);--core:120px;animation:pf-burst .8s cubic-bezier(.15,.7,.3,1) calc(var(--d) + var(--t) + 120ms) forwards}
-.potential-forge .pf-headline{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
-.potential-forge .pf-headline-t{font-family:var(--pf-display);font-weight:400;font-size:30px;line-height:1.15;letter-spacing:.03em;color:#e9edf3;text-shadow:0 2px 0 #000}
+.potential-forge .pf-line-sparks{position:absolute;left:43px;top:50%;width:0;height:0;pointer-events:none}
+.potential-forge .pf-line-sparks i{background:var(--grade);box-shadow:0 0 6px var(--grade);--core:120px;animation:pf-burst .8s cubic-bezier(.15,.7,.3,1) calc(var(--d) + var(--t) + 120ms + var(--t0,0ms)) forwards}
+.potential-forge .pf-headline{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.potential-forge .pf-headline-t{font-family:var(--pf-display);font-weight:400;font-size:34px;line-height:1.12;letter-spacing:.03em;color:#e9edf3;text-shadow:0 2px 0 #000}
 .potential-forge .pf-headline-s{color:var(--pf-text-2);font-size:13px;font-weight:600;max-width:34em}
-.potential-forge .pf-shell[data-tone=win] .pf-headline-t{color:var(--pf-brass-hi);text-shadow:0 2px 0 #5b3d0d,0 0 26px rgba(232,176,75,.6)}
-.potential-forge .pf-shell[data-tone=win] .pf-headline.pf-intro{animation-name:pf-stamp;animation-duration:.6s;animation-timing-function:cubic-bezier(.2,1.5,.4,1)}
+/* 성공/승급: 금박 글자 + 양옆 장식선 */
+.potential-forge .pf-shell[data-tone=win] .pf-headline-t{font-size:44px;color:var(--pf-brass-hi);text-shadow:none;
+  background:linear-gradient(180deg,#fffaf0 0,#ffe39a 38%,#e8a93a 62%,#b9771c 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 2px 0 #4a2f08) drop-shadow(0 0 20px rgba(232,176,75,.55))}
+.potential-forge .pf-shell.is-tier .pf-headline-t{background:linear-gradient(180deg,#fff 0,color-mix(in srgb,var(--tier) 55%,#fff) 36%,var(--tier) 64%,color-mix(in srgb,var(--tier) 60%,#000) 100%);-webkit-background-clip:text;background-clip:text;
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.8)) drop-shadow(0 0 22px color-mix(in srgb,var(--tier) 60%,transparent))}
+.potential-forge .pf-shell[data-tone=win] .pf-headline::before{content:'';width:min(300px,86%);height:10px;background:
+  linear-gradient(90deg,transparent,var(--pf-brass) 30% 70%,transparent) center/100% 1px no-repeat,
+  linear-gradient(45deg,transparent 35%,var(--pf-brass-hi) 36% 64%,transparent 65%) center/10px 10px no-repeat;filter:drop-shadow(0 0 6px rgba(232,176,75,.6))}
+.potential-forge .pf-shell[data-tone=win] .pf-headline.pf-intro{animation-name:pf-stamp;animation-duration:.65s;animation-timing-function:cubic-bezier(.2,1.5,.4,1)}
 .potential-forge .pf-shell[data-tone=halt] .pf-headline-t{color:#d6dbe3}
 .potential-forge .pf-shell[data-tone=err] .pf-headline-t{color:#ffb4ac}
 .potential-forge .pf-tier-up{display:flex;align-items:center;justify-content:center;gap:12px;padding:12px;border:1px solid rgba(255,213,106,.6);border-radius:5px;background:linear-gradient(90deg,transparent,rgba(255,213,106,.16),transparent),#15120b;box-shadow:0 0 26px rgba(255,213,106,.18),inset 0 1px 0 rgba(255,240,200,.2)}
 .potential-forge .pf-tier-up-k{padding:2px 9px;border-radius:3px;background:#ffd56a;color:#2a1a03;font-size:12px;font-weight:900}
-.potential-forge .pf-tier-up b{font-family:var(--pf-display);font-weight:400;font-size:21px;color:#ffe9b0;text-shadow:0 0 14px rgba(255,213,106,.6)}
+.potential-forge .pf-tier-up b{font-family:var(--pf-display);font-weight:400;font-size:25px;color:#ffe9b0;text-shadow:0 0 14px rgba(255,213,106,.6)}
 .potential-forge .pf-tier-up.pf-intro{animation-name:pf-stamp;animation-duration:.6s;animation-timing-function:cubic-bezier(.2,1.5,.4,1)}
 .potential-forge .pf-power{display:grid;grid-template-columns:1fr auto 1fr;gap:1px;border:1px solid #2a2c33;border-radius:5px;overflow:hidden;background:#2a2c33}
 .potential-forge .pf-power-cell{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;background:var(--pf-iron-1)}
@@ -349,7 +464,6 @@
   .potential-forge .pf-footer{padding:10px 12px calc(10px + env(safe-area-inset-bottom));gap:7px}
   .potential-forge .pf-btn{min-height:50px;font-size:15px}
   .potential-forge .pf-btn-brass{font-size:18px}
-  .potential-forge .pf-select{font-size:16px}
   /* 진행/결과: 코어를 왼쪽에 두고 핵심 정보를 한 화면에 */
   .potential-forge .is-running .pf-stage,.potential-forge .is-result .pf-stage{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto auto;align-items:center;column-gap:12px;row-gap:6px;padding:2px 0}
   .potential-forge .is-running .pf-core,.potential-forge .is-result .pf-core{--core:128px;grid-row:1/4}
@@ -357,19 +471,23 @@
   .potential-forge .is-running .pf-nameplate,.potential-forge .is-result .pf-nameplate{flex-direction:row;flex-wrap:wrap;gap:6px}
   .potential-forge .is-running .pf-eq-name,.potential-forge .is-result .pf-eq-name{padding:4px 10px;font-size:13px}
   .potential-forge .pf-gem{width:20px;height:20px;margin:-10px 0 0 -10px}
-  .potential-forge .is-running .pf-gem i,.potential-forge .is-result .pf-gem i{display:none}
   .potential-forge .pf-counter-n{font-size:38px}
   .potential-forge .pf-seal{width:104px;height:104px;margin:-52px 0 0 -52px}
   .potential-forge .pf-seal span{font-size:19px}
-  .potential-forge .pf-headline-t{font-size:23px}
+  .potential-forge .pf-headline-t{font-size:26px}
+  .potential-forge .pf-shell[data-tone=win] .pf-headline-t{font-size:32px}
+  .potential-forge .pf-shell[data-tone=win] .pf-headline::before{width:min(200px,90%)}
   .potential-forge .pf-headline-s{font-size:12px}
   .potential-forge .is-result .pf-headline{align-items:flex-start;text-align:left}
 }
 @media (max-width:480px){
-  .potential-forge .pf-target{grid-template-columns:26px minmax(0,1fr);grid-template-rows:auto auto;row-gap:6px}
-  .potential-forge .pf-target-no{grid-row:1/3}
-  .potential-forge .pf-line{grid-template-columns:18px 56px minmax(0,1fr);gap:8px;padding:6px 8px 6px 6px}
-  .potential-forge .pf-line.has-goal{grid-template-columns:18px 56px minmax(0,1fr) 40px}
+  .potential-forge .pf-rune{grid-template-columns:36px minmax(0,1fr) auto;gap:10px;min-height:60px;padding:8px 10px 8px 8px}
+  .potential-forge .pf-rune-socket{width:36px;height:36px}
+  .potential-forge .pf-rune-socket::after{inset:10px}
+  .potential-forge .pf-rune-act{padding:5px 8px}
+  .potential-forge .pf-line{grid-template-columns:56px minmax(0,1fr);gap:10px;padding:6px 8px}
+  .potential-forge .pf-line.has-goal{grid-template-columns:56px minmax(0,1fr) 40px}
+  .potential-forge .pf-line-sparks{left:36px}
   .potential-forge .pf-grade{font-size:11px}
   .potential-forge .pf-line-text{font-size:13px}
   .potential-forge .pf-socket{min-height:104px;padding:9px 2px 8px}
@@ -380,6 +498,30 @@
   .potential-forge .pf-tablet{padding:10px 8px}
   .potential-forge .pf-tablet-head{margin:0 4px 8px}
   .potential-forge .pf-shell::before,.potential-forge .pf-shell::after{display:none}
+}
+/* 각인판: 휴대폰에서는 화면 안에 꽉 맞추고 타일 격자만 스크롤 */
+@media (max-width:560px){
+  .potential-forge .pf-picker-overlay{padding:8px}
+  .potential-forge .pf-picker{max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);border-radius:8px}
+  .potential-forge .pf-picker-head{padding:10px 10px 8px 16px}
+  .potential-forge .pf-picker-title{font-size:19px}
+  .potential-forge .pf-picker-seal{margin:10px 12px 0;padding:8px 12px}
+  .potential-forge .pf-picker-seal-name{font-size:15px}
+  .potential-forge .pf-picker-label{margin:10px 14px 5px}
+  .potential-forge .pf-picker-grid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));margin:0 4px;padding:2px 8px 10px}
+  .potential-forge .pf-tile{min-height:52px;padding:7px 9px}
+  .potential-forge .pf-picker-grades{gap:6px;padding:0 12px 10px}
+  .potential-forge .pf-facet{min-height:62px;padding:7px 2px 6px}
+  .potential-forge .pf-picker-foot{padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+  .potential-forge .pf-picker-foot .pf-btn{min-height:48px}
+}
+@media (max-height:620px){
+  .potential-forge .pf-picker-seal{margin-top:8px;padding:6px 12px}
+  .potential-forge .pf-picker-seal-gem{width:24px;height:24px}
+  .potential-forge .pf-picker-label{margin-top:8px}
+  .potential-forge .pf-facet{flex-direction:row;min-height:46px;gap:6px}
+  .potential-forge .pf-facet-gem{width:14px;height:14px;margin:0}
+  .potential-forge .pf-facet-sub{display:none}
 }
 
 /* ===== 움직임 ===== */
@@ -400,7 +542,14 @@
 @keyframes pf-seal{0%{opacity:0;transform:rotate(-10deg) scale(1.8)}60%{opacity:1;transform:rotate(-10deg) scale(.94)}100%{opacity:1;transform:rotate(-10deg) scale(1)}}
 @keyframes pf-burst{0%{opacity:1;transform:rotate(var(--a)) translateY(0)}100%{opacity:0;transform:rotate(var(--a)) translateY(calc(var(--core) * -.62 * var(--r)))}}
 @keyframes pf-converge{0%{opacity:0;transform:rotate(var(--a)) translateY(calc(var(--core) * -.7 * var(--r)))}30%{opacity:1}100%{opacity:0;transform:rotate(var(--a)) translateY(0)}}
-@keyframes pf-bloom{0%{opacity:0;transform:scale(.3)}35%{opacity:.85;transform:scale(1.2)}100%{opacity:0;transform:scale(2)}}
+@keyframes pf-bloom{0%{opacity:0;transform:scale(.3)}30%{opacity:.9;transform:scale(1.15)}100%{opacity:0;transform:scale(2.2)}}
+@keyframes pf-gather{0%{opacity:0;transform:scale(1.25)}60%{opacity:.85}100%{opacity:1;transform:scale(.42)}}
+@keyframes pf-gather-hearth{0%{transform:scale(1);filter:brightness(.8)}85%{transform:scale(.86);filter:brightness(1.9)}100%{transform:none;filter:none}}
+@keyframes pf-quake{0%,100%{transform:none}15%{transform:translate(-4px,2px)}35%{transform:translate(4px,-2px)}55%{transform:translate(-3px,-1px)}75%{transform:translate(2px,1px)}}
+@keyframes pf-shock{0%{opacity:0;transform:scale(.3)}10%{opacity:1}100%{opacity:0;transform:scale(2.9)}}
+@keyframes pf-clang{0%{opacity:0;transform:scale(.2) rotate(-12deg)}22%{opacity:1;transform:scale(1) rotate(0)}100%{opacity:0;transform:scale(1.3) rotate(6deg)}}
+@keyframes pf-veil{from{opacity:0}to{opacity:1}}
+@keyframes pf-tablet-in{0%{opacity:0;transform:translateY(14px) scale(.96)}100%{opacity:1;transform:none}}
 @keyframes pf-rays-in{to{opacity:.6}}
 @keyframes pf-charge{0%{transform:scale(.9);filter:brightness(.7) drop-shadow(0 0 0 transparent)}55%{transform:scale(.94);filter:brightness(1.1) drop-shadow(0 0 10px var(--burst))}68%{transform:scale(1.1);filter:brightness(1.6) drop-shadow(0 0 22px var(--burst))}100%{transform:scale(1);filter:brightness(1) drop-shadow(0 8px 14px rgba(0,0,0,.7))}}
 @keyframes pf-rise{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:none}}

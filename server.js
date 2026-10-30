@@ -9679,6 +9679,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/game-actions.js"></script>
 <script src="/static/artifact-effects.js"></script>
 <script src="/static/artifact-ui.js"></script>
+<script src="/static/potential-forge-audio.js"></script>
 <script src="/static/potential-forge-ui.js"></script>
 <script src="/static/quest-board-effects.js"></script>
 <script src="/static/pvp-lobby.js"></script>
