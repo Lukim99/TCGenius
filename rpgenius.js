@@ -843,7 +843,7 @@ function readJson(filePath, fallback) {
 }
 
 // mtime 기반 캐시 readJson — 전투 계산 등 초당 수십 회 호출되는 경로 전용.
-// 반환 객체는 공유되므로 호출부는 절대 변형하지 말 것 (현재: BaseStat/ExpTable — 값 복사·숫자 조회만 함).
+// 반환 객체는 공유되므로 호출부는 절대 변형하지 말 것 (BaseStat/ExpTable/Potential — 값 복사·숫자 조회만 함).
 const readJsonCacheStore = {};
 function readJsonCached(filePath, fallback) {
     try {
@@ -1759,7 +1759,7 @@ function applyPotentialDerivedStats(stats, user) {
 }
 
 function getPotentialData() {
-    return readJson(POTENTIAL_PATH, {});
+    return readJsonCached(POTENTIAL_PATH, {});
 }
 
 function pickPotentialGroup(type, rarity) {
@@ -2295,7 +2295,7 @@ function webAwakenPotential(user, number) {
 }
 
 // 웹: 재설정 모달용 정보 (현재 잠재능력, 쥬얼 보유, 옵션별 비용)
-function getPotentialRerollInfo(user, number) {
+function getPotentialRerollInfo(user, number, includeTargets = true) {
     const idx = Number(number);
     if (!Number.isInteger(idx) || idx < 1) return { error: '잘못된 장비 번호입니다.' };
     const selected = getAllUserEquipments(user)[idx - 1];
@@ -2324,7 +2324,7 @@ function getPotentialRerollInfo(user, number) {
             white: { cost: costOf(POTENTIAL_WHITE_JEWEL_DISCOUNT), discountPct: Math.round(POTENTIAL_WHITE_JEWEL_DISCOUNT * 100), available: whiteCount > 0 }
         },
         upgrade: upgrade ? { next: getPotentialRarityLabel(upgrade.next), guarantee: Number(upgrade.guarantee || 0), failCount } : null,
-        targetOptions: getPotentialTargetOptions(getPotentialEquipmentType(type), currentTier),
+        ...(includeTargets ? { targetOptions: getPotentialTargetOptions(getPotentialEquipmentType(type), currentTier) } : {}),
         gold: Number(user.gold || 0)
     };
 }
@@ -2336,11 +2336,11 @@ function webRerollPotential(user, number, jewelChoice) {
     return getPotentialRerollResult(user, user.pendingAction);
 }
 
-function getPotentialRerollResult(user, p) {
+function getPotentialRerollResult(user, p, includeCombatPower = true) {
     if (!p || p.type !== '잠재능력재설정확인') return { error: '재설정에 실패했습니다.' };
     const selected = p.targetUid ? getAllUserEquipments(user).find(entry => entry.equip.uid === p.targetUid) : getAllUserEquipments(user)[Number(p.number) - 1];
     let combatPower = null;
-    if (selected && selected.equip) {
+    if (includeCombatPower && selected && selected.equip) {
         const currentPotential = selected.equip.potential;
         try {
             selected.equip.potential = p.oldPotential;
@@ -2389,30 +2389,57 @@ function getPotentialTargetOptions(type, tier) {
     return [...options.values()];
 }
 
-function potentialGoalsMatched(potential, targets) {
-    return targets.map((target, index) => !target || potentialOptionKey(potential?.option?.[index]) === target.key
-        && POTENTIAL_GOAL_GRADES.indexOf(potential.option[index].grade || getPotentialDefaultGradeKey(potential.rarity)) >= POTENTIAL_GOAL_GRADES.indexOf(target.grade));
+function potentialTargetKeys(target) {
+    return Array.isArray(target?.keys) ? target.keys : target?.key ? [target.key] : [];
+}
+
+function matchPotentialGoals(potential, targets) {
+    const lines = potential?.option || [];
+    let best = { matched: targets.map(target => !target), lineMatches: lines.map(() => null) }, bestCount = -1;
+    // 최대 세 조건을 서로 다른 줄에 배정한다. 겹치는 허용 옵션과 최소 등급은 최대 일치 조합으로 판정한다.
+    function visit(index, matched, assignments, count) {
+        if (index === targets.length) {
+            if (count > bestCount) { bestCount = count; best = { matched: [...matched], lineMatches: [...assignments] }; }
+            return;
+        }
+        const target = targets[index];
+        if (!target) { matched[index] = true; visit(index + 1, matched, assignments, count); return; }
+        const keys = potentialTargetKeys(target);
+        for (let line = 0; line < lines.length; line++) {
+            const option = lines[line];
+            if (assignments[line] !== null || !keys.includes(potentialOptionKey(option))
+                || POTENTIAL_GOAL_GRADES.indexOf(option.grade || getPotentialDefaultGradeKey(potential.rarity)) < POTENTIAL_GOAL_GRADES.indexOf(target.grade)) continue;
+            matched[index] = true; assignments[line] = index;
+            visit(index + 1, matched, assignments, count + 1);
+            assignments[line] = null;
+        }
+        matched[index] = false;
+        visit(index + 1, matched, assignments, count);
+    }
+    visit(0, [], lines.map(() => null), 0);
+    return best;
 }
 
 function getPotentialAutoTarget(user) {
     return getAllUserEquipments(user).find(entry => entry.equip.uid === user.potentialAuto?.targetUid);
 }
 
-function getPotentialAutoView(user) {
+function getPotentialAutoView(user, detailed = true) {
     const run = user.potentialAuto;
     if (!run) return null;
     const target = getPotentialAutoTarget(user);
     const number = target ? getAllUserEquipments(user).findIndex(entry => entry.equip.uid === run.targetUid) + 1 : null;
     return {
         ok: true, number, jewel: run.jewel, targets: run.targets, gold: Number(user.gold || 0),
+        jewels: { jewel: getInventoryItemCount(user, getItemIdByName(POTENTIAL_JEWEL_ITEM_NAME)), white: getInventoryItemCount(user, getItemIdByName(POTENTIAL_WHITE_JEWEL_ITEM_NAME)) },
         current: { tierKey: getPotentialRarityKey(run.original.rarity), tierLabel: getPotentialRarityLabel(run.original.rarity), entries: formatPotentialOptionEntries(run.original) },
-        targetOptions: getPotentialTargetOptions(run.type, getPotentialRarityKey(run.original.rarity)),
+        ...(detailed ? { targetOptions: getPotentialTargetOptions(run.type, getPotentialRarityKey(run.original.rarity)) } : {}),
         run: { id: run.id, rolls: run.rolls, spent: run.spent, goldLimit: run.goldLimit, jewelUsed: run.jewelUsed,
-            matched: run.candidate ? potentialGoalsMatched(run.candidate, run.targets) : run.targets.map(target => !target), status: run.status, stopReason: run.stopReason },
+            ...matchPotentialGoals(run.candidate, run.targets), status: run.status, stopReason: run.stopReason },
         result: run.candidate ? getPotentialRerollResult(user, { type: '잠재능력재설정확인', targetUid: run.targetUid,
             oldPotential: run.original, newPotential: run.candidate, cost: run.lastCost, useJewel: run.jewel !== 'none',
             currentTier: getPotentialRarityKey(run.original.rarity), nextTier: getPotentialRarityKey(run.candidate.rarity),
-            upgraded: getPotentialRarityKey(run.original.rarity) !== getPotentialRarityKey(run.candidate.rarity), guaranteed: run.guaranteed }) : null
+            upgraded: getPotentialRarityKey(run.original.rarity) !== getPotentialRarityKey(run.candidate.rarity), guaranteed: run.guaranteed }, detailed && run.status !== 'running') : null
     };
 }
 
@@ -2431,18 +2458,20 @@ function startPotentialAuto(user, input) {
     for (let i = 0; i < targets.length; i++) {
         const goal = targets[i];
         if (goal === null) continue;
-        if (!goal || !info.targetOptions.some(option => option.key === goal.key && option.grades.includes(goal.grade))) return { error: '선택할 수 없는 목표 옵션입니다.' };
-        const minFirst = { rare: 0, epic: 1, unique: 2, legendary: 3 }[info.currentTier];
-        const reachable = POTENTIAL_GOAL_GRADES.filter((grade, rank) => rank >= POTENTIAL_GOAL_GRADES.indexOf(goal.grade) && (i > 0 || rank >= minFirst));
-        if (!reachable.some(grade => (table[grade] || []).some(group => group.rate > 0 && (group.roll || []).some(roll => potentialOptionKey(roll) === goal.key)))) {
-            return { error: (i + 1) + '번째 자리에서 나올 수 없는 목표 옵션입니다.' };
+        const keys = potentialTargetKeys(goal);
+        if (!goal || !keys.length || keys.length > info.targetOptions.length || new Set(keys).size !== keys.length
+            || !keys.every(key => info.targetOptions.some(option => option.key === key))
+            || !keys.some(key => info.targetOptions.find(option => option.key === key).grades.includes(goal.grade))) return { error: '선택할 수 없는 목표 옵션입니다.' };
+        const reachable = POTENTIAL_GOAL_GRADES.slice(POTENTIAL_GOAL_GRADES.indexOf(goal.grade));
+        if (!keys.every(key => reachable.some(grade => (table[grade] || []).some(group => group.rate > 0 && (group.roll || []).some(roll => potentialOptionKey(roll) === key))))) {
+            return { error: (i + 1) + '번째 조건에서 나올 수 없는 목표 옵션입니다.' };
         }
     }
     const limit = input.goldLimit == null || input.goldLimit === '' ? null : Number(input.goldLimit);
     if (limit !== null && (!['number', 'string'].includes(typeof input.goldLimit) || !Number.isSafeInteger(limit) || limit < 1)) return { error: '골드 한도는 1 이상의 정수로 입력해주세요.' };
     user.potentialAuto = {
         id: crypto.randomUUID(), requestId: input.requestId, targetUid: ensureEquipmentUid(target.equip), type,
-        original: clonePlain(target.equip.potential), candidate: null, targets: targets.map(goal => goal ? { key: goal.key, grade: goal.grade } : null),
+        original: clonePlain(target.equip.potential), candidate: null, targets: targets.map(goal => goal ? { keys: [...potentialTargetKeys(goal)], grade: goal.grade } : null),
         jewel: input.jewel, goldLimit: limit, spent: 0, rolls: 0, jewelUsed: 0, status: 'running', stopReason: null
     };
     return getPotentialAutoView(user);
@@ -2454,33 +2483,46 @@ function stopPotentialAuto(user, id, reason = 'manual') {
     return getPotentialAutoView(user);
 }
 
-function stepPotentialAuto(user, id, expectedRolls) {
+function stepPotentialAuto(user, id, expectedRolls, batchSize = 1) {
     const run = user.potentialAuto;
     if (!run || run.id !== id) return { error: '진행 중인 자동 재설정을 찾을 수 없습니다.' };
     if (!Number.isSafeInteger(expectedRolls) || expectedRolls < 0 || expectedRolls > run.rolls) return { error: '재설정 진행 번호가 올바르지 않습니다.' };
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 3) return { error: '한 번에 1~3회만 각인할 수 있습니다.' };
     // 같은 회차를 재전송하거나 여러 탭에서 보내도 한 번만 차감한다.
     if (expectedRolls < run.rolls || run.status !== 'running') return getPotentialAutoView(user);
+    const frames = [];
+    // 각 회차의 비용과 목표를 따로 검사하되, 최대 3회의 변경을 서버에서 한 번에 저장한다.
+    for (let i = 0; i < batchSize && run.status === 'running'; i++) {
+        rollPotentialAutoOnce(user);
+        frames.push(getPotentialAutoView(user, false));
+    }
+    return { ...getPotentialAutoView(user), frames };
+}
+
+function rollPotentialAutoOnce(user) {
+    const run = user.potentialAuto;
+    const halt = reason => { run.status = 'stopped'; run.stopReason = reason; };
     const target = getPotentialAutoTarget(user);
-    if (!target || !isDeepStrictEqual(target.equip.potential, run.original) || user.pendingAction) return stopPotentialAuto(user, id, 'error');
+    if (!target || !isDeepStrictEqual(target.equip.potential, run.original) || user.pendingAction) return halt('error');
     const number = getAllUserEquipments(user).findIndex(entry => entry.equip.uid === run.targetUid) + 1;
     const original = target.equip.potential;
     target.equip.potential = clonePlain(run.candidate || run.original);
-    const info = getPotentialRerollInfo(user, number), option = info.options?.[run.jewel];
+    const info = getPotentialRerollInfo(user, number, false), option = info.options?.[run.jewel];
     let result, rolled;
     try {
-        if (!option) return stopPotentialAuto(user, id, 'error');
-        if (run.goldLimit !== null && run.spent + option.cost > run.goldLimit) return stopPotentialAuto(user, id, 'budget');
-        if (Number(user.gold || 0) < option.cost) return stopPotentialAuto(user, id, 'gold');
-        if (run.jewel !== 'none' && !option.available) return stopPotentialAuto(user, id, 'jewel');
+        if (!option) return halt('error');
+        if (run.goldLimit !== null && run.spent + option.cost > run.goldLimit) return halt('budget');
+        if (Number(user.gold || 0) < option.cost) return halt('gold');
+        if (run.jewel !== 'none' && !option.available) return halt('jewel');
         user.potentialAuto = null;
-        result = webRerollPotential(user, number, run.jewel);
+        result = rerollEquipmentPotential(user, number, run.jewel);
         rolled = user.pendingAction;
     } finally {
         target.equip.potential = original;
         user.potentialAuto = run;
         user.pendingAction = null;
     }
-    if (result.error || !rolled) return stopPotentialAuto(user, id, 'error');
+    if (result.startsWith('❌') || !rolled) return halt('error');
     // 승급 전 실패 누적은 기존 취소 규칙처럼 보존하고, 승급 이후에는 원본 티어에 누적하지 않는다.
     if (getPotentialRarityKey(run.original.rarity) === rolled.currentTier) {
         run.original.failCount = rolled.oldPotential.failCount;
@@ -2490,8 +2532,7 @@ function stepPotentialAuto(user, id, expectedRolls) {
     run.spent += rolled.cost; run.lastCost = rolled.cost; run.rolls++;
     if (run.jewel !== 'none') run.jewelUsed++;
     run.guaranteed = run.guaranteed || rolled.guaranteed;
-    if (potentialGoalsMatched(run.candidate, run.targets).every(Boolean)) return stopPotentialAuto(user, id, 'matched');
-    return getPotentialAutoView(user);
+    if (matchPotentialGoals(run.candidate, run.targets).matched.every(Boolean)) halt('matched');
 }
 
 function finishPotentialAuto(user, id, choice) {

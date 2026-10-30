@@ -112,6 +112,8 @@ test('잠재 자동 재설정은 자리별 최소 등급을 모두 만족하면 
         potentialData.accessory[grade] = [{ rate: 1, roll: [option] }];
     }
     t.mock.method(fs, 'readFileSync', (file, ...args) => file === potentialPath ? JSON.stringify(potentialData) : read(file, ...args));
+    const stat = fs.statSync, changedTime = stat(potentialPath).mtimeMs + 1;
+    t.mock.method(fs, 'statSync', (file, ...args) => file === potentialPath ? { mtimeMs: changedTime } : stat(file, ...args));
     const random = t.mock.method(Math, 'random', () => 0);
     const stepped = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 0 });
     random.mock.restore();
@@ -201,7 +203,7 @@ test('잠재 자동 재설정은 승급 후보에서 계속 뽑지만 원본은 
     const second = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 1 });
     assert.equal(second.data.result.new.tierKey, 'unique');
     assert.equal(second.data.number, 2);
-    assert.ok(second.data.info.targetOptions.find(option => option.key === 'stat:hp').grades.includes('bronze'), '승급해도 시작할 때 정한 최소 등급 표시를 보존한다');
+    assert.ok(second.data.targetOptions.find(option => option.key === 'stat:hp').grades.includes('bronze'), '승급해도 시작할 때 정한 최소 등급 표시를 보존한다');
     current = await rpg.getRPGUserByName(fixture.name);
     assert.deepEqual(current.inventory.equipment[1].potential.option, originalOptions);
     await request('/api/potential/auto/stop', { id: started.data.run.id });
@@ -214,6 +216,7 @@ test('잠재 자동 재설정은 승급 후보에서 계속 뽑지만 원본은 
 
 test('잠재 자동 재설정 저장 실패는 비용·후보·회차를 함께 되돌린다', async t => {
     await potentialUser(); const started = await startAuto();
+    t.mock.method(Math, 'random', () => 0);
     const snapshot = JSON.parse(JSON.stringify(await rpg.getRPGUserByName(fixture.name)));
     const send = DynamoDBDocumentClient.prototype.send;
     t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function(command) {
@@ -221,12 +224,102 @@ test('잠재 자동 재설정 저장 실패는 비용·후보·회차를 함께 
         if (command.constructor.name === 'GetCommand' && command.input.TableName === 'rpgenius_user') return { Item: snapshot };
         return send.call(this, command);
     });
-    const response = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 0 });
+    const response = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 0, batchSize: 3 });
     assert.equal(response.status, 409);
     const current = await rpg.getRPGUserByName(fixture.name);
     assert.equal(current.gold, snapshot.gold);
     assert.deepEqual(current.potentialAuto, snapshot.potentialAuto);
     assert.deepEqual(current.inventory, snapshot.inventory);
+});
+
+test('자동 각인 3회 묶음은 DB 읽기 없이 한 번 저장하고 재전송은 추가 차감하지 않는다', async t => {
+    await potentialUser();
+    const started = await startAuto(), id = started.data.run.id;
+    const cost = started.data.info.options.none.cost;
+    t.mock.method(Math, 'random', () => 0);
+    const commands = [], send = DynamoDBDocumentClient.prototype.send;
+    t.mock.method(DynamoDBDocumentClient.prototype, 'send', function(command) { commands.push(command); return send.call(this, command); });
+    const read = fs.readFileSync; let potentialReads = 0;
+    t.mock.method(fs, 'readFileSync', (file, ...args) => { if (String(file).endsWith('Potential.json')) potentialReads++; return read(file, ...args); });
+    for (const batchSize of [0, 4, 1.5, '3']) assert.equal((await request('/api/potential/auto/step', { id, expectedRolls: 0, batchSize })).status, 400);
+    const singlesBefore = commands.length;
+    for (let i = 0; i < 3; i++) await request('/api/potential/auto/step', { id, expectedRolls: i });
+    const singleWrites = commands.slice(singlesBefore).filter(command => command.constructor.name === 'UpdateCommand').length;
+    const batchBefore = commands.length;
+    const stepped = await request('/api/potential/auto/step', { id, expectedRolls: 3, batchSize: 3 });
+    const batchCommands = commands.slice(batchBefore);
+    assert.equal(stepped.status, 200);
+    assert.deepEqual(stepped.data.frames.map(frame => frame.run.rolls), [4, 5, 6]);
+    assert.deepEqual(stepped.data.frames.map(frame => frame.run.spent), [4, 5, 6].map(n => n * cost));
+    assert.equal(stepped.data.run.spent, cost * 6);
+    assert.equal(stepped.data.result.combatPower, null, '진행 중에는 표시하지 않는 전투력을 계산하지 않는다');
+    assert.equal(singleWrites, 3);
+    assert.equal(batchCommands.filter(command => command.constructor.name === 'UpdateCommand').length, 1);
+    assert.equal(commands.filter(command => ['GetCommand', 'ScanCommand'].includes(command.constructor.name)).length, 0);
+    assert.equal(potentialReads, 0, '변경되지 않은 잠재능력 JSON을 다시 읽지 않는다');
+    const beforeReplay = commands.length;
+    const replay = await request('/api/potential/auto/step', { id, expectedRolls: 3, batchSize: 3 });
+    assert.equal(replay.data.run.rolls, 6);
+    assert.equal(commands.length, beforeReplay);
+    assert.equal((await rpg.getRPGUserByName(fixture.name)).gold, 1000000000 - cost * 6);
+    const beforeConcurrent = commands.length;
+    const replies = await Promise.all([request('/api/potential/auto/step', { id, expectedRolls: 6, batchSize: 3 }), request('/api/potential/auto/step', { id, expectedRolls: 6, batchSize: 3 })]);
+    assert.ok(replies.every(reply => reply.status === 200 && reply.data.run.rolls === 9));
+    assert.equal(commands.slice(beforeConcurrent).filter(command => command.constructor.name === 'UpdateCommand').length, 1);
+    assert.equal((await rpg.getRPGUserByName(fixture.name)).gold, 1000000000 - cost * 9);
+    const stopped = await request('/api/potential/auto/stop', { id });
+    assert.ok(stopped.data.result.combatPower, '최종 비교 화면에서는 전투력을 계산한다');
+});
+
+test('목표 조건은 줄 순서 없이 허용 옵션 중 하나로 맞추고 한 줄을 중복 계산하지 않는다', async () => {
+    await potentialUser();
+    const targets = [{ keys: ['stat:hp', 'stat:mp'], grade: 'gold' }, { keys: ['stat:hp'], grade: 'platinum' }, null];
+    const started = await startAuto({ targets });
+    assert.equal(started.status, 200);
+    assert.deepEqual(started.data.targets, targets);
+    const user = await rpg.getRPGUserByName(fixture.name);
+    const hp = { grade: 'platinum', stat: { hp: 200 } }, mp = { grade: 'gold', stat: { mp: 100 } }, drop = { grade: 'gold', plusStat: { itemDropChance: .1 } };
+    const check = options => { user.potentialAuto.candidate = { rarity: '레전더리', option: options }; return rpg.getPotentialAutoView(user, false).run; };
+    assert.deepEqual(check([hp, mp, drop]).lineMatches, [1, 0, null], '유연한 조건에 HP를 먼저 써서 엄격한 조건을 놓치면 안 된다');
+    assert.deepEqual(check([mp, drop, hp]).matched, [true, true, true]);
+    assert.deepEqual(check([mp, drop, hp]).lineMatches, [0, null, 1]);
+    assert.equal(check([hp, drop, drop]).matched.filter(Boolean).length, 2, '빈 조건을 제외하면 HP 한 줄은 한 조건만 충족한다');
+    user.potentialAuto.targets = [{ keys: ['stat:hp'], grade: 'gold' }, { keys: ['stat:hp'], grade: 'platinum' }, null];
+    const goldHp = { grade: 'gold', stat: { hp: 150 } };
+    assert.deepEqual(check([hp, goldHp, drop]).lineMatches, [1, 0, null], '더 높은 등급이 필요한 조건부터 배정할 수 있어야 한다');
+    user.potentialAuto.targets = [{ key: 'stat:mp', grade: 'gold' }, null, null];
+    assert.deepEqual(check([drop, drop, mp]).matched, [true, true, true], '저장된 기존 단일 옵션 조건도 순서 없이 판정한다');
+    await potentialUser();
+    assert.equal((await startAuto({ targets: [{ keys: [], grade: 'gold' }, null, null] })).status, 400);
+    assert.equal((await startAuto({ targets: [{ keys: ['stat:hp', 'stat:hp'], grade: 'gold' }, null, null] })).status, 400);
+    assert.equal((await startAuto({ targets: [{ keys: ['stat:hp', 'stat:fake'], grade: 'gold' }, null, null] })).status, 400);
+});
+
+test('자동 각인 묶음은 매회 목표와 한도 및 쥬얼을 검사하고 승급 비용도 반영한다', async t => {
+    t.mock.method(Math, 'random', () => 0);
+    await potentialUser();
+    const matched = await startAuto({ targets: [{ key: 'stat:hp', grade: 'platinum' }, null, null] });
+    const win = await request('/api/potential/auto/step', { id: matched.data.run.id, expectedRolls: 0, batchSize: 3 });
+    assert.equal(win.data.run.rolls, 1); assert.equal(win.data.run.stopReason, 'matched');
+    await potentialUser();
+    const cost = (await request('/api/potential/reroll-info/1')).data.options.none.cost;
+    const limited = await startAuto({ goldLimit: cost * 2 });
+    const budget = await request('/api/potential/auto/step', { id: limited.data.run.id, expectedRolls: 0, batchSize: 3 });
+    assert.equal(budget.data.run.rolls, 2); assert.equal(budget.data.run.stopReason, 'budget');
+    assert.equal(budget.data.run.spent, cost * 2);
+    const jewel = rpg.getDataCache('Item').findIndex(item => item.name === '쥬얼');
+    await potentialUser('레전더리', 1000000000, [{ id: jewel, count: 1 }]);
+    const withJewel = await startAuto({ jewel: 'jewel' });
+    const depleted = await request('/api/potential/auto/step', { id: withJewel.data.run.id, expectedRolls: 0, batchSize: 3 });
+    assert.equal(depleted.data.run.rolls, 1); assert.equal(depleted.data.run.stopReason, 'jewel');
+    assert.equal(depleted.data.run.jewelUsed, 1); assert.equal(depleted.data.jewels.jewel, 0);
+    const original = await potentialUser('레어');
+    const rareCost = (await request('/api/potential/reroll-info/1')).data.options.none.cost;
+    const upgrade = await startAuto({ goldLimit: rareCost });
+    const upgraded = await request('/api/potential/auto/step', { id: upgrade.data.run.id, expectedRolls: 0, batchSize: 3 });
+    assert.equal(upgraded.data.run.rolls, 1); assert.equal(upgraded.data.run.stopReason, 'budget');
+    assert.equal(upgraded.data.result.new.tierKey, 'epic');
+    assert.equal((await rpg.getRPGUserByName(fixture.name)).inventory.equipment[0].potential.rarity, original.inventory.equipment[0].potential.rarity);
 });
 
 test('잠재 수동 재설정도 기존 비교 결과 복구·적용·중복 차감 방지를 유지한다', async t => {
@@ -305,7 +398,8 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
         const chooseTarget = async (index, key, grade) => {
             await page.click('[data-pf-focus="target' + index + '"]');
             await page.waitForSelector('.pf-picker-overlay');
-            await page.click('[data-pf-option="' + key + '"]');
+            await page.click('[data-pf-option=""]');
+            for (const option of (Array.isArray(key) ? key : key ? [key] : [])) await page.click('[data-pf-option="' + option + '"]');
             if (grade) await page.click('[data-pf-grade="' + grade + '"]');
             await page.click('[data-pf-focus="target-confirm"]');
             await page.waitForSelector('.pf-picker-overlay', { hidden: true });
@@ -313,7 +407,7 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
         await page.waitForSelector(setup);
         assert.equal(await page.$$eval('#potentialContent select', elements => elements.length), 0);
         assert.doesNotMatch(await page.$eval(setup, element => element.textContent), /[·•ⅠⅡⅢ]/);
-        await chooseTarget(0, 'plusStat:itemDropChance', 'platinum');
+        await chooseTarget(0, ['plusStat:itemDropChance', 'stat:mp'], 'platinum');
         await chooseTarget(1, 'plusStat:itemDropChance', 'gold');
         await page.type('[data-pf-focus="budget"]', String(cost * 3));
         const dir = path.join(__dirname, '../output/potential-forge'); fs.mkdirSync(dir, { recursive: true });
@@ -326,13 +420,30 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
         await page.keyboard.press('Escape');
         await page.waitForSelector('.pf-picker-overlay', { hidden: true });
         assert.equal(await page.evaluate(() => document.activeElement.dataset.pfFocus), 'target0');
-        assert.equal(await page.evaluate(() => potentialState.targets[0].key), 'plusStat:itemDropChance');
+        assert.deepEqual(await page.evaluate(() => potentialState.targets[0].keys), ['plusStat:itemDropChance', 'stat:mp']);
         await page.setViewport({ width: 390, height: 844 });
         await page.screenshot({ path: path.join(dir, 'setup-mobile.png') });
         await page.click('[data-pf-focus="target1"]');
         await page.waitForSelector('.pf-picker-overlay');
         await page.$eval('.pf-picker-overlay', async element => { await Promise.all(element.getAnimations({ subtree: true }).filter(animation => animation.effect.getTiming().iterations !== Infinity).map(animation => animation.finished)); });
         await page.screenshot({ path: path.join(dir, 'picker-mobile.png') });
+        for (const width of [610, 390, 320]) {
+            await page.setViewport({ width, height: 740 });
+            assert.equal(await page.$eval('.pf-picker-grid', element => element.scrollTop), 0, '선택창을 처음 열면 첫 행 전체가 보인다');
+            const clipped = await page.$$eval('.pf-tile', tiles => tiles.flatMap(tile => {
+                const box = tile.getBoundingClientRect(), name = tile.querySelector('.pf-tile-name').getBoundingClientRect();
+                const pips = tile.querySelector('.pf-tile-pips')?.getBoundingClientRect();
+                return name.top < box.top + 4 || name.right > box.right || (pips && (pips.top < name.bottom + 3 || pips.bottom > box.bottom - 3)) ? [tile.textContent] : [];
+            }));
+            assert.deepEqual(clipped, [], width + 'px에서 옵션 글자와 등급 보석이 타일 안에 들어가야 한다');
+            assert.ok(await page.$eval('[data-pf-focus="target-confirm"]', element => { const r = element.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
+            if (width === 610) {
+                await page.$eval('.pf-picker-grid', element => { element.scrollTop = element.scrollHeight; });
+                await page.screenshot({ path: path.join(dir, 'picker-long-options.png') });
+                await page.$eval('.pf-picker-grid', element => { element.scrollTop = 0; });
+            }
+        }
+        await page.setViewport({ width: 390, height: 844 });
         assert.ok(await page.$eval('[data-pf-focus="target-confirm"]', element => { const r = element.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
         await page.keyboard.press('Tab');
         assert.ok(await page.evaluate(() => !!document.activeElement.closest('.pf-picker-overlay')));
@@ -352,6 +463,30 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
         let user = await rpg.getRPGUserByName(fixture.name);
         assert.deepEqual(user.inventory.equipment[0].potential, original);
         assert.equal(user.gold, initial.gold - cost * 3);
+        // 같은 3회 묶음을 각각의 배속으로 한 회씩 공개하며, 배속 전환은 새 결제를 만들지 않는다.
+        await page.evaluate(() => {
+            const render = PotentialForge.renderRunning;
+            window.__forgeFrames = [];
+            PotentialForge.renderRunning = function(root, model, actions) {
+                if (model.run.rolls && window.__forgeFrames.at(-1)?.roll !== model.run.rolls) window.__forgeFrames.push({ roll: model.run.rolls, at: performance.now() });
+                return render(root, model, actions);
+            };
+        });
+        const speedEvidence = [];
+        for (const speed of [1, 2, 3]) {
+            await page.click('[data-pf-speed="' + speed + '"]');
+            assert.equal(await page.$eval('[data-pf-speed="' + speed + '"]', element => element.getAttribute('aria-pressed')), 'true');
+            await page.evaluate(() => { window.__forgeFrames = []; });
+            await page.click('[data-pf-focus="auto"]');
+            await page.waitForSelector(result);
+            const frames = await page.evaluate(() => window.__forgeFrames);
+            assert.deepEqual(frames.map(frame => frame.roll), [1, 2, 3]);
+            const interval = (frames[2].at - frames[0].at) / 2;
+            assert.ok(interval >= 650 / speed - 45 && interval < 650 / speed + 180, speed + '배속 간격: ' + interval);
+            speedEvidence.push({ speed, intervalMs: Math.round(interval) });
+            await page.click('[data-pf-focus="keep"]'); await page.waitForSelector(setup);
+        }
+        fs.writeFileSync(path.join(dir, 'speed-check.json'), JSON.stringify(speedEvidence, null, 2));
         await page.setViewport({ width: 1440, height: 1000 });
         await chooseTarget(0, 'stat:hp', 'platinum');
         await chooseTarget(1, '');
@@ -380,6 +515,10 @@ test('잠재 공방 브라우저는 목표 설정·자동 각인·비교 선택�
         await page.$eval('[data-pf-focus="budget"]', input => { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); });
         await page.click('[data-pf-focus="auto"]');
         await page.waitForFunction(() => potentialState.auto?.run.rolls >= 1);
+        const paidBeforeSpeed = await page.evaluate(() => potentialState.auto.run.spent);
+        await page.click('[data-pf-speed="2"]');
+        assert.equal(await page.evaluate(() => potentialState.speed), 2);
+        assert.equal(await page.evaluate(() => potentialState.auto.run.spent), paidBeforeSpeed);
         await page.click('[data-pf-focus="stop"]');
         await page.waitForSelector(result);
         assert.match(await page.$eval(result, element => element.textContent), /각인 중단/);

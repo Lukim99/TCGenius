@@ -4026,16 +4026,17 @@ for (const action of ['start', 'step', 'stop', 'finish']) server.post('/api/pote
         const input = req.body || {};
         const blocked = getEquipmentActionBlockedReason(user, '변경');
         if (blocked && (action === 'start' || action === 'finish' && input.choice === 'apply')) return res.status(400).json({ error: blocked });
-        const number = rpgenius.getPotentialAutoView(user)?.number || Number(input.number);
+        const number = user.potentialAuto ? rpgenius.getAllUserEquipments(user).findIndex(entry => entry.equip.uid === user.potentialAuto.targetUid) + 1 : Number(input.number);
         let out;
         if (action === 'start') out = rpgenius.startPotentialAuto(user, input);
-        if (action === 'step') out = blocked ? rpgenius.stopPotentialAuto(user, input.id, 'error') : rpgenius.stepPotentialAuto(user, input.id, input.expectedRolls);
+        if (action === 'step') out = blocked ? rpgenius.stopPotentialAuto(user, input.id, 'error') : rpgenius.stepPotentialAuto(user, input.id, input.expectedRolls, input.batchSize);
         if (action === 'stop') out = rpgenius.stopPotentialAuto(user, input.id);
         if (action === 'finish') out = rpgenius.finishPotentialAuto(user, input.id, input.choice);
         if (out.error) return res.status(400).json(out);
         await rpgenius.commitProtectedUserChange(user, ['gold', 'inventory', 'equipments', 'potentialAuto']);
         if (action === 'finish') return res.json({ ok: true, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
-        res.json({ ...out, info: buildPotentialRerollInfo(user, number) });
+        // 진행 중에는 바뀐 재화만 전달한다. 장비 목록과 목표 목록을 매 회차 다시 만들지 않는다.
+        res.json({ ...out, info: action === 'step' ? { gold: out.gold, jewels: out.jewels } : buildPotentialRerollInfo(user, number) });
     } catch (error) {
         console.error('[potential auto]', error.name);
         res.status(409).json({ error: '재설정 결과를 저장하지 못했거나 보유 정보가 변경되었습니다. 다시 불러와주세요.' });

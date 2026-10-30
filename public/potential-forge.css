@@ -34,6 +34,11 @@
 .potential-forge h2,.potential-forge h3,.potential-forge p,.potential-forge ul,.potential-forge ol,.potential-forge dl,.potential-forge dd{margin:0}
 .potential-forge :is(button,input):focus-visible{outline:2px solid var(--pf-brass-hi);outline-offset:2px}
 
+/* 공통 버튼은 종류별 규칙보다 먼저 선언한다. 타일의 여백과 글자 크기를 덮어쓰지 않는다. */
+.potential-forge .pf-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:52px;padding:0 16px;border-radius:6px;font-size:16px;font-weight:800;letter-spacing:.02em;line-height:1.2;cursor:pointer;transition:transform .08s,filter .15s,box-shadow .15s}
+.potential-forge .pf-btn:active:not(:disabled){transform:translateY(3px)}
+.potential-forge .pf-btn:disabled{cursor:not-allowed;filter:grayscale(.85) brightness(.7);opacity:.6}
+
 /* ===== 셸 ===== */
 .potential-forge .pf-shell{position:relative;flex:1 0 auto;display:flex;flex-direction:column;
   background:
@@ -89,9 +94,9 @@
 .potential-forge .pf-ring-outer{animation:pf-spin 80s linear infinite}
 .potential-forge .pf-ring-star{animation:pf-spin 120s linear infinite reverse}
 .potential-forge .pf-ring-inner{animation:pf-spin 40s linear infinite}
-.potential-forge .pf-core[data-mode=running] .pf-ring-outer{animation-duration:7s}
-.potential-forge .pf-core[data-mode=running] .pf-ring-star{animation-duration:11s}
-.potential-forge .pf-core[data-mode=running] .pf-ring-inner{animation-duration:2.6s}
+.potential-forge .pf-core[data-mode=running] .pf-ring-outer{animation-duration:calc(7s / var(--pf-speed,1))}
+.potential-forge .pf-core[data-mode=running] .pf-ring-star{animation-duration:calc(11s / var(--pf-speed,1))}
+.potential-forge .pf-core[data-mode=running] .pf-ring-inner{animation-duration:calc(2.6s / var(--pf-speed,1))}
 .potential-forge .pf-core[data-mode=running] .pf-r-glyph{opacity:.9;filter:drop-shadow(0 0 3px var(--tier))}
 .potential-forge .pf-core[data-mode=running] .pf-hearth{animation:pf-flicker 1.1s ease-in-out infinite}
 .potential-forge .pf-core[data-mode=halt] .pf-ring{filter:saturate(.4) brightness(.8)}
@@ -143,10 +148,14 @@
 .potential-forge .pf-line-text{position:relative;z-index:1;display:block;color:#e8ecf2;font-size:14px;font-weight:700;line-height:1.4;overflow-wrap:anywhere}
 .potential-forge .pf-line-goal{position:relative;z-index:1;display:flex;align-items:center;gap:6px;margin-top:3px;color:var(--pf-text-3);font-size:11px;font-weight:700}
 .potential-forge .pf-line-goal em{flex:0 0 auto;padding:0 5px;border:1px solid #4a3d24;border-radius:2px;background:#17140e;color:#c9a865;font-style:normal;font-size:10px;font-weight:850;line-height:15px}
+.potential-forge .pf-conditions{list-style:none;display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid #4a3d24;border-radius:4px;background:#12110e}
+.potential-forge .pf-conditions li{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--pf-text-2);font-size:12px}
+.potential-forge .pf-conditions b{flex-shrink:0;color:#a89d88;font-size:11px}
+.potential-forge .pf-conditions .is-met b{color:var(--pf-good);text-shadow:0 0 8px #8de39a55}
 .potential-forge .pf-reel{position:absolute;inset:-8px -4px;opacity:0;background:repeating-linear-gradient(180deg,transparent 0 7px,rgba(232,176,75,.08) 7px 8px);
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);mask-image:linear-gradient(90deg,transparent,#000 15%,#000 85%,transparent);transition:opacity .3s}
 .potential-forge .pf-tablet.is-rolling .pf-reel{opacity:1;animation:pf-reel .5s linear infinite}
-.potential-forge .pf-land{animation:pf-land .34s cubic-bezier(.2,.9,.3,1.15) both}
+.potential-forge .pf-land{animation:pf-land calc(.34s / var(--pf-speed,1)) cubic-bezier(.2,.9,.3,1.15) both}
 
 .potential-forge .pf-tablet.is-compact{padding:10px}
 .potential-forge .pf-tablet.is-compact .pf-line{min-height:36px;padding:4px 10px 4px 8px;gap:10px;grid-template-columns:56px minmax(0,1fr)}
@@ -260,11 +269,11 @@
 .potential-forge .pf-picker-seal:not(.is-set) .pf-picker-seal-grade{color:var(--pf-text-3)}
 .potential-forge .pf-picker-label{flex:0 0 auto;display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:12px 20px 6px;color:#d9bd84;font-size:12px;font-weight:850;letter-spacing:.06em}
 .potential-forge .pf-picker-hint{color:var(--pf-text-3);font-size:11px;font-weight:700;letter-spacing:0}
-.potential-forge .pf-picker-grid{position:relative;flex:1 1 auto;min-height:104px;overflow-y:auto;overscroll-behavior:contain;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));align-content:start;gap:6px;margin:0 6px;padding:2px 10px 10px;scrollbar-width:thin;scrollbar-color:#5a4520 transparent;
+.potential-forge .pf-picker-grid{position:relative;flex:1 1 auto;min-height:104px;overflow-y:auto;overscroll-behavior:contain;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));grid-auto-rows:max-content;align-content:start;gap:6px;margin:0 6px;padding:2px 10px 10px;scrollbar-width:thin;scrollbar-color:#5a4520 transparent;
   -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(180deg,#000 calc(100% - 14px),transparent)}
 .potential-forge .pf-picker-grid::-webkit-scrollbar{width:6px}
 .potential-forge .pf-picker-grid::-webkit-scrollbar-thumb{background:#4a3a1f;border-radius:6px}
-.potential-forge .pf-tile{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:6px;min-height:58px;padding:8px 11px;text-align:left;
+.potential-forge .pf-tile{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:8px;min-height:76px;padding:10px 11px;text-align:left;
   border:1px solid #2e3139;border-radius:4px;background:linear-gradient(180deg,#1c1e24,#131418);color:var(--pf-text);font-size:13px;font-weight:750;letter-spacing:0;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 2px 0 #060708}
 .potential-forge .pf-tile:hover:not(:disabled){border-color:#5c4b2c;background:linear-gradient(180deg,#22242b,#16171c)}
@@ -273,9 +282,9 @@
 .potential-forge .pf-tile[aria-pressed=true]{border:1px solid var(--pf-brass);background:linear-gradient(180deg,#2e2516,#17130c);color:#fff2d6;box-shadow:inset 0 0 0 1px rgba(255,226,163,.22),0 0 16px rgba(232,176,75,.24),0 2px 0 #3b2a0e}
 /* 고른 타일 오른쪽 위에 새겨지는 인장 */
 .potential-forge .pf-tile[aria-pressed=true]::after{content:'';position:absolute;top:7px;right:8px;width:8px;height:8px;transform:rotate(45deg);background:var(--pf-brass-hi);box-shadow:0 0 8px rgba(255,226,163,.8)}
-.potential-forge .pf-tile-name{line-height:1.3;overflow-wrap:anywhere;padding-right:12px}
+.potential-forge .pf-tile-name{flex:0 0 auto;width:100%;line-height:1.3;overflow-wrap:anywhere;padding-right:12px}
 .potential-forge .pf-tile-sub{color:var(--pf-text-3);font-size:11px;font-weight:700}
-.potential-forge .pf-tile-pips{display:flex;gap:5px}
+.potential-forge .pf-tile-pips{display:flex;flex:0 0 auto;gap:5px;padding:2px}
 .potential-forge .pf-tile-pips i{width:7px;height:7px;transform:rotate(45deg);background:var(--grade);box-shadow:0 0 4px color-mix(in srgb,var(--grade) 60%,transparent)}
 .potential-forge .pf-tile-pips i.is-off{background:transparent;box-shadow:inset 0 0 0 1px #3a3d47}
 .potential-forge .pf-picker-grades{flex:0 0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:0 16px 14px}
@@ -319,9 +328,6 @@
 .potential-forge .pf-error{padding:9px 12px;border:1px solid rgba(239,114,104,.4);border-radius:4px;background:rgba(127,29,29,.25);color:#ffb4ac;font-size:13px;font-weight:700}
 
 /* 버튼 */
-.potential-forge .pf-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:52px;padding:0 16px;border-radius:6px;font-size:16px;font-weight:800;letter-spacing:.02em;line-height:1.2;cursor:pointer;transition:transform .08s,filter .15s,box-shadow .15s}
-.potential-forge .pf-btn:active:not(:disabled){transform:translateY(3px)}
-.potential-forge .pf-btn:disabled{cursor:not-allowed;filter:grayscale(.85) brightness(.7);opacity:.6}
 .potential-forge .pf-btn-iron{border:1px solid #4a4f5c;background:linear-gradient(180deg,#363a45,#22252c 55%,#1a1c22);color:#e6e9ef;box-shadow:inset 0 1px 0 rgba(255,255,255,.12),inset 0 -2px 0 rgba(0,0,0,.4),0 4px 0 #07080a,0 8px 16px rgba(0,0,0,.4)}
 .potential-forge .pf-btn-iron:hover:not(:disabled){background:linear-gradient(180deg,#414552,#282b33 55%,#1e2026)}
 .potential-forge .pf-btn-iron:active:not(:disabled){box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 1px 0 #07080a}
@@ -336,6 +342,10 @@
   box-shadow:inset 0 1px 0 rgba(255,255,255,.4),inset 0 -3px 0 rgba(60,6,2,.5),0 4px 0 #4a0f0a,0 10px 26px rgba(226,100,90,.3)}
 .potential-forge .pf-btn-stop:hover:not(:disabled){background:linear-gradient(180deg,#ee766c,#c4433a 50%,#962a20)}
 .potential-forge .pf-stop-mark{width:16px;height:16px;border-radius:2px;background:#fff4f2;box-shadow:0 1px 0 #4a0c07}
+.potential-forge .pf-speed{display:flex;align-items:center;justify-content:center;gap:6px}
+.potential-forge .pf-speed-label{margin-right:6px;color:var(--pf-text-2);font-size:12px;font-weight:800}
+.potential-forge .pf-speed-btn{min-height:36px;min-width:60px;padding:6px 12px;border:1px solid #4a402c;border-radius:3px;background:linear-gradient(#282820,#12120f);color:#b7ab91;font-size:13px;box-shadow:inset 0 1px 0 #ffffff12,0 2px 0 #050505}
+.potential-forge .pf-speed-btn[aria-pressed=true]{border-color:var(--pf-brass);background:linear-gradient(#725526,#35240c);color:var(--pf-brass-hi);box-shadow:inset 0 0 0 1px #ffe2a333,0 0 12px #e8b04b33}
 
 /* ===== 진행 화면 ===== */
 .potential-forge .pf-embers{position:absolute;inset:0;z-index:1;pointer-events:none}
@@ -343,7 +353,7 @@
 .potential-forge .pf-embers i{background:#ffb36b;box-shadow:0 0 6px #ff8a3d;animation:pf-ember 2.2s linear infinite;animation-delay:calc(var(--t) * 6)}
 .potential-forge .pf-embers i:nth-child(3n){animation-duration:2.9s}
 .potential-forge .pf-core[data-mode=halt] .pf-embers{display:none}
-.potential-forge .pf-pulse{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;border:2px solid color-mix(in srgb,var(--tier) 70%,var(--pf-brass));box-shadow:0 0 18px color-mix(in srgb,var(--tier) 50%,transparent);animation:pf-pulse .6s ease-out forwards}
+.potential-forge .pf-pulse{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;border:2px solid color-mix(in srgb,var(--tier) 70%,var(--pf-brass));box-shadow:0 0 18px color-mix(in srgb,var(--tier) 50%,transparent);animation:pf-pulse calc(.6s / var(--pf-speed,1)) ease-out forwards}
 .potential-forge .pf-counter{display:flex;align-items:baseline;justify-content:center;gap:6px;margin-top:-2px}
 .potential-forge .pf-counter-n{display:inline-block;font-family:var(--pf-display);font-weight:400;font-size:46px;line-height:1;font-variant-numeric:tabular-nums;color:var(--pf-brass-hi);text-shadow:0 2px 0 #5b3d0d,0 0 22px rgba(232,176,75,.45)}
 .potential-forge .pf-counter-n.is-bump{animation:pf-bump .28s ease-out}
@@ -509,7 +519,7 @@
   .potential-forge .pf-picker-seal-name{font-size:15px}
   .potential-forge .pf-picker-label{margin:10px 14px 5px}
   .potential-forge .pf-picker-grid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));margin:0 4px;padding:2px 8px 10px}
-  .potential-forge .pf-tile{min-height:52px;padding:7px 9px}
+  .potential-forge .pf-tile{min-height:76px;padding:9px}
   .potential-forge .pf-picker-grades{gap:6px;padding:0 12px 10px}
   .potential-forge .pf-facet{min-height:62px;padding:7px 2px 6px}
   .potential-forge .pf-picker-foot{padding:10px 12px calc(10px + env(safe-area-inset-bottom))}

@@ -8,10 +8,10 @@
     const GRADES = ['bronze', 'silver', 'gold', 'platinum'];
     const GRADE_LABEL = { bronze: '브론즈', silver: '실버', gold: '골드', platinum: '플레티넘' };
     const TIERS = ['rare', 'epic', 'unique', 'legendary'];
-    const SLOT_SR = ['첫 번째 줄', '두 번째 줄', '세 번째 줄'];
+    const SLOT_SR = ['첫 번째 조건', '두 번째 조건', '세 번째 조건'];
     const JEWEL_NAME = { none: '촉매 없음', jewel: '쥬얼', white: '화이트 쥬얼' };
     const STOP_TEXT = {
-        matched: { tone: 'win', title: '목표 달성!', sub: '정한 목표 줄이 한꺼번에 새겨졌습니다.' },
+        matched: { tone: 'win', title: '목표 달성!', sub: '줄 위치와 관계없이 모든 조건을 충족했습니다.' },
         budget: { tone: 'halt', title: '골드 한도 도달', sub: '정한 한도 안에서 목표를 찾지 못했습니다.' },
         gold: { tone: 'halt', title: '골드 부족', sub: '다음 각인 비용이 보유 골드보다 많아 멈췄습니다.' },
         jewel: { tone: 'halt', title: '쥬얼 소진', sub: '쥬얼이 떨어져 멈췄습니다. 골드 결제로 바꾸지 않았습니다.' },
@@ -117,15 +117,37 @@
     function normTargets(raw, optMap) {
         return [0, 1, 2].map(i => {
             const t = Array.isArray(raw) ? raw[i] : null;
-            if (!t || !optMap.has(String(t.key))) return null;
-            const grades = gradesOf(optMap.get(String(t.key)));
-            return { key: String(t.key), grade: grades.includes(t.grade) ? t.grade : grades[0] };
+            const keys = t && (Array.isArray(t.keys) ? t.keys : [t.key]).filter(key => optMap.has(key));
+            if (!keys || !keys.length) return null;
+            const grades = targetGrades(keys, optMap);
+            return { keys: [...new Set(keys)], grade: grades.includes(t.grade) ? t.grade : grades[0] };
         });
+    }
+    function targetGrades(keys, optMap) {
+        return GRADES.filter(g => keys.some(key => gradesOf(optMap.get(key)).includes(g))
+            && keys.every(key => gradesOf(optMap.get(key)).some(available => gradeIdx(available) >= gradeIdx(g))));
+    }
+    function targetName(t, optMap, compact = false) {
+        const names = t.keys.map(key => optMap.get(key)?.label || key);
+        return compact && names.length > 2 ? names.slice(0, 2).join(' 또는 ') + ' 외 ' + (names.length - 2) + '개' : names.join(' 또는 ');
     }
     function targetText(t, optMap) {
         if (!t) return '조건 없음';
-        const o = optMap.get(t.key);
-        return (o ? o.label : t.key) + ' ' + GRADE_LABEL[t.grade] + ' 이상';
+        return targetName(t, optMap) + ' ' + GRADE_LABEL[t.grade] + ' 이상';
+    }
+    function conditionSummary(targets, optMap) {
+        const el = h('ul', 'pf-conditions');
+        el.setAttribute('aria-label', '목표 조건 충족 현황');
+        const rows = targets.map(t => {
+            if (!t) return null;
+            const row = h('li');
+            row.title = targetText(t, optMap);
+            row.append(h('span', null, targetName(t, optMap, true) + ' ' + GRADE_LABEL[t.grade] + ' 이상'));
+            const status = h('b', null, '미충족'); row.append(status); el.append(row);
+            return { row, status };
+        });
+        const sync = matched => rows.forEach((entry, i) => { if (entry) { entry.row.classList.toggle('is-met', !!matched?.[i]); entry.status.textContent = matched?.[i] ? '충족' : '미충족'; } });
+        return { el, sync };
     }
     function affordability(info, jewel) {
         const opt = (info.options || {})[jewel] || {};
@@ -179,6 +201,24 @@
         });
         sync();
         return b;
+    }
+
+    function speedControl(value, onChange, disabled = false) {
+        const el = h('div', 'pf-speed');
+        el.setAttribute('role', 'group');
+        el.setAttribute('aria-label', '자동 각인 속도');
+        el.append(h('span', 'pf-speed-label', '각인 속도'));
+        const buttons = [1, 2, 3].map(speed => {
+            const b = button('pf-speed-btn', () => { sync(speed); play('select'); call(onChange, speed); }, speed + '배속');
+            b.dataset.pfSpeed = String(speed);
+            b.dataset.pfFocus = 'speed' + speed;
+            b.disabled = disabled;
+            el.append(b);
+            return b;
+        });
+        function sync(speed) { buttons.forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.pfSpeed) === (speed || 1)))); }
+        sync(value);
+        return { el, sync };
     }
 
     // ---------- 공통 조각 ----------
@@ -285,7 +325,9 @@
             const lampText = h('span', 'pf-lamp-t');
             lamp.append(h('i', 'pf-lamp-orb'), lampText);
             const goalLine = h('span', 'pf-line-goal');
-            goalLine.append(h('em', null, '목표'), document.createTextNode(goal.text));
+            ln.goalText = h('span', null, goal.text);
+            ln.goalLine = goalLine;
+            goalLine.append(h('em', null, '조건'), ln.goalText);
             body.append(goalLine);
             el.classList.add('has-goal');
             el.append(lamp);
@@ -298,7 +340,14 @@
     function setLamp(ln, state) {
         if (!ln.lamp) return;
         ln.lamp.dataset.state = state;
-        ln.lampText.textContent = state === 'on' ? '충족' : state === 'off' ? '미충족' : '자유';
+        ln.lampText.textContent = state === 'on' ? '충족' : state === 'off' ? '미충족' : '—';
+    }
+    function setLineCondition(ln, run, index) {
+        const condition = run?.lineMatches?.[index];
+        const used = Number.isInteger(condition);
+        if (ln.goalLine) { ln.goalLine.hidden = !used; ln.goalText.textContent = used ? SLOT_SR[condition] : ''; }
+        setLamp(ln, used ? 'on' : 'free');
+        return used;
     }
     // goals: [{text}|null]×3 — 목표 표시가 필요한 화면에서만 넘긴다
     function tablet(data, title, cls, goals) {
@@ -432,7 +481,7 @@
         if (jewel !== 'none') jewelSec.append(h('p', 'pf-note', '각인 1회마다 ' + JEWEL_NAME[jewel] + ' 1개를 씁니다. 떨어지면 자동 각인이 멈춰요.'));
 
         const tgtSec = section('목표 각인');
-        tgtSec.append(h('p', 'pf-note', '줄마다 원하는 옵션과 최소 등급을 고르세요. 비워 둔 줄은 무엇이 나와도 괜찮습니다.'));
+        tgtSec.append(h('p', 'pf-note', '줄 위치는 상관없습니다. 조건마다 허용할 옵션을 여러 개 고를 수 있고, 그중 하나가 나오면 충족합니다.'));
         const tgtList = h('div', 'pf-targets');
         targets.forEach((_, i) => {
             const trigger = button('pf-rune', () => openPicker({
@@ -441,7 +490,7 @@
                     targets[i] = picked;
                     syncRow();
                     refresh();
-                    call(actions.onTarget, i, picked ? { key: picked.key, grade: picked.grade } : null);
+                    call(actions.onTarget, i, picked ? { keys: [...picked.keys], grade: picked.grade } : null);
                 }
             }));
             trigger.dataset.pfFocus = 'target' + i;
@@ -458,11 +507,10 @@
             trigger.append(socket, text, act);
             const syncRow = () => {
                 const t = targets[i];
-                const o = t && optMap.get(t.key);
                 trigger.dataset.grade = t ? t.grade : '';
                 trigger.classList.toggle('is-set', !!t);
-                name.textContent = t ? (o ? o.label : t.key) : '조건 없음';
-                sub.textContent = t ? GRADE_LABEL[t.grade] + ' 이상' : '무엇이 나와도 통과';
+                name.textContent = t ? targetName(t, optMap, true) : '조건 없음';
+                sub.textContent = t ? GRADE_LABEL[t.grade] + ' 이상' + (t.keys.length > 1 ? ' 중 하나' : '') : '이 조건은 검사하지 않음';
                 act.textContent = t ? '바꾸기' : '정하기';
                 trigger.setAttribute('aria-label', SLOT_SR[i] + ' 목표, ' + name.textContent + (t ? ' ' + sub.textContent : '') + '. 눌러서 고르기');
             };
@@ -502,8 +550,10 @@
         lore.setAttribute('aria-label', '각인 규칙');
         [
             '시도마다 세 줄이 모두 새로 새겨집니다.',
-            '정한 줄이 모두 같은 자리에서 목표 등급 이상으로 맞으면 멈춥니다.',
+            '조건 안에서는 선택한 옵션 중 하나만 나오면 됩니다.',
+            '모든 조건을 서로 다른 줄에서 충족하면 멈춥니다. 한 줄을 두 번 세지 않습니다.',
             '원래 잠재능력은 끝까지 보관되고, 마지막에 원래와 새 잠재 중 직접 고릅니다.',
+            '최대 3회씩 진행합니다. 중단하면 이미 진행한 마지막 결과를 확인합니다.',
             '도중에 티어가 오를 수 있으며, 그 뒤로는 각인 비용이 늘 수 있습니다.'
         ].forEach(t => lore.append(h('li', null, t)));
 
@@ -532,14 +582,14 @@
         autoBtn.append(h('span', 'pf-btn-sigil'), h('span', null, busy ? '각인 중…' : '자동 각인'));
         const btns = h('div', 'pf-actions');
         btns.append(singleBtn, autoBtn);
-        footer.append(cost, btns, autoHint);
+        footer.append(speedControl(model.speed, actions.onSpeed, busy).el, cost, btns, autoHint);
         shell.append(footer);
 
         function blockReason(limit) {
             if (busy) return '각인을 처리하는 중입니다.';
             if (!aff.goldOk) return '골드가 부족합니다.';
             if (!aff.jewelOk) return '선택한 쥬얼이 없습니다.';
-            if (!targets.some(Boolean)) return '목표를 한 줄 이상 정하면 자동 각인을 시작할 수 있어요.';
+            if (!targets.some(Boolean)) return '조건을 하나 이상 정하면 자동 각인을 시작할 수 있어요.';
             if (limit != null && limit < aff.cost) return '골드 한도가 1회 비용보다 적습니다.';
             return '';
         }
@@ -557,7 +607,7 @@
             const reason = blockReason(limit);
             autoBtn.disabled = !!reason;
             const n = targets.filter(Boolean).length;
-            autoHint.textContent = reason || ('목표 ' + n + '줄이 모두 맞을 때까지 자동으로 각인합니다.');
+            autoHint.textContent = reason || ('조건 ' + n + '개를 모두 충족할 때까지 자동으로 각인합니다.');
             autoHint.classList.toggle('is-warn', !!reason && !busy);
         }
         refresh();
@@ -596,7 +646,7 @@
     // 옵션 타일과 등급 보석을 고른 뒤 '목표 새기기'로 확정한다. 취소하면 바뀌지 않는다.
     function openPicker({ root, shell, slot, current, optMap, trigger, onConfirm }) {
         if (shell.querySelector('.pf-picker-overlay')) return;
-        let pending = current ? { key: current.key, grade: current.grade } : null;
+        let pending = current ? { keys: [...current.keys], grade: current.grade } : null;
         const scroller = root.closest('.pot-wrap');
         const keepScroll = scroller ? scroller.scrollTop : 0;
 
@@ -633,7 +683,7 @@
         const optLabel = h('div', 'pf-picker-label');
         const optLabelId = uid();
         optLabel.id = optLabelId;
-        optLabel.append(h('span', null, '옵션'));
+        optLabel.append(h('span', null, '허용 옵션'), h('span', 'pf-picker-hint', '여러 개 선택 가능 / 스크롤'));
         const grid = h('div', 'pf-picker-grid');
         grid.setAttribute('role', 'group');
         grid.setAttribute('aria-labelledby', optLabelId);
@@ -652,7 +702,7 @@
                     pips.append(p);
                 });
                 tile.append(pips);
-            } else tile.append(h('span', 'pf-tile-sub', '무엇이 나와도 통과'));
+            } else tile.append(h('span', 'pf-tile-sub', '이 조건은 검사하지 않음'));
             tiles.push(tile);
             grid.append(tile);
         };
@@ -689,10 +739,9 @@
         panel.append(head, seal, optLabel, grid, gradeLabel, gradeRow, foot);
 
         function sync() {
-            const key = pending ? pending.key : '';
-            const opt = pending && optMap.get(pending.key);
-            const ok = opt ? gradesOf(opt) : [];
-            tiles.forEach(t => t.setAttribute('aria-pressed', String(t.dataset.pfOption === key)));
+            const keys = pending ? pending.keys : [];
+            const ok = pending ? targetGrades(keys, optMap) : [];
+            tiles.forEach(t => t.setAttribute('aria-pressed', String(keys.length ? keys.includes(t.dataset.pfOption) : t.dataset.pfOption === '')));
             facets.forEach(f => {
                 const g = f.dataset.pfGrade;
                 f.disabled = !pending || !ok.includes(g);
@@ -700,24 +749,27 @@
             });
             seal.dataset.grade = pending ? pending.grade : '';
             seal.classList.toggle('is-set', !!pending);
-            sealName.textContent = opt ? String(opt.label) : '조건 없음';
-            sealGrade.textContent = pending ? GRADE_LABEL[pending.grade] + ' 이상이면 충족' : '이 줄은 무엇이 나와도 통과';
+            sealName.textContent = pending ? targetName(pending, optMap, true) : '조건 없음';
+            sealGrade.textContent = pending ? keys.length + '개 중 하나가 ' + GRADE_LABEL[pending.grade] + ' 이상이면 충족' : '이 조건은 검사하지 않음';
             gradeHint.textContent = pending ? '' : '조건 없음은 등급을 고르지 않습니다';
         }
         function pickOption(key) {
             const o = optMap.get(key);
             if (!o) pending = null;
             else {
-                const ok = gradesOf(o);
+                const keys = pending ? [...pending.keys] : [];
+                const index = keys.indexOf(key);
+                if (index >= 0) keys.splice(index, 1); else keys.push(key);
+                const ok = targetGrades(keys, optMap);
                 const prev = pending && pending.grade;
-                pending = { key, grade: ok.includes(prev) ? prev : ok[0] };
+                pending = keys.length ? { keys, grade: ok.includes(prev) ? prev : ok[0] } : null;
             }
             sync();
             play('select');
         }
         function pickGrade(g) {
             if (!pending) return;
-            pending = { key: pending.key, grade: g };
+            pending = { keys: pending.keys, grade: g };
             sync();
             play('select', g);
         }
@@ -788,9 +840,9 @@
         shell.append(overlay);
         if (scroller) scroller.classList.add('pf-locked');
         play('select');
-        const start = tiles.find(t => t.getAttribute('aria-pressed') === 'true') || tiles[0];
-        start.focus({ preventScroll: true });
-        grid.scrollTop = Math.max(0, start.offsetTop - (grid.clientHeight - start.offsetHeight) / 2);
+        // 중간 행부터 잘려 보이지 않도록 목록은 처음부터 연다. 선택값은 상단 미리보기에 유지한다.
+        tiles[0].focus({ preventScroll: true });
+        grid.scrollTop = 0;
     }
 
     // ---------- 자동 각인 진행 화면 ----------
@@ -814,6 +866,7 @@
         const r = { id: run.id, targets, prevRolls: -1, prevMatched: [false, false, false], prevTier: null, sealed: false, actions: null };
 
         const shell = h('div', 'pf-shell is-running');
+        r.shell = shell;
         shell.setAttribute('role', 'region');
         shell.setAttribute('aria-label', '자동 각인 진행');
         shell.append(header('자동 각인', eqTitle(eq), null));
@@ -860,14 +913,15 @@
         forge.append(s.stage, stats);
 
         const right = h('div', 'pf-col');
-        const goals = targets.map(t => ({ text: targetText(t, optMap) }));
+        const goals = [0, 1, 2].map(() => ({ text: '' }));
         const cand = tablet(res && res.new, '최신 후보', 'is-candidate is-rolling', goals);
         r.cand = cand;
         r.tierBanner = h('div', 'pf-tier-banner');
         r.tierBanner.setAttribute('aria-live', 'polite');
         cand.el.append(r.tierBanner);
         const keep = tablet(original, '보관 중인 원래 잠재', 'is-kept is-compact');
-        right.append(cand.el, keep.el);
+        r.conditions = conditionSummary(targets, optMap);
+        right.append(r.conditions.el, cand.el, keep.el);
         body.append(forge, right);
         shell.append(body);
 
@@ -877,7 +931,8 @@
         r.stopBtn.dataset.pfFocus = 'stop';
         r.stopLabel = h('span', null, '각인 멈추기');
         r.stopBtn.append(h('span', 'pf-stop-mark'), r.stopLabel);
-        footer.append(r.stopBtn, h('p', 'pf-auto-hint', '멈춰도 원래 잠재능력은 그대로 보관됩니다.'));
+        r.speed = speedControl(model.speed, speed => { r.shell.style.setProperty('--pf-speed', String(speed)); call(r.actions && r.actions.onSpeed, speed); });
+        footer.append(r.speed.el, r.stopBtn, h('p', 'pf-auto-hint', '진행한 최대 3회 중 마지막 결과를 보관합니다. 원래 잠재능력은 유지됩니다.'));
         shell.append(footer);
 
         st.run = r;
@@ -892,6 +947,8 @@
         const fresh = rolls !== r.prevRolls;
         const entries = (res && res.new && res.new.entries) || [];
         const running = run.status === 'running';
+        r.speed.sync(model.speed);
+        r.shell.style.setProperty('--pf-speed', String(model.speed || 1));
 
         r.core.dataset.mode = running ? 'running' : 'halt';
         if (fresh) {
@@ -929,19 +986,17 @@
             r.prevTier = tierKey;
         }
 
-        // 목표 표시등은 서버가 준 run.matched만 따른다
-        const matched = Array.isArray(run.matched) ? run.matched : [];
+        // 조건별 충족과 각 줄에 배정된 조건은 서버 판정을 따른다.
+        r.conditions.sync(run.matched);
         r.cand.lines.forEach((ln, i) => {
-            const on = !!matched[i];
-            const state = !r.targets[i] ? 'free' : on ? 'on' : 'off';
-            setLamp(ln, state);
-            if (state === 'on' && !r.prevMatched[i]) {
+            const on = setLineCondition(ln, run, i);
+            if (on && !r.prevMatched[i]) {
                 ln.el.classList.remove('is-hit');
                 void ln.el.offsetWidth;
                 ln.el.classList.add('is-hit');
                 play('lamp');
             }
-            r.prevMatched[i] = state === 'on';
+            r.prevMatched[i] = on;
         });
 
         const limit = run.goldLimit == null ? null : num(run.goldLimit);
@@ -1059,7 +1114,7 @@
         // 이전 / 이후 비교
         const cmp = h('div', 'pf-compare');
         const before = tablet(res.old, '이전 잠재', 'is-before');
-        const goals = run && targets.some(Boolean) ? targets.map(t => ({ text: targetText(t, optMap) })) : null;
+        const goals = run && targets.some(Boolean) ? [0, 1, 2].map(() => ({ text: '' })) : null;
         const after = tablet(res.new, '새 잠재', 'is-after', goals);
         const matched = run && Array.isArray(run.matched) ? run.matched : [];
         after.lines.forEach((ln, i) => {
@@ -1067,7 +1122,7 @@
             ln.el.style.setProperty('--d', (LINE_AT + LINE_GAP * i) + 'ms');
             const g = gradeIdx(ln.el.dataset.grade);
             if (g >= 2) ln.el.append(sparks(g >= 3 ? 10 : 6, 'pf-line-sparks pf-fx'));
-            if (goals) setLamp(ln, !targets[i] ? 'free' : matched[i] ? 'on' : 'off');
+            if (goals) setLineCondition(ln, run, i);
         });
         const arrow = h('div', 'pf-arrow');
         arrow.setAttribute('aria-hidden', 'true');
@@ -1075,9 +1130,11 @@
         if (goals) {
             const need = targets.filter(Boolean).length;
             const hit = targets.filter((t, i) => t && matched[i]).length;
-            const tally = h('p', 'pf-tally pf-intro' + (hit === need ? ' is-full' : ''), '목표 ' + hit + ' / ' + need + '줄 충족');
+            const tally = h('p', 'pf-tally pf-intro' + (hit === need ? ' is-full' : ''), '조건 ' + hit + ' / ' + need + '개 충족');
             tally.style.setProperty('--d', FINALE_AT + 'ms');
-            cmp.append(tally);
+            const conditions = conditionSummary(targets, optMap);
+            conditions.sync(matched);
+            cmp.append(tally, conditions.el);
         }
         const right = h('div', 'pf-col');
         right.append(cmp);

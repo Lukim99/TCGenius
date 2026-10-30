@@ -1704,7 +1704,7 @@ async function awakenPotential(eq, event) {
 let potentialState = null;
 function potentialModel(state) {
     return { equipment: state.eq, info: state.info, jewel: state.jewel, targets: state.targets,
-        goldLimit: state.goldLimit, busy: state.busy, error: state.error,
+        goldLimit: state.goldLimit, speed: state.speed, busy: state.busy, error: state.error,
         run: state.auto && state.auto.run, result: state.lastResult };
 }
 function renderRerollSetup() {
@@ -1714,12 +1714,16 @@ function renderRerollSetup() {
         onJewel: key => { if (state.busy) return; state.jewel = key; renderRerollSetup(); },
         onTarget: (index, target) => { state.targets[index] = target; },
         onBudget: value => { state.goldLimit = value; },
+        onSpeed: value => { state.speed = value; },
         onSingle: doReroll, onAuto: startPotentialAutoClient, onClose: closeRerollModal
     });
 }
 function renderPotentialRunning(state) {
     if (state !== potentialState || state.closed) return;
-    PotentialForge.renderRunning($('#potentialContent'), potentialModel(state), { onStop: stopPotentialAutoClient });
+    const frame = state.displayFrame;
+    const model = potentialModel(state);
+    if (frame) Object.assign(model, { run: frame.run, result: frame.result, info: { ...model.info, gold: frame.gold, jewels: frame.jewels } });
+    PotentialForge.renderRunning($('#potentialContent'), model, { onStop: stopPotentialAutoClient, onSpeed: value => { state.speed = value; } });
 }
 function showRerollResult(data) {
     const state = potentialState;
@@ -1732,7 +1736,7 @@ function showRerollResult(data) {
 }
 function openRerollModal(eq) {
     if (potentialState && !potentialState.closed) return;
-    potentialState = { eq, info: null, jewel: 'none', targets: [null, null, null], goldLimit: '', busy: false, auto: null, lastResult: null, closed: false };
+    potentialState = { eq, info: null, jewel: 'none', targets: [null, null, null], goldLimit: '', speed: 1, busy: false, auto: null, lastResult: null, closed: false };
     const overlay = $('#potentialOverlay');
     overlay.classList.add('active');
     overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '잠재능력 각인 공방');
@@ -1759,8 +1763,9 @@ function closeRerollModal() {
 function acceptPotentialAutoResponse(state, data) {
     state.auto = data;
     state.lastResult = data.result;
-    if (data.info && !data.info.error) state.info = data.info;
+    if (data.info && !data.info.error) state.info = { ...state.info, ...data.info };
     if (state.info && state.info.equipment) state.eq = state.info.equipment;
+    if (data.number) state.eq = { ...state.eq, number: data.number };
     if (data.jewel) state.jewel = data.jewel;
     if (data.targets) state.targets = data.targets;
     state.goldLimit = data.run.goldLimit == null ? '' : String(data.run.goldLimit);
@@ -1828,6 +1833,7 @@ async function startPotentialAutoClient() {
 }
 async function pumpPotentialAuto(state) {
     const runId = state.auto.run.id;
+    state.displayFrame = null;
     while (state.auto && state.auto.run.id === runId && state.auto.run.status === 'running') {
         if (state.closed || state.stopRequested || state !== potentialState) {
             const data = await postApi('/api/potential/auto/stop', { id: state.auto.run.id });
@@ -1836,13 +1842,21 @@ async function pumpPotentialAuto(state) {
         }
         renderPotentialRunning(state);
         state.busy = true;
+        let frames;
         try {
-            const data = await postApi('/api/potential/auto/step', { id: state.auto.run.id, expectedRolls: state.auto.run.rolls });
+            const data = await postApi('/api/potential/auto/step', { id: state.auto.run.id, expectedRolls: state.auto.run.rolls, batchSize: 3 });
             acceptPotentialAutoResponse(state, data);
+            frames = data.frames || [data];
         } finally { state.busy = false; }
-        if (state.auto.run.status !== 'running') break;
-        renderPotentialRunning(state);
-        await new Promise(resolve => setTimeout(resolve, 650));
+        // 저장이 끝난 묶음을 한 회차씩 공개한다. 속도를 높여도 DB 요청을 회차별로 보내지 않는다.
+        for (const frame of frames) {
+            if (state.closed || state.stopRequested || state !== potentialState || state.auto?.run.id !== runId) break;
+            state.displayFrame = frame;
+            renderPotentialRunning(state);
+            if (frame.run.status !== 'running') break;
+            await new Promise(resolve => setTimeout(resolve, 650 / state.speed));
+        }
+        state.displayFrame = null;
     }
     if (state === potentialState && !state.closed && state.auto && state.auto.run.id === runId) showRerollResult(state.lastResult);
 }
@@ -1851,7 +1865,8 @@ async function stopPotentialAutoClient() {
     if (!state || !state.auto) return;
     const runId = state.auto.run.id;
     state.stopRequested = true;
-    // 진행 중인 한 회차는 저장을 마친 뒤 멈추며, 다음 회차 대기 중에도 즉시 중단한다.
+    state.displayFrame = null;
+    // 진행 중인 최대 3회 묶음은 저장을 마친 뒤 멈추며, 공개 대기 중에도 마지막 저장 결과로 이동한다.
     try {
         const data = await postApi('/api/potential/auto/stop', { id: runId });
         if (!state.auto || state.auto.run.id !== runId) return;
