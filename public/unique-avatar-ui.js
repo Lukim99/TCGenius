@@ -570,7 +570,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         uStats.append(optLi);
         outUnique.el.append(uStats);
         outRows.append(outUnique.el, outNormal.el);
-        outcome.el.append(outRows);
+        outcome.el.append(h('p', 'ua-out-note', '아래 결과 중 1종을 획득합니다.'), outRows);
         rail.append(cubes.el, pity.el, outcome.el);
 
         // 결과 캐릭터
@@ -635,9 +635,12 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         function outcomeRow(kind, label) {
             const el = h('div', 'ua-out');
             el.dataset.kind = kind;
+            const head = h('div', 'ua-out-head');
+            const rate = h('b', 'ua-out-rate');
             const desc = h('span', 'ua-out-desc');
-            el.append(h('span', 'ua-out-name', label), desc);
-            return { el, desc };
+            head.append(h('span', 'ua-out-name', label), rate);
+            el.append(head, desc);
+            return { el, desc, rate };
         }
         function announce(text) { live.textContent = ''; live.textContent = text; }
         function focusDrawer() {
@@ -836,8 +839,11 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             [...charRow.querySelectorAll('.ua-char')].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === sid(s.characterId))));
 
             const charName = ch ? ch.name : '고른 캐릭터';
+            const uniqueRate = cube ? (pityOn ? 100 : Math.round(Number(cube.chance) * 100)) : null;
+            outUnique.rate.textContent = uniqueRate == null ? '—' : uniqueRate + '%';
+            outNormal.rate.textContent = uniqueRate == null ? '—' : (100 - uniqueRate) + '%';
             outUnique.desc.textContent = charName + ' 유니크 아바타' + (pityOn ? ' (다음 합성 확정)' : '');
-            outNormal.desc.textContent = charName + ' 일반 아바타';
+            outNormal.desc.textContent = charName + ' 일반 아바타 중 1종';
             outNormal.el.classList.toggle('is-off', pityOn);
 
             const full = s.materials.length >= 2;
@@ -1052,6 +1058,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         // ----- 닫기 / 정리 -----
         function requestClose() {
             if (s.busy || s.stale) return;
+            if (s.view === 'reveal') { backToSetup(); return; }
             destroy();
             if (current === inst) current = null;
             call(actions.close);

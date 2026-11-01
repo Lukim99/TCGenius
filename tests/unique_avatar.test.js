@@ -341,7 +341,8 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         const materialIds = httpUser.avatars.slice(0, 2).map(a => a.id);
         await select(materialIds);
         assert.equal(await page.$('.ua-sound, .ua-cube-price, .ua-cube-rate, .ua-odds'), null);
-        assert.doesNotMatch(await page.$eval('.ua-overlay', node => node.textContent), /10%|15%|25%|100%|300P|300 마일리지|600 마일리지/);
+        assert.doesNotMatch(await page.$eval('.ua-overlay', node => node.textContent), /300P|300 마일리지|600 마일리지/);
+        assert.deepEqual(await page.$$eval('.ua-out-rate', nodes => nodes.map(node => node.textContent)), ['100%', '0%']);
         assert.equal(await page.$$eval('.ua-char img', images => images.every(image => decodeURIComponent(image.src).includes('유니크아바타/전신/'))), true);
         assert.equal(await page.$eval('.ua-item[data-grade="unique"] img', image => decodeURIComponent(image.src).includes('1차 유니크 아바타.png')), true);
         assert.equal(await page.$eval('.ua-go', button => button.disabled), false);
@@ -349,6 +350,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.screenshot({ path: path.join(dir, 'synthesis-desktop.png') });
         await page.setViewport({ width: 390, height: 844 });
         await page.screenshot({ path: path.join(dir, 'synthesis-mobile.png') });
+        await (await page.$('.ua-filter')).screenshot({ path: path.join(dir, 'synthesis-filter-mobile.png') });
         assert.equal(await page.$eval('.ua-overlay', node => node.scrollWidth <= innerWidth + 1), true);
         await page.click('.ua-go');
         await page.waitForSelector('.ua-overlay[data-view="reveal"] .is-settled', { timeout: 15000 });
@@ -360,7 +362,21 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.screenshot({ path: path.join(dir, 'unique-result-mobile.png') });
         await page.setViewport({ width: 1440, height: 1000 });
         await page.screenshot({ path: path.join(dir, 'unique-result-desktop.png') });
-        await page.click('.ua-reveal-actions .ua-btn-gold');
+        await page.click('.ua-reveal-actions .ua-btn-line');
+        assert.equal(await page.$eval('.ua-overlay', node => node.dataset.view), 'setup');
+        for (const [index, rates] of [[0, ['10%', '90%']], [1, ['15%', '85%']], [2, ['25%', '75%']]]) {
+            const cubeId = fixture.Item.findIndex(item => item.name === unique.CUBES[index].name);
+            await page.click('.ua-cube[data-id="' + cubeId + '"]');
+            assert.deepEqual(await page.$$eval('.ua-out-rate', nodes => nodes.map(node => node.textContent)), rates);
+        }
+        await page.setViewport({ width: 1280, height: 720 });
+        await (await page.$('.ua-filter')).screenshot({ path: path.join(dir, 'synthesis-filter-desktop.png') });
+        await page.screenshot({ path: path.join(dir, 'synthesis-probability-desktop.png') });
+        await page.setViewport({ width: 1440, height: 1000 });
+        await page.$eval('.ua-outcome-panel', node => node.scrollIntoView({ block: 'nearest', behavior: 'instant' }));
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await (await page.$('.ua-outcome-panel')).screenshot({ path: path.join(dir, 'synthesis-outcome-probabilities.png') });
+        await page.click('.ua-cube[data-id="' + fixture.Item.findIndex(item => item.name === unique.CUBES[0].name) + '"]');
         await select(httpUser.avatars.slice(0, 2).map(a => a.id), 1);
         await page.click('.ua-go');
         await page.waitForSelector('.ua-overlay[data-tone="normal"] .is-settled', { timeout: 15000 });
@@ -370,8 +386,12 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.screenshot({ path: path.join(dir, 'normal-result-desktop.png') });
         assert.ok(audio.size >= 4); assert.ok([...audio.values()].every(status => status === 200));
         assert.ok(await page.evaluate(() => window.__avatarAudioStarts > 0));
-        await page.evaluate(() => UniqueAvatarUI.close());
+        await page.click('.ua-reveal-actions .ua-btn-gold');
+        await page.evaluate(() => { shopTab = '마일리지'; });
+        await page.click('.ua-shop');
         assert.equal(await page.$('.ua-overlay'), null);
+        await page.waitForSelector('.shop-game-controls [data-category="포인트"][aria-pressed="true"]');
+        await page.screenshot({ path: path.join(dir, 'cube-purchase-point-shop.png') });
         await page.evaluate(async () => { openRichModal('빵귤', '아바타', []); await appendAvatarSection({ source: 'main' }); });
         await page.click('.uaw-head');
         await page.click('.uaw-tile[data-grade="unique"]');

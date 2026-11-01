@@ -1161,7 +1161,7 @@ async function openAvatarSynthesis(cubeName) {
         closePresetNestedModal(); closeModal();
         window.UniqueAvatarUI.open(model, {
             close: () => {},
-            shop: () => { window.UniqueAvatarUI.close(); activatePage('shop'); },
+            shop: () => { window.UniqueAvatarUI.close(); shopTab = '포인트'; activatePage('shop'); },
             synthesize: async body => {
                 const signature = JSON.stringify([model.version, body]);
                 if (pendingRequest?.signature !== signature) pendingRequest = { signature, id: crypto.randomUUID() };

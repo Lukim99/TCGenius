@@ -185,6 +185,10 @@ html.ua-locked,html.ua-locked body,html.uas-locked,html.uas-locked body{overflow
 
 /* 결과 미리보기 */
 .ua-outcome{display:flex;flex-direction:column;gap:8px}
+.ua-outcome-panel .ua-out-note{margin-bottom:10px;color:var(--ua-text-2);font-size:12.5px}
+.ua-out-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.ua-out-rate{flex:0 0 auto;color:var(--ua-text);font-size:20px;font-weight:900;line-height:1.3;font-variant-numeric:tabular-nums}
+.ua-out[data-kind=unique] .ua-out-rate{color:var(--ua-gold-hi)}
 .ua-out{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:8px;background:#0a0c0f;border-left:3px solid var(--ua-line-3);transition:opacity .2s}
 .ua-out[data-kind=unique]{border-left-color:var(--ua-gold);background:linear-gradient(90deg,rgba(233,176,79,.08),transparent 70%)}
 .ua-out.is-off{opacity:.38}
@@ -222,9 +226,9 @@ html.ua-locked,html.ua-locked body,html.uas-locked,html.uas-locked body{overflow
 
 /* ----- 재료 서랍: 인벤토리 ----- */
 .ua-drawer{display:flex;flex-direction:column}
-.ua-filter{display:flex;gap:6px;margin:-2px 0 12px;overflow-x:auto;scrollbar-width:none}
+.ua-filter{flex:0 0 auto;display:flex;align-items:center;gap:6px;margin:0 0 12px;padding:2px 0;overflow-x:auto;scrollbar-width:none}
 .ua-filter::-webkit-scrollbar{display:none}
-.ua-tab{flex:0 0 auto;display:inline-flex;align-items:baseline;gap:5px;min-height:36px;padding:0 12px;border:1px solid var(--ua-line);border-radius:8px;background:#0b0d10;color:var(--ua-text-3);font-size:13px;font-weight:800;cursor:pointer}
+.ua-overlay .ua-tab{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:36px;padding:6px 12px;border:1px solid var(--ua-line);border-radius:8px;background:#0b0d10;color:var(--ua-text-3);font-size:13px;font-weight:800;line-height:1.4;white-space:nowrap;cursor:pointer}
 .ua-tab:hover{color:var(--ua-text-2);border-color:var(--ua-line-2)}
 .ua-tab-n{font-size:11.5px;font-variant-numeric:tabular-nums;opacity:.8}
 .ua-tab[aria-pressed=true]{border-color:var(--ua-gold-lo);background:var(--ua-gold-bg);color:var(--ua-gold-hi)}
