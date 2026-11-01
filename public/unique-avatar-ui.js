@@ -552,7 +552,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         const uStats = h('ul', 'ua-out-stats');
         UNIQUE_STATS.forEach(([k, v]) => { const li = h('li'); li.append(h('span', null, k), h('b', null, v)); uStats.append(li); });
         const optLi = h('li', 'is-wide');
-        optLi.append(h('span', null, '비전투 옵션'), h('b', null, UNIQUE_OPTION_COUNT + '종 중 1종 선택'));
+        optLi.append(h('span', null, '추가 옵션'), h('b', null, UNIQUE_OPTION_COUNT + '종 중 1종 선택'));
         uStats.append(optLi);
         outUnique.el.append(uStats);
         outRows.append(outUnique.el, outNormal.el);
@@ -993,9 +993,9 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
                 const stats = h('ul', 'ua-reveal-stats');
                 UNIQUE_STATS.forEach(([k, v], i) => { const li = seq(h('li'), 1200 + i * 90); li.append(h('span', null, k), h('b', null, v)); stats.append(li); });
                 const li = seq(h('li', 'is-opt'), 1380);
-                li.append(h('span', null, '비전투 옵션'), h('b', null, UNIQUE_OPTION_COUNT + '종 중 1종'));
+                li.append(h('span', null, '추가 옵션'), h('b', null, UNIQUE_OPTION_COUNT + '종 중 1종'));
                 stats.append(li);
-                info.append(stats, seq(h('p', 'ua-reveal-note', '비전투 옵션은 아바타 상세 화면에서 자유롭게 설정할 수 있습니다.'), 1450));
+                info.append(stats, seq(h('p', 'ua-reveal-note', '추가 옵션은 비전투 중 아바타 상세 화면에서 자유롭게 변경할 수 있습니다.'), 1450));
             }
             // 결과 이후 확정 게이지
             const G = s.model.guaranteedAt;

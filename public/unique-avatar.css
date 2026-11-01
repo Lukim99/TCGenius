@@ -427,7 +427,7 @@ html.ua-locked,html.ua-locked body{overflow:hidden!important}
 .preset-nested-modal.avatar .avatar-detail-stat.cond{color:var(--text-2,#9aa3b2);font-size:13px;font-weight:400}
 .preset-nested-modal.avatar .avatar-hint{margin-top:8px;color:var(--text-3,#7a818d);font-size:12px;line-height:1.55;text-align:center}
 .preset-nested-modal.avatar .avatar-detail-note{margin-top:12px;padding:12px;border:1px solid var(--border,#2a2e37);border-radius:6px;background:none;color:var(--text-2,#9aa3b2);font-size:13px;line-height:1.5;text-align:center}
-/* 유니크 비전투 옵션: 선택 줄 목록 (.unique-avatar-options 안 button, aria-pressed 또는 .selected) */
+/* 유니크 추가 옵션: 선택 줄 목록 (.unique-avatar-options 안 button, aria-pressed 또는 .selected) */
 .unique-avatar-options{display:flex;flex-direction:column;margin:0 0 12px}
 .unique-avatar-options:empty{display:none}
 .unique-avatar-options .unique-avatar-options-title{margin:4px 0 6px;color:var(--text-2,#9aa3b2);font-size:13px;font-weight:500;text-align:left}

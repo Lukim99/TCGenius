@@ -1178,7 +1178,7 @@ function openAvatarDetailModal(av, avatarRef) {
     function renderOptions() {
         optionBox.replaceChildren();
         if (!selected || av.grade !== '유니크') return;
-        optionBox.appendChild(el('p', { class: 'avatar-hint unique-avatar-options-title' }, '거래 가능 ' + Math.max(0, 3 - Number(selected.trades || 0)) + '회 · 비전투 중 추가 옵션 1개 선택'));
+        optionBox.appendChild(el('p', { class: 'avatar-hint unique-avatar-options-title' }, '거래 가능 ' + Math.max(0, 3 - Number(selected.trades || 0)) + '회 · 추가 옵션은 비전투 중 변경 가능'));
         (av.uniqueOptions || []).forEach(option => optionBox.appendChild(el('button', {
             type: 'button', 'aria-pressed': selected.option === option.id, class: selected.option === option.id ? 'selected' : '',
             onclick: async () => {
