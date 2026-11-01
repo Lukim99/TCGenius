@@ -987,7 +987,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             kicker.append(h('span', null, joinMeta(unique ? '유니크 아바타 획득' : '아바타 획득', result.guaranteed ? '확정 보상' : '')));
             const name = seq(h('h2', 'ua-reveal-name', av.name || ''), 1000);
             name.id = nameId;
-            const meta = seq(h('p', 'ua-reveal-meta', joinMeta(av.grade || (unique ? '유니크' : ''), tradesText(av.remainingTrades))), 1100);
+            const meta = seq(h('p', 'ua-reveal-meta', av.grade || (unique ? '유니크' : '')), 1100);
             info.append(kicker, name, meta);
             if (unique) {
                 const stats = h('ul', 'ua-reveal-stats');
