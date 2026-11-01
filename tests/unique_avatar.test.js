@@ -259,7 +259,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
     try {
         const page = await browser.newPage(), errors = [], audio = new Map();
         page.on('pageerror', error => errors.push(error.message));
-        page.on('response', response => { if (response.url().includes('/assets/potential-forge/') && response.url().endsWith('.mp3')) audio.set(response.url(), response.status()); });
+        page.on('response', response => { if (response.url().includes('/assets/unique-avatar/') && response.url().endsWith('.mp3')) audio.set(response.url(), response.status()); });
         await page.evaluateOnNewDocument(() => {
             window.__avatarAudioStarts = 0;
             const start = AudioBufferSourceNode.prototype.start;
@@ -270,8 +270,15 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.goto(base, { waitUntil: 'networkidle0' });
         await page.evaluate(async () => { openRichModal('빵귤', '아바타', []); await appendAvatarSection({ source: 'main' }); });
         await page.waitForSelector('.uaw-tile');
+        await page.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.querySelectorAll('.uaw img')].map(image => { image.loading = 'eager'; return image.decode(); })); });
+        assert.equal(await page.$$eval('.uaw-tile[data-grade="unique"] img', images => images.every(image => image.src.includes('/card-image?'))), true);
         const dir = path.join(__dirname, '../output/unique-avatar'); fs.mkdirSync(dir, { recursive: true });
         await page.screenshot({ path: path.join(dir, 'wardrobe-desktop.png') });
+        await page.setViewport({ width: 390, height: 844 });
+        await page.screenshot({ path: path.join(dir, 'wardrobe-mobile.png') });
+        await (await page.$('.uaw')).screenshot({ path: path.join(dir, 'wardrobe-panel-mobile.png') });
+        assert.equal(await page.$eval('.uaw', node => node.scrollWidth <= node.clientWidth + 1), true);
+        await page.setViewport({ width: 1440, height: 1000 });
         await page.click('.uaw-synth');
         await page.waitForSelector('.ua-overlay');
         await page.evaluate(() => Promise.all([...document.querySelectorAll('.ua-overlay img')].map(image => { image.loading = 'eager'; return image.decode().catch(() => {}); })));
@@ -282,7 +289,10 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         };
         const materialIds = httpUser.avatars.slice(0, 2).map(a => a.id);
         await select(materialIds);
-        assert.match(await page.$eval('.ua-overlay', node => node.textContent), /100%/);
+        assert.equal(await page.$('.ua-sound, .ua-cube-price, .ua-cube-rate, .ua-odds'), null);
+        assert.doesNotMatch(await page.$eval('.ua-overlay', node => node.textContent), /10%|15%|25%|100%|300P|300 마일리지|600 마일리지/);
+        assert.equal(await page.$$eval('.ua-char img', images => images.every(image => decodeURIComponent(image.src).includes('유니크아바타/전신/'))), true);
+        assert.equal(await page.$eval('.ua-item[data-grade="unique"] img', image => decodeURIComponent(image.src).includes('1차 유니크 아바타.png')), true);
         assert.equal(await page.$eval('.ua-go', button => button.disabled), false);
         await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 450)));
         await page.screenshot({ path: path.join(dir, 'synthesis-desktop.png') });
@@ -294,6 +304,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         assert.equal(httpUser.avatarSynthesisFailures, 0);
         assert.equal(httpUser.avatars.filter(a => a.name === '[1차]유니크 빵귤').length, 2);
         assert.match(await page.$eval('.ua-reveal-name', node => node.textContent), /빵귤/);
+        assert.equal(await page.$eval('.ua-frame-art img', image => image.src.includes('/card-image?')), true);
         await page.screenshot({ path: path.join(dir, 'unique-result-mobile.png') });
         await page.setViewport({ width: 1440, height: 1000 });
         await page.screenshot({ path: path.join(dir, 'unique-result-desktop.png') });
@@ -301,6 +312,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await select(httpUser.avatars.slice(0, 2).map(a => a.id), 1);
         await page.click('.ua-go');
         await page.waitForSelector('.ua-overlay[data-tone="normal"] .is-settled', { timeout: 15000 });
+        assert.equal(await page.$eval('.ua-frame-art img', image => image.src.includes('/card-image?')), true);
         assert.equal(httpUser.avatarSynthesisFailures, 1);
         assert.ok(fixture.Fashion.find(f => f.name === httpUser.avatars.at(-1).name).primary_card.includes(1));
         await page.screenshot({ path: path.join(dir, 'normal-result-desktop.png') });
@@ -311,6 +323,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.evaluate(async () => { openRichModal('빵귤', '아바타', []); await appendAvatarSection({ source: 'main' }); });
         await page.click('.uaw-tile[data-grade="unique"]');
         await page.waitForSelector('.unique-avatar-options button');
+        assert.equal(await page.$eval('.avatar-detail-preview img', image => image.src.includes('/card-image?')), true);
         await page.evaluate(() => [...document.querySelectorAll('.unique-avatar-options button')].find(button => button.textContent === '회복 및 보호막 효과 +5%').click());
         await page.waitForFunction(() => [...document.querySelectorAll('.unique-avatar-options button')].some(button => button.textContent === '회복 및 보호막 효과 +5%' && button.getAttribute('aria-pressed') === 'true'));
         assert.equal(httpUser.avatars.find(a => a.name === '[1차]유니크 빵귤').option, 'recovery');

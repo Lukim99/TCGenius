@@ -5,7 +5,6 @@
     'use strict';
 
     const SVG_NS = 'http://www.w3.org/2000/svg';
-    const SOUND_PREF = 'unique-avatar-sound';
     const SOUND_FILES = ['select', 'charge', 'impact', 'resonance', 'bloom', 'victory'];
     const GRADE_KEYS = [['unique', '유니크'], ['limited', '한정'], ['prestige', '프레스티지'], ['normal', '일반']];
     const UNIQUE_STATS = [['공격력', '+250'], ['체력', '+2,500']];
@@ -76,7 +75,6 @@
     const arr = v => (Array.isArray(v) ? v : []);
     const sid = v => (v == null ? '' : String(v));
     const fmt = v => (Math.round(Number(v) || 0)).toLocaleString('ko-KR');
-    const pct = c => Math.round(Math.max(0, Math.min(1, Number(c) || 0)) * 100) + '%';
     const hash = i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
     function gradeKey(grade, name) {
         const g = String(grade || '');
@@ -86,6 +84,8 @@
         if (/일반/.test(g)) return 'normal';
         return 'other';
     }
+    const synthesisAvatarImage = avatar => gradeKey(avatar.grade, avatar.name) === 'unique'
+        ? avatar.iconUrl || avatar.imageUrl : avatar.portraitUrl || avatar.imageUrl;
     function tradesText(n) {
         if (n == null || n === '') return '';
         const v = Number(n);
@@ -94,27 +94,18 @@
         if (v === 0) return '거래 불가';
         return '거래 ' + fmt(v) + '회';
     }
-    function splitName(name) {
-        const m = /^\[([^\]]+)\]\s*(.*)$/.exec(String(name || ''));
-        return m ? { tag: m[1], rest: m[2] } : { tag: '', rest: String(name || '') };
-    }
-    function gradeChip(grade, name) {
-        const c = h('span', 'ua-grade', grade || '');
-        c.dataset.grade = gradeKey(grade, name);
-        return c;
-    }
+    // 등급·거래 같은 부가 정보는 꼬리표 대신 한 줄 텍스트로 잇는다
+    const joinMeta = (...parts) => parts.filter(Boolean).join(' · ');
 
     // ---------- 효과음: 외부 CC0 음원 레이어링 ----------
     const sound = (() => {
-        let enabled = true;
-        try { enabled = localStorage.getItem(SOUND_PREF) !== 'off'; } catch (_) { }
         let ctx = null, master = null, epoch = 0;
         const buffers = new Map(), loading = new Map(), voices = new Set();
         function load(name) {
             if (buffers.has(name)) return Promise.resolve(buffers.get(name));
             if (!ctx) return Promise.resolve(null);
             if (!loading.has(name)) {
-                const task = fetch('/static/assets/potential-forge/' + name + '.mp3')
+                const task = fetch('/static/assets/unique-avatar/' + name + '.mp3')
                     .then(r => { if (!r.ok) throw new Error('audio'); return r.arrayBuffer(); })
                     .then(bytes => new Promise((ok, fail) => ctx.decodeAudioData(bytes, ok, fail)))
                     .then(buffer => { buffers.set(name, buffer); return buffer; })
@@ -126,7 +117,6 @@
         }
         // 사용자 입력 안에서만 부른다
         function unlock() {
-            if (!enabled) return;
             const AC = window.AudioContext || window.webkitAudioContext;
             if (!AC) return;
             if (!ctx) {
@@ -158,10 +148,10 @@
             voices.clear();
         }
         function cue(name, volume, rate, delay) {
-            if (!enabled || !ctx || document.hidden) return;
+            if (!ctx || document.hidden) return;
             const token = epoch;
             load(name).then(buffer => {
-                if (!buffer || !enabled || token !== epoch || document.hidden || ctx.state !== 'running') return;
+                if (!buffer || token !== epoch || document.hidden || ctx.state !== 'running') return;
                 while (voices.size >= 12) { const old = voices.values().next().value; cut(old); voices.delete(old); }
                 const source = ctx.createBufferSource(), gain = ctx.createGain();
                 source.buffer = buffer;
@@ -187,13 +177,7 @@
                 case 'error': cue('impact', 0.22, 0.6); break;
             }
         }
-        function toggle() {
-            enabled = !enabled;
-            try { localStorage.setItem(SOUND_PREF, enabled ? 'on' : 'off'); } catch (_) { }
-            if (enabled) unlock(); else stop();
-            return enabled;
-        }
-        return { get enabled() { return enabled; }, unlock, play, stop, toggle };
+        return { unlock, play, stop };
     })();
 
     // ---------- WebGL 차원 큐브 + 빛 입자 ----------
@@ -475,7 +459,6 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         const findCube = id => s.model.cubes.find(c => sid(c.id) === sid(id)) || null;
         const findChar = id => s.model.characters.find(c => sid(c.id) === sid(id)) || null;
         const isPity = () => s.model.attempts >= s.model.guaranteedAt - 1;
-        const chanceOf = cube => (isPity() ? 1 : Math.max(0, Math.min(1, Number(cube && cube.chance) || 0)));
 
         function reconcile() {
             s.materials = s.materials.filter(id => findAvatar(id));
@@ -502,15 +485,6 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         live.setAttribute('aria-live', 'polite');
 
         const top = h('header', 'ua-top');
-        const soundBtn = h('button', 'ua-sound');
-        soundBtn.type = 'button';
-        const soundIco = h('i', 'ua-sound-ico');
-        soundIco.setAttribute('aria-hidden', 'true');
-        const soundLabel = h('span', 'ua-sound-label');
-        soundBtn.append(soundIco, soundLabel);
-        const syncSound = () => { soundBtn.setAttribute('aria-pressed', String(sound.enabled)); soundLabel.textContent = sound.enabled ? '효과음 켬' : '효과음 끔'; };
-        soundBtn.addEventListener('click', () => { if (sound.toggle()) sound.play('select'); syncSound(); });
-        syncSound();
         const titleBox = h('div', 'ua-title');
         const title = h('h2', 'ua-title-text', '바인드 큐브 합성');
         title.id = titleId;
@@ -523,7 +497,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         closeBtn.setAttribute('aria-label', '합성 닫기');
         closeBtn.append(icon('x'));
         topActs.append(shopBtn, closeBtn);
-        top.append(soundBtn, titleBox, topActs);
+        top.append(titleBox, topActs);
 
         const body = h('div', 'ua-body');
 
@@ -551,11 +525,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         beamA.setAttribute('aria-hidden', 'true'); beamB.setAttribute('aria-hidden', 'true');
         const coreIcon = h('span', 'ua-core-icon');
         coreIcon.setAttribute('aria-hidden', 'true');
-        const odds = h('div', 'ua-odds');
-        const oddsLabel = h('span', 'ua-odds-k');
-        const oddsValue = h('b', 'ua-odds-v');
-        odds.append(oddsLabel, oddsValue);
-        core.append(coreLight, beamA, beamB, coreFrame, coreIcon, odds);
+        core.append(coreLight, beamA, beamB, coreFrame, coreIcon);
         stage.append(slots[0].el, core, slots[1].el);
 
         // 우측(모바일은 아래) 정보 레일
@@ -582,7 +552,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         const uStats = h('ul', 'ua-out-stats');
         UNIQUE_STATS.forEach(([k, v]) => { const li = h('li'); li.append(h('span', null, k), h('b', null, v)); uStats.append(li); });
         const optLi = h('li', 'is-wide');
-        optLi.append(h('span', null, '비전투 옵션'), h('b', null, UNIQUE_OPTION_COUNT + '종 중 1종 자유 설정'));
+        optLi.append(h('span', null, '비전투 옵션'), h('b', null, UNIQUE_OPTION_COUNT + '종 중 1종 선택'));
         uStats.append(optLi);
         outUnique.el.append(uStats);
         outRows.append(outUnique.el, outNormal.el);
@@ -649,13 +619,9 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         function outcomeRow(kind, label) {
             const el = h('div', 'ua-out');
             el.dataset.kind = kind;
-            const top = h('div', 'ua-out-top');
-            const name = h('span', 'ua-out-name', label);
-            const rate = h('b', 'ua-out-rate');
-            top.append(name, rate);
             const desc = h('span', 'ua-out-desc');
-            el.append(top, desc);
-            return { el, rate, desc };
+            el.append(h('span', 'ua-out-name', label), desc);
+            return { el, desc };
         }
         function announce(text) { live.textContent = ''; live.textContent = text; }
         function focusDrawer() {
@@ -671,16 +637,12 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             s.model.cubes.forEach(c => {
                 const b = btn('ua-cube', null, () => { if (sid(s.cubeId) === sid(c.id)) return; s.cubeId = c.id; s.error = ''; sound.play('select'); syncSetup(); });
                 b.dataset.id = sid(c.id);
-                b.dataset.rate = String(Math.round((Number(c.chance) || 0) * 100));
                 const count = Math.max(0, Math.round(Number(c.count) || 0));
                 const ic = art('ua-cube-icon', c.iconUrl, '', true);
                 ic.setAttribute('aria-hidden', 'true');
-                const text = h('span', 'ua-cube-text');
-                text.append(h('span', 'ua-cube-name', c.name || '바인드 큐브'), h('span', 'ua-cube-rate', '유니크 ' + pct(c.chance)));
                 const cnt = h('span', 'ua-cube-count' + (count ? '' : ' is-empty'), '보유 ' + fmt(count));
-                b.append(ic, text, cnt);
-                if (c.priceLabel) b.append(h('span', 'ua-cube-price', c.priceLabel));
-                b.setAttribute('aria-label', (c.name || '바인드 큐브') + ', 유니크 확률 ' + pct(c.chance) + ', 보유 ' + fmt(count) + '개' + (c.priceLabel ? ', 가격 ' + c.priceLabel : ''));
+                b.append(ic, h('span', 'ua-cube-name', c.name || '바인드 큐브'), cnt);
+                b.setAttribute('aria-label', (c.name || '바인드 큐브') + ', 보유 ' + fmt(count) + '개');
                 cubeRow.append(b);
             });
         }
@@ -709,9 +671,9 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             if (keys.length < 2) { filterRow.hidden = true; return; }
             filterRow.hidden = false;
             [['all', '전체']].concat(keys).forEach(([k, label]) => {
-                const b = btn('ua-chip', null, () => { if (s.filter === k) return; s.filter = k; sound.play('select'); buildFilter(); buildGrid(); syncSetup(); });
+                const b = btn('ua-tab', null, () => { if (s.filter === k) return; s.filter = k; sound.play('select'); buildFilter(); buildGrid(); syncSetup(); });
                 b.dataset.grade = k;
-                b.append(h('span', null, label), h('b', null, fmt(k === 'all' ? s.model.avatars.length : counts[k])));
+                b.append(h('span', null, label), h('span', 'ua-tab-n', fmt(k === 'all' ? s.model.avatars.length : counts[k])));
                 b.setAttribute('aria-pressed', String(s.filter === k));
                 filterRow.append(b);
             });
@@ -732,15 +694,10 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
                 b.dataset.grade = gradeKey(a.grade, a.name);
                 const mark = h('span', 'ua-check');
                 mark.append(icon('check'));
-                const order = h('span', 'ua-item-order');
-                const meta = h('span', 'ua-item-meta');
-                meta.append(gradeChip(a.grade, a.name));
-                const tt = tradesText(a.remainingTrades);
-                if (tt) meta.append(h('span', 'ua-item-trade', tt));
-                const pic = art('ua-item-art', a.portraitUrl || a.imageUrl, '', false, a.name);
-                pic.append(mark, order);
-                if (a.equipped) pic.append(h('span', 'ua-item-eq', '장착 중'));
-                b.append(pic, h('span', 'ua-item-name', a.name || ''), meta);
+                const pic = art('ua-item-art', synthesisAvatarImage(a), '', false, a.name);
+                pic.append(mark);
+                const meta = h('span', 'ua-item-meta', joinMeta(a.grade, a.equipped ? '장착 중' : '', tradesText(a.remainingTrades)));
+                b.append(pic, h('span', 'ua-item-name', a.name || ''), meta, h('span', 'ua-item-order'));
                 b.title = a.name || '';
                 grid.append(b);
             });
@@ -785,10 +742,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
                 slot.inner.append(empty);
                 return;
             }
-            const plate = h('span', 'ua-slot-plate');
-            plate.append(h('span', 'ua-slot-name', a.name || ''), gradeChip(a.grade, a.name));
-            slot.inner.append(art('ua-slot-art', a.portraitUrl || a.imageUrl, '', true, a.name), plate);
-            if (a.equipped) slot.inner.append(h('span', 'ua-item-eq', '장착 중'));
+            slot.inner.append(art('ua-slot-art', synthesisAvatarImage(a), '', true, a.name), h('span', 'ua-slot-name', a.name || ''));
             const x = h('span', 'ua-slot-x');
             x.setAttribute('aria-hidden', 'true');
             x.append(icon('x'));
@@ -811,7 +765,6 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         function syncSetup() {
             const m = s.model;
             const cube = findCube(s.cubeId);
-            const chance = chanceOf(cube);
             const pityOn = isPity();
             const ch = findChar(s.characterId);
             const sel = s.materials.map(findAvatar);
@@ -827,8 +780,6 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
                 coreIcon.replaceChildren(art('ua-core-img', iconUrl, cube ? cube.name : '', true));
             }
             core.classList.toggle('is-pity', pityOn);
-            oddsLabel.textContent = pityOn ? '유니크 확정' : '유니크 확률';
-            oddsValue.textContent = pct(chance);
 
             // 확정 게이지
             if (pips.childElementCount !== m.guaranteedAt) {
@@ -844,21 +795,19 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             pips.setAttribute('aria-valuenow', String(m.attempts));
             const remain = m.guaranteedAt - m.attempts;
             pips.setAttribute('aria-valuetext', pityOn ? '다음 합성 유니크 확정' : '연속 실패 ' + m.attempts + '회, 확정까지 ' + remain + '회');
-            pityMeta.textContent = m.attempts + ' / ' + (m.guaranteedAt - 1);
+            pityMeta.textContent = pityOn ? '다음 합성 확정' : '확정까지 ' + remain + '회';
             pity.el.classList.toggle('is-pity', pityOn);
             pityNote.textContent = pityOn
-                ? '다음 합성은 큐브 종류와 상관없이 유니크 아바타가 확정입니다.'
-                : '유니크가 나오지 않으면 게이지가 오릅니다. ' + remain + '번째 합성에서 확정. 유니크가 나오면 초기화됩니다.';
+                ? '다음 합성은 큐브 종류와 상관없이 유니크 아바타가 나옵니다.'
+                : '유니크가 나오지 않을 때마다 한 칸씩 오르고, 유니크가 나오면 처음부터 다시 셉니다.';
 
             [...cubeRow.querySelectorAll('.ua-cube')].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === sid(s.cubeId))));
             [...charRow.querySelectorAll('.ua-char')].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === sid(s.characterId))));
 
             const charName = ch ? ch.name : '고른 캐릭터';
-            outUnique.rate.textContent = pityOn ? '100% 확정' : pct(chance);
-            outNormal.rate.textContent = pct(1 - chance);
-            outUnique.desc.textContent = '[1차]유니크 ' + charName + ' 아바타';
+            outUnique.desc.textContent = charName + ' 유니크 아바타' + (pityOn ? ' (다음 합성 확정)' : '');
             outNormal.desc.textContent = charName + ' 일반 아바타';
-            outNormal.el.classList.toggle('is-off', chance >= 1);
+            outNormal.el.classList.toggle('is-off', pityOn);
 
             const full = s.materials.length >= 2;
             grid.classList.toggle('is-full', full);
@@ -884,7 +833,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             goBtn.disabled = s.busy || !!reason || s.view !== 'setup';
             goBtn.classList.toggle('is-busy', s.busy);
             goLabel.textContent = s.busy ? '합성 중…' : '합성하기';
-            goSub.textContent = s.busy ? '서버 결과를 기다리는 중' : (pityOn ? '유니크 확정' : '유니크 ' + pct(chance));
+            goSub.textContent = s.busy ? '서버 결과를 기다리는 중' : (pityOn ? '다음 합성 유니크 확정' : '유니크 확정까지 ' + remain + '회');
             cta.classList.toggle('is-ready', !reason && !s.busy);
             cta.classList.toggle('is-blocked', !!m.blockedReason);
 
@@ -1014,7 +963,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             if (unique) halo.append(seq(h('span', 'ua-rays'), 380));
             halo.append(seq(h('span', 'ua-shock'), 0), seq(h('span', 'ua-shock is-echo'), 120));
             frame.append(halo);
-            const portrait = seq(art('ua-frame-art', av.portraitUrl || av.imageUrl, av.name || '', true), OPEN_AT + 40);
+            const portrait = seq(art('ua-frame-art', av.imageUrl, av.name || '', true), OPEN_AT + 40);
             const glow = seq(h('span', 'ua-aperture-glow'), OPEN_AT - 40);
             const aperture = h('span', 'ua-aperture');
             for (let i = 0; i < 6; i++) {
@@ -1035,18 +984,11 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
 
             const info = h('div', 'ua-reveal-info');
             const kicker = seq(h('p', 'ua-reveal-kicker'), 900);
-            kicker.append(h('span', null, unique ? '유니크 아바타 획득' : '아바타 획득'));
-            if (result.guaranteed) kicker.append(h('b', 'ua-tag is-gold', '확정'));
-            const nm = splitName(av.name);
-            const name = seq(h('h2', 'ua-reveal-name'), 1000);
+            kicker.append(h('span', null, joinMeta(unique ? '유니크 아바타 획득' : '아바타 획득', result.guaranteed ? '확정 보상' : '')));
+            const name = seq(h('h2', 'ua-reveal-name', av.name || ''), 1000);
             name.id = nameId;
-            if (nm.tag) name.append(h('span', 'ua-tag is-gold', nm.tag));
-            name.append(h('span', null, nm.rest || av.name || ''));
-            const chips = seq(h('div', 'ua-reveal-chips'), 1100);
-            chips.append(gradeChip(av.grade || (unique ? '유니크' : ''), av.name));
-            const tt = tradesText(av.remainingTrades);
-            if (tt) chips.append(h('span', 'ua-tag', tt));
-            info.append(kicker, name, chips);
+            const meta = seq(h('p', 'ua-reveal-meta', joinMeta(av.grade || (unique ? '유니크' : ''), tradesText(av.remainingTrades))), 1100);
+            info.append(kicker, name, meta);
             if (unique) {
                 const stats = h('ul', 'ua-reveal-stats');
                 UNIQUE_STATS.forEach(([k, v], i) => { const li = seq(h('li'), 1200 + i * 90); li.append(h('span', null, k), h('b', null, v)); stats.append(li); });
@@ -1182,15 +1124,15 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         if (counts.other) keys.push(['other', '기타']);
         if (st.grade !== 'all' && !counts[st.grade]) st.grade = 'all';
         if (keys.length > 1) {
-            const filter = h('div', 'uaw-filter');
+            const filter = h('div', 'uaw-tabs');
             filter.setAttribute('role', 'group');
             filter.setAttribute('aria-label', '아바타 등급 필터');
             [['all', '전체']].concat(keys).forEach(([k, label]) => {
-                const b = btn('uaw-chip', null, () => { if (st.grade === k) return; st.grade = k; renderWardrobe(root, avatars, actions); }, true);
+                const b = btn('uaw-tab', null, () => { if (st.grade === k) return; st.grade = k; renderWardrobe(root, avatars, actions); }, true);
                 b.dataset.grade = k;
                 b.dataset.uawFocus = 'grade-' + k;
                 const n = k === 'all' ? list.length : counts[k];
-                b.append(h('span', null, label), h('b', null, fmt(n)));
+                b.append(h('span', null, label), h('span', 'uaw-tab-n', fmt(n)));
                 b.setAttribute('aria-pressed', String(st.grade === k));
                 filter.append(b);
             });
@@ -1216,34 +1158,20 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             t.classList.toggle('is-locked', !a.unlocked);
             t.classList.toggle('is-equipped', !!a.equipped);
             t.classList.toggle('is-blocked', !!a.unlocked && a.starOk === false);
-            const artBox = art('uaw-art', a.portraitUrl || a.imageUrl, '', false, a.name);
-            const badges = h('span', 'uaw-badges');
-            if (a.equipped) badges.append(h('span', 'uaw-badge is-eq', '장착'));
-            if (a.statApplied) badges.append(h('span', 'uaw-badge is-stat', '능력치'));
-            artBox.append(badges);
+            const artBox = art('uaw-art', a.imageUrl, '', false, a.name);
             const cnt = Math.round(Number(a.ownedCount) || 0);
-            if (a.unlocked && cnt > 1) artBox.append(h('span', 'uaw-owned', '×' + fmt(cnt)));
-            if (!a.unlocked) {
-                const lock = h('span', 'uaw-lock');
-                lock.append(icon('lock'), h('span', null, '미보유'));
-                artBox.append(lock);
-            } else if (a.starOk === false && a.requireStarText) artBox.append(h('span', 'uaw-req', a.requireStarText + ' 필요'));
             const info = h('span', 'uaw-info');
-            if (unique) info.append(h('span', 'uaw-ribbon', '유니크'));
-            const nm = splitName(a.name);
-            const name = h('span', 'uaw-name');
-            if (unique && nm.tag) name.append(h('span', 'uaw-name-tag', nm.tag));
-            name.append(h('span', null, unique ? nm.rest : (a.name || '')));
-            info.append(name);
-            if (!unique) info.append(h('span', 'uaw-grade', a.grade || ''));
-            if (unique) {
-                const lines = arr(a.statLines).slice(0, 3);
-                if (lines.length) {
-                    const ul = h('span', 'uaw-stats');
-                    lines.forEach(l => ul.append(h('span', null, l)));
-                    info.append(ul);
-                }
-            }
+            info.append(h('span', 'uaw-name', a.name || ''), h('span', 'uaw-grade', a.grade || ''));
+            // 상태는 꼬리표 없이 한 줄씩: 장착 > 보유 수 > 미보유, 그 아래 능력치·조건
+            const state = h('span', 'uaw-state');
+            if (!a.unlocked) {
+                const lock = h('span', 'is-lock');
+                lock.append(icon('lock'), h('span', null, '미보유'));
+                state.append(lock);
+            } else state.append(h('span', a.equipped ? 'is-eq' : 'is-own', a.equipped ? '장착 중' : '보유' + (cnt > 1 ? ' ' + fmt(cnt) + '개' : '')));
+            if (a.statApplied) state.append(h('span', 'is-stat', '능력치 적용'));
+            if (a.unlocked && a.starOk === false && a.requireStarText) state.append(h('span', 'is-req', a.requireStarText + ' 필요'));
+            info.append(state);
             t.append(artBox, info);
             const parts = [a.name || '', a.grade || ''];
             parts.push(a.unlocked ? '보유' + (cnt > 1 ? ' ' + cnt + '개' : '') : '미보유');

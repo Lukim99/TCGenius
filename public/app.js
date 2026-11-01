@@ -1197,7 +1197,7 @@ function openAvatarDetailModal(av, avatarRef) {
             ...av.instances.map((entry, index) => el('option', { value: entry.id, selected: entry.id === selected.id }, '보유 아바타 ' + (index + 1) + (av.grade === '유니크' ? ' · 거래 ' + Math.max(0, 3 - Number(entry.trades || 0)) + '회 남음' : ''))));
         nodes.push(picker);
     }
-    if (av.portraitUrl || av.imageUrl) nodes.push(el('div', { class: 'avatar-detail-preview' + (av.grade === '유니크' ? ' is-unique' : '') }, el('img', { src: av.portraitUrl || av.imageUrl, alt: av.name })));
+    if (av.imageUrl) nodes.push(el('div', { class: 'avatar-detail-preview' + (av.grade === '유니크' ? ' is-unique' : '') }, el('img', { src: av.imageUrl, alt: av.name })));
     const statBox = el('div', { class: 'avatar-detail-stats' });
     const statLines = av.statLines || [];
     if (statLines.length) statLines.forEach(line => statBox.appendChild(el('div', { class: 'avatar-detail-stat' }, line)));
