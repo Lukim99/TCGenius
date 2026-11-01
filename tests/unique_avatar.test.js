@@ -441,6 +441,15 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 450)));
         await page.screenshot({ path: path.join(dir, 'ultimate-cutscene.png') });
         await page.evaluate(() => __uniqueTestCutscene.destroy());
+        await page.evaluate(() => activatePage('info'));
+        await page.waitForSelector('#mainCard .card-name-halloween', { visible: true });
+        await page.$eval('#mainCard img', image => image.decode());
+        const titleCard = await page.$('#mainCard');
+        await page.screenshot({ path: path.join(dir, 'halloween-profile-desktop.png') });
+        for (const time of [0, 1600]) {
+            await page.$eval('#mainCard .card-name-halloween', (node, time) => { const animation = node.getAnimations()[0]; animation.pause(); animation.currentTime = time; }, time);
+            await titleCard.screenshot({ path: path.join(dir, 'halloween-name-' + time + '.png') });
+        }
         assert.deepEqual(errors, []);
     } finally { await browser.close(); }
 });

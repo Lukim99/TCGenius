@@ -591,6 +591,12 @@ async function loadHomeBanners() {
     }
 }
 
+function cardNameContent(value) {
+    const text = String(value || ''), start = text.indexOf('할로윈 ');
+    if (start < 0) return text;
+    return el('span', null, text.slice(0, start), el('span', { class: 'card-name-halloween' }, '할로윈'), text.slice(start + 3));
+}
+
 function cardNode(card, compact, onClick) {
     if (!card || !card.name) return el('div', { class: 'empty-card' }, '카드 없음');
     const props = { class: 'card-tile ' + (compact ? 'compact' : '') };
@@ -599,7 +605,7 @@ function cardNode(card, compact, onClick) {
     } });
     return el('div', props,
         card.imageUrl ? el('img', { src: card.imageUrl, alt: card.formatted }) : el('div', { class: 'no-img' }, card.name),
-        el('div', { class: 'card-name' }, card.formatted)
+        el('div', { class: 'card-name' }, cardNameContent(card.formatted))
     );
 }
 
@@ -1043,7 +1049,7 @@ async function closeModal() {
 function openRichModal(title, sub, nodes) {
     modalRequestToken++;
     setModalVariant();
-    $('#modalTitle').textContent = title;
+    $('#modalTitle').replaceChildren(title || '');
     $('#modalSub').textContent = sub || '';
     $('#modalSub').style.display = sub ? '' : 'none';
     $('#modalBody').replaceChildren(el('div', { class: 'mc-body' }, ...nodes));
@@ -1202,7 +1208,7 @@ function openAvatarDetailModal(av, avatarRef) {
 
 function openMainCardModal(card, avatarRef) {
     const nodes = mainCardDetailNodes(card);
-    openRichModal(card && card.formatted ? card.formatted : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬' : '스킬', nodes);
+    openRichModal(card && card.formatted ? cardNameContent(card.formatted) : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬' : '스킬', nodes);
     if (avatarRef) appendAvatarSection(avatarRef);
 }
 
@@ -1225,7 +1231,7 @@ function cardSlotDetailNodes(card) {
 
 function openCardSlotModal(card, slotNumber) {
     const nodes = cardSlotDetailNodes(card);
-    openRichModal(card.formatted, (card.starText || '') + ' · 카드 슬롯 효과', nodes);
+    openRichModal(cardNameContent(card.formatted), (card.starText || '') + ' · 카드 슬롯 효과', nodes);
     if (Number(slotNumber || 0) > 0 && myName && currentProfileName === myName) {
         appendAvatarSection({ source: 'slot', number: slotNumber });
         const row = el('div', { class: 'row modal-action-row' });
@@ -3408,7 +3414,7 @@ function presetCard(slot) {
         ? el('div', { class: 'preset-portrait', title: mainName },
             el('div', { class: 'preset-portrait-frame' },
                 preset.mainCard.imageUrl ? el('img', { src: preset.mainCard.imageUrl, alt: mainName }) : null),
-            el('span', { class: 'preset-portrait-name' }, mainName))
+            el('span', { class: 'preset-portrait-name' }, cardNameContent(mainName)))
         : el('div', { class: 'preset-portrait none' },
             el('div', { class: 'preset-portrait-frame' }, el('img', { src: PRESET_EMPTY_CARD_URL, alt: '메인 카드 미장착' })),
             el('span', { class: 'preset-portrait-name' }, '미장착'));
@@ -3476,7 +3482,7 @@ function openPresetNestedEquipmentModal(eq) {
 function openPresetNestedCardModal(card, kind) {
     const main = kind === 'main';
     openPresetNestedModal(
-        card.formatted || card.name,
+        cardNameContent(card.formatted || card.name),
         (card.starText || '') + (main ? ' · 스킬' : ' · 카드 슬롯 효과'),
         [el('div', { class: 'mc-body' }, ...(main ? mainCardDetailNodes(card) : cardSlotDetailNodes(card)))],
         'card'
@@ -6114,7 +6120,7 @@ function renderRegisterModal() {
             } else {
                 nameText = item.name; metaText = item.type + ' · 보유 ' + comma(item.count) + '개';
             }
-            const infoEl = el('div', null, el('div', { class: 'reg-item-name' }, nameText), el('div', { class: 'reg-item-meta' }, metaText));
+            const infoEl = el('div', null, el('div', { class: 'reg-item-name' }, kind === 'card' ? cardNameContent(nameText) : nameText), el('div', { class: 'reg-item-meta' }, metaText));
             if (kind === 'equipment' && item.artifact) infoEl.appendChild(artifactOptionSummary(item.artifact));
             if (kind === 'equipment' && item.potentialDisplay) {
                 const pb = potentialBlockNode(item.potentialDisplay);
@@ -6455,7 +6461,7 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
                     Array.from(pick.children).forEach(c => c.classList.remove('on'));
                     row.classList.add('on');
                 }
-            }, el('div', null, el('b', null, title), el('div', { class: 'meta' }, meta)), img);
+            }, el('div', null, el('b', null, entry.kind === 'card' ? cardNameContent(title) : title), el('div', { class: 'meta' }, meta)), img);
             pick.appendChild(row);
         });
         body.appendChild(el('div', { class: 'reg-section-label', style: 'margin:0' }, '판매할 ' + AUCTION_KIND_LABEL[entry.kind] + ' 선택'));
