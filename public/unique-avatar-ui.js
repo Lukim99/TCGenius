@@ -17,7 +17,6 @@
 
     let current = null;
     let uidSeq = 0;
-    const wardrobeStates = new WeakMap();
 
     // ---------- 기본 도구 ----------
     function h(tag, cls, text) {
@@ -1128,32 +1127,31 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
     function renderWardrobe(root, avatars, actions) {
         if (!root) return;
         actions = actions || {};
-        let st = wardrobeStates.get(root);
-        if (!st) { st = { grade: 'all' }; wardrobeStates.set(root, st); }
         const list = arr(avatars).filter(Boolean);
-        const active = document.activeElement;
-        const focusKey = active && root.contains(active) && active.dataset ? active.dataset.uawFocus : '';
 
-        const wrap = h('div', 'uaw');
-        const head = h('div', 'uaw-head');
+        const wrap = h('details', 'uaw');
+        const head = h('summary', 'uaw-head');
+        const body = h('div', 'uaw-body');
         const owned = list.filter(a => a.unlocked).length;
-        const titleBox = h('div', 'uaw-title');
+        const titleBox = h('span', 'uaw-title');
         titleBox.append(h('strong', null, '아바타'), h('span', 'uaw-count', '보유 ' + fmt(owned) + ' / ' + fmt(list.length)));
-        head.append(titleBox);
+        const toggle = h('span', 'uaw-toggle');
+        toggle.append(h('span', 'uaw-expand', '펼치기'), h('span', 'uaw-collapse', '접기'));
+        head.append(titleBox, toggle);
+        wrap.append(head, body);
         if (typeof actions.synthesis === 'function') {
+            const toolbar = h('div', 'uaw-actions');
             const syn = btn('uaw-synth', null, () => actions.synthesis());
-            syn.dataset.uawFocus = 'synth';
             syn.append(icon('cube'), h('span', null, '바인드 큐브 합성'));
-            head.append(syn);
+            toolbar.append(syn);
+            body.append(toolbar);
         }
-        wrap.append(head);
 
         // 지금 입고 있는 아바타: 전신을 작은 무대에 세운다
         const worn = list.find(a => a.equipped);
         if (worn) {
             const hero = btn('uaw-hero', null, () => call(actions.select, worn), true);
             hero.dataset.grade = gradeKey(worn.grade, worn.name);
-            hero.dataset.uawFocus = 'hero';
             const spot = h('span', 'uaw-hero-spot');
             spot.setAttribute('aria-hidden', 'true');
             const copy = h('span', 'uaw-hero-copy');
@@ -1162,44 +1160,21 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             go.setAttribute('aria-hidden', 'true');
             hero.append(spot, art('uaw-hero-art', worn.portraitUrl || worn.imageUrl, '', false, worn.name), copy, go);
             hero.setAttribute('aria-label', '현재 외형 ' + (worn.name || '') + '. 상세 보기');
-            wrap.append(hero);
-        }
-
-        const counts = {};
-        list.forEach(a => { const k = gradeKey(a.grade, a.name); counts[k] = (counts[k] || 0) + 1; });
-        const keys = GRADE_KEYS.filter(([k]) => counts[k]);
-        if (counts.other) keys.push(['other', '기타']);
-        if (st.grade !== 'all' && !counts[st.grade]) st.grade = 'all';
-        if (keys.length > 1) {
-            const filter = h('div', 'uaw-tabs');
-            filter.setAttribute('role', 'group');
-            filter.setAttribute('aria-label', '아바타 등급 필터');
-            [['all', '전체']].concat(keys).forEach(([k, label]) => {
-                const b = btn('uaw-tab', null, () => { if (st.grade === k) return; st.grade = k; renderWardrobe(root, avatars, actions); }, true);
-                b.dataset.grade = k;
-                b.dataset.uawFocus = 'grade-' + k;
-                const n = k === 'all' ? list.length : counts[k];
-                b.append(h('span', null, label), h('span', 'uaw-tab-n', fmt(n)));
-                b.setAttribute('aria-pressed', String(st.grade === k));
-                filter.append(b);
-            });
-            wrap.append(filter);
+            body.append(hero);
         }
 
         const rank = a => (gradeKey(a.grade, a.name) === 'unique' ? 0 : 4) + (a.equipped ? 0 : 2) + (a.unlocked ? 0 : 1);
         const shown = list
             .map((a, i) => ({ a, i }))
-            .filter(({ a }) => st.grade === 'all' || gradeKey(a.grade, a.name) === st.grade)
             .sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i)
             .map(({ a }) => a);
 
         const grid = h('div', 'uaw-grid');
-        if (!shown.length) grid.append(h('p', 'uaw-empty', list.length ? '이 등급의 아바타가 없습니다.' : '아바타가 없습니다.'));
+        if (!shown.length) grid.append(h('p', 'uaw-empty', '아바타가 없습니다.'));
         shown.forEach(a => {
             const key = gradeKey(a.grade, a.name);
             const t = btn('uaw-tile', null, () => call(actions.select, a), true);
             t.dataset.grade = key;
-            t.dataset.uawFocus = 'av-' + (a.name || '');
             t.classList.toggle('is-unique', key === 'unique');
             t.classList.toggle('is-locked', !a.unlocked);
             t.classList.toggle('is-equipped', !!a.equipped);
@@ -1229,13 +1204,9 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             t.setAttribute('aria-label', parts.filter(Boolean).join(', ') + '. 상세 보기');
             grid.append(t);
         });
-        wrap.append(grid);
+        body.append(grid);
 
         root.replaceChildren(wrap);
-        if (focusKey) {
-            const target = [...root.querySelectorAll('[data-uaw-focus]')].find(n => n.dataset.uawFocus === focusKey);
-            if (target) target.focus({ preventScroll: true });
-        }
     }
 
     // ---------- 아바타 쇼룸 (상세) ----------

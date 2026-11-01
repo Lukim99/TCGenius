@@ -316,13 +316,18 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.goto(base, { waitUntil: 'networkidle0' });
         await page.evaluate(async () => { openRichModal('빵귤', '아바타', []); await appendAvatarSection({ source: 'main' }); });
         await page.waitForSelector('.uaw-tile');
+        const dir = path.join(__dirname, '../output/unique-avatar'); fs.mkdirSync(dir, { recursive: true });
+        await page.screenshot({ path: path.join(dir, 'wardrobe-collapsed-desktop.png') });
+        await page.click('.uaw-head');
         await page.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.querySelectorAll('.uaw img')].map(image => { image.loading = 'eager'; return image.decode(); })); });
         assert.equal(await page.$$eval('.uaw-tile[data-grade="unique"] img', images => images.every(image => image.src.includes('/card-image?'))), true);
-        const dir = path.join(__dirname, '../output/unique-avatar'); fs.mkdirSync(dir, { recursive: true });
         await page.screenshot({ path: path.join(dir, 'wardrobe-desktop.png') });
         await page.setViewport({ width: 390, height: 844 });
         await page.screenshot({ path: path.join(dir, 'wardrobe-mobile.png') });
         await (await page.$('.uaw')).screenshot({ path: path.join(dir, 'wardrobe-panel-mobile.png') });
+        await page.click('.uaw-head');
+        await page.screenshot({ path: path.join(dir, 'wardrobe-collapsed-mobile.png') });
+        await page.keyboard.press('Enter');
         assert.equal(await page.$eval('.uaw', node => node.scrollWidth <= node.clientWidth + 1), true);
         await page.setViewport({ width: 1440, height: 1000 });
         await page.click('.uaw-synth');
@@ -368,6 +373,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.evaluate(() => UniqueAvatarUI.close());
         assert.equal(await page.$('.ua-overlay'), null);
         await page.evaluate(async () => { openRichModal('빵귤', '아바타', []); await appendAvatarSection({ source: 'main' }); });
+        await page.click('.uaw-head');
         await page.click('.uaw-tile[data-grade="unique"]');
         await page.waitForSelector('.unique-avatar-options button');
         assert.equal(await page.$eval('.avatar-detail-preview img', image => image.src.includes('/card-image?')), true);
