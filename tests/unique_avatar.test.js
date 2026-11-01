@@ -81,6 +81,19 @@ test('release appends only missing definitions, keeps all existing operator data
         assert.deepEqual(listing.price, { goods: cube.goods, amount: cube.price });
     }
 });
+
+test('equipped unique avatar uses Halloween in the card title while its inventory name stays unique', () => {
+    for (const fashion of fixture.Fashion.filter(f => f.uniqueSeries === 1)) for (const type of ['일반', '전직', '각성']) {
+        const id = fashion.primary_card[0], character = read('CharacterCards')[id];
+        const card = { id, type, star: 10, skin: fashion.name };
+        assert.equal(rpg.formatUserCard(card), '[𝛴] ' + (type === '일반' ? '' : type + ' ') + '할로윈 ' + character.name);
+        assert.equal(card.skin, unique.nameFor(character.name));
+    }
+    assert.equal(rpg.formatUserCard({ id: 3, type: '각성', star: 10 }), '[𝛴] 각성 오버라이드');
+    const normal = fixture.Fashion.find(fashion => fashion.name === '정장');
+    const id = normal.primary_card[0];
+    assert.equal(rpg.formatUserCard({ id, type: '일반', star: 4, skin: normal.name }), '[5성] 정장 ' + read('CharacterCards')[id].name);
+});
 test('each cube uses its probability boundary and gives the chosen character only', () => {
     unique.CUBES.forEach((cube, i) => {
         const user = makeUser(), body = request(user, i);
@@ -193,6 +206,23 @@ test('new Glencheck and Dealer avatar layers are served for each card tier and p
         assert.deepEqual(Buffer.from(await response.arrayBuffer()), source);
     }
 });
+
+test('avatar gallery serves distinct card, portrait and available cutscene media with currency icons', async () => {
+    const { body } = await api('/api/cards/avatars?source=main');
+    const uniqueAvatar = body.avatars.find(a => a.grade === '유니크');
+    const normalAvatar = body.avatars.find(a => a.grade === '일반' && a.shop);
+    assert.match(uniqueAvatar.imageUrl, /^\/card-image\?/);
+    assert.match(decodeURIComponent(uniqueAvatar.portraitUrl), /유니크아바타\/전신\//);
+    assert.match(decodeURIComponent(uniqueAvatar.cutsceneUrl), /유니크아바타\/컷씬\//);
+    assert.match(normalAvatar.portraitUrl, /portrait=1/);
+    assert.equal(normalAvatar.cutsceneUrl, null);
+    assert.ok(normalAvatar.shop.price.iconUrl);
+    for (const url of [uniqueAvatar.imageUrl, uniqueAvatar.portraitUrl, uniqueAvatar.cutsceneUrl, normalAvatar.portraitUrl, normalAvatar.shop.price.iconUrl]) {
+        const response = await fetch(new URL(url, base), { headers: { Cookie: cookie } });
+        assert.equal(response.status, 200, url);
+        assert.match(response.headers.get('content-type'), /^image\//);
+    }
+});
 test('shop allows repeated avatar purchases and purchased cube prices match release definitions', async () => {
     httpUser.point = httpUser.mileage = 100000;
     const shop = await api('/api/shop');
@@ -262,6 +292,9 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         page.on('response', response => { if (response.url().includes('/assets/unique-avatar/') && response.url().endsWith('.mp3')) audio.set(response.url(), response.status()); });
         await page.evaluateOnNewDocument(() => {
             window.__avatarAudioStarts = 0;
+            window.__avatarRevokedUrls = [];
+            const revoke = URL.revokeObjectURL;
+            URL.revokeObjectURL = function(url) { window.__avatarRevokedUrls.push(url); return revoke.call(this, url); };
             const start = AudioBufferSourceNode.prototype.start;
             AudioBufferSourceNode.prototype.start = function(...args) { window.__avatarAudioStarts++; return start.apply(this, args); };
         });
@@ -304,6 +337,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         assert.equal(httpUser.avatarSynthesisFailures, 0);
         assert.equal(httpUser.avatars.filter(a => a.name === '[1차]유니크 빵귤').length, 2);
         assert.match(await page.$eval('.ua-reveal-name', node => node.textContent), /빵귤/);
+        assert.doesNotMatch(await page.$eval('.ua-reveal', node => node.textContent), /거래/);
         assert.equal(await page.$eval('.ua-frame-art img', image => image.src.includes('/card-image?')), true);
         await page.screenshot({ path: path.join(dir, 'unique-result-mobile.png') });
         await page.setViewport({ width: 1440, height: 1000 });
@@ -324,14 +358,54 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.click('.uaw-tile[data-grade="unique"]');
         await page.waitForSelector('.unique-avatar-options button');
         assert.equal(await page.$eval('.avatar-detail-preview img', image => image.src.includes('/card-image?')), true);
-        await page.evaluate(() => [...document.querySelectorAll('.unique-avatar-options button')].find(button => button.textContent === '회복 및 보호막 효과 +5%').click());
+        await page.evaluate(() => Promise.all([...document.querySelectorAll('.uas img')].map(image => image.decode())));
+        assert.equal(await page.$eval('.uas-figure-art img', image => decodeURIComponent(image.src).includes('유니크아바타/전신/')), true);
+        await page.hover('.uas-figure');
+        assert.equal(await page.$eval('.uas-figure', node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)');
+        await page.mouse.move(0, 0);
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 750)));
+        await page.screenshot({ path: path.join(dir, 'avatar-showroom-desktop.png') });
+        await page.click('.uas-lens-btn[data-focus="card"]');
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)));
+        await page.screenshot({ path: path.join(dir, 'avatar-card-desktop.png') });
+        await page.click('.uas-lens-btn[data-focus="cine"]');
+        await page.waitForFunction(() => document.querySelector('.uas-cine-screen img')?.naturalWidth > 0);
+        const firstCutscene = await page.$eval('.uas-cine-screen img', image => image.src);
+        await page.screenshot({ path: path.join(dir, 'avatar-cutscene-desktop.png') });
+        await page.click('.uas-cine-replay');
+        await page.waitForFunction(previous => { const image = document.querySelector('.uas-cine-screen img'); return image && image.naturalWidth > 0 && image.src !== previous; }, {}, firstCutscene);
+        assert.equal(await page.evaluate(url => __avatarRevokedUrls.includes(url), firstCutscene), true);
+        const replayCutscene = await page.$eval('.uas-cine-screen img', image => image.src);
+        await page.click('.uas-lens-btn[data-focus="figure"]');
+        assert.equal(await page.evaluate(url => __avatarRevokedUrls.includes(url), replayCutscene), true);
+        await page.setViewport({ width: 390, height: 844 });
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 600)));
+        const recoveryOption = await page.$('::-p-text(회복 및 보호막 효과 +5%)');
+        await recoveryOption.scrollIntoView();
+        await recoveryOption.click();
         await page.waitForFunction(() => [...document.querySelectorAll('.unique-avatar-options button')].some(button => button.textContent === '회복 및 보호막 효과 +5%' && button.getAttribute('aria-pressed') === 'true'));
         assert.equal(httpUser.avatars.find(a => a.name === '[1차]유니크 빵귤').option, 'recovery');
-        await page.setViewport({ width: 390, height: 844 });
+        await page.mouse.move(0, 0);
         await page.screenshot({ path: path.join(dir, 'avatar-options-mobile.png') });
+        assert.equal(await page.$eval('.uas', node => node.scrollWidth <= innerWidth + 1), true);
         await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent === '장착').click());
         await page.waitForFunction(() => !document.querySelector('.unique-avatar-options'));
         assert.equal(httpUser.main_card.skin, '[1차]유니크 빵귤');
+        await page.evaluate(async () => {
+            const data = await api('/api/cards/avatars?source=main');
+            openAvatarDetailModal(data.avatars.find(a => a.grade === '일반' && a.shop), { source: 'main' });
+        });
+        await page.waitForSelector('.uas-buy .uas-coin img');
+        await page.evaluate(() => Promise.all([...document.querySelectorAll('.uas img')].map(image => image.decode())));
+        assert.equal(await page.$eval('.uas-figure-art img', image => image.src.includes('portrait=1')), true);
+        assert.equal(await page.$('.uas-lens-btn[data-focus="cine"]'), null);
+        assert.equal(await page.$eval('.uas-buy .uas-coin img', image => image.naturalWidth > 0), true);
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 750)));
+        await page.screenshot({ path: path.join(dir, 'avatar-purchase-mobile.png') });
+        await page.setViewport({ width: 1440, height: 1000 });
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 600)));
+        await page.screenshot({ path: path.join(dir, 'avatar-purchase-desktop.png') });
+        await page.evaluate(() => UniqueAvatarUI.closeShowroom());
         const scene = rpg.getUniqueAvatarCutscene(httpUser);
         await page.addStyleTag({ url: base + '/static/ultimate-cutscene.css' });
         await page.addScriptTag({ url: base + '/static/ultimate-cutscene.js' });

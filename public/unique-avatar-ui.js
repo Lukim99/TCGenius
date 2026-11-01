@@ -38,6 +38,12 @@
         if (kind === 'plus') s.append(svg('path', { d: 'M10 4v12M4 10h12', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.6 }));
         if (kind === 'lock') s.append(svg('path', { d: 'M6.5 9V7a3.5 3.5 0 0 1 7 0v2', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.7 }), svg('rect', { x: 4.5, y: 9, width: 11, height: 8, rx: 1.2, fill: 'currentColor' }));
         if (kind === 'skip') s.append(svg('path', { d: 'M3 4l7 6-7 6zM10 4l7 6-7 6z', fill: 'currentColor' }));
+        if (kind === 'cube') s.append(svg('path', { d: 'M10 1.8l7 4v8.4l-7 4-7-4V5.8zM3 5.8l7 4 7-4M10 9.8v8.4', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.5, 'stroke-linejoin': 'round' }));
+        if (kind === 'play') s.append(svg('path', { d: 'M6 3.5l11 6.5-11 6.5z', fill: 'currentColor' }));
+        if (kind === 'replay') s.append(svg('path', { d: 'M4.2 7.5A6.5 6.5 0 1 1 3.6 12M4 3v4.6h4.6', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.9, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+        if (kind === 'figure') s.append(svg('circle', { cx: 10, cy: 4.6, r: 2.6, fill: 'currentColor' }), svg('path', { d: 'M5.6 18.5l1.2-8.6c.2-1.3 1.3-2.2 2.6-2.2h1.2c1.3 0 2.4.9 2.6 2.2l1.2 8.6z', fill: 'currentColor' }));
+        if (kind === 'card') s.append(svg('rect', { x: 4.5, y: 2.5, width: 11, height: 15, rx: 1.4, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.7 }), svg('path', { d: 'M7.5 12.5l2.5-3 2.5 3', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.5 }));
+        if (kind === 'film') s.append(svg('rect', { x: 2.5, y: 4.5, width: 15, height: 11, rx: 1.4, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.7 }), svg('path', { d: 'M8.5 7.6l4.4 2.4-4.4 2.4z', fill: 'currentColor' }));
         return s;
     }
     // silent: 보관함처럼 효과음을 쓰지 않는 화면은 음원을 열지 않는다
@@ -501,9 +507,14 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
 
         const body = h('div', 'ua-body');
 
-        // 무대: 재료 칸 | 큐브 | 재료 칸
-        const stage = h('section', 'ua-stage');
-        stage.setAttribute('aria-label', '합성 제단');
+        // 합성실: 결과 캐릭터 투영 + 제단(재료 칸 | 큐브 | 재료 칸) + 캐릭터 필름
+        const chamber = h('section', 'ua-chamber');
+        chamber.setAttribute('aria-label', '합성 제단');
+        const destiny = h('div', 'ua-destiny');
+        destiny.setAttribute('aria-hidden', 'true');
+        const floor = h('div', 'ua-floor');
+        floor.setAttribute('aria-hidden', 'true');
+        const stage = h('div', 'ua-stage');
         const slots = [0, 1].map(i => {
             const b = btn('ua-slot', null, () => {
                 if (s.materials[i] != null) { const a = findAvatar(s.materials[i]); s.materials.splice(i, 1); s.error = ''; sound.play('release'); announce('재료 ' + (i + 1) + ' 비움' + (a ? ': ' + a.name : '')); syncSetup(); }
@@ -537,7 +548,11 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         pips.setAttribute('role', 'progressbar');
         pips.setAttribute('aria-label', '유니크 확정 게이지');
         const pityNote = h('p', 'ua-pity-note');
-        pity.el.append(pips, pityNote);
+        const pityBig = h('p', 'ua-pity-big');
+        const pityNum = h('b'), pityUnit = h('span');
+        pityBig.append(pityNum, pityUnit);
+        pityBig.setAttribute('aria-hidden', 'true');
+        pity.el.append(pityBig, pips, pityNote);
 
         const cubes = panel('바인드 큐브', 'ua-cubes-panel');
         const cubeRow = h('div', 'ua-cubes');
@@ -557,7 +572,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         outUnique.el.append(uStats);
         outRows.append(outUnique.el, outNormal.el);
         outcome.el.append(outRows);
-        rail.append(pity.el, cubes.el, outcome.el);
+        rail.append(cubes.el, pity.el, outcome.el);
 
         // 결과 캐릭터
         const chars = panel('결과 캐릭터', 'ua-chars-panel');
@@ -566,6 +581,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         charRow.setAttribute('role', 'group');
         charRow.setAttribute('aria-label', '결과 캐릭터 선택');
         chars.el.append(charRow);
+        chamber.append(floor, destiny, stage, chars.el);
 
         // 재료 서랍
         const drawer = panel('재료 아바타', 'ua-drawer');
@@ -579,7 +595,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         grid.setAttribute('aria-label', '재료로 쓸 아바타. 2개를 고르세요');
         drawer.el.append(filterRow, grid);
 
-        body.append(stage, rail, chars.el, drawer.el);
+        body.append(chamber, rail, drawer.el);
 
         // 하단 실행 줄
         const cta = h('footer', 'ua-cta');
@@ -593,9 +609,10 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         const goBtn = btn('ua-go', null, submit);
         const goLabel = h('span', 'ua-go-label', '합성하기');
         const goSub = h('span', 'ua-go-sub');
-        goBtn.append(h('span', 'ua-go-mark'), h('span', 'ua-go-text'));
+        const goMark = h('span', 'ua-go-mark');
+        goMark.setAttribute('aria-hidden', 'true');
+        goBtn.append(goMark, h('span', 'ua-go-text'));
         goBtn.lastChild.append(goLabel, goSub);
-        goBtn.firstChild.setAttribute('aria-hidden', 'true');
         cta.append(ctaCopy, goBtn);
 
         shell.append(top, body, cta);
@@ -638,10 +655,10 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
                 const b = btn('ua-cube', null, () => { if (sid(s.cubeId) === sid(c.id)) return; s.cubeId = c.id; s.error = ''; sound.play('select'); syncSetup(); });
                 b.dataset.id = sid(c.id);
                 const count = Math.max(0, Math.round(Number(c.count) || 0));
-                const ic = art('ua-cube-icon', c.iconUrl, '', true);
-                ic.setAttribute('aria-hidden', 'true');
-                const cnt = h('span', 'ua-cube-count' + (count ? '' : ' is-empty'), '보유 ' + fmt(count));
-                b.append(ic, h('span', 'ua-cube-name', c.name || '바인드 큐브'), cnt);
+                const well = h('span', 'ua-cube-well');
+                well.setAttribute('aria-hidden', 'true');
+                well.append(art('ua-cube-icon', c.iconUrl, '', true), h('span', 'ua-cube-count' + (count ? '' : ' is-empty'), '×' + fmt(count)));
+                b.append(well, h('span', 'ua-cube-name', c.name || '바인드 큐브'));
                 b.setAttribute('aria-label', (c.name || '바인드 큐브') + ', 보유 ' + fmt(count) + '개');
                 cubeRow.append(b);
             });
@@ -696,8 +713,9 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
                 mark.append(icon('check'));
                 const pic = art('ua-item-art', synthesisAvatarImage(a), '', false, a.name);
                 pic.append(mark);
-                const meta = h('span', 'ua-item-meta', joinMeta(a.grade, a.equipped ? '장착 중' : '', tradesText(a.remainingTrades)));
-                b.append(pic, h('span', 'ua-item-name', a.name || ''), meta, h('span', 'ua-item-order'));
+                const meta = h('span', 'ua-item-meta', joinMeta(a.equipped ? '장착 중' : '', tradesText(a.remainingTrades)));
+                pic.append(h('span', 'ua-item-order'));
+                b.append(pic, h('span', 'ua-item-name', a.name || ''), meta);
                 b.title = a.name || '';
                 grid.append(b);
             });
@@ -778,8 +796,20 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             if (coreIcon.dataset.src !== iconUrl) {
                 coreIcon.dataset.src = iconUrl;
                 coreIcon.replaceChildren(art('ua-core-img', iconUrl, cube ? cube.name : '', true));
+                goMark.replaceChildren(art('ua-go-cube', iconUrl, '', true));
             }
             core.classList.toggle('is-pity', pityOn);
+            chamber.classList.toggle('is-pity', pityOn);
+            // 고른 캐릭터의 전신을 큐브 뒤에 투영한다
+            const destinyUrl = ch ? sid(ch.portraitUrl || ch.imageUrl) : '';
+            if (destiny.dataset.src !== destinyUrl) {
+                destiny.dataset.src = destinyUrl;
+                destiny.replaceChildren();
+                if (destinyUrl) destiny.append(art('ua-destiny-art', destinyUrl, '', true));
+                destiny.classList.remove('is-in');
+                void destiny.offsetWidth;
+                destiny.classList.add('is-in');
+            }
 
             // 확정 게이지
             if (pips.childElementCount !== m.guaranteedAt) {
@@ -795,7 +825,9 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             pips.setAttribute('aria-valuenow', String(m.attempts));
             const remain = m.guaranteedAt - m.attempts;
             pips.setAttribute('aria-valuetext', pityOn ? '다음 합성 유니크 확정' : '연속 실패 ' + m.attempts + '회, 확정까지 ' + remain + '회');
-            pityMeta.textContent = pityOn ? '다음 합성 확정' : '확정까지 ' + remain + '회';
+            pityMeta.textContent = '계정 공용 · 진행 ' + m.attempts + '칸';
+            pityNum.textContent = pityOn ? '다음' : String(remain);
+            pityUnit.textContent = pityOn ? '합성 유니크 확정' : '회 안에 유니크 확정';
             pity.el.classList.toggle('is-pity', pityOn);
             pityNote.textContent = pityOn
                 ? '다음 합성은 큐브 종류와 상관없이 유니크 아바타가 나옵니다.'
@@ -814,7 +846,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             [...grid.querySelectorAll('.ua-item')].forEach(b => {
                 const at = s.materials.findIndex(id => sid(id) === b.dataset.id);
                 b.setAttribute('aria-pressed', String(at >= 0));
-                b.querySelector('.ua-item-order').textContent = at >= 0 ? '재료 ' + (at + 1) : '';
+                b.querySelector('.ua-item-order').textContent = at >= 0 ? String(at + 1) : '';
                 const a = findAvatar(b.dataset.id);
                 b.setAttribute('aria-label', (a ? a.name + ', ' + (a.grade || '') : '') + (a && a.equipped ? ', 장착 중' : '') + (at >= 0 ? ', 재료 ' + (at + 1) + '로 선택됨' : ''));
             });
@@ -995,7 +1027,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
                 const li = seq(h('li', 'is-opt'), 1380);
                 li.append(h('span', null, '추가 옵션'), h('b', null, UNIQUE_OPTION_COUNT + '종 중 1종'));
                 stats.append(li);
-                info.append(stats, seq(h('p', 'ua-reveal-note', '추가 옵션은 비전투 중 아바타 상세 화면에서 자유롭게 변경할 수 있습니다.'), 1450));
+                info.append(stats, seq(h('p', 'ua-reveal-note', '추가 옵션은 아바타 상세 화면에서 고릅니다. 변경은 전투 중이 아닐 때만 가능하고, 효과는 전투에 적용됩니다.'), 1450));
             }
             // 결과 이후 확정 게이지
             const G = s.model.guaranteedAt;
@@ -1055,7 +1087,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             document.removeEventListener('visibilitychange', onVis);
             window.removeEventListener('pagehide', onHide);
             window.removeEventListener('resize', onWake);
-            body.removeEventListener('scroll', onWake);
+            overlay.removeEventListener('scroll', onWake, true);
             reducedQuery.removeEventListener('change', onWake);
             overlay.remove();
             document.documentElement.classList.remove('ua-locked');
@@ -1074,7 +1106,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         document.addEventListener('visibilitychange', onVis);
         window.addEventListener('pagehide', onHide);
         window.addEventListener('resize', onWake);
-        body.addEventListener('scroll', onWake, { passive: true });
+        overlay.addEventListener('scroll', onWake, { capture: true, passive: true });
         reducedQuery.addEventListener('change', onWake);
         title.focus({ preventScroll: true });
 
@@ -1111,12 +1143,27 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         if (typeof actions.synthesis === 'function') {
             const syn = btn('uaw-synth', null, () => actions.synthesis());
             syn.dataset.uawFocus = 'synth';
-            const glyph = h('span', 'uaw-synth-glyph');
-            glyph.setAttribute('aria-hidden', 'true');
-            syn.append(glyph, h('span', null, '바인드 큐브 합성'));
+            syn.append(icon('cube'), h('span', null, '바인드 큐브 합성'));
             head.append(syn);
         }
         wrap.append(head);
+
+        // 지금 입고 있는 아바타: 전신을 작은 무대에 세운다
+        const worn = list.find(a => a.equipped);
+        if (worn) {
+            const hero = btn('uaw-hero', null, () => call(actions.select, worn), true);
+            hero.dataset.grade = gradeKey(worn.grade, worn.name);
+            hero.dataset.uawFocus = 'hero';
+            const spot = h('span', 'uaw-hero-spot');
+            spot.setAttribute('aria-hidden', 'true');
+            const copy = h('span', 'uaw-hero-copy');
+            copy.append(h('span', 'uaw-hero-kicker', '현재 외형'), h('span', 'uaw-hero-name', worn.name || ''), h('span', 'uaw-hero-grade', worn.grade || ''));
+            const go = h('span', 'uaw-hero-go', '쇼룸');
+            go.setAttribute('aria-hidden', 'true');
+            hero.append(spot, art('uaw-hero-art', worn.portraitUrl || worn.imageUrl, '', false, worn.name), copy, go);
+            hero.setAttribute('aria-label', '현재 외형 ' + (worn.name || '') + '. 상세 보기');
+            wrap.append(hero);
+        }
 
         const counts = {};
         list.forEach(a => { const k = gradeKey(a.grade, a.name); counts[k] = (counts[k] || 0) + 1; });
@@ -1150,29 +1197,30 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         if (!shown.length) grid.append(h('p', 'uaw-empty', list.length ? '이 등급의 아바타가 없습니다.' : '아바타가 없습니다.'));
         shown.forEach(a => {
             const key = gradeKey(a.grade, a.name);
-            const unique = key === 'unique';
             const t = btn('uaw-tile', null, () => call(actions.select, a), true);
             t.dataset.grade = key;
             t.dataset.uawFocus = 'av-' + (a.name || '');
-            t.classList.toggle('is-unique', unique);
+            t.classList.toggle('is-unique', key === 'unique');
             t.classList.toggle('is-locked', !a.unlocked);
             t.classList.toggle('is-equipped', !!a.equipped);
             t.classList.toggle('is-blocked', !!a.unlocked && a.starOk === false);
-            const artBox = art('uaw-art', a.imageUrl, '', false, a.name);
             const cnt = Math.round(Number(a.ownedCount) || 0);
+            // 카드 원화가 주인공: 상태는 카드 위 표식 하나와 이름 아래 한 줄로만
+            const frame = h('span', 'uaw-frame');
+            frame.append(art('uaw-art', a.imageUrl, '', false, a.name));
+            if (!a.unlocked) { const seal = h('span', 'uaw-seal'); seal.setAttribute('aria-hidden', 'true'); seal.append(icon('lock')); frame.append(seal); }
+            if (a.equipped) { const mark = h('span', 'uaw-worn', '장착'); mark.setAttribute('aria-hidden', 'true'); frame.append(mark); }
+            if (a.unlocked && cnt > 1) { const q = h('span', 'uaw-qty', '×' + fmt(cnt)); q.setAttribute('aria-hidden', 'true'); frame.append(q); }
+            const line = h('span', 'uaw-line');
+            line.append(h('span', 'uaw-grade', a.grade || ''));
+            let state = '';
+            if (!a.unlocked) state = '미보유';
+            else if (a.starOk === false && a.requireStarText) state = a.requireStarText + ' 필요';
+            else if (a.statApplied) state = '능력치 적용';
+            if (state) line.append(h('span', 'uaw-state' + (a.unlocked && a.starOk === false ? ' is-req' : ''), state));
             const info = h('span', 'uaw-info');
-            info.append(h('span', 'uaw-name', a.name || ''), h('span', 'uaw-grade', a.grade || ''));
-            // 상태는 꼬리표 없이 한 줄씩: 장착 > 보유 수 > 미보유, 그 아래 능력치·조건
-            const state = h('span', 'uaw-state');
-            if (!a.unlocked) {
-                const lock = h('span', 'is-lock');
-                lock.append(icon('lock'), h('span', null, '미보유'));
-                state.append(lock);
-            } else state.append(h('span', a.equipped ? 'is-eq' : 'is-own', a.equipped ? '장착 중' : '보유' + (cnt > 1 ? ' ' + fmt(cnt) + '개' : '')));
-            if (a.statApplied) state.append(h('span', 'is-stat', '능력치 적용'));
-            if (a.unlocked && a.starOk === false && a.requireStarText) state.append(h('span', 'is-req', a.requireStarText + ' 필요'));
-            info.append(state);
-            t.append(artBox, info);
+            info.append(h('span', 'uaw-name', a.name || ''), line);
+            t.append(frame, info);
             const parts = [a.name || '', a.grade || ''];
             parts.push(a.unlocked ? '보유' + (cnt > 1 ? ' ' + cnt + '개' : '') : '미보유');
             if (a.equipped) parts.push('장착 중');
@@ -1190,5 +1238,441 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         }
     }
 
-    window.UniqueAvatarUI = { open, close, renderWardrobe };
+    // ---------- 아바타 쇼룸 (상세) ----------
+    // app.js가 showroom(av, { setOption, apply, buy })로 연다. 서버 호출과 성공 후 닫기는 app.js가 맡고,
+    // 실패하면 Error를 던진다. 이 화면은 전시·선택·대기 상태·오류 표시만 한다.
+    const SHOP_UNITS = { point: 'P', gold: '골드', garnet: '가넷', mileage: '마일리지' };
+    const UNIQUE_TRADE_LIMIT = 3;
+    let room = null;
+
+    const tradeLeft = entry => Math.max(0, UNIQUE_TRADE_LIMIT - Number(entry && entry.trades || 0));
+    function priceText(p) {
+        p = p || {};
+        return p.goods === 'item' ? (p.name || '아이템') + ' ' + fmt(p.amount) + '개' : fmt(p.amount) + (SHOP_UNITS[p.goods] ? ' ' + SHOP_UNITS[p.goods] : '');
+    }
+    // 실제 재화 아이콘 + 수량. 아이콘이 없거나 깨지면 단위 글자로 대신한다
+    function priceTag(p) {
+        p = p || {};
+        const tag = h('span', 'uas-price' + (p.goods === 'item' ? ' is-item' : '') + (p.iconUrl ? '' : ' no-icon'));
+        tag.setAttribute('aria-hidden', 'true');
+        if (p.iconUrl) {
+            const coin = h('span', 'uas-coin');
+            const i = document.createElement('img');
+            i.alt = '';
+            i.decoding = 'async';
+            i.draggable = false;
+            i.addEventListener('error', () => { coin.remove(); tag.classList.add('no-icon'); });
+            i.src = p.iconUrl;
+            coin.append(i);
+            tag.append(coin);
+        }
+        tag.append(h('b', 'uas-amount', fmt(p.amount)));
+        const unit = p.goods === 'item' ? (p.name || '') : (SHOP_UNITS[p.goods] || '');
+        if (unit) tag.append(h('span', 'uas-unit', unit));
+        return tag;
+    }
+    function parseStat(line) {
+        const m = String(line).match(/^(.*?)\s*([+-][\d,.]+%?)$/);
+        return m && m[1] ? [m[1].trim(), m[2]] : [String(line), ''];
+    }
+
+    function createShowroom(av, actions) {
+        const key = gradeKey(av.grade, av.name);
+        const unique = key === 'unique';
+        const instances = arr(av.instances).filter(Boolean);
+        const hasFigure = !!av.portraitUrl;
+        const hasCine = !!av.cutsceneUrl;
+        const s = {
+            selected: instances.find(e => e.id === av.selectedAvatarId) || instances[0] || null,
+            focus: hasFigure ? 'figure' : 'card', pending: '', busyBtn: null, error: '',
+            stale: false, cineUrl: '', cineToken: 0, blob: null
+        };
+        const prevFocus = document.activeElement;
+        const motion = () => !reducedQuery.matches;
+        const plainName = String(av.name || '').replace(/^\[[^\]]*\]\s*/, '');
+
+        const root = h('div', 'uas');
+        root.dataset.grade = key;
+        root.setAttribute('role', 'dialog');
+        root.setAttribute('aria-modal', 'true');
+        const nameId = uid();
+        root.setAttribute('aria-labelledby', nameId);
+        const live = h('div', 'ua-sr');
+        live.setAttribute('aria-live', 'polite');
+
+        // ----- 무대 -----
+        const stage = h('section', 'uas-stage');
+        stage.setAttribute('aria-label', '아바타 전시');
+        stage.dataset.focus = s.focus;
+        const backdrop = h('div', 'uas-backdrop');
+        backdrop.setAttribute('aria-hidden', 'true');
+        backdrop.append(h('i', 'uas-spot'), h('i', 'uas-floor'), h('i', 'uas-ring'), h('span', 'uas-mark', plainName));
+
+        let figure = null;
+        if (hasFigure) {
+            figure = btn('uas-figure', null, () => setFocus('figure'), true);
+            figure.setAttribute('aria-label', '전신 크게 보기');
+            const mirror = art('uas-figure-mirror', av.portraitUrl, '', true);
+            mirror.setAttribute('aria-hidden', 'true');
+            figure.append(mirror, art('uas-figure-art', av.portraitUrl, (av.name || '') + ' 전신', true, av.name));
+        }
+
+        const cardBtn = btn('uas-card', null, () => setFocus('card'), true);
+        cardBtn.setAttribute('aria-label', '카드 크게 보기');
+        const tilt = h('span', 'uas-card-tilt avatar-detail-preview' + (unique ? ' is-unique' : ''));
+        const glare = h('span', 'uas-glare');
+        glare.setAttribute('aria-hidden', 'true');
+        tilt.append(art('uas-card-art', av.imageUrl, (av.name || '') + ' 카드', true, av.name), glare);
+        cardBtn.append(tilt);
+        cardBtn.addEventListener('pointermove', onTilt);
+        cardBtn.addEventListener('pointerleave', resetTilt);
+
+        // 컷씬: 고르면 그 자리에서 한 번 재생, 다시 재생은 새 객체 URL로
+        let cine = null, screen = null, playBtn = null, replayBtn = null;
+        if (hasCine) {
+            cine = h('div', 'uas-cine');
+            const poster = art('uas-cine-poster', av.portraitUrl || av.imageUrl, '', true);
+            poster.setAttribute('aria-hidden', 'true');
+            screen = h('div', 'uas-cine-screen');
+            playBtn = btn('uas-cine-play', null, () => playCine(), true);
+            playBtn.append(icon('play'), h('span', null, '궁극기 컷씬 재생'));
+            replayBtn = btn('uas-cine-replay', null, () => playCine(), true);
+            replayBtn.append(icon('replay'), h('span', null, '다시 재생'));
+            const fail = h('p', 'uas-cine-fail', '컷씬을 불러오지 못했습니다.');
+            cine.append(poster, screen, playBtn, replayBtn, fail);
+        }
+
+        const lens = h('div', 'uas-lens');
+        lens.setAttribute('role', 'group');
+        lens.setAttribute('aria-label', '보기 전환');
+        const lensBtns = {};
+        [['figure', '전신', 'figure', hasFigure], ['card', '카드', 'card', true], ['cine', '컷씬', 'film', hasCine]].forEach(([k, label, ic, on]) => {
+            if (!on) return;
+            const b = btn('uas-lens-btn', null, () => setFocus(k), true);
+            b.dataset.focus = k;
+            b.append(icon(ic), h('span', null, label));
+            lensBtns[k] = b;
+            lens.append(b);
+        });
+        lens.hidden = Object.keys(lensBtns).length < 2;
+
+        const closeBtn = btn('uas-x', null, requestClose, true);
+        closeBtn.setAttribute('aria-label', '아바타 상세 닫기');
+        closeBtn.append(icon('x'));
+
+        stage.append(backdrop);
+        if (figure) stage.append(figure);
+        stage.append(cardBtn);
+        if (cine) stage.append(cine);
+        stage.append(lens);
+
+        // ----- 정보 패널 -----
+        const panel = h('section', 'uas-panel');
+        const scroll = h('div', 'uas-scroll');
+        const head = h('header', 'uas-head');
+        const gradeEl = h('p', 'uas-grade', av.grade || '');
+        const name = h('h2', 'uas-name', av.name || '');
+        name.id = nameId;
+        name.tabIndex = -1;
+        const own = h('p', 'uas-own');
+        head.append(gradeEl, name, own);
+        scroll.append(head);
+
+        const statSec = h('section', 'uas-sec');
+        statSec.append(h('h3', 'uas-h', '능력치'));
+        const stats = h('div', 'uas-stats');
+        const lines = arr(av.statLines);
+        if (lines.length) lines.forEach(line => {
+            const [k, v] = parseStat(line);
+            const row = h('div', 'uas-stat');
+            row.append(h('span', 'uas-stat-k', k), h('b', 'uas-stat-v', v));
+            stats.append(row);
+        });
+        else stats.append(h('p', 'uas-stat-none', '추가 스탯 없음'));
+        statSec.append(stats);
+        if (Number(av.requireStar || 0) > 0) statSec.append(h('p', 'uas-cond' + (av.unlocked && !av.starOk ? ' is-bad' : ''), '장착 조건 · ' + (av.requireStarText || '') + ' 이상'));
+        scroll.append(statSec);
+
+        let copies = null;
+        if (instances.length > 1) {
+            const sec = h('section', 'uas-sec');
+            sec.append(h('h3', 'uas-h', '보유 사본'));
+            copies = h('div', 'uas-copies');
+            copies.setAttribute('role', 'group');
+            copies.setAttribute('aria-label', '사용할 아바타 사본');
+            instances.forEach((entry, i) => {
+                const b = btn('uas-copy', null, () => {
+                    if (s.pending || s.selected === entry) return;
+                    s.selected = entry;
+                    s.error = '';
+                    sync();
+                    announce('사본 ' + (i + 1) + ' 선택');
+                }, true);
+                b.dataset.id = sid(entry.id);
+                b.append(h('b', null, String(i + 1)), h('span', null, unique ? '거래 ' + tradeLeft(entry) + '회' : '사본'));
+                b.setAttribute('aria-label', '사본 ' + (i + 1) + (unique ? ', 거래 가능 ' + tradeLeft(entry) + '회' : ''));
+                copies.append(b);
+            });
+            sec.append(copies);
+            scroll.append(sec);
+        }
+
+        const optionBox = h('div', 'unique-avatar-options');
+        scroll.append(optionBox);
+
+        const notes = h('div', 'uas-notes');
+        if (unique && !s.selected && arr(av.uniqueOptions).length) notes.append(h('p', null, '획득하면 추가 옵션 ' + arr(av.uniqueOptions).length + '종 중 1종을 골라 적용합니다.'));
+        if (unique) notes.append(h('p', null, '장착하면 궁극기에 유니크 전용 컷씬이 재생됩니다.'));
+        notes.append(h('p', null, '아바타 능력치는 메인 카드에 장착했을 때만 적용됩니다.'));
+        if (av.unlocked && !av.equipped && av.starOk) notes.append(h('p', null, '능력치만 적용: 외형은 지금 장착한 아바타를 유지하고, 능력치만 이 아바타로 적용합니다.'));
+        if (av.shop && av.shop.price && av.shop.shopType && av.shop.shopType !== '아바타') notes.append(h('p', null, av.shop.shopType + ' 상점에서 판매 중입니다.'));
+        scroll.append(notes);
+
+        const dock = h('footer', 'uas-dock');
+        const errEl = h('p', 'uas-error');
+        errEl.setAttribute('role', 'alert');
+        const acts = h('div', 'uas-acts');
+        dock.append(errEl, acts);
+        panel.append(scroll, dock);
+
+        root.append(stage, panel, closeBtn, live);
+
+        function announce(text) { live.textContent = ''; live.textContent = text; }
+
+        function actBtn(text, body, primary) {
+            return btn('uas-btn' + (primary ? ' is-primary' : ''), text, e => run('apply', () => call(actions.apply, Object.assign({ avatarId: s.selected ? s.selected.id : undefined }, body)), e.currentTarget), true);
+        }
+        function buyBtn(primary) {
+            const sold = !!av.shop.soldOut;
+            const label = sold ? '품절' : (primary ? '구매' : '하나 더 구매');
+            const b = btn('uas-btn uas-buy' + (primary ? ' is-primary' : ''), null, e => run('buy', () => call(actions.buy), e.currentTarget), true);
+            b.append(h('span', 'uas-buy-label', label), priceTag(av.shop.price));
+            b.setAttribute('aria-label', label + ', ' + priceText(av.shop.price));
+            if (sold) b.dataset.locked = '1';
+            return b;
+        }
+        function buildDock() {
+            acts.replaceChildren();
+            const listed = !!(av.shop && av.shop.price);
+            if (!av.unlocked) {
+                if (listed) acts.append(buyBtn(true));
+                else acts.append(h('p', 'uas-dock-note', '미보유'));
+                return;
+            }
+            if (!av.equipped && !av.starOk) acts.append(h('p', 'uas-dock-note is-warn', (av.requireStarText || '') + ' 이상 카드에만 장착할 수 있습니다.'));
+            else if (av.equipped) {
+                acts.append(actBtn('해제', { name: '' }, false));
+                if (instances.length > 1) acts.append(actBtn('선택한 아바타로 변경', { name: av.name }, true));
+            } else {
+                acts.append(actBtn('장착', { name: av.name }, true));
+                acts.append(av.statApplied
+                    ? actBtn('능력치 적용 해제', { name: '', statsOnly: true }, false)
+                    : actBtn('능력치만 적용', { name: av.name, statsOnly: true }, false));
+            }
+            if (listed && !av.shop.soldOut) acts.append(buyBtn(false));
+        }
+
+        function renderOptions() {
+            optionBox.replaceChildren();
+            if (!unique || !s.selected) return;
+            const optionHead = h('div', 'uas-opt-head');
+            optionHead.append(h('p', 'unique-avatar-options-title', '추가 옵션'), h('p', 'uas-opt-note', '변경은 전투 중이 아닐 때만 · 효과는 전투에서 적용'));
+            optionBox.append(optionHead);
+            const target = s.selected;
+            arr(av.uniqueOptions).forEach(option => {
+                const on = target.option === option.id;
+                const b = btn(on ? 'selected' : '', option.label, e => {
+                    if (target.option === option.id) return;
+                    run('option', async () => {
+                        const next = await call(actions.setOption, target.id, option.id);
+                        if (next != null) target.option = next;
+                        announce('추가 옵션: ' + option.label);
+                    }, e.currentTarget);
+                }, true);
+                b.dataset.id = sid(option.id);
+                b.setAttribute('aria-pressed', String(on));
+                b.disabled = !!s.pending;
+                b.classList.toggle('is-busy', s.pending === 'option' && !!s.busyBtn && s.busyBtn.dataset.id === b.dataset.id);
+                optionBox.append(b);
+            });
+        }
+
+        function sync() {
+            stage.dataset.focus = s.focus;
+            Object.keys(lensBtns).forEach(k => lensBtns[k].setAttribute('aria-pressed', String(s.focus === k)));
+            if (figure) figure.tabIndex = s.focus === 'figure' ? -1 : 0;
+            cardBtn.tabIndex = s.focus === 'card' ? -1 : 0;
+            if (s.focus !== 'card') resetTilt();
+
+            own.replaceChildren();
+            const cnt = Math.round(Number(av.ownedCount) || 0) || instances.length;
+            const state = !av.unlocked ? '미보유' : av.equipped ? '장착 중' : av.statApplied ? '능력치 적용 중' : '보유';
+            own.append(h('span', av.equipped ? 'is-on' : (!av.unlocked ? 'is-off' : null), state));
+            if (av.unlocked && cnt > 1) own.append(h('span', null, fmt(cnt) + '개 보유'));
+            if (unique && s.selected) own.append(h('span', null, '거래 가능 ' + tradeLeft(s.selected) + '회'));
+
+            if (copies) [...copies.children].forEach(b => {
+                b.setAttribute('aria-pressed', String(!!s.selected && b.dataset.id === sid(s.selected.id)));
+                b.disabled = !!s.pending;
+            });
+            renderOptions();
+            [...acts.querySelectorAll('button')].forEach(b => {
+                b.disabled = !!s.pending || b.dataset.locked === '1';
+                b.classList.toggle('is-busy', !!s.pending && b === s.busyBtn);
+            });
+            errEl.textContent = s.error;
+            errEl.hidden = !s.error;
+            closeBtn.disabled = !!s.pending;
+            root.setAttribute('aria-busy', String(!!s.pending));
+        }
+
+        async function run(kind, task, button) {
+            if (s.pending || s.stale) return;
+            s.pending = kind;
+            s.busyBtn = button || null;
+            s.error = '';
+            sync();
+            try { await task(); } catch (err) {
+                if (s.stale) return;
+                s.error = err && err.message ? String(err.message) : '요청을 처리하지 못했습니다. 다시 시도해 주세요.';
+            }
+            if (s.stale) return;
+            s.pending = '';
+            s.busyBtn = null;
+            sync();
+            if (s.error) announce(s.error);
+            // 옵션 줄은 다시 그려지므로 같은 줄로 초점을 돌려준다
+            if (kind === 'option' && button && button.dataset.id) {
+                const again = [...optionBox.querySelectorAll('button')].find(b => b.dataset.id === button.dataset.id);
+                if (again) again.focus({ preventScroll: true });
+            }
+        }
+
+        // ----- 보기 전환 / 카드 기울이기 / 컷씬 -----
+        function setFocus(f) {
+            if (!lensBtns[f] || s.focus === f) return;
+            if (s.focus === 'cine') stopCine();
+            s.focus = f;
+            sync();
+            if (f === 'cine' && motion()) playCine();
+            else if (f === 'cine') playBtn.focus({ preventScroll: true });
+        }
+        function onTilt(e) {
+            if (s.focus !== 'card' || !motion() || e.pointerType === 'touch') return;
+            const r = tilt.getBoundingClientRect();
+            if (!r.width) return;
+            const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+            tilt.style.setProperty('--rx', (-y * 12).toFixed(2) + 'deg');
+            tilt.style.setProperty('--ry', (x * 16).toFixed(2) + 'deg');
+            tilt.style.setProperty('--gx', ((x + 0.5) * 100).toFixed(1) + '%');
+            tilt.style.setProperty('--gy', ((y + 0.5) * 100).toFixed(1) + '%');
+            tilt.classList.add('is-tilting');
+        }
+        function resetTilt() {
+            ['--rx', '--ry', '--gx', '--gy'].forEach(p => tilt.style.removeProperty(p));
+            tilt.classList.remove('is-tilting');
+        }
+        function clearFrame() {
+            if (screen) screen.replaceChildren();
+            if (s.cineUrl) { URL.revokeObjectURL(s.cineUrl); s.cineUrl = ''; }
+            if (cine) cine.classList.remove('is-playing');
+        }
+        function stopCine() {
+            s.cineToken++;
+            clearFrame();
+            if (cine) cine.classList.remove('is-loading');
+        }
+        async function playCine() {
+            if (!hasCine || s.stale || s.focus !== 'cine') return;
+            const token = ++s.cineToken;
+            clearFrame();
+            cine.classList.remove('is-failed');
+            cine.classList.add('is-loading');
+            try {
+                if (!s.blob) s.blob = fetch(av.cutsceneUrl).then(r => { if (!r.ok) throw new Error('cutscene'); return r.blob(); });
+                const blob = await s.blob;
+                if (s.stale || token !== s.cineToken || s.focus !== 'cine' || document.hidden) return;
+                // 한 번만 도는 애니메이션이므로 매번 새 객체 URL로 처음부터 재생한다
+                s.cineUrl = URL.createObjectURL(blob);
+                const img = document.createElement('img');
+                img.alt = (av.name || '') + ' 궁극기 컷씬';
+                img.decoding = 'async';
+                img.draggable = false;
+                img.src = s.cineUrl;
+                screen.replaceChildren(img);
+                cine.classList.add('is-playing');
+                if (root.contains(document.activeElement) && document.activeElement === playBtn) replayBtn.focus({ preventScroll: true });
+            } catch (_) {
+                s.blob = null;
+                if (!s.stale && token === s.cineToken) cine.classList.add('is-failed');
+            } finally {
+                if (token === s.cineToken) cine.classList.remove('is-loading');
+            }
+        }
+
+        // ----- 닫기 / 키보드 -----
+        function requestClose() {
+            if (s.pending || s.stale) return;
+            destroy();
+        }
+        function trapTab(e) {
+            const items = [...root.querySelectorAll('button')].filter(b => !b.disabled && b.tabIndex >= 0 && !b.closest('[hidden]') && b.getClientRects().length && getComputedStyle(b).visibility !== 'hidden');
+            if (!items.length) { e.preventDefault(); return; }
+            const first = items[0], last = items[items.length - 1];
+            const inside = root.contains(document.activeElement);
+            if (e.shiftKey && (!inside || document.activeElement === first || document.activeElement === name)) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
+        }
+        function onKey(e) {
+            if (document.querySelector('.msg-modal-bg')) return;
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                if (s.focus === 'cine') { setFocus(hasFigure ? 'figure' : 'card'); lensBtns.cine.focus({ preventScroll: true }); }
+                else requestClose();
+            } else if (e.key === 'Tab') trapTab(e);
+        }
+        function onVis() { if (document.hidden && s.focus === 'cine') stopCine(); }
+        function onMotion() { if (!motion()) resetTilt(); }
+
+        function destroy() {
+            if (s.stale) return;
+            s.stale = true;
+            stopCine();
+            s.blob = null;
+            document.removeEventListener('keydown', onKey, true);
+            document.removeEventListener('visibilitychange', onVis);
+            window.removeEventListener('pagehide', stopCine);
+            reducedQuery.removeEventListener('change', onMotion);
+            root.remove();
+            document.documentElement.classList.remove('uas-locked');
+            if (room === inst) room = null;
+            if (prevFocus && prevFocus.isConnected && typeof prevFocus.focus === 'function') prevFocus.focus({ preventScroll: true });
+        }
+
+        buildDock();
+        sync();
+        document.body.append(root);
+        document.documentElement.classList.add('uas-locked');
+        document.addEventListener('keydown', onKey, true);
+        document.addEventListener('visibilitychange', onVis);
+        window.addEventListener('pagehide', stopCine);
+        reducedQuery.addEventListener('change', onMotion);
+        name.focus({ preventScroll: true });
+
+        const inst = { destroy };
+        return inst;
+    }
+
+    function showroom(av, actions) {
+        closeShowroom();
+        room = createShowroom(av || {}, actions || {});
+        return room;
+    }
+    function closeShowroom() {
+        if (room) room.destroy();
+        room = null;
+    }
+
+    window.UniqueAvatarUI = { open, close, renderWardrobe, showroom, closeShowroom };
 })();

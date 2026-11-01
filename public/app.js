@@ -1170,112 +1170,34 @@ async function openAvatarSynthesis(cubeName) {
     } catch (error) { showAlert(error.message); }
 }
 
-// 아바타 타일 클릭 → 이중 모달: 미리보기 + 스탯 + 장착/해제 버튼
+// 아바타 타일 클릭 → 전체 화면 쇼룸(UniqueAvatarUI.showroom). 화면은 모듈이, 서버 호출은 여기서.
+// 실패는 Error로 던져 쇼룸 안에 표시하고, 성공이 확인된 뒤에만 쇼룸을 닫는다.
 function openAvatarDetailModal(av, avatarRef) {
-    const nodes = [];
-    let selected = (av.instances || []).find(entry => entry.id === av.selectedAvatarId) || (av.instances || [])[0];
-    const optionBox = el('div', { class: 'unique-avatar-options' });
-    function renderOptions() {
-        optionBox.replaceChildren();
-        if (!selected || av.grade !== '유니크') return;
-        optionBox.appendChild(el('p', { class: 'avatar-hint unique-avatar-options-title' }, '거래 가능 ' + Math.max(0, 3 - Number(selected.trades || 0)) + '회 · 추가 옵션은 비전투 중 변경 가능'));
-        (av.uniqueOptions || []).forEach(option => optionBox.appendChild(el('button', {
-            type: 'button', 'aria-pressed': selected.option === option.id, class: selected.option === option.id ? 'selected' : '',
-            onclick: async () => {
-                optionBox.querySelectorAll('button').forEach(button => { button.disabled = true; });
-                try {
-                    const result = await postApi('/api/avatars/option', { avatarId: selected.id, option: option.id });
-                    selected.option = result.avatar.option;
-                    if (result.profile) renderProfile(result.profile);
-                } catch (error) { showAlert(error.message); }
-                renderOptions();
-            }
-        }, option.label)));
-    }
-    if ((av.instances || []).length > 1) {
-        const picker = el('select', { 'aria-label': '사용할 아바타 사본', onchange: event => { selected = av.instances.find(entry => entry.id === event.target.value); renderOptions(); } },
-            ...av.instances.map((entry, index) => el('option', { value: entry.id, selected: entry.id === selected.id }, '보유 아바타 ' + (index + 1) + (av.grade === '유니크' ? ' · 거래 ' + Math.max(0, 3 - Number(entry.trades || 0)) + '회 남음' : ''))));
-        nodes.push(picker);
-    }
-    if (av.imageUrl) nodes.push(el('div', { class: 'avatar-detail-preview' + (av.grade === '유니크' ? ' is-unique' : '') }, el('img', { src: av.imageUrl, alt: av.name })));
-    const statBox = el('div', { class: 'avatar-detail-stats' });
-    const statLines = av.statLines || [];
-    if (statLines.length) statLines.forEach(line => statBox.appendChild(el('div', { class: 'avatar-detail-stat' }, line)));
-    else statBox.appendChild(el('div', { class: 'avatar-detail-stat none' }, '추가 스탯 없음'));
-    if (Number(av.requireStar || 0) > 0) statBox.appendChild(el('div', { class: 'avatar-detail-stat cond' }, '장착 조건: ' + av.requireStarText + ' 이상'));
-    nodes.push(statBox);
-    renderOptions(); nodes.push(optionBox);
-    if (av.grade === '유니크') nodes.push(el('div', { class: 'avatar-hint' }, '외형 장착 시 궁극기에 유니크 전용 컷씬이 재생됩니다.'));
-    nodes.push(el('div', { class: 'avatar-hint' }, '아바타 스탯은 메인카드에 장착했을 때만 적용됩니다.'));
-    if (!av.unlocked) {
-        if (av.shop && av.shop.price) {
-            const p = av.shop.price;
-            const priceLabel = p.goods === 'item'
-                ? (p.name || '아이템') + ' ×' + comma(Number(p.amount || 0))
-                : comma(Number(p.amount || 0)) + (p.goods === 'point' ? 'P' : p.goods === 'gold' ? ' 골드' : p.goods === 'garnet' ? ' 가넷' : p.goods === 'mileage' ? ' 마일리지' : '');
-            const buyBtn = el('button', {
-                class: 'primary',
-                style: 'width:100%',
-                disabled: !!av.shop.soldOut,
-                onclick: async e => {
-                    const button = e.currentTarget;
-                    button.disabled = true;
-                    try {
-                        // 클릭 시점의 최신 상점 데이터로 재검증 (가격·품절·판매 여부 실시간 반영)
-                        const data = await api('/api/shop');
-                        shopData = data;
-                        const shopItem = (data.shop[av.shop.shopType] || []).find(it => it.type === '아바타' && it.fashion === av.name);
-                        if (!shopItem) throw new Error('현재 판매하지 않는 상품입니다.');
-
-                        if (shopItem.soldOut) throw new Error('품절된 상품입니다.');
-                        shopTab = av.shop.shopType;
-                        closePresetNestedModal();
-                        openShopBuyModal(shopItem);
-                    } catch (err) {
-                        showAlert(err.message);
-                        button.disabled = false;
-                    }
-                }
-            }, av.shop.soldOut ? '품절 (' + priceLabel + ')' : '구매 (' + priceLabel + ')');
-            nodes.push(el('div', { class: 'row', style: 'margin-top:10px' }, buyBtn));
-            if (av.shop.shopType && av.shop.shopType !== '아바타') {
-                nodes.push(el('div', { class: 'avatar-hint' }, av.shop.shopType + ' 상점에서 판매 중입니다.'));
-            }
-        } else {
-            nodes.push(el('div', { class: 'avatar-detail-note' }, '미보유'));
+    window.UniqueAvatarUI.showroom(av, {
+        setOption: async (avatarId, option) => {
+            const result = await postApi('/api/avatars/option', { avatarId, option });
+            if (result.profile) renderProfile(result.profile);
+            return result.avatar.option;
+        },
+        apply: async body => {
+            const res = await postApi('/api/cards/avatar', Object.assign({ source: avatarRef.source, number: avatarRef.number }, body));
+            window.UniqueAvatarUI.closeShowroom();
+            closeModal();
+            if (res.profile) renderProfile(res.profile);
+            if (pageIsActive('inventory')) await loadInventory('cards');
+        },
+        buy: async () => {
+            // 클릭 시점의 최신 상점 데이터로 재검증 (가격·품절·판매 여부 실시간 반영)
+            const data = await api('/api/shop');
+            shopData = data;
+            const shopItem = (data.shop[av.shop.shopType] || []).find(it => it.type === '아바타' && it.fashion === av.name);
+            if (!shopItem) throw new Error('현재 판매하지 않는 상품입니다.');
+            if (shopItem.soldOut) throw new Error('품절된 상품입니다.');
+            shopTab = av.shop.shopType;
+            window.UniqueAvatarUI.closeShowroom();
+            openShopBuyModal(shopItem);
         }
-    } else if (!av.equipped && !av.starOk) {
-        nodes.push(el('div', { class: 'avatar-detail-note' }, '⚠️ ' + av.requireStarText + ' 이상 카드에만 장착할 수 있습니다.'));
-    } else {
-        const sendAvatarAction = async (button, body) => {
-            button.disabled = true;
-            try {
-                const res = await postApi('/api/cards/avatar', Object.assign({ source: avatarRef.source, number: avatarRef.number, avatarId: selected?.id }, body));
-                closePresetNestedModal();
-                closeModal();
-                if (res.profile) renderProfile(res.profile);
-                if (pageIsActive('inventory')) await loadInventory('cards');
-            } catch (err) {
-                showAlert(err.message);
-                button.disabled = false;
-            }
-        };
-        const buttons = [];
-        if (av.equipped) {
-            buttons.push(el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: '' }) }, '해제'));
-            if ((av.instances || []).length > 1) buttons.push(el('button', { class: 'primary', style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: av.name }) }, '선택한 아바타로 변경'));
-        } else {
-            buttons.push(el('button', { class: 'primary', style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: av.name }) }, '장착'));
-            buttons.push(av.statApplied
-                ? el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: '', statsOnly: true }) }, '능력치 적용 해제')
-                : el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: av.name, statsOnly: true }) }, '능력치만 적용'));
-        }
-        nodes.push(el('div', { class: 'row', style: 'margin-top:10px;display:flex;gap:8px' }, ...buttons));
-        if (!av.equipped) {
-            nodes.push(el('div', { class: 'avatar-hint' }, '능력치만 적용: 외형은 현재 장착 중인 아바타를 유지하고, 능력치만 이 아바타로 적용됩니다.'));
-        }
-    }
-    openPresetNestedModal(av.name, '아바타 · ' + av.grade + (av.equipped ? ' · 장착 중' : (av.unlocked ? (av.statApplied ? ' · 능력치 적용 중' : '') : ' · 미보유')), nodes, 'avatar');
+    });
 }
 
 function openMainCardModal(card, avatarRef) {

@@ -2823,7 +2823,8 @@ function formatUserCard(card) {
     if (!data) return '없음';
     const fashion = getCardFashion(card);
     const typeText = card.type && card.type != '일반' ? card.type + ' ' : '';
-    return '[' + formatStar(card.star) + '] ' + typeText + (fashion ? fashion.name + ' ' : '') + data.name;
+    const fashionName = fashion?.uniqueSeries === 1 ? '할로윈' : fashion?.name;
+    return '[' + formatStar(card.star) + '] ' + typeText + (fashionName ? fashionName + ' ' : '') + data.name;
 }
 
 function getEquipmentData(type, id) {
