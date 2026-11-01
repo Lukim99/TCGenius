@@ -1146,14 +1146,6 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
         toggle.append(h('span', 'uaw-expand', '펼치기'), h('span', 'uaw-collapse', '접기'));
         head.append(titleBox, toggle);
         wrap.append(head, body);
-        if (typeof actions.synthesis === 'function') {
-            const toolbar = h('div', 'uaw-actions');
-            const syn = btn('uaw-synth', null, () => actions.synthesis());
-            syn.append(icon('cube'), h('span', null, '바인드 큐브 합성'));
-            toolbar.append(syn);
-            body.append(toolbar);
-        }
-
         // 지금 입고 있는 아바타: 전신을 작은 무대에 세운다
         const worn = list.find(a => a.equipped);
         if (worn) {
@@ -1217,7 +1209,7 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
     }
 
     // ---------- 아바타 쇼룸 (상세) ----------
-    // app.js가 showroom(av, { setOption, apply, buy })로 연다. 서버 호출과 성공 후 닫기는 app.js가 맡고,
+    // app.js가 showroom(av, { setOption, apply, buy, synthesis })로 연다. 서버 호출과 성공 후 닫기는 app.js가 맡고,
     // 실패하면 Error를 던진다. 이 화면은 전시·선택·대기 상태·오류 표시만 한다.
     const SHOP_UNITS = { point: 'P', gold: '골드', garnet: '가넷', mileage: '마일리지' };
     const UNIQUE_TRADE_LIMIT = 3;
@@ -1434,20 +1426,25 @@ void main(){float r=length(gl_PointCoord-0.5)*2.0;float a=((1.0-smoothstep(0.1,1
             const listed = !!(av.shop && av.shop.price);
             if (!av.unlocked) {
                 if (listed) acts.append(buyBtn(true));
-                else acts.append(h('p', 'uas-dock-note', '미보유'));
-                return;
-            }
-            if (!av.equipped && !av.starOk) acts.append(h('p', 'uas-dock-note is-warn', (av.requireStarText || '') + ' 이상 카드에만 장착할 수 있습니다.'));
-            else if (av.equipped) {
-                acts.append(actBtn('해제', { name: '' }, false));
-                if (instances.length > 1) acts.append(actBtn('선택한 아바타로 변경', { name: av.name }, true));
+                else if (!unique) acts.append(h('p', 'uas-dock-note', '미보유'));
             } else {
-                acts.append(actBtn('장착', { name: av.name }, true));
-                acts.append(av.statApplied
-                    ? actBtn('능력치 적용 해제', { name: '', statsOnly: true }, false)
-                    : actBtn('능력치만 적용', { name: av.name, statsOnly: true }, false));
+                if (!av.equipped && !av.starOk) acts.append(h('p', 'uas-dock-note is-warn', (av.requireStarText || '') + ' 이상 카드에만 장착할 수 있습니다.'));
+                else if (av.equipped) {
+                    acts.append(actBtn('해제', { name: '' }, false));
+                    if (instances.length > 1) acts.append(actBtn('선택한 아바타로 변경', { name: av.name }, true));
+                } else {
+                    acts.append(actBtn('장착', { name: av.name }, true));
+                    acts.append(av.statApplied
+                        ? actBtn('능력치 적용 해제', { name: '', statsOnly: true }, false)
+                        : actBtn('능력치만 적용', { name: av.name, statsOnly: true }, false));
+                }
+                if (listed && !av.shop.soldOut) acts.append(buyBtn(false));
             }
-            if (listed && !av.shop.soldOut) acts.append(buyBtn(false));
+            if (unique && typeof actions.synthesis === 'function') {
+                const synthesis = btn('uas-btn uas-synth' + (av.unlocked ? '' : ' is-primary'), null, e => run('synthesis', () => call(actions.synthesis), e.currentTarget), true);
+                synthesis.append(icon('cube'), h('span', null, '바인드 큐브 합성'));
+                acts.append(synthesis);
+            }
         }
 
         function renderOptions() {

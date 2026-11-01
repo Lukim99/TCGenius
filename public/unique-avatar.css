@@ -455,16 +455,9 @@ html.ua-locked,html.ua-locked body,html.uas-locked,html.uas-locked body{overflow
 .uaw .uaw-collapse,.uaw[open] .uaw-expand{display:none}
 .uaw[open] .uaw-collapse{display:inline}
 .uaw-body{display:flex;flex-direction:column;gap:14px;padding-top:14px}
-.uaw-actions{display:flex;justify-content:flex-end}
 .uaw-title{display:flex;align-items:baseline;gap:8px}
 .uaw-title strong{font-size:19px;font-weight:900;letter-spacing:-.01em}
 .uaw-count{color:var(--text-3,#7a818d);font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
-.uaw-synth{position:relative;display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:0 16px 0 12px;overflow:hidden;border:1px solid #ffe2a0!important;border-radius:10px;cursor:pointer;
-  background:linear-gradient(180deg,#f8d382,#dc9c34)!important;color:#2a1a03!important;font-size:13.5px;font-weight:900;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -3px 0 rgba(122,72,8,.45),0 6px 18px -8px rgba(233,176,79,.7);transition:filter .15s,transform .08s}
-.uaw-synth .ua-ico{width:20px;height:20px}
-.uaw-synth:hover{filter:brightness(1.06)}
-.uaw-synth:active{transform:translateY(2px)}
 
 /* 현재 외형 무대 */
 .uaw-hero{position:relative;display:grid;grid-template-columns:96px minmax(0,1fr) auto;align-items:center;gap:14px;width:100%;height:132px;padding:0 16px 0 8px;overflow:hidden;border:1px solid color-mix(in srgb,var(--g) 40%,#2a2e37)!important;border-radius:12px;cursor:pointer;text-align:left;
@@ -665,7 +658,7 @@ html.ua-locked,html.ua-locked body,html.uas-locked,html.uas-locked body{overflow
 .uas-dock{flex:0 0 auto;padding:14px 20px;padding-bottom:max(14px,env(safe-area-inset-bottom));border-top:1px solid var(--s-line);background:#0a0b0e}
 .uas-error{margin-bottom:10px!important;padding:9px 12px;border-left:3px solid #e46a5f;border-radius:4px;background:rgba(228,106,95,.1);color:#f6b8b1;font-size:13px;font-weight:700}
 .uas-acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.uas-acts>:only-child,.uas-buy:not(.is-primary),.uas-dock-note{grid-column:1/-1}
+.uas-acts>:only-child,.uas-buy:not(.is-primary),.uas-synth,.uas-dock-note{grid-column:1/-1}
 .uas-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:10px;min-width:0;min-height:56px;padding:0 16px;border:1px solid var(--s-line-2);border-radius:12px;background:linear-gradient(180deg,#1a1d24,#121419);color:var(--s-text);font-size:16px;font-weight:900;cursor:pointer;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.05),inset 0 -3px 0 rgba(0,0,0,.35);transition:filter .15s,transform .08s,border-color .15s}
 .uas-btn:hover:not(:disabled){border-color:#4a515d}

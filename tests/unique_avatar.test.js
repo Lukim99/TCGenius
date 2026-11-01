@@ -330,8 +330,12 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.keyboard.press('Enter');
         assert.equal(await page.$eval('.uaw', node => node.scrollWidth <= node.clientWidth + 1), true);
         await page.setViewport({ width: 1440, height: 1000 });
-        await page.click('.uaw-synth');
+        assert.equal(await page.$('.uaw-synth'), null);
+        await page.click('.uaw-tile[data-grade="unique"]');
+        await page.waitForSelector('.uas-synth');
+        await page.click('.uas-synth');
         await page.waitForSelector('.ua-overlay');
+        assert.equal(await page.$('.uas'), null);
         await page.evaluate(() => Promise.all([...document.querySelectorAll('.ua-overlay img')].map(image => { image.loading = 'eager'; return image.decode().catch(() => {}); })));
         const select = async (id, characterId = 0) => {
             await page.click('.ua-item[data-id="' + id[0] + '"]');
@@ -435,6 +439,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
             openAvatarDetailModal(data.avatars.find(a => a.grade === '일반' && a.shop), { source: 'main' });
         });
         await page.waitForSelector('.uas-buy .uas-coin img');
+        assert.equal(await page.$('.uas-synth'), null);
         await page.evaluate(() => Promise.all([...document.querySelectorAll('.uas img')].map(image => image.decode())));
         assert.equal(await page.$eval('.uas-figure-art img', image => decodeURIComponent(image.src).endsWith('필드/캐릭터/빵귤__일반__수영장 파티.png')), true);
         assert.equal(await page.$('.uas-lens-btn[data-focus="cine"]'), null);

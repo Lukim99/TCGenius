@@ -1150,7 +1150,7 @@ async function appendAvatarSection(avatarRef) {
     }
     const avatars = data.avatars || [];
     if (!avatars.length) { wrap.replaceChildren(); return; }
-    window.UniqueAvatarUI.renderWardrobe(wrap, avatars, { select: av => openAvatarDetailModal(av, avatarRef), synthesis: openAvatarSynthesis });
+    window.UniqueAvatarUI.renderWardrobe(wrap, avatars, { select: av => openAvatarDetailModal(av, avatarRef) });
 }
 
 async function openAvatarSynthesis(cubeName) {
@@ -1158,6 +1158,7 @@ async function openAvatarSynthesis(cubeName) {
         const model = await api('/api/avatars/synthesis');
         model.initialCubeId = model.cubes.find(cube => cube.name === cubeName)?.id;
         let pendingRequest;
+        window.UniqueAvatarUI.closeShowroom();
         closePresetNestedModal(); closeModal();
         window.UniqueAvatarUI.open(model, {
             close: () => {},
@@ -1180,6 +1181,7 @@ async function openAvatarSynthesis(cubeName) {
 // 실패는 Error로 던져 쇼룸 안에 표시하고, 성공이 확인된 뒤에만 쇼룸을 닫는다.
 function openAvatarDetailModal(av, avatarRef) {
     window.UniqueAvatarUI.showroom(av, {
+        synthesis: openAvatarSynthesis,
         setOption: async (avatarId, option) => {
             const result = await postApi('/api/avatars/option', { avatarId, option });
             if (result.profile) renderProfile(result.profile);
