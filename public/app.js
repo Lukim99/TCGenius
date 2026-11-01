@@ -1144,39 +1144,68 @@ async function appendAvatarSection(avatarRef) {
     }
     const avatars = data.avatars || [];
     if (!avatars.length) { wrap.replaceChildren(); return; }
-    const grid = el('div', { class: 'avatar-grid' });
-    avatars.forEach(av => {
-        const tile = el('div', {
-            class: 'avatar-tile' + (av.equipped ? ' equipped' : '') + (!av.unlocked ? ' locked' : ''),
-            title: (av.statLines || []).join('\n'),
-            onclick: () => openAvatarDetailModal(av, avatarRef)
-        },
-            el('div', { class: 'avatar-tile-thumb' },
-                av.imageUrl ? el('img', { src: av.imageUrl, alt: av.name }) : el('span', { class: 'avatar-tile-fallback' }, '?'),
-                !av.unlocked ? el('span', { class: 'avatar-tile-lock' }, '🔒') : null,
-                av.equipped ? el('span', { class: 'avatar-tile-on' }, '장착 중') : null,
-                av.statApplied ? el('span', { class: 'avatar-tile-stat' }, '능력치') : null
-            ),
-            el('div', { class: 'avatar-tile-name' }, av.name),
-            el('div', { class: 'avatar-tile-meta' + (av.grade === '한정' ? ' limited' : av.grade === '프레스티지' ? ' prestige' : '') },
-                av.grade + (av.unlocked && !av.starOk ? ' · ' + av.requireStarText + ' 필요' : ''))
-        );
-        grid.appendChild(tile);
-    });
-    wrap.replaceChildren(cardSectionNode('아바타'), grid,
-        el('div', { class: 'avatar-hint' }, '아바타를 누르면 상세 정보와 장착/해제 버튼이 표시됩니다.'));
+    window.UniqueAvatarUI.renderWardrobe(wrap, avatars, { select: av => openAvatarDetailModal(av, avatarRef), synthesis: openAvatarSynthesis });
+}
+
+async function openAvatarSynthesis(cubeName) {
+    try {
+        const model = await api('/api/avatars/synthesis');
+        model.initialCubeId = model.cubes.find(cube => cube.name === cubeName)?.id;
+        let pendingRequest;
+        closePresetNestedModal(); closeModal();
+        window.UniqueAvatarUI.open(model, {
+            close: () => {},
+            shop: () => { window.UniqueAvatarUI.close(); activatePage('shop'); },
+            synthesize: async body => {
+                const signature = JSON.stringify([model.version, body]);
+                if (pendingRequest?.signature !== signature) pendingRequest = { signature, id: crypto.randomUUID() };
+                const result = await postApi('/api/avatars/synthesis', { ...body, version: model.version, requestId: pendingRequest.id });
+                pendingRequest = null;
+                Object.assign(model, result.state);
+                if (result.profile) renderProfile(result.profile);
+                if (pageIsActive('inventory')) loadInventory('items').catch(() => {});
+                return result;
+            }
+        });
+    } catch (error) { showAlert(error.message); }
 }
 
 // 아바타 타일 클릭 → 이중 모달: 미리보기 + 스탯 + 장착/해제 버튼
 function openAvatarDetailModal(av, avatarRef) {
     const nodes = [];
-    if (av.imageUrl) nodes.push(el('div', { class: 'avatar-detail-preview' }, el('img', { src: av.imageUrl, alt: av.name })));
+    let selected = (av.instances || []).find(entry => entry.id === av.selectedAvatarId) || (av.instances || [])[0];
+    const optionBox = el('div', { class: 'unique-avatar-options' });
+    function renderOptions() {
+        optionBox.replaceChildren();
+        if (!selected || av.grade !== '유니크') return;
+        optionBox.appendChild(el('p', { class: 'avatar-hint unique-avatar-options-title' }, '거래 가능 ' + Math.max(0, 3 - Number(selected.trades || 0)) + '회 · 비전투 중 추가 옵션 1개 선택'));
+        (av.uniqueOptions || []).forEach(option => optionBox.appendChild(el('button', {
+            type: 'button', 'aria-pressed': selected.option === option.id, class: selected.option === option.id ? 'selected' : '',
+            onclick: async () => {
+                optionBox.querySelectorAll('button').forEach(button => { button.disabled = true; });
+                try {
+                    const result = await postApi('/api/avatars/option', { avatarId: selected.id, option: option.id });
+                    selected.option = result.avatar.option;
+                    if (result.profile) renderProfile(result.profile);
+                } catch (error) { showAlert(error.message); }
+                renderOptions();
+            }
+        }, option.label)));
+    }
+    if ((av.instances || []).length > 1) {
+        const picker = el('select', { 'aria-label': '사용할 아바타 사본', onchange: event => { selected = av.instances.find(entry => entry.id === event.target.value); renderOptions(); } },
+            ...av.instances.map((entry, index) => el('option', { value: entry.id, selected: entry.id === selected.id }, '보유 아바타 ' + (index + 1) + (av.grade === '유니크' ? ' · 거래 ' + Math.max(0, 3 - Number(entry.trades || 0)) + '회 남음' : ''))));
+        nodes.push(picker);
+    }
+    if (av.portraitUrl || av.imageUrl) nodes.push(el('div', { class: 'avatar-detail-preview' + (av.grade === '유니크' ? ' is-unique' : '') }, el('img', { src: av.portraitUrl || av.imageUrl, alt: av.name })));
     const statBox = el('div', { class: 'avatar-detail-stats' });
     const statLines = av.statLines || [];
     if (statLines.length) statLines.forEach(line => statBox.appendChild(el('div', { class: 'avatar-detail-stat' }, line)));
     else statBox.appendChild(el('div', { class: 'avatar-detail-stat none' }, '추가 스탯 없음'));
     if (Number(av.requireStar || 0) > 0) statBox.appendChild(el('div', { class: 'avatar-detail-stat cond' }, '장착 조건: ' + av.requireStarText + ' 이상'));
     nodes.push(statBox);
+    renderOptions(); nodes.push(optionBox);
+    if (av.grade === '유니크') nodes.push(el('div', { class: 'avatar-hint' }, '외형 장착 시 궁극기에 유니크 전용 컷씬이 재생됩니다.'));
     nodes.push(el('div', { class: 'avatar-hint' }, '아바타 스탯은 메인카드에 장착했을 때만 적용됩니다.'));
     if (!av.unlocked) {
         if (av.shop && av.shop.price) {
@@ -1197,7 +1226,7 @@ function openAvatarDetailModal(av, avatarRef) {
                         shopData = data;
                         const shopItem = (data.shop[av.shop.shopType] || []).find(it => it.type === '아바타' && it.fashion === av.name);
                         if (!shopItem) throw new Error('현재 판매하지 않는 상품입니다.');
-                        if (shopItem.owned) throw new Error('이미 보유한 아바타입니다.');
+
                         if (shopItem.soldOut) throw new Error('품절된 상품입니다.');
                         shopTab = av.shop.shopType;
                         closePresetNestedModal();
@@ -1221,7 +1250,7 @@ function openAvatarDetailModal(av, avatarRef) {
         const sendAvatarAction = async (button, body) => {
             button.disabled = true;
             try {
-                const res = await postApi('/api/cards/avatar', Object.assign({ source: avatarRef.source, number: avatarRef.number }, body));
+                const res = await postApi('/api/cards/avatar', Object.assign({ source: avatarRef.source, number: avatarRef.number, avatarId: selected?.id }, body));
                 closePresetNestedModal();
                 closeModal();
                 if (res.profile) renderProfile(res.profile);
@@ -1234,6 +1263,7 @@ function openAvatarDetailModal(av, avatarRef) {
         const buttons = [];
         if (av.equipped) {
             buttons.push(el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: '' }) }, '해제'));
+            if ((av.instances || []).length > 1) buttons.push(el('button', { class: 'primary', style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: av.name }) }, '선택한 아바타로 변경'));
         } else {
             buttons.push(el('button', { class: 'primary', style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: av.name }) }, '장착'));
             buttons.push(av.statApplied
@@ -2247,7 +2277,7 @@ function itemUseControls(item) {
         el('button', { type: 'button', onclick: () => syncAmount(amount + 1), 'aria-label': '수량 늘리기' }, '+'),
         el('button', { class: 'item-use-max', type: 'button', onclick: () => syncAmount(max) }, 'MAX')
     ) : null;
-    const useButton = el('button', { class: 'item-use-button', type: 'button', onclick: () => useInventoryItem(item, amount, useButton) }, item.choiceOptions?.length ? '주머니 열기' : item.name === '봉인된 자물쇠' ? '1회 개봉' : '1개 사용');
+    const useButton = el('button', { class: 'item-use-button', type: 'button', onclick: () => useInventoryItem(item, amount, useButton) }, ['바인드 큐브', '황금 바인드 큐브', '마스터 바인드 큐브'].includes(item.name) ? '합성창 열기' : item.choiceOptions?.length ? '주머니 열기' : item.name === '봉인된 자물쇠' ? '1회 개봉' : '1개 사용');
     return el('section', { class: 'item-use-bar' },
         el('div', { class: 'item-use-bar-copy' }, el('span', null, '아이템 사용'), el('small', null, item.bulkUsable ? '사용할 수량을 선택해주세요.' : '이 아이템은 한 번에 1개씩 사용할 수 있습니다.')),
         quantity,
@@ -2544,6 +2574,7 @@ function renderItemUsePending(item, pending, changes) {
 }
 
 async function useInventoryItem(item, count, button) {
+    if (['바인드 큐브', '황금 바인드 큐브', '마스터 바인드 큐브'].includes(item.name)) { finishCloseModal(); openAvatarSynthesis(item.name); return; }
     if (item.choiceOptions?.length) {
         finishCloseModal();
         openChoicePouch(item.id).catch(error => showAlert(error.message));
@@ -5871,7 +5902,6 @@ function openShopBuyModal(item) {
         const have = item.priceItemCount || 0;
         if (p.amount > 0) maxQty = Math.min(maxQty, Math.floor(have / p.amount));
     }
-    if (item.type === '아바타') maxQty = Math.min(maxQty, 1);
     maxQty = Math.max(0, maxQty);
 
     let qty = Math.min(1, maxQty || 1);
@@ -6142,7 +6172,7 @@ function renderRegisterModal() {
         ? el('div', { class: 'empty', style: 'padding:16px 0' }, emptyMsg)
         : el('div', { class: 'reg-pick-scroll' }, ...pool.map(item => {
             const isSel = kind === 'item' ? regState.selectedItemId === item.id
-                : kind === 'avatar' ? regState.selectedAvatarName === item.name
+                : kind === 'avatar' ? regState.selectedAvatarId === item.id
                 : regState.selectedIndex === item.index;
             let thumbEl, nameText, metaText;
             thumbEl = buildRegItemThumb(item, kind);
@@ -6150,7 +6180,7 @@ function renderRegisterModal() {
                 nameText = item.formatted; metaText = item.starText || '';
             } else if (kind === 'avatar') {
                 nameText = item.name;
-                metaText = '아바타 · ' + (item.grade || '일반') + (item.grade === '한정' ? ' (판매 후 재거래 불가)' : '');
+                metaText = '아바타 · ' + (item.grade || '일반') + (item.grade === '한정' ? ' (판매 후 재거래 불가)' : item.grade === '유니크' ? ' · 거래 ' + Math.max(0, 3 - Number(item.trades || 0)) + '회 남음' : '');
             } else if (kind === 'equipment') {
                 nameText = item.name + (item.level > 0 ? ' +' + item.level : '');
                 metaText = item.rarity + ' · ' + item.typeLabel;
@@ -6171,7 +6201,7 @@ function renderRegisterModal() {
             const checkEl = el('div', { class: 'reg-check' + (isSel ? ' sel' : '') }, isSel ? svgIcon(REG_CHK_SVG) : null);
             return el('div', {
                 class: 'reg-pick-row' + (isSel ? ' selected' : ''),
-                onclick: () => { if (kind === 'item') regState.selectedItemId = item.id; else if (kind === 'avatar') regState.selectedAvatarName = item.name; else regState.selectedIndex = item.index; renderRegisterModal(); }
+                onclick: () => { if (kind === 'item') regState.selectedItemId = item.id; else if (kind === 'avatar') { regState.selectedAvatarName = item.name; regState.selectedAvatarId = item.id; } else regState.selectedIndex = item.index; renderRegisterModal(); }
             }, thumbEl, infoEl, checkEl);
         }));
 
@@ -6233,7 +6263,7 @@ async function submitRegister() {
         body.index = regState.selectedIndex;
     } else if (kind === 'avatar') {
         if (!regState.selectedAvatarName) { showRegErr('아바타를 선택해주세요.'); return; }
-        body.name = regState.selectedAvatarName;
+        body.name = regState.selectedAvatarName; body.avatarId = regState.selectedAvatarId;
     } else {
         if (regState.selectedItemId < 0) { showRegErr('아이템을 선택해주세요.'); return; }
         const count = Number($('#regCount') ? $('#regCount').value : 1);
@@ -6429,6 +6459,7 @@ async function openBuyOrderDetail(entry) {
 
 function renderFulfillSection(entry, fulfillable, body, errBox) {
     let selectedIndex = -1;
+    let selectedAvatarId = fulfillable.avatar?.instances?.[0]?.id;
     let qty = 1;
     const showErr = msg => { errBox.textContent = msg; errBox.classList.add('visible'); };
     const receipt = el('div', { class: 'shop-receipt' });
@@ -6462,6 +6493,8 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
             body.appendChild(el('div', { class: 'empty' }, av.tradeBlockReason));
             return null;
         }
+        if ((av.instances || []).length > 1) body.appendChild(el('select', { 'aria-label': '판매할 아바타', onchange: event => { selectedAvatarId = event.target.value; } },
+            ...av.instances.map((instance, index) => el('option', { value: instance.id }, '보유 아바타 ' + (index + 1) + (av.grade === '유니크' ? ' · 거래 ' + Math.max(0, 3 - Number(instance.trades || 0)) + '회 남음' : '')))));
         const avThumb = av.iconUrl
             ? el('img', { src: av.iconUrl, style: { width: '36px', height: '36px', objectFit: 'contain' } })
             : (av.imageUrl ? el('img', { src: av.imageUrl, style: { width: '32px', height: '42px', objectFit: 'cover', borderRadius: '4px' } }) : null);
@@ -6512,6 +6545,7 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
     const sellBtn = el('button', { class: 'primary', onclick: async () => {
         errBox.classList.remove('visible');
         const reqBody = { id: entry.id };
+        if (entry.kind === 'avatar') reqBody.avatarId = selectedAvatarId;
         if (entry.kind === 'item') reqBody.count = qty;
         else if (entry.kind !== 'avatar') {
             if (selectedIndex < 0) return showErr('판매할 ' + AUCTION_KIND_LABEL[entry.kind] + '을(를) 선택해주세요.');
@@ -8802,11 +8836,11 @@ async function openMailCompose() {
     function viewPicker(kind) {
         const usedNums = new Set(gifts.filter(g => g.type === 'equipment').map(g => g.number));
         const usedIdx = new Set(gifts.filter(g => g.type === 'pet').map(g => g.index));
-        const usedAvatars = new Set(gifts.filter(g => g.type === 'avatar').map(g => g.name));
+        const usedAvatars = new Set(gifts.filter(g => g.type === 'avatar').map(g => g.avatarId));
         let opts = kind === 'equipment' ? giftable.equipment : kind === 'pet' ? giftable.pets : kind === 'avatar' ? (giftable.avatars || []) : giftable.items;
         if (kind === 'equipment') opts = opts.filter(o => !usedNums.has(o.number));
         else if (kind === 'pet') opts = opts.filter(o => !usedIdx.has(o.index));
-        else if (kind === 'avatar') opts = opts.filter(o => !usedAvatars.has(o.name));
+        else if (kind === 'avatar') opts = opts.filter(o => !usedAvatars.has(o.id));
         const title = kind === 'equipment' ? '장비 선택' : kind === 'pet' ? '펫 선택' : kind === 'avatar' ? '아바타 선택' : '아이템 선택';
         const list = el('div', { class: 'mc-pick-list' });
         if (!opts.length) list.appendChild(el('div', { class: 'mc-gift-empty' }, kind === 'avatar' ? '보낼 수 있는 아바타가 없습니다.\n(프레스티지 · 거래 횟수를 소진한 한정판 제외)' : '보낼 수 있는 항목이 없습니다.'));
@@ -8825,7 +8859,7 @@ async function openMailCompose() {
     function pickGift(kind, o) {
         if (kind === 'equipment') { gifts.push({ type: 'equipment', number: o.number, _label: o.name + (o.level > 0 ? ' +' + o.level : ''), _icon: o.iconUrl, _frame: o.frameUrl }); viewCompose(); }
         else if (kind === 'pet') { gifts.push({ type: 'pet', index: o.index, _label: o.name + (o.level > 0 ? ' +' + o.level : ''), _icon: o.iconUrl, _frame: o.frameUrl }); viewCompose(); }
-        else if (kind === 'avatar') { gifts.push({ type: 'avatar', name: o.name, _label: o.name + ' 아바타' + (o.grade === '한정' ? ' [한정]' : ''), _icon: o.iconUrl || o.imageUrl, _frame: o.iconUrl ? o.frameUrl : null }); viewCompose(); }
+        else if (kind === 'avatar') { gifts.push({ type: 'avatar', name: o.name, avatarId: o.id, _label: o.name + ' 아바타' + (o.grade === '한정' ? ' [한정]' : ''), _icon: o.iconUrl || o.imageUrl, _frame: o.iconUrl ? o.frameUrl : null }); viewCompose(); }
         else viewItemCount(o);
     }
 

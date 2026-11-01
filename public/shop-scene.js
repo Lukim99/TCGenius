@@ -106,8 +106,7 @@
             let max = 999;
             for (const value of Object.values(item?.limitInfo?.remaining || {})) if (typeof value === 'number') max = Math.min(max, value);
             if (item?.price.amount > 0) max = Math.min(max, Math.floor(balance / item.price.amount));
-            if (item?.type === '아바타') max = Math.min(max, 1);
-            if (!item || item.owned || item.soldOut) max = 0;
+            if (!item || item.soldOut) max = 0;
             max = Math.max(0, max); s.qty = Math.max(1, Math.min(s.qty, max || 1));
             const limits = Object.entries({ max: '전체', daily: '일일', weekly: '주간', monthly: '월간', global: '선착순' }).filter(([key]) => item?.limitInfo?.limits[key] != null)
                 .map(([key, label]) => ({ label, limit: item.limitInfo.limits[key], remaining: Math.max(0, item.limitInfo.remaining[key] || 0) }));

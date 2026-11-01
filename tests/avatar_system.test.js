@@ -2,10 +2,20 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-for (const line of fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^\s*([^#=]+)=(.*)$/);
-    if (match) process.env[match[1].trim()] = match[2].trim();
-}
+const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
+const AWS = require('aws-sdk');
+AWS.S3.prototype.makeRequest = operation => {
+    if (operation === 'listObjectsV2') return { promise: async () => ({ Contents: [] }) };
+    throw new Error('Unexpected S3 operation: ' + operation);
+};
+DynamoDBDocumentClient.prototype.send = async command => {
+    if (command.constructor.name === 'GetCommand' && command.input.TableName === 'rpgenius_data') {
+        const file = path.join(__dirname, '../DB/RPGenius', command.input.Key.key + '.json');
+        return { Item: { data: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [] } };
+    }
+    if (command.constructor.name === 'ScanCommand') return { Items: [] };
+    throw new Error('Unexpected isolated database command: ' + command.constructor.name);
+};
 
 const rpg = require('../rpgenius');
 
@@ -31,7 +41,10 @@ const rpg = require('../rpgenius');
     user.save = async () => {};
     assert.strictEqual(rpg.hasAvatar(user, normalFashion.name), false, '초기 미보유');
     assert.strictEqual(rpg.unlockAvatar(user, normalFashion.name, 0), true, '해금 성공');
-    assert.strictEqual(rpg.unlockAvatar(user, normalFashion.name, 0), false, '중복 해금 거부');
+    assert.strictEqual(rpg.unlockAvatar(user, normalFashion.name, 0), true, '중복 보유 허용');
+    assert.strictEqual(rpg.getUserAvatars(user).length, 2, '사본 2개 보유');
+    assert.notStrictEqual(user.avatars[0].id, user.avatars[1].id, '사본별 식별자');
+    rpg.removeUserAvatar(user, normalFashion.name, user.avatars[1].id);
     assert.strictEqual(rpg.hasAvatar(user, normalFashion.name), true, '보유 확인');
 
     // 3) 거래 가능 규칙: 일반=가능, 프레스티지=불가, 한정=1회

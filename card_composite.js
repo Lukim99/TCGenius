@@ -190,10 +190,12 @@ function resolveCardLayers(card) {
     const tiers = isAwakening ? ['각성'] : isJob
         ? (prestige ? ['프레스티지 전직', '전직'] : ['전직'])
         : (prestige ? ['프레스티지 일반', '일반'] : ['일반']);
+    const unique = skin === '[1차]유니크 ' + card.name;
+    const artSkin = unique ? '유니크 1차' : skin;
     const skinTiers = [...new Set([...tiers, '일반', '전직', '각성', '프레스티지 일반', '프레스티지 전직'])];
     const artNames = [
-        ...(skin ? skinTiers.map(tier => tier + ' ' + skin + ' ' + card.name + '.png') : []),
-        ...tiers.map(tier => tier + ' ' + card.name + '.png')
+        ...(artSkin ? skinTiers.map(tier => tier + ' ' + artSkin + ' ' + card.name + '.png') : []),
+        ...(unique ? [] : tiers.map(tier => tier + ' ' + card.name + '.png'))
     ];
     const character = firstExisting(path.join(CHARACTER_DIR, card.name), artNames);
     if (!character) return null;

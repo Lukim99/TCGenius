@@ -49,6 +49,26 @@ function browser(reduced = false) {
     };
 }
 
+test('유니크 외형은 기본 궁극기를 대체하고 재시전 및 동작 줄이기를 유지한다', async () => {
+    const scene = { characterName: '빵귤', skillName: '유드 알레프', url: '/unique.webp', posterUrl: '/unique.png' };
+    const event = { id: 'unique1', action: 'skill', skillName: scene.skillName, uniqueCutscene: scene };
+    const b = browser();
+    assert.equal(b.player.play(event), 1800);
+    assert.equal(b.player.play(event), 0);
+    await b.flush();
+    assert.deepEqual(b.fetched, [scene.url]);
+    b.finish(); b.player.play({ ...event, id: 'unique2' }); await b.flush();
+    assert.equal(b.fetched.length, 1);
+    assert.notEqual(b.images[0].url, b.images[1].url);
+    const reduced = browser(true);
+    reduced.player.play(event); await reduced.flush();
+    assert.deepEqual(reduced.fetched, [scene.posterUrl]);
+    assert.equal([...reduced.timers.values()][0].ms, 1000);
+    assert.equal(cutscenes.find({ ...event, action: 'tick' }), null);
+    assert.equal(cutscenes.find({ ...event, skillName: '자인' }), null);
+    assert.equal(cutscenes.find({ ...event, uniqueCutscene: null }).url, undefined);
+});
+
 test('수나타 소환과 강화형 궁극기는 실제 시전당 1회 재생하며 반복 응답과 지속 피해는 제외한다', async () => {
     const b = browser(), event = { id: 'cast1', at: 9990, action: 'skill', skillName: '수나타 소환' };
     assert.equal(b.player.play(event), 2399);

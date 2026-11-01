@@ -140,7 +140,7 @@
         return out;
     }
     const curName = p => (p && p.name) || CUR[p && p.goods] || '';
-    const reason = it => !it ? '' : it.owned ? '보유중' : it.soldOut ? '품절' : '';
+    const reason = it => !it ? '' : it.soldOut ? '품절' : '';
     function buyState() {
         const it = A.item, cap = Math.max(0, Math.floor(Number(A.max)) || 0), unit = Number(it && it.price && it.price.amount) || 0, bal = Number(A.balance) || 0;
         const q = clamp(Math.floor(Number(S.qty)) || 1, 1, Math.max(1, cap)), cost = unit * q;

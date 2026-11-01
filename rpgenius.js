@@ -2645,17 +2645,21 @@ function applyPackSkinToCard(card, skinName) {
 }
 
 // ===== 아바타 (계정 단위 패션 해금) =====
-// user.avatars: [{ name, trades }] — name은 Fashion 엔트리 이름(일반/전직 변형 공용), trades는 거래된 횟수.
-// 등급: exclusive=한정(최초 1회 거래), isHigh=프레스티지(거래 불가), 그 외 일반(무제한 거래).
+// user.avatars: [{ id, name, trades, option? }] — 중복 보유는 개별 id로 구별하고 trades는 거래된 횟수다.
+// 등급: uniqueSeries=1 유니크(3회), exclusive=한정(1회), isHigh=프레스티지(불가), 그 외 일반(무제한).
 
 function getUserAvatars(user) {
     if (!user.avatars || !Array.isArray(user.avatars)) user.avatars = [];
+    user.avatars.forEach((entry, index) => {
+        if (entry && !entry.id) entry.id = 'legacy-' + require('crypto').createHash('sha256').update(JSON.stringify([user.id, index, entry.name, entry.trades])).digest('hex').slice(0, 24);
+    });
     return user.avatars;
 }
 
-function findUserAvatar(user, name) {
+function findUserAvatar(user, name, id) {
     const key = String(name || '').trim();
-    return getUserAvatars(user).find(entry => entry && entry.name == key) || null;
+    const entries = getUserAvatars(user).filter(entry => entry && entry.name == key && (!id || entry.id === id));
+    return entries.sort((a, b) => Number(a.trades || 0) - Number(b.trades || 0))[0] || null;
 }
 
 function hasAvatar(user, name) {
@@ -2666,33 +2670,38 @@ function getAvatarGradeByName(name) {
     const key = String(name || '').trim();
     const entries = getFashionData().filter(fashion => fashion && fashion.name == key);
     if (entries.length == 0) return null;
+    if (entries.some(entry => entry.uniqueSeries === 1)) return '유니크';
     if (entries.some(entry => entry.exclusive === true)) return '한정';
     if (entries.some(entry => entry.isHigh === true)) return '프레스티지';
     return '일반';
 }
 
-function unlockAvatar(user, name, trades) {
+function unlockAvatar(user, name, trades, instance) {
     const key = String(name || '').trim();
-    if (!key || hasAvatar(user, key)) return false;
-    getUserAvatars(user).push({ name: key, trades: Math.max(0, Number(trades || 0)) });
+    if (!key || !getAvatarGradeByName(key)) return false;
+    const entry = { id: instance?.id || require('crypto').randomUUID(), name: key, trades: Math.max(0, Number(trades || 0)) };
+    if (getAvatarGradeByName(key) === '유니크') entry.option = require('./unique_avatar').option(instance?.option).id;
+    if (getUserAvatars(user).some(old => old.id === entry.id)) return false;
+    user.avatars.push(entry);
     return true;
 }
 
 // 아바타 거래 불가 사유. null이면 거래 가능.
-function getAvatarTradeBlockReason(user, name) {
-    const entry = findUserAvatar(user, name);
+function getAvatarTradeBlockReason(user, name, id) {
+    const entry = findUserAvatar(user, name, id);
     if (!entry) return '보유하지 않은 아바타입니다.';
     const grade = getAvatarGradeByName(name);
     if (grade == '프레스티지') return '프레스티지 아바타는 거래할 수 없습니다.';
     if (grade == '한정' && Number(entry.trades || 0) >= 1) return '한정판 아바타는 최초 1회만 거래할 수 있습니다.';
+    if (grade == '유니크' && Number(entry.trades || 0) >= 3) return '유니크 아바타는 최대 3회만 거래할 수 있습니다.';
     return null;
 }
 
-function stripAvatarFromUserCards(user, name) {
+function stripAvatarFromUserCards(user, name, id) {
     const key = String(name || '').trim();
     const strip = card => {
-        if (card && typeof card.skin == 'string' && card.skin.trim() == key) delete card.skin;
-        if (card && typeof card.statSkin == 'string' && card.statSkin.trim() == key) delete card.statSkin;
+        if (card && card.skin === key && (!hasAvatar(user, key) || card.avatarId === id)) { delete card.skin; delete card.avatarId; }
+        if (card && card.statSkin === key && (!hasAvatar(user, key) || card.statAvatarId === id)) { delete card.statSkin; delete card.statAvatarId; }
     };
     strip(user.main_card);
     (Array.isArray(user.card_slot) ? user.card_slot : []).forEach(strip);
@@ -2700,13 +2709,14 @@ function stripAvatarFromUserCards(user, name) {
 }
 
 // 아바타 해금을 계정에서 제거(거래/경매 등록용). 장착 중인 카드에서도 해제한다.
-function removeUserAvatar(user, name) {
+function removeUserAvatar(user, name, id) {
     const key = String(name || '').trim();
     const list = getUserAvatars(user);
-    const index = list.findIndex(entry => entry && entry.name == key);
+    const selected = findUserAvatar(user, key, id);
+    const index = list.indexOf(selected);
     if (index < 0) return null;
     const entry = list.splice(index, 1)[0];
-    stripAvatarFromUserCards(user, key);
+    stripAvatarFromUserCards(user, key, entry.id);
     return entry;
 }
 
@@ -2726,6 +2736,8 @@ function getAvatarOptionsForCard(user, card) {
         name: fashion.name,
         grade: getAvatarGradeByName(fashion.name),
         unlocked: hasAvatar(user, fashion.name),
+        ownedCount: getUserAvatars(user).filter(entry => entry.name === fashion.name).length,
+        instances: getUserAvatars(user).filter(entry => entry.name === fashion.name).map(entry => ({ ...entry })),
         requireStar: Number(fashion.requireStar || 0),
         starOk: star >= Number(fashion.requireStar || 0),
         equipped: typeof card.skin == 'string' && card.skin.trim() == fashion.name,
@@ -2734,40 +2746,47 @@ function getAvatarOptionsForCard(user, card) {
 }
 
 // 카드에 아바타 장착/해제. name이 비면 해제. 성공 시 null, 실패 시 사유 문자열.
-function equipAvatarOnCard(user, card, name) {
+function equipAvatarOnCard(user, card, name, id) {
     if (!card || typeof card.id == 'undefined') return '카드를 찾을 수 없습니다.';
     const key = String(name || '').trim();
     if (!key) {
         delete card.skin;
+        delete card.avatarId;
         return null;
     }
-    if (!hasAvatar(user, key)) return '보유하지 않은 아바타입니다.';
+    const instance = findUserAvatar(user, key, id);
+    if (!instance) return '보유하지 않은 아바타입니다.';
     const option = getAvatarOptionsForCard(user, card).find(entry => entry.name == key);
     if (!option) return '이 카드에 적용할 수 없는 아바타입니다.';
     if (!option.starOk) return (option.requireStar + 1) + '성 이상 카드에만 장착할 수 있습니다.';
     card.skin = key;
-    if (typeof card.statSkin == 'string' && card.statSkin.trim() == key) delete card.statSkin; // 장착하면 스탯도 따라오므로 중복 제거
+    card.avatarId = instance.id;
+    if (typeof card.statSkin == 'string' && card.statSkin.trim() == key) { delete card.statSkin; delete card.statAvatarId; }
     return null;
 }
 
 // 능력치만 적용: 외형은 현재 장착 아바타(card.skin) 그대로, 스탯만 해당 아바타로 바꾼다. name이 비면 해제.
 // 보유한 아바타만 가능. 성공 시 null, 실패 시 사유 문자열.
-function applyAvatarStatsOnCard(user, card, name) {
+function applyAvatarStatsOnCard(user, card, name, id) {
     if (!card || typeof card.id == 'undefined') return '카드를 찾을 수 없습니다.';
     const key = String(name || '').trim();
     if (!key) {
         delete card.statSkin;
+        delete card.statAvatarId;
         return null;
     }
-    if (!hasAvatar(user, key)) return '보유하지 않은 아바타입니다.';
+    const instance = findUserAvatar(user, key, id);
+    if (!instance) return '보유하지 않은 아바타입니다.';
     const option = getAvatarOptionsForCard(user, card).find(entry => entry.name == key);
     if (!option) return '이 카드에 적용할 수 없는 아바타입니다.';
     if (!option.starOk) return (option.requireStar + 1) + '성 이상 카드에만 적용할 수 있습니다.';
-    if (typeof card.skin == 'string' && card.skin.trim() == key) {
+    if (typeof card.skin == 'string' && card.skin.trim() == key && (!card.avatarId || card.avatarId === instance.id)) {
         delete card.statSkin; // 장착 중인 아바타는 이미 스탯이 적용된다
+        delete card.statAvatarId;
         return null;
     }
     card.statSkin = key;
+    card.statAvatarId = instance.id;
     return null;
 }
 
@@ -4262,9 +4281,14 @@ function calculateUserStats(user, _out) {
     if (equippedPassiveIds.has(armorExpansion.PASSIVE_IDS.hellfire)) stats.hasHellfireRage = true;
     if (equippedPassiveIds.has(armorExpansion.PASSIVE_IDS.stormWalker)) stats.hasStormWalker = true;
     const fashion = getCardStatFashion(user.main_card);
-    if (fashion && Number(user.main_card && user.main_card.star || 0) >= Number(fashion.requireStar || 0)) {
+    if (fashion && (fashion.uniqueSeries !== 1 || hasAvatar(user, fashion.name)) && Number(user.main_card && user.main_card.star || 0) >= Number(fashion.requireStar || 0)) {
         addStats(stats, fashion.option && fashion.option.stat || {});
         addStats(plusStats, fashion.option && fashion.option.plusStat || {});
+        if (fashion.uniqueSeries === 1) {
+            const card = user.main_card;
+            const avatar = findUserAvatar(user, fashion.name, card.statSkin ? card.statAvatarId : card.avatarId);
+            if (avatar) addStats(stats, require('./unique_avatar').option(avatar.option).stats);
+        }
     }
     // 칭호 스탯 (장비와 동일하게 stat/plusStat 누적 → 아래 마무리 연산에서 처리)
     const titleDef = getTitleStatsDef(user);
@@ -7932,6 +7956,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     const event = combatEffects.annotateEvent({
         id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId: enemy.id,
         action: manual ? extra.isBasic ? 'basic' : 'skill' : 'tick', skillName: extra.skillName || null,
+        uniqueCutscene: manual && !extra.isBasic && extra.skillName ? getUniqueAvatarCutscene(user, extra.skillName) : null,
         ...(extra.stoneCast ? { stoneBranch: extra.stoneBranch || 'shared' } : {}),
         dot: !!extra.paradiseDot || !!extra.dotAttack && !extra.isBotAutoAttack,
         triggeredEffectIds: extra.triggeredEffectIds || [], effectElement: extra.attackElement || null,
@@ -8167,6 +8192,16 @@ function consumeNextDamageReduction(user, damage) {
 
 function isUltimateSkillForUser(user, skill) {
     return getUltimateSkills(user).some(entry => entry.skill.name === skill?.name);
+}
+
+function getUniqueAvatarCutscene(user, skillName) {
+    const fashion = getCardFashion(user.main_card);
+    if (fashion?.uniqueSeries !== 1 || !hasAvatar(user, fashion.name)) return null;
+    const ultimate = getUltimateSkills(user).at(-1)?.skill;
+    if (!ultimate || (skillName && ultimate.name !== skillName)) return null;
+    const character = readJson(CHARACTER_CARDS_PATH, [])[user.main_card.id];
+    return { url: '/rpg-ui?file=' + encodeURIComponent('유니크아바타/컷씬/' + character.name + '.webp'),
+        posterUrl: '/rpg-ui?file=' + encodeURIComponent('유니크아바타/전신/' + character.name + '.png'), skillName: ultimate.name, characterName: character.name };
 }
 
 function getSkillCooldownRate(stats) {
@@ -12698,8 +12733,8 @@ function grantPackReward(user, reward, summary) {
     if (reward.type == '아바타') {
         const avatarName = String(reward.fashion || '').trim();
         if (!getAvatarGradeByName(avatarName)) return;
-        const unlocked = unlockAvatar(user, avatarName, 0);
-        addRewardSummary(summary, 'avatar:' + avatarName, '🧥 ' + avatarName + ' 아바타' + (unlocked ? '' : ' (이미 보유)'), 1);
+        for (let i = 0; i < count; i++) unlockAvatar(user, avatarName, 0);
+        addRewardSummary(summary, 'avatar:' + avatarName, '🧥 ' + avatarName + ' 아바타', count);
         return;
     }
     if (reward.type == '칭호') {
@@ -13053,6 +13088,7 @@ async function useItem(user, itemName, countArg, options = {}) {
     if (item.name === '송편' && item.use === '송편') return '❌ 윷놀이 이벤트가 종료되어 송편을 사용할 수 없습니다.';
     if (item.name === POINT_MINE_DROP_ITEM_NAME) return '❌ 곡괭이 상자 열쇠는 웹 포인트 광산에서 사용할 수 있습니다.\n\nhttps://rpgenius.kro.kr/?tab=' + encodeURIComponent('포인트 광산');
     if (item.name == '봉인된 자물쇠') return '❌ 봉인된 자물쇠는 웹버전에서 이용 가능합니다.\n\nhttps://rpgenius.kro.kr/sealed-lock';
+    if (item.use === '바인드큐브') return '❌ 바인드 큐브는 웹 인벤토리의 합성창에서 아바타 2개와 함께 사용해주세요.\n\nhttps://rpgenius.kro.kr/';
     if (!['소모품', '가챠', '번들', '사용', '미끼'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
     if (item.type == '소모품' && isBlackCurtainHealingBlocked(user) && (item.use_func || []).some(func => /회복/.test(String(func && func.type || '')))) {
         return '❌ 흑막의 저주로 회복할 수 없습니다.';
@@ -13721,8 +13757,6 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (shopItem.type == '아바타') {
         const avatarName = String(shopItem.fashion || '').trim();
         if (!getAvatarGradeByName(avatarName)) return '❌ 처리할 수 없는 상품입니다.';
-        if (hasAvatar(user, avatarName)) return '❌ 이미 보유한 아바타입니다.';
-        if (count != 1) return '❌ 아바타는 1개만 구매할 수 있습니다.';
     }
     // '패키지' 상점의 '아이템'이 실제로는 번들인 경우, 번들 아이템을 지급하지 않고 구성품을 즉시 수령시킨다.
     let bundleData = null;
@@ -13797,7 +13831,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
             user.inventory.card.push(card);
         }
     } else if (shopItem.type == '아바타') {
-        unlockAvatar(user, String(shopItem.fashion || '').trim(), 0);
+        for (let i = 0; i < Number(shopItem.count || 1) * count; i++) unlockAvatar(user, String(shopItem.fashion || '').trim(), 0);
     } else if (shopItem.type == '가넷') {
         user.garnet = Number(user.garnet || 0) + Number(shopItem.count) * count;
     } else if (shopItem.type == '골드') {
@@ -15142,7 +15176,7 @@ async function claimMailGifts(user, id) {
         else if (g.type == 'card' && g.card) { user.inventory.card.push({ id: Number(g.card.id), star: Number(g.card.star || 0), type: g.card.type || '일반' }); const d = describeMailGift(g); lines.push(d ? d.label : '캐릭터 카드'); }
         else if (g.type == 'item') { lines.push(...formatItemReward(grantItemReward(user, Number(g.id), Number(g.count || 0)))); }
         else if (g.type == 'title') { const t = getTitleById(g.titleId); const first = unlockTitle(user, g.titleId); lines.push('🏅 칭호 「' + (t ? t.name : g.titleId) + '」' + (first ? '' : ' (이미 보유)')); }
-        else if (g.type == 'avatar') { const first = unlockAvatar(user, g.name, Number(g.trades || 0)); lines.push('🧥 ' + String(g.name) + ' 아바타' + (first ? '' : ' (이미 보유)')); }
+        else if (g.type == 'avatar') { unlockAvatar(user, g.name, Number(g.trades || 0), g); lines.push('🧥 ' + String(g.name) + ' 아바타'); }
     });
     e.claimed = true;
     if (!e.read) { e.read = true; e.readAt = Date.now(); }
@@ -15217,12 +15251,13 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
             resolved.push({ kind: 'item', id, count });
         } else if (spec.type == 'avatar') {
             const avatarName = String(spec.name || '').trim();
-            if (usedAvatar.has(avatarName)) return { error: '같은 아바타를 중복으로 담을 수 없습니다.' };
-            usedAvatar.add(avatarName);
-            const blockReason = getAvatarTradeBlockReason(sender, avatarName);
+            const selected = findUserAvatar(sender, avatarName, spec.avatarId);
+            if (!selected) return { error: '보유하지 않은 아바타입니다.' };
+            if (usedAvatar.has(selected.id)) return { error: '같은 아바타를 중복으로 담을 수 없습니다.' };
+            usedAvatar.add(selected.id);
+            const blockReason = getAvatarTradeBlockReason(sender, avatarName, selected.id);
             if (blockReason) return { error: blockReason };
-            if (hasAvatar(recipient, avatarName)) return { error: '받는 사람이 이미 보유한 아바타입니다: ' + avatarName };
-            resolved.push({ kind: 'avatar', name: avatarName });
+            resolved.push({ kind: 'avatar', name: avatarName, avatarId: selected.id });
         } else {
             return { error: '지원하지 않는 선물 종류입니다.' };
         }
@@ -15260,8 +15295,8 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
             removeInventoryItem(sender, r.id, r.count);
             gifts.push({ type: 'item', id: r.id, count: r.count });
         } else if (r.kind == 'avatar') {
-            const removed = removeUserAvatar(sender, r.name); // 장착 중이던 카드에서도 해제된다
-            gifts.push({ type: 'avatar', name: r.name, trades: Number(removed && removed.trades || 0) + 1 });
+            const removed = removeUserAvatar(sender, r.name, r.avatarId);
+            gifts.push({ ...removed, type: 'avatar', trades: Number(removed.trades || 0) + 1 });
         }
     });
     equipIndices.sort((a, b) => b - a).forEach(i => sender.inventory.equipment.splice(i, 1));
@@ -17520,6 +17555,7 @@ module.exports = {
     equipAvatarOnCard,
     applyAvatarStatsOnCard,
     getCardStatFashion,
+    getUniqueAvatarCutscene,
     stripAvatarFromUserCards,
     formatEquipmentInfo,
     formatInventory,

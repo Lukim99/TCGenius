@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
 
-    // 제공된 원본 WebP의 재생 길이. 스킨/각성 여부와 관계없이 카드 본명의 연출을 사용한다.
+    // 기본 궁극기 WebP의 재생 길이. 유니크 외형은 서버가 지정한 전용 연출을 사용한다.
     const CLIPS = Object.freeze([
         ['빵귤', '유드 알레프', 1799], ['뭔마', '안면강타', 1799],
         ['글렌첵', '핫식스의정력', 1799], ['오버라이드', '처형박수', 1799],
@@ -17,10 +17,12 @@
         ['일리온', '느억맘', 1799], ['워뇨띠', '원영적사고 모드 전환', 1799],
         ['키노', '카스 살포', 1799]
     ].map(([character, skill, duration]) => Object.freeze({ character, skill, duration })));
-    const assetUrl = (clip, still = false) => '/rpg-ui?file=' + encodeURIComponent('궁극기/' + clip.character + (still ? '-still' : '') + '-v1.webp');
+    const assetUrl = (clip, still = false) => (still ? clip.posterUrl : clip.url) || '/rpg-ui?file=' + encodeURIComponent('궁극기/' + clip.character + (still ? '-still' : '') + '-v1.webp');
 
     function find(event, cardName) {
         if (!event || event.action !== 'skill' || event.skipped || event.error) return null;
+        const scene = event.uniqueCutscene;
+        if (scene?.url && scene.skillName === event.skillName) return { character: scene.characterName, skill: scene.skillName, url: scene.url, posterUrl: scene.posterUrl, duration: 1800 };
         return CLIPS.find(clip => clip.skill === event.skillName
             || event.skillName === '빅뱅' && clip.character === cardName) || null;
     }

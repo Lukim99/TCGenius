@@ -26,6 +26,7 @@ DynamoDBDocumentClient.prototype.send = async function (command) {
         return {};
     }
     if (command.constructor.name === 'GetCommand') {
+        if (input.TableName === 'rpgenius_data' && input.Key.key === 'Fashion') return { Item: { data: require('../scripts/register_unique_avatars').fashions } };
         if (input.TableName === 'rpgenius_mail') return { Item: mailRecords.get(input.Key.id) };
         return {};
     }
@@ -42,6 +43,7 @@ DynamoDBDocumentClient.prototype.send = async function (command) {
 const rpg = require('../rpgenius');
 
 (async () => {
+    await rpg.loadRpgeniusDataEntry('Fashion');
     const sender = new rpg.RPGUser('mail-point-sender', 'mail-point-sender-id');
     sender.point = 100;
     const sent = await rpg.sendMail(sender, recipientData.name, '포인트', '테스트', [{ type: 'point', amount: 40 }]);
@@ -67,6 +69,23 @@ const rpg = require('../rpgenius');
     assert.strictEqual(claimed.ok, true);
     assert.strictEqual(receiver.point, 40);
     assert.strictEqual(receiver.mail[0].claimed, true);
+
+    const avatarSender = new rpg.RPGUser('mail-avatar-sender', 'mail-avatar-sender-id');
+    const avatarName = '[1차]유니크 빵귤';
+    rpg.unlockAvatar(avatarSender, avatarName, 0); rpg.unlockAvatar(avatarSender, avatarName, 2);
+    const copies = avatarSender.avatars.map(entry => ({ ...entry }));
+    avatarSender.avatars[1].option = 'recovery';
+    const avatarMail = await rpg.sendMail(avatarSender, recipientData.name, '아바타', '', copies.map(entry => ({ type: 'avatar', name: avatarName, avatarId: entry.id })));
+    assert.equal(avatarMail.ok, true); assert.equal(avatarSender.avatars.length, 0);
+    const avatarGifts = mailRecords.get(avatarMail.mailId).gifts;
+    assert.deepEqual(avatarGifts.map(entry => entry.trades), [1, 3]);
+    assert.equal(avatarGifts[1].option, 'recovery');
+    rpg.unlockAvatar(receiver, avatarName, 0);
+    receiver.mail.push({ id: avatarMail.mailId, claimed: false });
+    assert.equal((await rpg.claimMailGifts(receiver, avatarMail.mailId)).ok, true);
+    assert.equal(receiver.avatars.length, 3, '기존 사본이 있어도 선물 두 개를 모두 받는다');
+    assert.equal(rpg.findUserAvatar(receiver, avatarName, copies[1].id).trades, 3);
+    assert.ok(rpg.getAvatarTradeBlockReason(receiver, avatarName, copies[1].id));
 
     const overdrawn = new rpg.RPGUser('mail-point-overdrawn', 'mail-point-overdrawn-id');
     overdrawn.point = 100;

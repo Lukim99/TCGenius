@@ -2042,7 +2042,7 @@ async function start(hostName) {
             const thorns = user ? getThornsSnapshot(user) : null;
             const elementChain = user && typeof rpgenius.getEquipmentElementChain === 'function' ? rpgenius.getEquipmentElementChain(user) : null;
             const transcendEquipment = user && typeof rpgenius.getTranscendEquipmentSnapshot === 'function' ? rpgenius.getTranscendEquipmentSnapshot(user, { includeAllActive: true }) : { entries: [], setCounts: {} };
-            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance, thorns, elementChain, transcendEquipment };
+            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance, thorns, elementChain, transcendEquipment, uniqueCutscene: user ? rpgenius.getUniqueAvatarCutscene(user) : null };
         } catch (_) {
             m.baseSnapshot = { stats: { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: {}, mainCardSkills: [], immortalArmor: null };
         }
@@ -5183,7 +5183,8 @@ function useSkill(name, skillName, targetName) {
     broadcast(room, 'skill-cast', {
         id: room.id + ':' + room.startedAt + ':skill-' + room.skillCastSerial,
         roomId: room.id, startedAt: room.startedAt, phaseIndex: room.phaseIndex,
-        at: nowMs(), action: 'skill', skillName, actor: me.name, cardName: me.card?.name
+        at: nowMs(), action: 'skill', skillName, actor: me.name, cardName: me.card?.name,
+        uniqueCutscene: me.baseSnapshot.uniqueCutscene?.skillName === skillName ? me.baseSnapshot.uniqueCutscene : null
     });
     executeSkillEffect(room, me, skillName, def, targetName, equipmentSkill);
     broadcastRoom(room);

@@ -2519,7 +2519,7 @@ TAB_LOADERS.pet = () => $('#petReload').click();
 let fashionData = [];
 let fashionFilterText = '';
 const fashionOpen = new WeakSet();
-const AVATAR_GRADES = ['일반', '프레스티지', '한정'];
+const AVATAR_GRADES = ['일반', '프레스티지', '한정', '유니크'];
 AVATAR_GRADES.forEach(grade => $('#fashionGradeFilter').appendChild(el('option', { value: grade }, grade)));
 function avatarGroups() {
     const groups = new Map();
@@ -2532,7 +2532,7 @@ function avatarGroups() {
     return [...groups.values()];
 }
 function avatarGrade(entries) {
-    return entries.some(e => e.exclusive === true) ? '한정' : entries.some(e => e.isHigh === true) ? '프레스티지' : '일반';
+    return entries.some(e => e.uniqueSeries === 1) ? '유니크' : entries.some(e => e.exclusive === true) ? '한정' : entries.some(e => e.isHigh === true) ? '프레스티지' : '일반';
 }
 function fashionCard(group) {
     const { entries, index } = group;
@@ -2592,9 +2592,9 @@ function fashionCard(group) {
     AVATAR_GRADES.forEach(grade => gradeSelect.appendChild(el('option', { value: grade }, grade)));
     gradeSelect.value = avatarGrade(entries);
     const tradeText = el('div', { class: 'muted', style: { marginTop: '8px' } });
-    function refreshGrade() { gradeTag.textContent = gradeSelect.value; tradeText.textContent = ({ 일반: '거래 가능', 프레스티지: '거래 불가', 한정: '최초 1회 거래 가능' })[gradeSelect.value] || ''; }
+    function refreshGrade() { gradeTag.textContent = gradeSelect.value; tradeText.textContent = ({ 일반: '거래 가능', 프레스티지: '거래 불가', 한정: '최초 1회 거래 가능', 유니크: '최대 3회 거래 가능 · 비전투 중 추가 옵션 1개 선택' })[gradeSelect.value] || ''; }
     gradeSelect.onchange = () => {
-        entries.forEach(entry => { delete entry.isHigh; delete entry.exclusive; if (gradeSelect.value === '프레스티지') entry.isHigh = true; if (gradeSelect.value === '한정') entry.exclusive = true; });
+        entries.forEach(entry => { delete entry.isHigh; delete entry.exclusive; delete entry.uniqueSeries; if (gradeSelect.value === '프레스티지') entry.isHigh = true; if (gradeSelect.value === '한정') entry.exclusive = true; if (gradeSelect.value === '유니크') entry.uniqueSeries = 1; });
         refreshGrade();
     };
     refreshGrade();

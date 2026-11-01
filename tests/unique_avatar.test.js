@@ -1,0 +1,332 @@
+'use strict';
+const { test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs'), path = require('path');
+const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
+const AWS = require('aws-sdk');
+const unique = require('../unique_avatar');
+const release = require('../scripts/register_unique_avatars');
+const read = key => JSON.parse(fs.readFileSync(path.join(__dirname, '../DB/RPGenius', key + '.json'), 'utf8'));
+const original = { Fashion: read('Fashion'), Item: read('Item'), Shop: read('Shop') };
+const fixture = release.prepare(original);
+let writes = [], rejectWrite = false;
+AWS.S3.prototype.makeRequest = operation => {
+    if (operation === 'listObjectsV2') return { promise: async () => ({ Contents: [] }) };
+    throw new Error('Unexpected S3 call: ' + operation);
+};
+DynamoDBDocumentClient.prototype.send = async command => {
+    const input = command.input;
+    if (command.constructor.name === 'GetCommand' && input.TableName === 'rpgenius_data') {
+        const file = path.join(__dirname, '../DB/RPGenius', input.Key.key + '.json');
+        return { Item: { data: structuredClone(fixture[input.Key.key] ?? (fs.existsSync(file) ? read(input.Key.key) : [])) } };
+    }
+    if (command.constructor.name === 'ScanCommand') return { Items: [] };
+    if (['UpdateCommand', 'PutCommand'].includes(command.constructor.name)) {
+        if (rejectWrite) throw new Error('isolated write failure');
+        writes.push(input); return {};
+    }
+    throw new Error('Unexpected isolated DB command: ' + command.constructor.name);
+};
+const rpg = require('../rpgenius');
+let sequence = 0;
+let http, base, httpUser, cookie;
+const webUsers = new Map();
+function makeUser() {
+    const user = new rpg.RPGUser('유니크테스트' + ++sequence, 'unique-test-' + sequence);
+    user.main_card = { id: 0, star: 6, type: '전직' }; user.card_slot = []; user.equipments = {};
+    user.need_character_card_select = false; user.avatarMigrated = true;
+    return user.load(JSON.parse(JSON.stringify(user)));
+}
+function materials(user) {
+    rpg.unlockAvatar(user, '정장', 0); rpg.unlockAvatar(user, '정장', 0);
+    return user.avatars.slice(-2).map(a => a.id);
+}
+function request(user, cube = 0) {
+    const avatarIds = materials(user), cubeId = fixture.Item.findIndex(item => item.name === unique.CUBES[cube].name);
+    rpg.addInventoryItem(user, cubeId, 1);
+    return { avatarIds, cubeId, characterId: 0, version: unique.version(user), requestId: 'request-' + ++sequence };
+}
+before(async () => {
+    await rpg.initRpgeniusData();
+    httpUser = makeUser();
+    webUsers.set(httpUser.name, httpUser);
+    rpg.getRPGUserByName = async name => webUsers.get(name) || null;
+    process.env.ADMIN_SESSION_SECRET = 'unique-isolated-test'; process.env.PORT = '0';
+    http = require('../server')();
+    await new Promise(resolve => http.on('listening', resolve));
+    base = 'http://127.0.0.1:' + http.address().port;
+    const payload = Buffer.from(JSON.stringify({ name: httpUser.name, exp: Date.now() + 60000 })).toString('base64url');
+    cookie = 'rpg_admin=' + payload + '.' + require('crypto').createHmac('sha256', process.env.ADMIN_SESSION_SECRET).update(payload).digest('base64url');
+});
+after(async () => { await new Promise(resolve => http.close(resolve)); });
+function cookieFor(user) {
+    const payload = Buffer.from(JSON.stringify({ name: user.name, exp: Date.now() + 60000 })).toString('base64url');
+    return 'rpg_admin=' + payload + '.' + require('crypto').createHmac('sha256', process.env.ADMIN_SESSION_SECRET).update(payload).digest('base64url');
+}
+async function api(url, body, auth = true) {
+    const response = await fetch(base + url, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', ...(auth ? { Cookie: typeof auth === 'string' ? auth : cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    return { status: response.status, body: await response.json() };
+}
+test('release appends only missing definitions, keeps all existing operator data, and is idempotent', () => {
+    assert.deepEqual(fixture.Fashion.slice(0, original.Fashion.length), original.Fashion);
+    assert.deepEqual(fixture.Item.slice(0, original.Item.length), original.Item);
+    assert.equal(fixture.Fashion.length - original.Fashion.length, 17);
+    assert.deepEqual(release.prepare(fixture), fixture);
+    const edited = structuredClone(fixture); edited.Fashion.at(-1).option.stat.atk = 999;
+    edited.Shop['아바타'] = [];
+    assert.deepEqual(release.prepare(edited), edited);
+    for (const cube of unique.CUBES) {
+        const id = fixture.Item.findIndex(i => i.name === cube.name);
+        const listing = Object.values(fixture.Shop).flat().find(i => i.item_id === id);
+        assert.deepEqual(listing.price, { goods: cube.goods, amount: cube.price });
+    }
+});
+test('each cube uses its probability boundary and gives the chosen character only', () => {
+    unique.CUBES.forEach((cube, i) => {
+        const user = makeUser(), body = request(user, i);
+        const won = unique.synthesize(user, body, rpg, () => cube.chance - .00001);
+        assert.equal(won.unique, true); assert.equal(won.avatar.name, '[1차]유니크 빵귤');
+        assert.equal(won.avatar.remainingTrades, 3); assert.equal(user.avatars.length, 1);
+        assert.equal(rpg.getInventoryItemCount(user, body.cubeId), 0);
+        const other = makeUser(), lost = unique.synthesize(other, request(other, i), rpg, () => cube.chance);
+        assert.equal(lost.unique, false);
+        const fashion = fixture.Fashion.find(f => f.name === lost.avatar.name);
+        assert.ok(fashion.primary_card.includes(0)); assert.equal(rpg.getAvatarGradeByName(fashion.name), '일반');
+    });
+});
+test('14 failures across cube and character choices guarantee the 15th and reset the shared counter', () => {
+    const user = makeUser();
+    for (let i = 0; i < 15; i++) {
+        const body = request(user, i % 3); body.characterId = i % 2;
+        const result = unique.synthesize(user, body, rpg, () => .99999);
+        assert.equal(result.unique, i === 14); assert.equal(user.avatarSynthesisFailures, i === 14 ? 0 : i + 1);
+    }
+});
+test('duplicate IDs, missing ownership, stale requests and invalid cubes never consume anything; replay is idempotent', () => {
+    const user = makeUser(), body = request(user), before = JSON.stringify(user);
+    for (const bad of [{ avatarIds: [body.avatarIds[0], body.avatarIds[0]] }, { avatarIds: ['missing', body.avatarIds[1]] }, { version: 'old' }, { cubeId: 0 }, { characterId: 999 }]) {
+        assert.ok(unique.synthesize(user, { ...body, ...bad }, rpg).error); assert.equal(JSON.stringify(user), before);
+    }
+    const result = unique.synthesize(user, body, rpg, () => 0), after = JSON.stringify(user);
+    assert.equal(unique.synthesize(user, body, rpg).avatar.id, result.avatar.id);
+    assert.equal(JSON.stringify(user), after);
+    assert.ok(unique.synthesize(user, { ...body, requestId: 'different' }, rpg).error);
+});
+test('individual avatars keep options and exactly three lifetime transfers, and consuming one does not remove another', () => {
+    const user = makeUser(), other = makeUser(), name = '[1차]유니크 빵귤';
+    rpg.unlockAvatar(user, name, 0); rpg.unlockAvatar(user, name, 3);
+    const [a, b] = user.avatars; a.option = 'recovery';
+    rpg.equipAvatarOnCard(user, user.main_card, name, b.id);
+    assert.ok(rpg.getAvatarTradeBlockReason(user, name, b.id));
+    let owner = user;
+    for (let trade = 0; trade < 3; trade++) {
+        assert.equal(rpg.getAvatarTradeBlockReason(owner, name, a.id), null);
+        const removed = rpg.removeUserAvatar(owner, name, a.id);
+        const recipient = owner === user ? other : user;
+        rpg.unlockAvatar(recipient, name, removed.trades + 1, removed); owner = recipient;
+    }
+    assert.ok(rpg.getAvatarTradeBlockReason(owner, name, a.id));
+    assert.equal(rpg.findUserAvatar(owner, name, a.id).option, 'recovery');
+    assert.equal(user.main_card.avatarId, b.id); assert.equal(user.main_card.skin, name);
+    rpg.removeUserAvatar(user, name, b.id); assert.equal(user.main_card.skin, undefined);
+});
+test('unique stats add 250 attack/2500 HP and exactly one optional effect; appearance controls cutscene', () => {
+    const user = makeUser(), base = rpg.calculateUserStats(user), name = '[1차]유니크 빵귤';
+    rpg.unlockAvatar(user, name, 0); rpg.equipAvatarOnCard(user, user.main_card, name);
+    const avatar = user.avatars[0];
+    for (const option of unique.OPTIONS) {
+        avatar.option = option.id; const stats = rpg.calculateUserStats(user);
+        assert.equal(stats.atk - base.atk, 250); assert.equal(stats.hp - base.hp, 2500);
+        for (const key of ['finalDamage', 'crit', 'recoveryEfficiency', 'shieldEfficiency', 'takenDamage', 'itemDropChance']) assert.ok(Math.abs((stats[key] || 0) - (base[key] || 0) - (option.stats[key] || 0)) < 1e-8, option.id + ': ' + key);
+    }
+    const scene = rpg.getUniqueAvatarCutscene(user); assert.ok(scene.url.includes('rpg-ui'));
+    assert.equal(scene.skillName, '유드 알레프');
+    assert.equal(rpg.getUniqueAvatarCutscene(user, '자인'), null);
+    assert.equal(rpg.getUniqueAvatarCutscene(user, 'not ultimate'), null);
+    rpg.equipAvatarOnCard(user, user.main_card, ''); rpg.applyAvatarStatsOnCard(user, user.main_card, name);
+    assert.equal(rpg.getUniqueAvatarCutscene(user), null); assert.ok(rpg.calculateUserStats(user).hp > base.hp);
+});
+test('protected save writes materials/cube/pity/result together and restores failed writes', async () => {
+    const user = makeUser(), body = request(user); user.load(JSON.parse(JSON.stringify(user)));
+    const before = JSON.stringify(user); unique.synthesize(user, body, rpg, () => 0);
+    rejectWrite = true;
+    await assert.rejects(rpg.commitProtectedUserChange(user, ['avatars','inventory','main_card','card_slot','avatarSynthesisFailures','lastAvatarSynthesis']));
+    rejectWrite = false; assert.equal(JSON.stringify(user), before);
+    unique.synthesize(user, body, rpg, () => 0);
+    await rpg.commitProtectedUserChange(user, ['avatars','inventory','main_card','card_slot','avatarSynthesisFailures','lastAvatarSynthesis']);
+    const write = writes.at(-1); assert.match(write.ConditionExpression, /attribute_exists\(id\)/);
+    for (const key of ['avatars','inventory','avatarSynthesisFailures','lastAvatarSynthesis']) assert.ok(Object.values(write.ExpressionAttributeNames).includes(key));
+});
+test('actual HTTP synthesis is authenticated, serialized and replay-safe; combat blocks option changes', async () => {
+    assert.equal((await api('/api/avatars/synthesis', null, false)).status, 401);
+    const body = request(httpUser); httpUser.load(JSON.parse(JSON.stringify(httpUser)));
+    httpUser.avatarSynthesisFailures = 14; body.version = unique.version(httpUser);
+    const state = await api('/api/avatars/synthesis');
+    assert.equal(state.status, 200); assert.equal(state.body.characters.length, 17);
+    const results = await Promise.all([api('/api/avatars/synthesis', body), api('/api/avatars/synthesis', body)]);
+    assert.deepEqual(results.map(r => r.status), [200, 200]);
+    assert.equal(results[0].body.result.avatar.id, results[1].body.result.avatar.id);
+    assert.equal(httpUser.avatars.length, 1); assert.equal(httpUser.avatarSynthesisFailures, 0);
+    const id = httpUser.avatars[0].id;
+    httpUser.field = { name: '테스트 전투' };
+    assert.equal((await api('/api/avatars/option', { avatarId: id, option: 'crit' })).status, 400);
+    assert.equal((await api('/api/cards/avatar', { source: 'main', name: httpUser.avatars[0].name, avatarId: id })).status, 400);
+    httpUser.field = null; httpUser.pvp = { battle: { phase: 'fight' } };
+    assert.equal((await api('/api/avatars/option', { avatarId: id, option: 'crit' })).status, 400);
+    delete httpUser.pvp;
+    const changed = await api('/api/avatars/option', { avatarId: id, option: 'recovery' });
+    assert.equal(changed.status, 200); assert.equal(changed.body.avatar.option, 'recovery');
+    assert.equal((await api('/api/avatars/option', { avatarId: 'someone-else', option: 'crit' })).status, 400);
+    assert.equal((await api('/api/avatars/option', { avatarId: id, option: 'invented' })).status, 400);
+    const equipped = await api('/api/cards/avatar', { source: 'main', name: httpUser.avatars[0].name, avatarId: id });
+    assert.equal(equipped.status, 200);
+    const wardrobe = await api('/api/cards/avatars?source=main');
+    assert.equal(wardrobe.body.avatars.find(a => a.grade === '유니크').ownedCount, 1);
+});
+
+test('new Glencheck and Dealer avatar layers are served for each card tier and prestige', async () => {
+    for (const name of ['글렌첵', '딜러장']) for (const tier of ['일반', '전직', '각성', '프레스티지 일반', '프레스티지 전직']) {
+        const params = new URLSearchParams({ name, skin: unique.nameFor(name), star: '9', type: tier.replace('프레스티지 ', ''), prestige: tier.startsWith('프레스티지') ? '1' : '0', portrait: '1' });
+        const response = await fetch(base + '/card-image?' + params, { headers: { Cookie: cookie } });
+        assert.equal(response.status, 200);
+        const source = fs.readFileSync(path.join(__dirname, '../DB/RPGenius/cardImage/카드분리/캐릭터', name, tier + ' 유니크 1차 ' + name + '.png'));
+        assert.deepEqual(Buffer.from(await response.arrayBuffer()), source);
+    }
+});
+test('shop allows repeated avatar purchases and purchased cube prices match release definitions', async () => {
+    httpUser.point = httpUser.mileage = 100000;
+    const shop = await api('/api/shop');
+    const listing = shop.body.shop['아바타'].find(entry => entry.type === '아바타');
+    assert.ok(listing);
+    const before = rpg.getUserAvatars(httpUser).filter(a => a.name === listing.fashion).length;
+    const bought = await api('/api/shop/buy', { shopType: '아바타', shopId: listing.shopId, count: 2 });
+    assert.equal(bought.status, 200, JSON.stringify(bought.body));
+    assert.equal(httpUser.avatars.filter(a => a.name === listing.fashion).length, before + 2);
+    const again = await api('/api/shop');
+    assert.equal(again.body.shop['아바타'].find(entry => entry.shopId === listing.shopId).soldOut, false);
+    for (const cube of unique.CUBES) {
+        const tab = cube.goods === 'point' ? '포인트' : '마일리지';
+        const itemId = fixture.Item.findIndex(i => i.name === cube.name);
+        const offer = fixture.Shop[tab].find(entry => entry.item_id === itemId);
+        const balance = httpUser[cube.goods], amount = rpg.getInventoryItemCount(httpUser, itemId);
+        assert.equal((await api('/api/shop/buy', { shopType: tab, shopId: offer.shopId, count: 1 })).status, 200);
+        assert.equal(httpUser[cube.goods], balance - cube.price);
+        assert.equal(rpg.getInventoryItemCount(httpUser, itemId), amount + 1);
+    }
+});
+test('auction transfers exact copies, allows duplicate ownership, preserves options and restores cancelled listings', async () => {
+    const seller = makeUser(), buyer = makeUser(), name = '[1차]유니크 빵귤';
+    webUsers.set(seller.name, seller); webUsers.set(buyer.name, buyer); buyer.gold = 100000;
+    rpg.unlockAvatar(seller, name, 2); rpg.unlockAvatar(seller, name, 3); rpg.unlockAvatar(buyer, name, 0);
+    const [available, bound] = seller.avatars; available.option = 'drop';
+    const sell = avatarId => api('/api/auction/register', { kind: 'avatar', name, avatarId, currency: 'gold', price: 100 }, cookieFor(seller));
+    assert.equal((await sell(bound.id)).status, 400);
+    const listing = await sell(available.id); assert.equal(listing.status, 200, JSON.stringify(listing.body));
+    assert.equal(seller.avatars.length, 1);
+    assert.equal((await api('/api/auction/cancel', { id: listing.body.id }, cookieFor(seller))).status, 200);
+    assert.equal(rpg.findUserAvatar(seller, name, available.id).trades, 2);
+    const relisted = await sell(available.id);
+    const purchased = await api('/api/auction/buy', { id: relisted.body.id }, cookieFor(buyer));
+    assert.equal(purchased.status, 200, JSON.stringify(purchased.body));
+    assert.equal(buyer.avatars.length, 2);
+    const received = rpg.findUserAvatar(buyer, name, available.id);
+    assert.equal(received.trades, 3); assert.equal(received.option, 'drop');
+    assert.ok(rpg.getAvatarTradeBlockReason(buyer, name, received.id));
+    assert.equal((await api('/api/auction/buy', { id: relisted.body.id }, cookieFor(buyer))).status, 400);
+});
+test('buy orders accept another copy and transfer the selected tradable instance only', async () => {
+    const seller = makeUser(), buyer = makeUser(), name = '[1차]유니크 빵귤';
+    webUsers.set(seller.name, seller); webUsers.set(buyer.name, buyer); buyer.gold = 10000;
+    rpg.unlockAvatar(seller, name, 3); rpg.unlockAvatar(seller, name, 1); rpg.unlockAvatar(buyer, name, 0);
+    const [bound, available] = seller.avatars;
+    const listing = await api('/api/buyorder/register', { kind: 'avatar', name, currency: 'gold', price: 100, count: 1 }, cookieFor(buyer));
+    assert.equal(listing.status, 200, JSON.stringify(listing.body));
+    const state = await api('/api/buyorder/fulfillable?id=' + listing.body.id, null, cookieFor(seller));
+    assert.deepEqual(state.body.avatar.instances.map(a => a.id), [available.id]);
+    assert.equal((await api('/api/buyorder/fulfill', { id: listing.body.id, avatarId: bound.id }, cookieFor(seller))).status, 400);
+    assert.equal((await api('/api/buyorder/fulfill', { id: listing.body.id, avatarId: available.id }, cookieFor(seller))).status, 200);
+    assert.equal(rpg.findUserAvatar(buyer, name, available.id).trades, 2);
+    assert.equal(seller.avatars[0].id, bound.id); assert.equal(buyer.avatars.length, 2);
+});
+test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, normal result, audio and cutscene', { skip: !process.env.UNIQUE_AVATAR_BROWSER_CHECK }, async t => {
+    httpUser.avatars = []; httpUser.inventory.item = []; httpUser.avatarSynthesisFailures = 14;
+    delete httpUser.lastAvatarSynthesis; httpUser.main_card = { id: 0, star: 6, type: '전직' };
+    for (const name of ['정장','정장','치어리더','범죄도시','드레스','수영장 파티','[1차]유니크 빵귤']) rpg.unlockAvatar(httpUser, name, 0);
+    for (const cube of unique.CUBES) rpg.addInventoryItem(httpUser, fixture.Item.findIndex(item => item.name === cube.name), 3);
+    httpUser.load(JSON.parse(JSON.stringify(httpUser)));
+    t.mock.method(Math, 'random', () => .99999);
+    const browser = await require('puppeteer-core').launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+    try {
+        const page = await browser.newPage(), errors = [], audio = new Map();
+        page.on('pageerror', error => errors.push(error.message));
+        page.on('response', response => { if (response.url().includes('/assets/potential-forge/') && response.url().endsWith('.mp3')) audio.set(response.url(), response.status()); });
+        await page.evaluateOnNewDocument(() => {
+            window.__avatarAudioStarts = 0;
+            const start = AudioBufferSourceNode.prototype.start;
+            AudioBufferSourceNode.prototype.start = function(...args) { window.__avatarAudioStarts++; return start.apply(this, args); };
+        });
+        await page.setViewport({ width: 1440, height: 1000 });
+        await page.setCookie({ name: 'rpg_admin', value: cookieFor(httpUser).split('=').slice(1).join('='), url: base });
+        await page.goto(base, { waitUntil: 'networkidle0' });
+        await page.evaluate(async () => { openRichModal('빵귤', '아바타', []); await appendAvatarSection({ source: 'main' }); });
+        await page.waitForSelector('.uaw-tile');
+        const dir = path.join(__dirname, '../output/unique-avatar'); fs.mkdirSync(dir, { recursive: true });
+        await page.screenshot({ path: path.join(dir, 'wardrobe-desktop.png') });
+        await page.click('.uaw-synth');
+        await page.waitForSelector('.ua-overlay');
+        await page.evaluate(() => Promise.all([...document.querySelectorAll('.ua-overlay img')].map(image => { image.loading = 'eager'; return image.decode().catch(() => {}); })));
+        const select = async (id, characterId = 0) => {
+            await page.click('.ua-item[data-id="' + id[0] + '"]');
+            await page.click('.ua-item[data-id="' + id[1] + '"]');
+            await page.click('.ua-char[data-id="' + characterId + '"]');
+        };
+        const materialIds = httpUser.avatars.slice(0, 2).map(a => a.id);
+        await select(materialIds);
+        assert.match(await page.$eval('.ua-overlay', node => node.textContent), /100%/);
+        assert.equal(await page.$eval('.ua-go', button => button.disabled), false);
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 450)));
+        await page.screenshot({ path: path.join(dir, 'synthesis-desktop.png') });
+        await page.setViewport({ width: 390, height: 844 });
+        await page.screenshot({ path: path.join(dir, 'synthesis-mobile.png') });
+        assert.equal(await page.$eval('.ua-overlay', node => node.scrollWidth <= innerWidth + 1), true);
+        await page.click('.ua-go');
+        await page.waitForSelector('.ua-overlay[data-view="reveal"] .is-settled', { timeout: 15000 });
+        assert.equal(httpUser.avatarSynthesisFailures, 0);
+        assert.equal(httpUser.avatars.filter(a => a.name === '[1차]유니크 빵귤').length, 2);
+        assert.match(await page.$eval('.ua-reveal-name', node => node.textContent), /빵귤/);
+        await page.screenshot({ path: path.join(dir, 'unique-result-mobile.png') });
+        await page.setViewport({ width: 1440, height: 1000 });
+        await page.screenshot({ path: path.join(dir, 'unique-result-desktop.png') });
+        await page.click('.ua-reveal-actions .ua-btn-gold');
+        await select(httpUser.avatars.slice(0, 2).map(a => a.id), 1);
+        await page.click('.ua-go');
+        await page.waitForSelector('.ua-overlay[data-tone="normal"] .is-settled', { timeout: 15000 });
+        assert.equal(httpUser.avatarSynthesisFailures, 1);
+        assert.ok(fixture.Fashion.find(f => f.name === httpUser.avatars.at(-1).name).primary_card.includes(1));
+        await page.screenshot({ path: path.join(dir, 'normal-result-desktop.png') });
+        assert.ok(audio.size >= 4); assert.ok([...audio.values()].every(status => status === 200));
+        assert.ok(await page.evaluate(() => window.__avatarAudioStarts > 0));
+        await page.evaluate(() => UniqueAvatarUI.close());
+        assert.equal(await page.$('.ua-overlay'), null);
+        await page.evaluate(async () => { openRichModal('빵귤', '아바타', []); await appendAvatarSection({ source: 'main' }); });
+        await page.click('.uaw-tile[data-grade="unique"]');
+        await page.waitForSelector('.unique-avatar-options button');
+        await page.evaluate(() => [...document.querySelectorAll('.unique-avatar-options button')].find(button => button.textContent === '회복 및 보호막 효과 +5%').click());
+        await page.waitForFunction(() => [...document.querySelectorAll('.unique-avatar-options button')].some(button => button.textContent === '회복 및 보호막 효과 +5%' && button.getAttribute('aria-pressed') === 'true'));
+        assert.equal(httpUser.avatars.find(a => a.name === '[1차]유니크 빵귤').option, 'recovery');
+        await page.setViewport({ width: 390, height: 844 });
+        await page.screenshot({ path: path.join(dir, 'avatar-options-mobile.png') });
+        await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent === '장착').click());
+        await page.waitForFunction(() => !document.querySelector('.unique-avatar-options'));
+        assert.equal(httpUser.main_card.skin, '[1차]유니크 빵귤');
+        const scene = rpg.getUniqueAvatarCutscene(httpUser);
+        await page.addStyleTag({ url: base + '/static/ultimate-cutscene.css' });
+        await page.addScriptTag({ url: base + '/static/ultimate-cutscene.js' });
+        await page.evaluate(scene => { window.__uniqueTestCutscene = UltimateCutscene.create(); __uniqueTestCutscene.play({ action: 'skill', skillName: scene.skillName, uniqueCutscene: scene }, scene.characterName); }, scene);
+        await page.waitForFunction(() => [...document.querySelectorAll('.ultimate-cutscene:not([hidden]) img')].some(image => image.complete && image.naturalWidth > 0));
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 450)));
+        await page.screenshot({ path: path.join(dir, 'ultimate-cutscene.png') });
+        await page.evaluate(() => __uniqueTestCutscene.destroy());
+        assert.deepEqual(errors, []);
+    } finally { await browser.close(); }
+});

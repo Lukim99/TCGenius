@@ -1004,8 +1004,8 @@ server.get('/api/mail/giftable', requireUser, async (req, res) => {
             .filter(i => !i.noTrade)
             .map(i => ({ id: i.id, name: i.name, count: i.count, iconUrl: i.iconUrl, frameUrl: i.frameUrl }));
         const avatars = rpgenius.getUserAvatars(user)
-            .filter(entry => entry && !rpgenius.getAvatarTradeBlockReason(user, entry.name))
-            .map(entry => Object.assign({ name: entry.name, grade: rpgenius.getAvatarGradeByName(entry.name) }, getAvatarDisplayAssets(entry.name)));
+            .filter(entry => entry && !rpgenius.getAvatarTradeBlockReason(user, entry.name, entry.id))
+            .map(entry => Object.assign({ ...entry, grade: rpgenius.getAvatarGradeByName(entry.name) }, getAvatarDisplayAssets(entry.name)));
         res.json({
             gold: Number(user.gold || 0), garnet: Number(user.garnet || 0), point: Number(user.point || 0),
             goldIconUrl: getItemImageUrl('화폐', '골드.png'), garnetIconUrl: getItemImageUrl('화폐', '가넷.png'), pointIconUrl: getItemImageUrl('화폐', '포인트.png'),
@@ -2114,6 +2114,7 @@ function getHFieldSpritePart(value) {
 function getHFieldCharacterSprite(mainCard) {
     const fallback = '필드/hfield-hunter.png';
     if (!mainCard || !mainCard.name) return '/rpg-ui?file=' + encodeURIComponent(fallback);
+    if (mainCard.skin === '[1차]유니크 ' + mainCard.name) return '/card-image?' + new URLSearchParams({ name: mainCard.name, skin: mainCard.skin, star: mainCard.star || 0, type: mainCard.type || '일반', prestige: mainCard.prestige ? '1' : '0', portrait: '1' });
     const name = getHFieldSpritePart(mainCard.name);
     const cardType = mainCard.type == '전직' ? '전직' : '일반';
     const skin = getHFieldSpritePart(mainCard.skin);
@@ -2338,6 +2339,7 @@ function buildHFieldActionResult(user, before, message, action, skillName) {
         event: combatEffects.annotateEvent({
             action,
             skillName: skillName || null,
+            uniqueCutscene: action === 'skill' && !String(message).startsWith('❌') ? rpgenius.getUniqueAvatarCutscene(user, skillName) : null,
             triggeredEffectIds,
             effectElement: getWebFieldAttackElement(user, action, skillName, state.skills),
             receivedEffectElement: state.target && state.target.element || null,
@@ -2725,6 +2727,7 @@ function buildGeneralFieldActionResult(user, before, message, action, skillName,
         event: combatEffects.annotateEvent({
             action,
             skillName: skillName || null,
+            uniqueCutscene: action === 'skill' && !String(message).startsWith('❌') ? rpgenius.getUniqueAvatarCutscene(user, skillName) : null,
             triggeredEffectIds,
             effectElement: getWebFieldAttackElement(user, action, skillName, state.skills),
             receivedEffectElement: state.target && state.target.element || null,
@@ -2931,6 +2934,7 @@ for (const action of ['attack', 'skill']) {
         const state = buildTrainingState(user);
         const hits = parseFieldOutgoingHits(message);
         const event = combatEffects.annotateEvent({ action, skillName: action === 'skill' ? skillName : null, hits,
+            uniqueCutscene: action === 'skill' && !String(message).startsWith('❌') ? rpgenius.getUniqueAvatarCutscene(user, skillName) : null,
             receivedHits: parseFieldIncomingHits(message), damage: hits.reduce((sum, hit) => sum + hit.damage, 0),
             received: Math.max(0, hpBefore - user.hp), criticalCount: hits.filter(hit => hit.critical).length,
             effectElement: getWebFieldAttackElement(user, action, skillName, state.skills),
@@ -3148,6 +3152,7 @@ function buildWorldBossActionResult(user, before, message, action, skillName) {
         ok: !String(message).startsWith('❌'), message: String(message), state,
         event: combatEffects.annotateEvent({
             action, skillName: skillName || null,
+            uniqueCutscene: action === 'skill' && !String(message).startsWith('❌') ? rpgenius.getUniqueAvatarCutscene(user, skillName) : null,
             effectElement: getWebFieldAttackElement(user, action, skillName, state.skills),
             receivedEffectElement: '암', hits, receivedHits, damage, received,
             triggeredEffectIds: rpgenius.drainFieldActionEffectIds(user.name),
@@ -3673,9 +3678,14 @@ server.get('/api/cards/avatars', requireUser, async (req, res) => {
             requireStarText: (option.requireStar + 1) + '성',
             starOk: option.starOk,
             statApplied: option.statApplied,
+            ownedCount: option.ownedCount,
+            instances: option.instances,
+            portraitUrl: avatarRoutes.portrait(option.name),
+            uniqueOptions: option.grade === '유니크' ? require('./unique_avatar').OPTIONS.map(({ id, label }) => ({ id, label })) : [],
+            selectedAvatarId: card.statSkin === option.name ? card.statAvatarId : card.avatarId,
             statLines: buildAvatarStatLines(option.fashion),
             imageUrl: getCardImageUrl({ id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: option.name, specter: card.specter, awakeningSpecter: card.awakeningSpecter }, user),
-            shop: option.unlocked ? null : findAvatarShopListing(user, option.name, now)
+            shop: findAvatarShopListing(user, option.name, now)
         }));
         res.json({ avatars, current: typeof card.skin == 'string' ? card.skin : '' });
     } catch (e) {
@@ -3689,19 +3699,29 @@ server.post('/api/cards/avatar', requireUser, async (req, res) => {
         const source = String((req.body && req.body.source) || '');
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        return await rpgenius.enqueueFieldAction(user, async () => {
         const card = resolveUserCardRef(user, source, req.body && req.body.number);
         if (!card) return res.status(400).json({ error: '카드를 찾을 수 없습니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user, '변경', '아바타를') || (user.pvp?.battle && user.pvp.battle.phase !== 'ended' ? '대전 중에는 아바타를 변경할 수 없습니다.' : null);
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
         const statsOnly = !!(req.body && req.body.statsOnly);
         const error = statsOnly
-            ? rpgenius.applyAvatarStatsOnCard(user, card, (req.body && req.body.name) || '')
-            : rpgenius.equipAvatarOnCard(user, card, (req.body && req.body.name) || '');
+            ? rpgenius.applyAvatarStatsOnCard(user, card, (req.body && req.body.name) || '', req.body.avatarId)
+            : rpgenius.equipAvatarOnCard(user, card, (req.body && req.body.name) || '', req.body.avatarId);
         if (error) return res.status(400).json({ error });
         await user.save();
         res.json({ ok: true, profile: buildUserProfile(user) });
+        });
     } catch (e) {
         console.error('card avatar equip error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
+});
+
+const avatarRoutes = require('./avatar_routes').registerAvatarRoutes(server, {
+    rpg: rpgenius, requireUser, characters: readJson(CHARACTER_CARDS_PATH, []), assets: getAvatarDisplayAssets,
+    cardImage: getCardImageUrl, itemImage: getItemIconUrl, uiImage: getGeneralFieldAssetUrl, profile: buildUserProfile,
+    blocked: user => rpgenius.getWebGameActionBlock(user) || getEquipmentActionBlockedReason(user, '합성하거나 옵션을 변경', '아바타를') || (user.pvp?.battle && user.pvp.battle.phase !== 'ended' ? '대전 중에는 이용할 수 없습니다.' : null)
 });
 
 // ===== 장착 프리셋 =====
@@ -5026,7 +5046,7 @@ server.get('/card-image', requireUser, async (req, res) => {
     const name = String(req.query.name || '');
     if (!name || name.includes('..') || path.basename(name) != name) return res.status(400).end();
     if (req.query.portrait === '1') {
-        const layers = cardComposite.resolveCardLayers({ name, star: 0, type: '일반' });
+        const layers = cardComposite.resolveCardLayers({ name, star: Number(req.query.star || 0), type: String(req.query.type || '일반'), skin: String(req.query.skin || ''), prestige: req.query.prestige === '1' });
         if (!layers) return res.status(404).end();
         return res.sendFile(layers.character);
     }
@@ -6292,7 +6312,7 @@ function serializeCard(card, user, context) {
 }
 
 const WEB_ITEM_USE_KEYS = new Set([
-    '축복사용권', '아티팩트옵션변경',
+    '축복사용권', '아티팩트옵션변경', '바인드큐브',
     '변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '각성캐릭터변환', '전직프레스티지',
     '스탯초기화', '장신구선택권',
     '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택',
@@ -7796,7 +7816,7 @@ function buildShopData(user) {
                 display: buildShopItemDisplay(item),
                 price: buildShopPriceDisplay(item.price),
                 priceItemCount,
-                soldOut: soldOut || owned,
+                soldOut,
                 owned,
                 limitInfo: hasLimits ? { limits, rec, globalCount, remaining } : null,
             };
@@ -8023,11 +8043,11 @@ function getAvatarPreviewImageUrl(name) {
 function getAvatarDisplayAssets(name) {
     const key = String(name || '').trim();
     const grade = rpgenius.getAvatarGradeByName(key) || '일반';
-    const frameRarity = grade == '한정' ? '초월' : (grade == '프레스티지' ? '레전더리' : '일반');
+    const frameRarity = grade == '한정' ? '초월' : grade === '유니크' ? '유니크' : (grade == '프레스티지' ? '레전더리' : '일반');
     const frameUrl = getAuctionFrameUrl('equipment', frameRarity);
-    let iconUrl = getItemImageUrl('아바타', key + ' 아바타.png');
+    let iconUrl = getItemImageUrl('아바타', grade === '유니크' ? '1차 유니크 아바타.png' : key + ' 아바타.png');
     if (!iconUrl && key.startsWith('고급 ')) iconUrl = getItemImageUrl('아바타', key.slice(3) + ' 아바타.png');
-    return { iconUrl, frameUrl, imageUrl: iconUrl ? null : getAvatarPreviewImageUrl(key), grade };
+    return { iconUrl, frameUrl, imageUrl: iconUrl && grade !== '유니크' ? null : getAvatarPreviewImageUrl(key), grade };
 }
 
 function buildAvatarAuctionStatLines(payload) {
@@ -8037,6 +8057,7 @@ function buildAvatarAuctionStatLines(payload) {
     if (lines.length > 0) lines.push('메인카드 장착 시 스탯 적용');
     const grade = payload && payload.grade || rpgenius.getAvatarGradeByName(key);
     if (grade == '한정') lines.push('한정판: 구매 후에는 다시 거래할 수 없습니다.');
+    if (grade == '유니크') lines.push('유니크: 남은 거래 ' + Math.max(0, 3 - Number(payload.trades || 0)) + '회 · ' + require('./unique_avatar').option(payload.option).label);
     return lines;
 }
 
@@ -8296,8 +8317,9 @@ function buildSellableAssets(user) {
         })
         .filter(Boolean);
     const avatars = rpgenius.getUserAvatars(user)
-        .filter(entry => entry && !rpgenius.getAvatarTradeBlockReason(user, entry.name))
+        .filter(entry => entry && !rpgenius.getAvatarTradeBlockReason(user, entry.name, entry.id))
         .map(entry => Object.assign({
+            id: entry.id,
             name: entry.name,
             grade: rpgenius.getAvatarGradeByName(entry.name),
             trades: Number(entry.trades || 0)
@@ -8367,11 +8389,11 @@ async function registerAuction(sellerName, body) {
     } else if (kind == 'avatar') {
         const avatarName = String(body.name || '').trim();
         if (!avatarName) return { error: '아바타를 선택해주세요.' };
-        const blockReason = rpgenius.getAvatarTradeBlockReason(user, avatarName);
+        const blockReason = rpgenius.getAvatarTradeBlockReason(user, avatarName, body.avatarId);
         if (blockReason) return { error: blockReason };
-        const removed = rpgenius.removeUserAvatar(user, avatarName);
+        const removed = rpgenius.removeUserAvatar(user, avatarName, body.avatarId);
         if (!removed) return { error: '보유하지 않은 아바타입니다.' };
-        payload = { name: avatarName, trades: Number(removed.trades || 0), grade: rpgenius.getAvatarGradeByName(avatarName) };
+        payload = { ...removed, grade: rpgenius.getAvatarGradeByName(avatarName) };
     }
 
     const entry = {
@@ -8469,8 +8491,7 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
         buyer.inventory.pet.push(petEntry);
     } else if (entry.kind == 'avatar') {
         const avatarName = String(entry.payload && entry.payload.name || '');
-        if (rpgenius.hasAvatar(buyer, avatarName)) return { error: '이미 보유한 아바타입니다.' };
-        rpgenius.unlockAvatar(buyer, avatarName, Number(entry.payload.trades || 0) + 1);
+        rpgenius.unlockAvatar(buyer, avatarName, Number(entry.payload.trades || 0) + 1, entry.payload);
     } else {
         return { error: '알 수 없는 종류입니다.' };
     }
@@ -8549,8 +8570,7 @@ async function cancelAuction(userName, auctionId) {
     } else if (entry.kind == 'pet') {
         user.inventory.pet.push(rpgenius.clonePetInstance(entry.payload));
     } else if (entry.kind == 'avatar') {
-        // 등록 중 같은 아바타를 다시 얻었을 수도 있으므로 이미 보유 중이면 그대로 둔다
-        rpgenius.unlockAvatar(user, entry.payload && entry.payload.name, Number(entry.payload && entry.payload.trades || 0));
+        rpgenius.unlockAvatar(user, entry.payload && entry.payload.name, Number(entry.payload && entry.payload.trades || 0), entry.payload);
     }
 
     list.splice(index, 1);
@@ -8753,7 +8773,6 @@ async function registerBuyOrder(buyerName, body) {
         const grade = rpgenius.getAvatarGradeByName(avatarName);
         if (!grade) return { error: '존재하지 않는 아바타입니다.' };
         if (grade == '프레스티지') return { error: '프레스티지 아바타는 거래할 수 없습니다.' };
-        if (rpgenius.hasAvatar(buyer, avatarName)) return { error: '이미 보유한 아바타입니다.' };
         payload = { name: avatarName, grade };
     }
 
@@ -8914,12 +8933,11 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         buyer.inventory.pet.push(transferred);
     } else if (entry.kind == 'avatar') {
         const avatarName = String(entry.payload && entry.payload.name || '');
-        const blockReason = rpgenius.getAvatarTradeBlockReason(seller, avatarName);
+        const blockReason = rpgenius.getAvatarTradeBlockReason(seller, avatarName, body.avatarId);
         if (blockReason) return { error: blockReason };
-        if (rpgenius.hasAvatar(buyer, avatarName)) return { error: '구매자가 이미 보유한 아바타입니다.' };
-        const removed = rpgenius.removeUserAvatar(seller, avatarName);
+        const removed = rpgenius.removeUserAvatar(seller, avatarName, body.avatarId);
         if (!removed) return { error: '보유하지 않은 아바타입니다.' };
-        rpgenius.unlockAvatar(buyer, avatarName, Number(removed.trades || 0) + 1);
+        rpgenius.unlockAvatar(buyer, avatarName, Number(removed.trades || 0) + 1, removed);
     } else {
         return { error: '알 수 없는 종류입니다.' };
     }
@@ -9050,6 +9068,7 @@ function buildFulfillableAssets(user, entry) {
         result.avatar = Object.assign({
             name: avatarName,
             owned: rpgenius.hasAvatar(user, avatarName),
+            instances: rpgenius.getUserAvatars(user).filter(avatar => avatar.name === avatarName && !rpgenius.getAvatarTradeBlockReason(user, avatarName, avatar.id)),
             tradeBlockReason: rpgenius.getAvatarTradeBlockReason(user, avatarName)
         }, getAvatarDisplayAssets(avatarName));
     } else if (entry.kind == 'pet') {
@@ -9689,6 +9708,8 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/shop-painter.js"></script>
 <script src="/static/shop-scene.js"></script>
 <script src="/static/orb-fusion.js"></script>
+<link rel="stylesheet" href="/static/unique-avatar.css">
+<script src="/static/unique-avatar-ui.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/direct-trade.js"></script>
 <script type="module" src="/static/chuseok.js"></script>

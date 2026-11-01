@@ -210,7 +210,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                             run.combatSequence = sequence + 1;
                             run.combatEvents = [...(run.combatEvents || []), combatEffects.annotateEvent({
                                 id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId,
-                                action: 'skill', skillName: body.skill, triggeredEffectIds, hits: [], receivedHits: [], damage: 0, received: 0
+                                action: 'skill', skillName: body.skill, uniqueCutscene: rpgenius.getUniqueAvatarCutscene(user, body.skill), triggeredEffectIds, hits: [], receivedHits: [], damage: 0, received: 0
                             })].slice(-12);
                         }
                     }

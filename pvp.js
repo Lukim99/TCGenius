@@ -273,6 +273,7 @@ function buildSideSnapshot(user, deck) {
         elementChain: rpgenius.getEquipmentElementChain(clone),
         equipment: rpgenius.getTranscendEquipmentSnapshot(clone, { includeAllActive: true }),
         passiveIds: Array.from(rpgenius.getEquippedPassiveIds(clone)),
+        uniqueCutscene: rpgenius.getUniqueAvatarCutscene(clone),
         star: Number(deck.mainCard && deck.mainCard.star || 0),
         display: buildDisplay(deck.mainCard, clone, skills)
     };
@@ -405,6 +406,8 @@ function evaluateRules(actor, enemy, t) {
 // ===== 전투 엔진 =====
 
 function pushEvent(battle, event) {
+    const scene = battle[event.actor]?.snapshot?.uniqueCutscene;
+    if (event.action === 'skill' && scene?.skillName === event.skillName) event.uniqueCutscene = scene;
     battle.seq += 1;
     battle.events.push(combatEffects.annotateEvent(Object.assign({ seq: battle.seq, damage: 0, criticalCount: 0, hitCount: 0, dodged: false, absorbed: 0 }, event)));
     if (battle.events.length > EVENT_KEEP) battle.events.splice(0, battle.events.length - EVENT_KEEP);
