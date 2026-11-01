@@ -214,13 +214,26 @@ test('avatar gallery serves distinct card, portrait and available cutscene media
     assert.match(uniqueAvatar.imageUrl, /^\/card-image\?/);
     assert.match(decodeURIComponent(uniqueAvatar.portraitUrl), /유니크아바타\/전신\//);
     assert.match(decodeURIComponent(uniqueAvatar.cutsceneUrl), /유니크아바타\/컷씬\//);
-    assert.match(normalAvatar.portraitUrl, /portrait=1/);
+    assert.equal(decodeURIComponent(normalAvatar.portraitUrl), '/rpg-ui?file=필드/캐릭터/빵귤__일반__수영장 파티.png');
     assert.equal(normalAvatar.cutsceneUrl, null);
     assert.ok(normalAvatar.shop.price.iconUrl);
     for (const url of [uniqueAvatar.imageUrl, uniqueAvatar.portraitUrl, uniqueAvatar.cutsceneUrl, normalAvatar.portraitUrl, normalAvatar.shop.price.iconUrl]) {
         const response = await fetch(new URL(url, base), { headers: { Cookie: cookie } });
         assert.equal(response.status, 200, url);
         assert.match(response.headers.get('content-type'), /^image\//);
+        if (url === normalAvatar.portraitUrl) assert.deepEqual(Buffer.from(await response.arrayBuffer()), fs.readFileSync(path.join(__dirname, '../DB/RPGenius/ui/필드/캐릭터/빵귤__일반__수영장 파티.png')));
+    }
+    for (const [name, skin, expected] of [
+        ['딜러장', '고급 산타', '/rpg-ui?file=필드/캐릭터/딜러장/전직__고급 산타.png'],
+        ['마쉐비', 'DVA', '/rpg-ui?file=필드/캐릭터/마쉐비__일반__DVA.png'],
+        ['뭔마', '이터널스', '/rpg-ui?file=필드/캐릭터/뭔마__일반__이터널스.png']
+    ]) {
+        const user = makeUser(); user.main_card.id = read('CharacterCards').findIndex(card => card.name === name);
+        webUsers.set(user.name, user);
+        const { body: gallery } = await api('/api/cards/avatars?source=main', null, cookieFor(user));
+        const avatar = gallery.avatars.find(avatar => avatar.name === skin);
+        assert.ok(avatar, skin);
+        assert.equal(avatar.portraitUrl ? decodeURIComponent(avatar.portraitUrl) : null, expected, skin);
     }
 });
 test('shop allows repeated avatar purchases and purchased cube prices match release definitions', async () => {
@@ -397,7 +410,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         });
         await page.waitForSelector('.uas-buy .uas-coin img');
         await page.evaluate(() => Promise.all([...document.querySelectorAll('.uas img')].map(image => image.decode())));
-        assert.equal(await page.$eval('.uas-figure-art img', image => image.src.includes('portrait=1')), true);
+        assert.equal(await page.$eval('.uas-figure-art img', image => decodeURIComponent(image.src).endsWith('필드/캐릭터/빵귤__일반__수영장 파티.png')), true);
         assert.equal(await page.$('.uas-lens-btn[data-focus="cine"]'), null);
         assert.equal(await page.$eval('.uas-buy .uas-coin img', image => image.naturalWidth > 0), true);
         await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 750)));
@@ -406,6 +419,20 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 600)));
         await page.screenshot({ path: path.join(dir, 'avatar-purchase-desktop.png') });
         await page.evaluate(() => UniqueAvatarUI.closeShowroom());
+        await page.setViewport({ width: 390, height: 844 });
+        for (const [name, skin, file] of [['마쉐비', 'DVA', 'avatar-dva-mobile.png'], ['뭔마', '이터널스', 'avatar-eternals-mobile.png']]) {
+            const previewUser = makeUser(); previewUser.main_card.id = read('CharacterCards').findIndex(card => card.name === name);
+            webUsers.set(previewUser.name, previewUser);
+            const { body: gallery } = await api('/api/cards/avatars?source=main', null, cookieFor(previewUser));
+            await page.evaluate(avatar => openAvatarDetailModal(avatar, { source: 'main' }), gallery.avatars.find(avatar => avatar.name === skin));
+            await page.waitForSelector('.uas-figure-art img');
+            await page.evaluate(() => Promise.all([...document.querySelectorAll('.uas img')].map(image => image.decode())));
+            assert.equal(await page.$eval('.uas-figure-art img', (image, expected) => decodeURIComponent(image.src).endsWith(expected), name + '__일반__' + skin + '.png'), true);
+            await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 750)));
+            await page.screenshot({ path: path.join(dir, file) });
+            await page.evaluate(() => UniqueAvatarUI.closeShowroom());
+        }
+        await page.setViewport({ width: 1440, height: 1000 });
         const scene = rpg.getUniqueAvatarCutscene(httpUser);
         await page.addStyleTag({ url: base + '/static/ultimate-cutscene.css' });
         await page.addScriptTag({ url: base + '/static/ultimate-cutscene.js' });

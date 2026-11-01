@@ -3662,13 +3662,15 @@ function findAvatarShopListing(user, avatarName, now) {
     return matches.find(m => !m.soldOut) || matches[0] || null;
 }
 
-function getAvatarMediaUrls(user, card, option) {
+function getAvatarMediaUrls(card, option) {
     const character = readJson(CHARACTER_CARDS_PATH, [])[card.id];
     if (!character) return { portraitUrl: null, cutsceneUrl: null };
-    const spec = { name: character.name, star: Number(card.star || 0), type: card.type || '일반', skin: option.name,
-        prestige: card.type === '전직' ? user.jobPrestige === true : user.prestige === true };
-    const layers = cardComposite.resolveCardLayers(spec);
-    const portraitUrl = avatarRoutes.portrait(option.name) || (layers ? '/card-image?' + new URLSearchParams({ ...spec, prestige: spec.prestige ? '1' : '0', portrait: '1' }) : null);
+    const name = getHFieldSpritePart(character.name), skin = getHFieldSpritePart(option.name);
+    // 전투에서 쓰는 해당 스킨의 전신만 전시한다. 카드용 인물 레이어나 기본 외형으로 대체하지 않는다.
+    const types = card.type === '각성' ? ['각성', '일반', '전직'] : ['일반', '전직'];
+    const candidates = types.flatMap(type => [name + '__' + type + '__' + skin + '.png', path.join(name, type + '__' + skin + '.png')]);
+    const sprite = candidates.find(file => fs.existsSync(path.join(RPG_UI_PATH, '필드', '캐릭터', file)));
+    const portraitUrl = avatarRoutes.portrait(option.name) || (sprite ? getGeneralFieldAssetUrl(path.join('필드', '캐릭터', sprite)) : null);
     const cutscene = '유니크아바타/컷씬/' + character.name + '.webp';
     return { portraitUrl, cutsceneUrl: option.grade === '유니크' && fs.existsSync(path.join(RPG_UI_PATH, cutscene)) ? getGeneralFieldAssetUrl(cutscene) : null };
 }
@@ -3693,7 +3695,7 @@ server.get('/api/cards/avatars', requireUser, async (req, res) => {
             statApplied: option.statApplied,
             ownedCount: option.ownedCount,
             instances: option.instances,
-            ...getAvatarMediaUrls(user, card, option),
+            ...getAvatarMediaUrls(card, option),
             uniqueOptions: option.grade === '유니크' ? require('./unique_avatar').OPTIONS.map(({ id, label }) => ({ id, label })) : [],
             selectedAvatarId: card.statSkin === option.name ? card.statAvatarId : card.avatarId,
             statLines: buildAvatarStatLines(option.fashion),
