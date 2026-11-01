@@ -543,7 +543,7 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
                 ? getWorldBossDefenderStats(context.boss)
                 : getCombatStats(context.dungeon && ((context.type == 'normal' || context.type == 'dailyDungeon' || context.type == 'training') ? context.dungeon : context.dungeon.elite));
             const lightMul = getElementDamageMultiplier('명', stats, defenderStats);
-            const damage = Math.max(1, Math.round(Number(state.judgment.damage || 0) * .15 * lightMul));
+            const damage = Math.max(1, Math.round(Number(state.judgment.damage || 0) * .05 * lightMul));
             if (Number(state.judgment.damage || 0) > 0) pending.push({ label: '심판 폭발', rawDamage: damage, precalculated: true, element: '명' });
         }
         delete state.judgment;
@@ -4375,6 +4375,7 @@ function calculateUserStats(user, _out) {
         if (passive.effect === 'hpAttack') stats.atk += Number(stats.hp || 0) / 10000 * passive.value;
         if (passive.effect === 'mpAttack') stats.atk += Number(stats.mp || 0) / 1000 * passive.value;
         if (passive.effect === 'riskAttack') stats.takenDamage = Number(stats.takenDamage || 0) + passive.value;
+        if (passive.effect === 'headsUpDamage') stats.afterBasic = Number(stats.afterBasic || 0) + .20;
     }
     let awakeningReduction = Number(slotEffects.hpDamageReduction || 0) - Number(stats.takenDamage || 0);
     if (stats.awakening && stats.awakening.effect === 'reductionAttack') {
@@ -4408,7 +4409,7 @@ function calculateUserStats(user, _out) {
     const randoShield = !_out?.skipRandoRuntime && getFieldShield(user);
     if (!_out?.skipRandoRuntime) randoCharacters.applyStats(stats, user.field, slotEffects, randoShield && randoShield.expired_at > Date.now() ? randoShield.amount : 0, Date.now());
     paradise.applyStats(user, stats);
-    return armorExpansion.applyConditionalStats(stats);
+    return transcendEquipment.capPrisonKeyCritical(armorExpansion.applyConditionalStats(stats));
 }
 
 const CP_WEIGHTS = {
@@ -4465,8 +4466,8 @@ function getAdvancedEquipmentCombatPowerModifiers(user, stats) {
         result.offense += Number(effect.offense || 0);
         result.defense += Number(effect.defense || 0);
         result.utility += Number(effect.utility || 0);
-        if (data.name == '감옥열쇠' && Number(stats && stats.crit || 0) > 1) {
-            const overflowSkillDamage = (Number(stats.crit) - 1) * (.2 + .1 * Math.max(0, stage - 1));
+        if (data.name == '감옥열쇠' && Number(stats && stats.prisonKeyOverflow || 0) > 0) {
+            const overflowSkillDamage = Number(stats.prisonKeyOverflow) * (2 + .5 * Math.max(0, stage - 1));
             result.offense += overflowSkillDamage * CP_WEIGHTS.AFTER_SKILL_RATIO;
         }
         if (data.set) setCounts[data.set] = Number(setCounts[data.set] || 0) + 1;
@@ -4929,8 +4930,9 @@ function getComboHitCount(stats, random = Math.random) {
 
 function applyCriticalDamage(damage, stats, extra, defenderStats) {
     const random = extra?.random || Math.random;
-    if (extra && extra.disableCritical && !stats.ilionForceCritical) return { damage: Number(damage || 0), isCritical: false };
-    const critChance = Math.max(0, Number(stats.crit || 0) + Number(extra && extra.critChanceBonus || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1) + Number(extra && extra.awakeningCritChanceBonus || 0);
+    if (extra?.skillName === '감사합니다 친구야' || extra && extra.disableCritical && !stats.ilionForceCritical) return { damage: Number(damage || 0), isCritical: false };
+    const rawCritChance = Math.max(0, Number(stats.crit || 0) + Number(stats.prisonKeyOverflow || 0) + Number(extra && extra.critChanceBonus || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1) + Number(extra && extra.awakeningCritChanceBonus || 0);
+    const critChance = stats.prisonKeyConversion ? Math.min(.80, rawCritChance) : rawCritChance;
     const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0)
         + armorExpansion.criticalBonus(stats, stats.fixedCriticalChance ?? critChance) - Number(stats.clairvoyanceBonus || 0);
     const critDef = Math.max(0, Math.min(1, Number(defenderStats && defenderStats.critDef || 0)));
@@ -4990,7 +4992,9 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
             : 1 + Number(stats && stats.nonElementDamage || 0);
         const lightMul = getElementDamageMultiplier('명', hitElementStats, defenderStats);
         const darkMul = getElementDamageMultiplier('암', hitElementStats, defenderStats);
-        let hitBonusMul = Number(hitExtra.damageBonusMul || 0);
+        const prisonKeyBonus = transcendEquipment.prisonKeySkillBonus(stats, hitExtra);
+        let hitBonusMul = Number(hitExtra.damageBonusMul || 0) + prisonKeyBonus;
+        if (prisonKeyBonus > 0) extra?.onEquipmentProc?.('감옥열쇠');
         // 고정 다단 공격은 명령 1회를 공격 1회로, 연격은 타격마다 별도 공격으로 집계한다.
         const countsAsAttack = isFixedMultiHit ? true : i < comboHitCount;
         const attackOffset = separateBasicAttackHits ? i : (isFixedMultiHit ? 0 : i);
@@ -5285,7 +5289,7 @@ function tryImmortalArmorRegen(user, maxHp, lines) {
     if (!user.equipmentPassiveCd || typeof user.equipmentPassiveCd != 'object') user.equipmentPassiveCd = {};
     const now = Date.now();
     if (Number(user.equipmentPassiveCd.immortalDragonArmor || 0) > now) return false;
-    user.equipmentPassiveCd.immortalDragonArmor = now + IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS;
+    user.equipmentPassiveCd.immortalDragonArmor = now + Math.max(0, IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS - Number(calculateUserStats(user).equipmentEffectCooldownFlat || 0) * 1000);
     const state = user.field.equipmentState = user.field.equipmentState || {};
     state.dragonRegen = { ticksLeft: IMMORTAL_DRAGON_ARMOR_REGEN_TICKS, nextTickAt: now + 1000 };
     tcgEquipment.record(state, '불굴');
@@ -5525,6 +5529,7 @@ function applyTranscendEquipmentStats(user, stats, plusStats) {
             }
         }
         switch (data.name) {
+            case '감옥열쇠': stats.prisonKeyConversion = v(2, .5); break;
             case '콰트로 1악장': stats.disableShield = 1; break;
             case '일레이나 전용 동전': stats.disableShield = 1; break;
             case '야구공': stats.forceZeroCrit = 1; break;
@@ -5540,7 +5545,7 @@ function applyTranscendEquipmentStats(user, stats, plusStats) {
                 stats.blackEchoArmorDarkAtkRate = v(.20, .10);
                 break;
             }
-            case '검은 잔향 하의': stats.blackEchoSkillDamage = v(.10, .03); break;
+            case '검은 잔향 하의': stats.blackEchoSkillDamage = v(.10, .05); break;
             case '777 목걸이': if (Number(user.main_card && user.main_card.star) == 6) add(plusStats, { extraDamage: .77 }); break;
             case '777 반지': if (Number(user.main_card && user.main_card.star) == 6) add(stats, { crit: v(.07, .07) }); break;
             case '777 팔찌': if (Number(user.main_card && user.main_card.star) == 6) add(stats, { pntPercent: v(.07, .07) }); break;
@@ -5560,7 +5565,7 @@ function applyTranscendEquipmentStats(user, stats, plusStats) {
             if (set == '심해의 순환') add(stats, { atk: 180, waterAtk: 100 });
             if (set == '천공의 심판') { add(stats, { atk: 200, lightAtk: 40 }); add(plusStats, { critMul: .10 }); }
             if (set == '검은 잔향') { add(stats, { atk: 220, darkAtk: 100 }); add(plusStats, { recoveryEfficiency: -.20 }); }
-            if (set == 'TCG의 유산') { add(stats, { crit: .05, equipmentEffectCooldownFlat: 2 }); }
+            if (set == 'TCG의 유산') { add(stats, { crit: .10, equipmentEffectCooldownFlat: 2 }); }
             if (set == '아드레날린') { add(stats, { crit: .07, allElementAtk: 77 }); add(plusStats, { critMul: .07 }); }
             if (set == '딜레이') add(plusStats, { afterSkill: .10 });
             if (set == '킹메이커') { add(stats, { hp: 1000, mp: 300, shieldEfficiency: .10, recoveryEfficiency: .10 }); }
@@ -5568,7 +5573,8 @@ function applyTranscendEquipmentStats(user, stats, plusStats) {
             if (set == '복선 회수') { add(stats, { crit: .10 }); add(plusStats, { extraDamage: .08 }); }
         }
         if (count >= 4) {
-            if (set == '마나번') { add(stats, { mp: 1000, manaBurnAttackRecovery: .01 }); add(plusStats, { atk: .05 }); }
+            if (set == '마나번') { add(stats, { mp: 1000, manaBurnAttackRecovery: .01 }); add(plusStats, { atk: .15 }); }
+            if (set == '심해의 순환') add(stats, { waterAtk: 150 });
             if (set == '피의 맹세') { add(plusStats, { hp: -.50, takenDamage: -.10 }); }
             if (set == '아드레날린') { add(stats, { pnt: 77 }); add(plusStats, { atk: .07, finalDamage: .07, afterSkill: .07 }); }
             if (set == '유랄') { add(stats, { cmb: .15, maxCmb: 1 }); add(plusStats, { atk: -.08 }); }
@@ -7177,7 +7183,7 @@ function activateFieldTcg(user, extra) {
         defense: (value, milliseconds) => { state.kingmakerDefenseDebuff = { value, expiredAt: now + milliseconds }; extra.defReductionBonus = Number(extra.defReductionBonus || 0) + value; },
         culprit: (takenFinalDamage, defReduction, milliseconds) => { state.culprit = { takenFinalDamage, defReduction, expiredAt: now + milliseconds }; },
         prisonKey: until => {
-            getFieldBuffs(user).receivedDamageMultiplier = { value: 1.5, expired_at: until };
+            getFieldBuffs(user).receivedDamageMultiplier = { value: 1.5, expired_at: Math.max(until, Number(getFieldBuffs(user).receivedDamageMultiplier?.expired_at || 0)) };
             extra.critChanceBonus = Number(extra.critChanceBonus || 0) + .10;
             extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .30;
         }
@@ -7267,17 +7273,12 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         extra.goldBonus = Number(extra.goldBonus || 0) + stacks * .01;
         markEquipment('범부의 대나무');
     }
-    if (Date.now() < Number(state.trueBeomUntil || 0)) {
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('범부의 대나무', .30, .05) * (1 + Number(stats.attackBuffEfficiency || 0));
+    if (state.trueBeom) {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('범부의 대나무', .30, .10) * (1 + Number(stats.attackBuffEfficiency || 0));
         if (actionType == 'skill') extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + stepValue('범부의 대나무', .30, .10);
         markEquipment('범부의 대나무');
     }
 
-    if (actionType == 'skill' && stageOf('감옥열쇠')) {
-        const overflowCrit = Math.max(0, Number(stats.crit || 0) - 1);
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + overflowCrit * stepValue('감옥열쇠', .20, .10);
-        if (overflowCrit > 0) markEquipment('감옥열쇠');
-    }
     // 궁극기 스킬 피해(ultimateDamage): 초심권 등 스탯 보유 장비 공통 (파티 preparePartyTranscendSkill과 동일 규칙)
     if (actionType == 'skill' && Number(stats.ultimateDamage || 0) != 0 && isUltimateSkillForUser(user, skill)) {
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.ultimateDamage);
@@ -7290,11 +7291,11 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
     }
     if (actionType == 'skill' && skill && skill.name == '청정수 투척' && stageOf('정수 필터망')) {
         extra.pntBonus = Number(extra.pntBonus || 0) + stepValue('정수 필터망', 25, 10);
-        state.cleanWaterBuff = { value: stepValue('정수 필터망', .08, .03), expiredAt: Date.now() + equipmentDurationMs(6) };
+        state.cleanWaterBuff = { value: stepValue('정수 필터망', .15, .05), expiredAt: Date.now() + equipmentDurationMs(15) };
         markEquipment('정수 필터망');
     }
     if (state.cleanWaterBuff && Date.now() < Number(state.cleanWaterBuff.expiredAt || 0) && extra.attackElement == '수') {
-        extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(state.cleanWaterBuff.value || 0);
+        extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(state.cleanWaterBuff.value || 0);
         markEquipment('정수 필터망');
     }
     if (state.deepWaterAttackBuff && Date.now() < Number(state.deepWaterAttackBuff.expiredAt || 0) && extra.attackElement == '수') {
@@ -7358,7 +7359,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         extra.receivedDamageReduction = Number(extra.receivedDamageReduction || 0) + bloodReduction;
         if (bloodReduction > 0) markEquipment('피의 흐름');
     }
-    if (actionType == 'skill' && currentHpRatio <= .60 && Number(stats.blackEchoSkillDamage || 0) > 0) {
+    if (actionType == 'skill' && currentHpRatio <= .80 && Number(stats.blackEchoSkillDamage || 0) > 0) {
         const currentSkillMul = Math.max(.01, 1 + Number(stats.afterSkill || 0));
         rawDamage = Math.round(rawDamage * ((currentSkillMul + Number(stats.blackEchoSkillDamage)) / currentSkillMul));
         markEquipment('검은 잔향 하의');
@@ -7548,7 +7549,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         const unitElementBonus = Number(perAttackUnitExtras[unit].allElementAtk || 0) * 4 + Number(perAttackUnitExtras[unit].waterAtk || 0);
         const totalElement = ['fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].reduce((sum, key) => sum + Number(stats[key] || 0) + Number(stats.allElementAtk || 0), 0) + unitElementBonus;
         if (!isHellPillar && stageOf('레인보우 프리즘') && totalElement >= 1000) {
-            addUnit(unit, 'finalDamageBonus', stepValue('레인보우 프리즘', .15, .05));
+            addUnit(unit, 'finalDamageBonus', stepValue('레인보우 프리즘', .12, .04));
             if (Date.now() >= Number(state.rainbowReadyAt || 0)) {
                 addUnit(unit, 'rainbowAttackRatio', stepValue('레인보우 프리즘', 1.8, .4));
                 state.rainbowReadyAt = Date.now() + equipmentCooldownMs(5);
@@ -8267,8 +8268,8 @@ function prepareTranscendSkillEffects(user, skill, stats) {
     if (skill && skill.name == '백억이요' && stage('범부의 대나무')) {
         if (now >= Number(state.beomStacksUntil || 0)) state.beomStacks = 0;
         state.beomStacks = Math.min(7, Number(state.beomStacks || 0) + 1);
-        state.beomStacksUntil = now + equipmentDurationMs(10);
-        if (state.beomStacks >= 7) state.trueBeomUntil = now + equipmentDurationMs(10);
+        state.beomStacksUntil = now + equipmentDurationMs(120);
+        if (state.beomStacks >= 7) state.trueBeom = true;
         markEquipment('범부의 대나무');
     }
     if (skill && skill.name == '초특급한탕') {
@@ -8310,7 +8311,7 @@ function prepareTranscendSkillEffects(user, skill, stats) {
     if (isUltimateSkillForUser(user, skill) && Number(stats.ultimateCooldownFlat || 0) > 0) result.cooldownFlatReduction += Number(stats.ultimateCooldownFlat);
     if (getEquippedSetCount(user, '심해의 순환') >= 4 && now >= Number(state.deepSetReadyAt || 0)) {
         result.ultimateCooldownReduction = 3000;
-        state.deepSetReadyAt = now + equipmentCooldownMs(12);
+        state.deepSetReadyAt = now + equipmentCooldownMs(4);
         markSet('심해의 순환');
     }
     if (stage('심해의 신발')) {
@@ -8338,7 +8339,7 @@ function prepareTranscendSkillEffects(user, skill, stats) {
     if (getEquippedSetCount(user, '검은 잔향') >= 4 && now >= Number(state.blackEchoSetReadyAt || 0)) {
         spendCurrentHpRate(.02);
         result.shadowDamageRate = virtualHp / Math.max(1, Number(stats.hp || 1)) <= .50 ? .50 : .35;
-        state.blackEchoSetReadyAt = now + equipmentCooldownMs(12);
+        state.blackEchoSetReadyAt = now + equipmentCooldownMs(4);
         markSet('검은 잔향');
         markTriggeredCombatEffect(result.extra, 'combat', '자해');
     }
@@ -8588,7 +8589,8 @@ function executeMainCardSkillInField(user, skillName) {
             extra.critChanceBonus = Number(extra.critChanceBonus || 0) + .10;
             extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .30;
         }
-        getFieldBuffs(user).receivedDamageMultiplier = { value: 1.5, expired_at: Date.now() + (prisonKey ? (getEquippedNamed(user, '행운의 복주머니') ? 11000 : 8000) : 4000) };
+        const until = Date.now() + (prisonKey ? (getEquippedNamed(user, '행운의 복주머니') ? 11000 : 8000) : 6000);
+        getFieldBuffs(user).receivedDamageMultiplier = { value: 1.5, expired_at: Math.max(until, Number(getFieldBuffs(user).receivedDamageMultiplier?.expired_at || 0)) };
     }
     if (skillData.skill.name == '피아스트') {
         const ratio = getSkillValue(skillData.skill, 1, star);
@@ -8635,6 +8637,7 @@ function executeMainCardSkillInField(user, skillName) {
         extra.notice = '안면강타: 시벌론 활성화';
     }
     if (skillData.skill.name == '감사합니다 친구야') {
+        extra.disableCritical = true;
         extra.receivedDamageReduction = 0.3;
         getFieldBuffs(user).receivedDamageReduction = { value: 0.3, expired_at: Date.now() + 10000 };
         extra.notice = '감사합니다 친구야: 10초 동안 받는 피해 30% 감소';
@@ -8647,9 +8650,9 @@ function executeMainCardSkillInField(user, skillName) {
         extra.forceCritical = true;
     }
     if (skillData.skill.name == '처형박수') {
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.crit || 0); // 치명타 확률만큼 피해 증가
-        extra.receivedDamageMul = 2.0;
-        if (isWorldBoss) getFieldBuffs(user).receivedDamageMultiplier = { value: 2.0, expired_at: Date.now() + 8000 };
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.crit || 0) * .5; // 치명타 확률의 50%만큼 피해 증가
+        extra.receivedDamageMul = 1.5;
+        getFieldBuffs(user).receivedDamageMultiplier = { value: 1.5, expired_at: Math.max(Date.now() + 12000, Number(getFieldBuffs(user).receivedDamageMultiplier?.expired_at || 0)) };
     }
     if (skillData.skill.name == '핫식스의정력') {
         const amount = Math.round(Number(stats.hp || 0) * getSkillValue(skillData.skill, 1, star) * (1 + Number(stats.shieldEfficiency || 0)));
@@ -8688,7 +8691,7 @@ function executeMainCardSkillInField(user, skillName) {
         const emoticon = getEquippedNamed(user, '흐음티콘');
         const emoticonStep = emoticon ? getTranscendStage(emoticon.ref.equip, emoticon.data) - 1 : 0;
         const defDown = getSkillValue(skillData.skill, 0, star) + (emoticon ? .12 + .04 * emoticonStep : 0);
-        const dotMul = 1 + Number(stats.dotDamage || 0) + (emoticon ? .40 + .15 * emoticonStep : 0);
+        const dotMul = 1 + Number(stats.dotDamage || 0) + (emoticon ? .30 + .10 * emoticonStep : 0);
         const dotDmg = Math.max(1, Math.round(Number(stats.atk || 0) * getSkillValue(skillData.skill, 1, star) * dotMul));
         const duration = paradiseCharacters.has(user, 'willMargin') ? 20000 : 10000;
         user.field.mark = { defReduce: defDown, dot: dotDmg, expired_at: Date.now() + duration };

@@ -94,14 +94,14 @@ function activate(ctx) {
         else state.dropoutStacks = 1;
     });
     effect('진사이', () => heal(200));
-    effect('정수 필터망', () => { add('pntBonus', value('정수 필터망', 25, 10)); buff('cleanWaterBuff', { value: value('정수 필터망', .08, .03) }, 6); });
+    effect('정수 필터망', () => { add('pntBonus', value('정수 필터망', 25, 10)); buff('cleanWaterBuff', { value: value('정수 필터망', .15, .05) }, 15); });
     effect('썩어버린 물', () => { state.rottenWaterStacks = Math.min(3, Number(state.rottenWaterStacks || 0) + 1); });
     effect('비리의 맛', () => { state.bribeNextBasic = { damage: value('비리의 맛', .40, .12), darkBonus: value('비리의 맛', .65, .15) }; });
     effect('치명적인 매력', () => { add('critChanceBonus', -Number(stats.crit || 0)); add('critMulBonus', Number(stats.crit || 0) * value('치명적인 매력', .70, .15)); });
     effect('범부의 대나무', () => {
         state.beomStacks = Math.min(7, (now < Number(state.beomStacksUntil || 0) ? Number(state.beomStacks || 0) : 0) + 1);
-        state.beomStacksUntil = now + duration(10);
-        if (state.beomStacks === 7) state.trueBeomUntil = state.beomStacksUntil;
+        state.beomStacksUntil = now + duration(120);
+        if (state.beomStacks === 7) state.trueBeom = true;
     });
     effect('교촌 주머니', () => { ctx.cooldown('초특급한탕', 0, 30000); buff('kyochonGoldBuff', { value: value('교촌 주머니', .10, .05) }, 30); });
     effect('불량 배터리', () => {

@@ -67,7 +67,7 @@ function applyConditionalStats(stats) {
 function triggerHellfire(stats, state, hp, maxHp, now = Date.now()) {
     if (!stats.hasHellfireRage || hp <= 0 || hp > maxHp * .20 || now < Number(state.hellfireRageReadyAt || 0)) return false;
     state.hellfireRage = { attack:.20 * (1 + Number(stats.attackBuffEfficiency || 0)), until:now+5000 };
-    state.hellfireRageReadyAt = now+15000;
+    state.hellfireRageReadyAt = now + Math.max(0, 15 - Number(stats.equipmentEffectCooldownFlat || 0)) * 1000;
     return true;
 }
 function attackBonus(state, now = Date.now()) {

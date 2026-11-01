@@ -61,7 +61,7 @@ function mentalCost(stats, skill) {
     return Math.max(0, Number(skill.mental_cost ?? skill.mp_cost ?? skill.mp ?? 0)) + (Number(stats.randoEquipment?.['청심환'] || 0) > 0 ? 10 : 0);
 }
 
-function applyStats(stats, runtime, slots, shield, now) {
+function applyStats(stats, runtime, slots, shield, now, combatStartedAt) {
     if (Number(shield || 0) > 0) stats.atk = Math.round(stats.atk * (1 + Number(slots?.shieldAttack || 0)));
     if (stats.wonyoddi) {
         const mode = runtime?.wonyoddi?.mode || '기본', star = stats.randoStar;
@@ -69,6 +69,9 @@ function applyStats(stats, runtime, slots, shield, now) {
         const stage = Number(stats.randoEquipment?.['존버의 미학'] || 0);
         const rates = { '즐리': [.06, .015], '쉐비': [.36, .09], '럭키비키': [.48, .12], '원영적사고': [.84, .21] }[mode];
         stats.afterBasic = Number(stats.afterBasic || 0) + base + (rates ? step(stage, ...rates) : 0);
+        const equipmentState = runtime?.equipmentState || runtime?.equipment || {};
+        const lastSkillAt = equipmentState.lastSkillAt ?? combatStartedAt ?? runtime?.enteredAt ?? equipmentState.combatStartedAt;
+        if (stage > 0 && lastSkillAt != null && now - lastSkillAt >= 10000) stats.afterBasic += .20;
         if (mode === '쉐비') stats.modeDefReduction = .30;
         if (mode === '럭키비키') stats.crit = Number(stats.crit || 0) + .77;
         if (mode === '원영적사고') { stats.crit = Number(stats.crit || 0) + .10 + .02 * star; stats.critMul = Number(stats.critMul || 0) + .30 + .02 * star; }
