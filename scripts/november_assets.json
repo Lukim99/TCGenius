@@ -1,0 +1,22 @@
+[
+  {
+    "category": "itemImage",
+    "file": "번들/카드박스IV.png",
+    "sha256": "53ccea06dbf30b5261cdc014f84f21d61644be553493b2bdb5c223128f426f6d"
+  },
+  {
+    "category": "itemImage",
+    "file": "가챠/[11월]보주 상자.png",
+    "sha256": "b2008e5b84002f318400dcff3172eaf1437a29b978708431fb7ba96a86cb4bf4"
+  },
+  {
+    "category": "itemImage",
+    "file": "가챠/[11월]11강 장비강화권 상자.png",
+    "sha256": "3558a0aa11066ee87abe2f46e7701c0653c136b70b7bdf19554efdfc893d7180"
+  },
+  {
+    "category": "ui",
+    "file": "봉인된 자물쇠/이달의 아이템.png",
+    "sha256": "e63b3419763667857dc5a93a3b2b34ae37b54d2047a6362d3a75c6376b7ce6c8"
+  }
+]

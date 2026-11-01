@@ -3002,7 +3002,7 @@ async function loadLockbox() {
     const root = $('#lockboxRoot');
     if (!root) return;
     const title = el('img', { class: 'lockbox-title', src: lockboxUi('글씨.png'), alt: '봉인된 자물쇠' });
-    const item = el('img', { class: 'lockbox-item', src: lockboxUi('이달의 아이템.png') + '&v=202610', alt: '10월 이달의 아이템' });
+    const item = el('img', { class: 'lockbox-item', src: lockboxUi('이달의 아이템.png') + '&v=202611', alt: '11월 이달의 아이템' });
     const char = el('img', { class: 'lockbox-char', src: lockboxUi('캐릭터.png'), alt: '' });
     const btns = el('div', { class: 'lockbox-btns' });
     btns.appendChild(el('button', { class: 'lockbox-btn', 'aria-label': '1회 열기', style: "background-image:url('" + lockboxUi('1회 열기 버튼.png') + "')", onclick: () => openLockbox(1) }));
