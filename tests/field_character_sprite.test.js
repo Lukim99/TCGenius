@@ -12,6 +12,16 @@ const getSprite = new Function('fs', 'path', 'RPG_UI_PATH', spriteSource + '\nre
 );
 const spriteFile = card => decodeURIComponent(getSprite(card).split('file=')[1]);
 
+test('유니크 아바타는 모든 카드 등급에서 카드 레이어 대신 전용 전신을 표시한다', () => {
+    const files = fs.readdirSync(path.join(root, 'DB/RPGenius/ui/유니크아바타/전신')).filter(file => file.endsWith('.png'));
+    assert.equal(files.length, 17);
+    for (const file of files) for (const type of ['일반', '전직', '각성']) {
+        const name = path.basename(file, '.png');
+        assert.equal(spriteFile({ name, skin: '[1차]유니크 ' + name, type, star: 10, prestige: true }), '유니크아바타/전신/' + file);
+        assert.notEqual(spriteFile({ name, statSkin: '[1차]유니크 ' + name, type }), '유니크아바타/전신/' + file);
+    }
+});
+
 test('일반 전용 아바타를 전직 카드에 장착해도 해당 스킨을 표시한다', () => {
     for (const name of ['딜러장', '흠시원']) {
         for (const skin of ['수영장 파티', '고급 수영장 파티']) {
@@ -45,10 +55,12 @@ test('외형 미장착 또는 파일 누락 시 기존 기본 캐릭터를 표�
 });
 
 test('일반 필드, 헬 필드, 월드보스와 PVP가 공통 스프라이트 선택을 사용한다', () => {
-    for (const name of ['buildGeneralFieldState', 'buildHFieldState', 'buildWorldBossState']) {
+    for (const name of ['buildGeneralFieldState', 'buildFieldPlayer', 'buildWorldBossState']) {
         const body = source.match(new RegExp('^function ' + name + '\\([^]*?^}', 'm'));
         assert.ok(body && body[0].includes('spriteUrl: getHFieldCharacterSprite(mainCard)'), name);
     }
+    const hell = source.match(/^function buildHFieldState\([^]*?^}/m);
+    assert.ok(hell && hell[0].includes('player: buildFieldPlayer(user, stats, mainCard)'));
     assert.ok(source.includes('pvp.configure({ serializeCard, getCharacterSprite: getHFieldCharacterSprite,'));
 });
 

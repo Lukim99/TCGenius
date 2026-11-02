@@ -37,8 +37,8 @@ function synthesize(user, body, rpg, random = Math.random) {
     if (!Number.isInteger(body.characterId)) return fail('원하는 캐릭터를 선택해주세요.');
     const fashions = rpg.getFashionData();
     const unique = fashions.find(f => isUnique(f) && f.primary_card?.includes(body.characterId));
-    const general = [...new Map(fashions.filter(f => !f.exclusive && !f.isHigh && !isUnique(f) && f.primary_card?.includes(body.characterId)).map(f => [f.name, f])).values()];
-    if (!unique || !general.length) return fail('이 캐릭터의 합성 결과가 아직 등록되지 않았습니다.');
+    const general = [...new Map(fashions.filter(f => !f.exclusive && !f.isHigh && !isUnique(f) && f.primary_card?.length).map(f => [f.name, f])).values()];
+    if (!unique || !general.length) return fail('합성 결과가 아직 등록되지 않았습니다.');
     const failures = Math.max(0, Number(user.avatarSynthesisFailures || 0));
     const guaranteed = failures >= 14;
     const won = guaranteed || random() < cube.chance;
@@ -48,7 +48,7 @@ function synthesize(user, body, rpg, random = Math.random) {
     rpg.unlockAvatar(user, resultFashion.name, 0);
     const avatar = user.avatars[user.avatars.length - 1];
     user.avatarSynthesisFailures = won ? 0 : failures + 1;
-    const result = { unique: won, guaranteed, characterId: body.characterId, avatar: { ...avatar, grade: won ? '유니크' : '일반', remainingTrades: won ? 3 : null }, attempts: user.avatarSynthesisFailures };
+    const result = { unique: won, guaranteed, characterId: won ? body.characterId : resultFashion.primary_card[0], avatar: { ...avatar, grade: won ? '유니크' : '일반', remainingTrades: won ? 3 : null }, attempts: user.avatarSynthesisFailures };
     user.lastAvatarSynthesis = { requestId: body.requestId, result };
     return result;
 }

@@ -10,8 +10,9 @@ function registerAvatarRoutes(server, deps) {
     };
     const view = (avatar, characterId) => {
         const display = assets(avatar.name);
+        const fashion = rpg.getFashionData().find(f => f.name === avatar.name && f.primary_card?.includes(characterId));
         return { ...avatar, ...display, imageUrl: Number.isInteger(characterId)
-            ? cardImage({ id: characterId, star: 6, type: '일반', skin: avatar.name }, {}) : display.imageUrl || display.iconUrl,
+            ? cardImage({ id: characterId, star: 6, type: fashion?.type === '전직' ? '전직' : '일반', skin: avatar.name }, {}) : display.imageUrl || display.iconUrl,
             portraitUrl: portrait(avatar.name), remainingTrades: rpg.getAvatarGradeByName(avatar.name) === '유니크' ? Math.max(0, 3 - Number(avatar.trades || 0)) : null };
     };
     function state(user) {

@@ -2114,8 +2114,8 @@ function getHFieldSpritePart(value) {
 function getHFieldCharacterSprite(mainCard) {
     const fallback = '필드/hfield-hunter.png';
     if (!mainCard || !mainCard.name) return '/rpg-ui?file=' + encodeURIComponent(fallback);
-    if (mainCard.skin === '[1차]유니크 ' + mainCard.name) return '/card-image?' + new URLSearchParams({ name: mainCard.name, skin: mainCard.skin, star: mainCard.star || 0, type: mainCard.type || '일반', prestige: mainCard.prestige ? '1' : '0', portrait: '1' });
     const name = getHFieldSpritePart(mainCard.name);
+    if (mainCard.skin === '[1차]유니크 ' + mainCard.name) return '/rpg-ui?file=' + encodeURIComponent('유니크아바타/전신/' + name + '.png');
     const cardType = mainCard.type == '전직' ? '전직' : '일반';
     const skin = getHFieldSpritePart(mainCard.skin);
     const candidates = [];

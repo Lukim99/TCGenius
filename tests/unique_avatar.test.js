@@ -94,7 +94,7 @@ test('equipped unique avatar uses Halloween in the card title while its inventor
     const id = normal.primary_card[0];
     assert.equal(rpg.formatUserCard({ id, type: '일반', star: 4, skin: normal.name }), '[5성] 정장 ' + read('CharacterCards')[id].name);
 });
-test('each cube uses its probability boundary and gives the chosen character only', () => {
+test('each cube uses its probability boundary and limits only unique results to the chosen character', () => {
     unique.CUBES.forEach((cube, i) => {
         const user = makeUser(), body = request(user, i);
         const won = unique.synthesize(user, body, rpg, () => cube.chance - .00001);
@@ -104,8 +104,21 @@ test('each cube uses its probability boundary and gives the chosen character onl
         const other = makeUser(), lost = unique.synthesize(other, request(other, i), rpg, () => cube.chance);
         assert.equal(lost.unique, false);
         const fashion = fixture.Fashion.find(f => f.name === lost.avatar.name);
-        assert.ok(fashion.primary_card.includes(0)); assert.equal(rpg.getAvatarGradeByName(fashion.name), '일반');
+        assert.ok(fashion.primary_card.includes(lost.characterId)); assert.equal(rpg.getAvatarGradeByName(fashion.name), '일반');
     });
+});
+
+test('failure draws uniformly from all ordinary avatar names regardless of chosen character', () => {
+    const general = [...new Set(fixture.Fashion.filter(f => rpg.getAvatarGradeByName(f.name) === '일반').map(f => f.name))];
+    for (const characterId of [0, 3]) for (let i = 0; i < general.length; i++) {
+        const user = makeUser(), body = request(user);
+        body.characterId = characterId;
+        const draws = [.99999, (i + .5) / general.length];
+        const result = unique.synthesize(user, body, rpg, () => draws.shift());
+        assert.equal(result.unique, false);
+        assert.equal(result.avatar.name, general[i]);
+        assert.ok(fixture.Fashion.find(f => f.name === result.avatar.name).primary_card.includes(result.characterId));
+    }
 });
 test('14 failures across cube and character choices guarantee the 15th and reset the shared counter', () => {
     const user = makeUser();
@@ -195,6 +208,42 @@ test('actual HTTP synthesis is authenticated, serialized and replay-safe; combat
     assert.equal(equipped.status, 200);
     const wardrobe = await api('/api/cards/avatars?source=main');
     assert.equal(wardrobe.body.avatars.find(a => a.grade === '유니크').ownedCount, 1);
+});
+
+test('HTTP failure result and replay display the awarded avatar character and card type', async t => {
+    const general = [...new Set(fixture.Fashion.filter(f => rpg.getAvatarGradeByName(f.name) === '일반').map(f => f.name))];
+    const santa = general.indexOf('산타');
+    const draws = [.99999, (santa + .5) / general.length];
+    const user = makeUser(), body = request(user), auth = cookieFor(user);
+    user.load(JSON.parse(JSON.stringify(user))); webUsers.set(user.name, user);
+    t.mock.method(Math, 'random', () => draws.shift() ?? .99999);
+    const response = await api('/api/avatars/synthesis', body, auth);
+    assert.equal(response.status, 200);
+    const result = response.body.result;
+    assert.equal(result.unique, false); assert.equal(result.avatar.name, '산타');
+    assert.notEqual(result.characterId, body.characterId);
+    const image = new URL(result.avatar.imageUrl, base);
+    assert.equal(image.searchParams.get('name'), '딜러장');
+    assert.equal(image.searchParams.get('skin'), '산타');
+    assert.equal(image.searchParams.get('type'), '전직');
+    assert.equal((await fetch(image, { headers: { Cookie: auth } })).status, 200);
+    const replay = await api('/api/avatars/synthesis', body, auth);
+    assert.equal(replay.body.result.avatar.imageUrl, result.avatar.imageUrl);
+    assert.equal(user.avatars.length, 1);
+    assert.equal((await api('/api/avatars/synthesis', null, auth)).body.lastResult.avatar.imageUrl, result.avatar.imageUrl);
+});
+
+test('WebGL training state serves the equipped unique fullbody and keeps card icons separate', async () => {
+    const user = makeUser(); user.main_card = { id: 3, star: 10, type: '각성', skin: '[1차]유니크 오버라이드' };
+    webUsers.set(user.name, user);
+    const response = await api('/api/training', null, cookieFor(user));
+    assert.equal(response.status, 200);
+    const player = response.body.player;
+    assert.equal(decodeURIComponent(player.spriteUrl), '/rpg-ui?file=유니크아바타/전신/오버라이드.png');
+    assert.match(player.cardImageUrl, /^\/card-image\?/);
+    const image = await fetch(base + player.spriteUrl, { headers: { Cookie: cookieFor(user) } });
+    assert.equal(image.status, 200);
+    assert.deepEqual(Buffer.from(await image.arrayBuffer()), fs.readFileSync(path.join(__dirname, '../DB/RPGenius/ui/유니크아바타/전신/오버라이드.png')));
 });
 
 test('new Glencheck and Dealer avatar layers are served for each card tier and prestige', async () => {
@@ -298,7 +347,7 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
     for (const cube of unique.CUBES) rpg.addInventoryItem(httpUser, fixture.Item.findIndex(item => item.name === cube.name), 3);
     httpUser.load(JSON.parse(JSON.stringify(httpUser)));
     t.mock.method(Math, 'random', () => .99999);
-    const browser = await require('puppeteer-core').launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+    const browser = await require('puppeteer-core').launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
     try {
         const page = await browser.newPage(), errors = [], audio = new Map();
         page.on('pageerror', error => errors.push(error.message));
@@ -321,6 +370,8 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.click('.uaw-head');
         await page.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.querySelectorAll('.uaw img')].map(image => { image.loading = 'eager'; return image.decode(); })); });
         assert.equal(await page.$$eval('.uaw-tile[data-grade="unique"] img', images => images.every(image => image.src.includes('/card-image?'))), true);
+        assert.equal(await page.$eval('.uaw-tile[data-grade="unique"] .uaw-name', node => node.textContent), '할로윈');
+        assert.equal(await page.$eval('.uaw-tile[data-grade="unique"] .uaw-grade', node => node.textContent), '[1차]유니크');
         await page.screenshot({ path: path.join(dir, 'wardrobe-desktop.png') });
         await page.setViewport({ width: 390, height: 844 });
         await page.screenshot({ path: path.join(dir, 'wardrobe-mobile.png') });
@@ -386,7 +437,10 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.waitForSelector('.ua-overlay[data-tone="normal"] .is-settled', { timeout: 15000 });
         assert.equal(await page.$eval('.ua-frame-art img', image => image.src.includes('/card-image?')), true);
         assert.equal(httpUser.avatarSynthesisFailures, 1);
-        assert.ok(fixture.Fashion.find(f => f.name === httpUser.avatars.at(-1).name).primary_card.includes(1));
+        const resultFashion = fixture.Fashion.find(f => f.name === httpUser.avatars.at(-1).name);
+        assert.equal(rpg.getAvatarGradeByName(resultFashion.name), '일반');
+        assert.ok(!resultFashion.primary_card.includes(1));
+        assert.equal(await page.$eval('.ua-frame-art img', image => new URL(image.src).searchParams.get('name')), read('CharacterCards')[resultFashion.primary_card[0]].name);
         await page.screenshot({ path: path.join(dir, 'normal-result-desktop.png') });
         assert.ok(audio.size >= 4); assert.ok([...audio.values()].every(status => status === 200));
         assert.ok(await page.evaluate(() => window.__avatarAudioStarts > 0));
@@ -400,6 +454,9 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         await page.click('.uaw-head');
         await page.click('.uaw-tile[data-grade="unique"]');
         await page.waitForSelector('.unique-avatar-options button');
+        assert.equal(await page.$eval('.uas-name', node => node.textContent), '할로윈');
+        assert.equal(await page.$eval('.uas-grade', node => node.textContent), '[1차]유니크');
+        assert.ok(await page.$eval('.uas-name .card-name-halloween', node => node.getAnimations().length));
         assert.equal(await page.$eval('.avatar-detail-preview img', image => image.src.includes('/card-image?')), true);
         await page.evaluate(() => Promise.all([...document.querySelectorAll('.uas img')].map(image => image.decode())));
         assert.equal(await page.$eval('.uas-figure-art img', image => decodeURIComponent(image.src).includes('유니크아바타/전신/')), true);
@@ -421,6 +478,33 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
         const replayCutscene = await page.$eval('.uas-cine-screen img', image => image.src);
         await page.click('.uas-lens-btn[data-focus="figure"]');
         assert.equal(await page.evaluate(url => __avatarRevokedUrls.includes(url), replayCutscene), true);
+        for (const width of [245, 320, 390]) {
+            await page.setViewport({ width, height: width === 390 ? 844 : 600 });
+            await page.evaluate(() => {
+                document.querySelector('.uas').scrollTop = 0;
+                document.querySelector('.uas-scroll').scrollTop = 0;
+                return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            });
+            await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 450)));
+            assert.equal(await page.$eval('.uas', node => node.scrollWidth <= innerWidth + 1), true, 'showroom overflow at ' + width);
+            assert.equal(await page.evaluate(() => {
+                const close = document.querySelector('.uas-x').getBoundingClientRect();
+                return [...document.querySelectorAll('.uas-lens-btn')].every(node => {
+                    const rect = node.getBoundingClientRect();
+                    return rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth && !(rect.left < close.right && rect.right > close.left && rect.top < close.bottom && rect.bottom > close.top);
+                });
+            }), true, 'media controls overlap at ' + width);
+            await page.screenshot({ path: path.join(dir, 'avatar-showroom-mobile-' + width + '.png') });
+            for (const selector of ['.unique-avatar-options button:last-child', '.uas-synth']) {
+                await page.$eval(selector, node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+                assert.equal(await page.$eval(selector, node => {
+                    const rect = node.getBoundingClientRect();
+                    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                    return hit === node || node.contains(hit);
+                }), true, selector + ' is obscured at ' + width);
+            }
+            assert.equal(await page.evaluate(() => document.querySelector('.uas-head').getBoundingClientRect().bottom <= document.querySelector('.uas-sec').getBoundingClientRect().top + 1), true, 'avatar title overlaps details at ' + width);
+        }
         await page.setViewport({ width: 390, height: 844 });
         await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 600)));
         const recoveryOption = await page.$('::-p-text(회복 및 보호막 효과 +5%)');
@@ -481,6 +565,21 @@ test('browser renders wardrobe, PC/mobile synthesis, real guaranteed result, nor
             await page.$eval('#mainCard .card-name-halloween', (node, time) => { const animation = node.getAnimations()[0]; animation.pause(); animation.currentTime = time; }, time);
             await titleCard.screenshot({ path: path.join(dir, 'halloween-name-' + time + '.png') });
         }
+        const battle = await browser.newPage();
+        battle.on('pageerror', error => errors.push(error.message));
+        await battle.setViewport({ width: 1280, height: 720 });
+        await battle.setCookie({ name: 'rpg_admin', value: cookieFor(httpUser).split('=').slice(1).join('='), url: base });
+        const trainingLoaded = battle.waitForResponse(response => response.url() === base + '/api/training');
+        const spriteLoaded = battle.waitForResponse(response => decodeURIComponent(response.url()).includes('file=유니크아바타/전신/빵귤.png') && [200, 304].includes(response.status()));
+        await battle.goto(base + '/training', { waitUntil: 'domcontentloaded' });
+        const combatState = await (await trainingLoaded).json();
+        assert.equal(decodeURIComponent(combatState.player.spriteUrl), '/rpg-ui?file=유니크아바타/전신/빵귤.png');
+        await battle.waitForFunction(() => document.querySelector('#hfCanvas')?.width > 0);
+        await battle.evaluate(() => new Promise(resolve => setTimeout(resolve, 700)));
+        await battle.screenshot({ path: path.join(dir, 'halloween-webgl-training.png') });
+        assert.deepEqual(errors, []);
+        await spriteLoaded;
+        await battle.close();
         assert.deepEqual(errors, []);
     } finally { await browser.close(); }
 });
