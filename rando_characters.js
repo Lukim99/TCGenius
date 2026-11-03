@@ -1,4 +1,5 @@
 'use strict';
+const attackStats = require('./attack_stats');
 
 const WONYODDI_ID = 15;
 const KINO_ID = 16;
@@ -62,7 +63,7 @@ function mentalCost(stats, skill) {
 }
 
 function applyStats(stats, runtime, slots, shield, now, combatStartedAt) {
-    if (Number(shield || 0) > 0) stats.atk = Math.round(stats.atk * (1 + Number(slots?.shieldAttack || 0)));
+    if (Number(shield || 0) > 0) attackStats.addPercent(stats, Number(slots?.shieldAttack || 0));
     if (stats.wonyoddi) {
         const mode = runtime?.wonyoddi?.mode || '기본', star = stats.randoStar;
         const base = { '즐리': .60, '쉐비': 1, '럭키비키': .77, '원영적사고': 1 + .10 * star }[mode] || 0;
@@ -78,7 +79,7 @@ function applyStats(stats, runtime, slots, shield, now, combatStartedAt) {
     }
     if (stats.kino && runtime) {
         const s = mentalState(stats, runtime, now), stage = Number(stats.randoEquipment?.['청심환'] || 0);
-        if (stats.awakening?.effect === 'mentalAttack') stats.atk = Math.round(stats.atk * (1 + Math.floor(s.value / 15) * stats.awakening.value));
+        if (stats.awakening?.effect === 'mentalAttack') attackStats.addPercent(stats, Math.floor(s.value / 15) * stats.awakening.value);
         if (s.berserk && stage > 0) { stats.finalDamage = Number(stats.finalDamage || 0) + step(stage, .20, .05); stats.critMul = Number(stats.critMul || 0) + step(stage, .30, .05); }
     }
     return stats;

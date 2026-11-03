@@ -1741,7 +1741,7 @@ const FLAT_STAT_DEFS = [
 ];
 
 const PLUS_STAT_DEFS = [
-    { key: 'atk', label: '최종 공격력', kind: 'percent' },
+    { key: 'atk', label: '공격력 %', kind: 'percent' },
     { key: 'def', label: '최종 방어력', kind: 'percent' },
     { key: 'hp', label: '최종 체력', kind: 'percent' },
     { key: 'mp', label: '최종 MP', kind: 'percent' },
@@ -1766,7 +1766,7 @@ const PLUS_STAT_DEFS = [
     { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' },
     { key: 'takenDamage', label: '받는 피해 증가', kind: 'percent' },
     { key: 'damageBonus', label: '일반 몬스터에게 주는 피해 증가', kind: 'percent' },
-    { key: 'finalAtk', label: '최종 공격력', kind: 'percent' },
+    { key: 'finalAtk', label: '공격력 % (기존 저장값)', kind: 'percent', legacy: true },
     { key: 'finalDamage', label: '최종 피해', kind: 'percent' },
     { key: 'extraDamage', label: '추가 피해', kind: 'percent' },
     { key: 'nonElementDamage', label: '[무]속성 공격 피해', kind: 'percent' },
@@ -1824,7 +1824,7 @@ function statEditor(title, _ignoredIcon, obj, defs) {
             extraKeys.forEach(key => list.appendChild(buildRow({ key, label: key, kind: 'int' }, true)));
         }
 
-        const remaining = defs.filter(d => !Object.prototype.hasOwnProperty.call(obj, d.key));
+        const remaining = defs.filter(d => !d.legacy && !Object.prototype.hasOwnProperty.call(obj, d.key));
         const addRow = el('div', { class: 'stat-add' });
         const sel = el('select');
         sel.appendChild(el('option', { value: '' }, '+ 능력치 추가...'));

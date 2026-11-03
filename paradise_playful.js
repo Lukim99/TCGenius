@@ -334,7 +334,11 @@ function afterHit(user, stats, extra, hit) {
     if (has(user, 'phaseExchange') && !s.phaseChanged && extra.paradiseEnemyHpBefore > enemy.maxHp * .5 && enemy.hp <= enemy.maxHp * .5 && enemy.hp > 0) {
         s.phaseChanged = true; normalCooldowns(user).forEach(([name]) => { user.field.skillCooldowns[name] = Date.now(); });
         corridor().heal(user, .20); enemy.atk = Math.round(enemy.atk * 1.30);
-        if (enemy.mirror) enemy.mirror.snapshot.stats.atk = enemy.atk;
+        if (enemy.mirror) {
+            const stats = enemy.mirror.snapshot.stats;
+            if (stats.baseAtk != null && stats.atk > 0) stats.baseAtk *= enemy.atk / stats.atk;
+            stats.atk = enemy.atk;
+        }
         notice(extra, '나도 2페이즈! 일반 스킬을 초기화하고 HP 20%를 회복합니다.');
     }
     if (has(user, 'cutsceneCoupon') && !s.cutsceneRecorded && k === 'skill' && !isUltimate(user, extra.skillName) && hit.criticalCount > 0) {
@@ -343,7 +347,11 @@ function afterHit(user, stats, extra, hit) {
     if (has(user, 'theHeist') && !s.heistUsed && s.basicHits >= 3 && s.skillHits >= 2 && enemy.hp > 0) {
         s.heistUsed = true; const stolen = enemy.atk * .20;
         enemy.atk = Math.round(enemy.atk * .80); enemy.def = Math.round(enemy.def * .80);
-        if (enemy.mirror) { enemy.mirror.snapshot.stats.atk = enemy.atk; enemy.mirror.snapshot.stats.def = enemy.def; }
+        if (enemy.mirror) {
+            const stats = enemy.mirror.snapshot.stats;
+            if (stats.baseAtk != null && stats.atk > 0) stats.baseAtk *= enemy.atk / stats.atk;
+            stats.atk = enemy.atk; stats.def = enemy.def;
+        }
         s.heistDamage = Math.min(stats.atk * 5, stolen * 3); shield(user, 'heist', stats.hp * .20, 12, stats);
         notice(extra, '도둑단 작전 성공! 적의 공격력과 방어력이 20% 감소합니다.');
     }

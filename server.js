@@ -2062,7 +2062,7 @@ function getHFieldRecoveryItems(user) {
     }).map(entry => {
         const data = items[Number(entry.id)];
         const effects = (data.use_func || []).filter(func => func && FIELD_POTION_TYPES.has(func.type)).map(func => {
-            if (func.type === '최종공격력비약') return '최종 공격력 +' + Math.round(Number(func.amount || 0) * 100) + '% · ' + Number(func.duration || 0) + '초';
+            if (func.type === '최종공격력비약') return '공격력 +' + Math.round(Number(func.amount || 0) * 100) + '% · ' + Number(func.duration || 0) + '초';
             const resource = String(func.type).startsWith('체력') ? 'HP' : 'MP';
             const amount = String(func.type).endsWith('%') ? Math.round(Number(func.amount || 0) * 100) + '%' : Number(func.amount || 0).toLocaleString('ko-KR');
             return resource + ' +' + amount;
@@ -4220,7 +4220,7 @@ function buildStatDiffs(currentStats, nextStats, currentPlus, nextPlus) {
         atkPerMillionGold: '골드 100만 당 공격력'
     };
     const PLUS_LABELS = {
-        atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+        atk: '공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
         pnt: '방어력 관통', gold: '골드 획득량', potion: '물약 효율',
         afterBasic: '일반 공격 피해', avd: '회피 확률', afterSkill: '스킬 공격 피해',
         '000': '추가 피해 확률', exp: '경험치 획득량', eliteDmg: '엘리트 추가 피해',
@@ -4229,7 +4229,7 @@ function buildStatDiffs(currentStats, nextStats, currentPlus, nextPlus) {
         critDef: '치명타 피해 감소율', cmb: '연격 확률', maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 추가 고정 피해',
         takenDamage: '받는 피해 증가', damageBonus: '주는 피해 증가',
-        finalAtk: '최종 공격력', finalDamage: '최종 피해', extraDamage: '추가 피해', bossDmg: '보스 추가 피해',
+        finalAtk: '공격력', finalDamage: '최종 피해', extraDamage: '추가 피해', bossDmg: '보스 추가 피해',
         butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
     };
     // 값이 낮을수록(감소할수록) 이득인 스탯
@@ -9114,7 +9114,7 @@ function buildTitleDisplay(user) {
 
 // 게임에 존재하는 모든 스탯 (그룹 유지)
 const PROFILE_STAT_GROUPS = [
-    { title: '기본', keys: ['atk', 'finalAtk', 'def', 'hp', 'mp', 'pnt', 'pntPercent'] },
+    { title: '기본', keys: ['atk', 'def', 'hp', 'mp', 'pnt', 'pntPercent'] },
     { title: '치명타', keys: ['crit', 'critMul', 'critDef'] },
     { title: '연격', keys: ['cmb', 'maxCmb'] },
     { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'extraDamage', 'dotDamage', 'skillTrueDmg', 'nonElementDamage'] },
@@ -9123,7 +9123,7 @@ const PROFILE_STAT_GROUPS = [
     { title: '획득', keys: ['gold', 'plusGold', 'exp', 'itemDropChance'] },
 ];
 const PROFILE_STAT_LABELS = {
-    atk: '공격력', finalAtk: '최종 공격력 증가', def: '방어력', hp: '최대 체력', mp: '최대 MP', pnt: '방어 관통력', pntPercent: '방어력 관통',
+    atk: '공격력', def: '방어력', hp: '최대 체력', mp: '최대 MP', pnt: '방어 관통력', pntPercent: '방어력 관통',
     crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
     afterBasic: '일반 공격 피해', afterSkill: '스킬 공격 피해', damageBonus: '일반 몬스터 추가 피해',
@@ -9183,7 +9183,8 @@ function buildProfileStatItem(key, stats, plusStats) {
     if (PROFILE_STAT_MULT.has(key)) {
         const total = Math.round(Number(stats[key] || 0));
         const plus = Number(plusStats[key] || 0);
-        const flat = plus !== 0 ? Math.round(total / (1 + plus)) : total;
+        const flat = key === 'atk' && stats.baseAtk != null ? Math.round(stats.baseAtk)
+            : plus !== 0 ? Math.round(total / (1 + plus)) : total;
         return { label: PROFILE_STAT_LABELS[key], value: comma(total), sub: '수치 ' + comma(flat) + ' · ' + pctText(plus), owned: true, tone: 'neutral' };
     }
     const raw = Number(stats[key] || 0);

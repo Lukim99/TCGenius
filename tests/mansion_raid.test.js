@@ -1141,7 +1141,7 @@ test('아티팩트 등급별 조건 종류는 중복 없고, 발현도와 네 �
     ] } };
     const user = { main_card: { id: 0, star: 6, type: '일반' } };
     const all = artifacts.evaluate(equip, '레전더리', user, {}, () => null);
-    assert.equal(all.manifestation, 30); assert.equal(all.values.finalDamage, .08); assert.equal(all.values.finalAtk, .12);
+    assert.equal(all.manifestation, 30); assert.equal(all.values.finalDamage, .08); assert.equal(all.values.atk, .12);
     assert.equal(all.values.extraDamage, .1); assert.equal(all.values.cooldown, .1);
     user.main_card.type = '전직';
     const partial = artifacts.evaluate(equip, '레전더리', user, {}, () => null);
@@ -1202,7 +1202,7 @@ test('실제 스탯·장착·프리셋 경로에서 아티팩트는 전용 슬�
     const current = rpg.calculateUserStats(user);
     assert.equal(current.hp, Math.round(baseline.hp * 1.1)); assert.equal(current.pnt, Math.round(baseline.pnt * 1.1));
     assert.ok(Math.abs(current.crit - baseline.crit - .1) < 1e-10);
-    assert.equal(current.atk, Math.round(baseline.atk * 1.12));
+    assert.equal(current.atk, Math.round(baseline.baseAtk * (1 + baseline.plusStats.atk + .12)));
     user.blessings = { rukim: Date.now() - 1000 }; user.hp = current.hp;
     rpg.calculateUserStats(user);
     assert.equal(user.hp, current.hp, '다른 축복이 만료돼도 아티팩트로 늘어난 HP를 잃지 않는다');
@@ -1727,10 +1727,10 @@ test('카드 추가 보상은 문서 성급과 유효한 일반·전직·각성 
     for (const id of ['mansionNormal', 'mansionHard']) for (const entry of quests.find(quest => quest.id === id).rewards.bonus.filter(entry => entry.type === '캐릭터카드')) {
         const result = party.__test.grantPartyQuestPackReward(user, entry, summary); assert.equal(result.card.star + 1, entry.display_star);
     }
-    const atk = rpg.calculateUserStats(user).atk;
+    const stats = rpg.calculateUserStats(user);
     rpg.addInventoryItem(user, registration.potionId, 1);
     assert.match(await rpg.useItem(user, '투신의 함성 포션', '1'), /사용/);
-    assert.equal(rpg.calculateUserStats(user).atk, Math.round(atk * 1.25));
+    assert.equal(rpg.calculateUserStats(user).atk, Math.round(stats.baseAtk * (1 + stats.plusStats.atk + .25)));
 });
 
 test('시련 보호막의 상한·하한과 실패 판정은 노말·하드·나이트메어에 각각 적용된다', async () => {
@@ -1990,14 +1990,69 @@ test('두 펫과 최종 공격력 정보 표시는 지정 효과를 반영하고
     assert.ok(Math.abs(rpg.calculateUserStats(user).gold - baseline.gold - .1) < 1e-10);
     user.equipments.pet = [{ id: registration.pets.조각, level: 0 }]; await user.save();
     const profile = (await request('/api/profile')).data;
-    assert.ok(profile.statGroups.flatMap(group => group.items).some(item => item.label === '최종 공격력 증가' && item.value === '1%'));
-    const room = await battle(); const member = room.members[0]; member.baseSnapshot.stats.atk = 1000;
+    const expectedPercent = Math.round(rpg.calculateUserStats(user).plusStats.atk * 1000) / 10;
+    assert.ok(profile.statGroups.flatMap(group => group.items).some(item => item.label === '공격력' && item.sub.endsWith('· +' + expectedPercent + '%')));
+    assert.ok(!profile.statGroups.flatMap(group => group.items).some(item => item.label === '최종 공격력 증가'));
+    const room = await battle(); const member = room.members[0];
+    Object.assign(member.baseSnapshot.stats, { atk: 1200, baseAtk: 1000, plusStats: { atk: .20 } });
     member.potions = [{ name: '투신의 함성 포션', count: 2 }];
-    assert.equal((await party.usePotion(member.name, '투신의 함성 포션')).ok, true); assert.equal(member.baseSnapshot.stats.atk, 1250);
+    assert.equal((await party.usePotion(member.name, '투신의 함성 포션')).ok, true); assert.equal(member.baseSnapshot.stats.atk, 1450);
     member.runtime.potionUntil = 0;
     assert.equal((await party.usePotion(member.name, '투신의 함성 포션')).ok, true);
-    const buff = member.runtime.buffs.find(buff => buff.id === 'battleCry'); assert.equal(buff.remain, 120); assert.equal(member.baseSnapshot.stats.atk, 1250);
-    buff.remain = .2; tick(room); assert.equal(member.baseSnapshot.stats.atk, 1000);
+    const buff = member.runtime.buffs.find(buff => buff.id === 'battleCry'); assert.equal(buff.remain, 120); assert.equal(member.baseSnapshot.stats.atk, 1450);
+    buff.remain = .2; tick(room); assert.equal(member.baseSnapshot.stats.atk, 1200);
+});
+
+test('기존 펫·아티팩트 finalAtk 저장값은 원본 변경 없이 공격력%로 합산한다', async () => {
+    const user = await reset();
+    user.statPointStats.atk = 20;
+    const baseline = rpg.calculateUserStats(user);
+    const pet = rpg.getDataCache('Pet')[registration.pets.조각];
+    const previous = pet.plusStat;
+    pet.plusStat = { atk: .04, finalAtk: .03 };
+    try {
+        user.equipments.pet = [{ id: registration.pets.조각, level: 0 }];
+        const equip = rpg.grantArtifact(user, '레전더리');
+        equip.artifact.options = [
+            { type: 'mainStar', condition: 7, ability: 'finalAtk', n: 10 },
+            { type: 'character', condition: 0, ability: 'atk', n: 10 },
+            { type: 'cardType', condition: '일반', ability: 'crit', n: 10 }
+        ];
+        assert.match(rpg.equipItemByNumber(user, 1), /장착/);
+        const saved = structuredClone(equip.artifact);
+        const meta = {}, stats = rpg.calculateUserStats(user, meta);
+        const expected = baseline.plusStats.atk + .04 + .03 + .10 + .10 + .12;
+        assert.ok(Math.abs(meta.plusStats.atk - expected) < 1e-10);
+        assert.equal(stats.atk, Math.round(baseline.baseAtk * (1 + expected)));
+        assert.equal(meta.plusStats.finalAtk, undefined);
+        assert.equal(stats.finalAtk, undefined);
+        assert.deepEqual(pet.plusStat, { atk: .04, finalAtk: .03 });
+        assert.deepEqual(equip.artifact, saved);
+        const view = artifacts.view(equip, '레전더리', user, stats, () => null, []);
+        assert.equal(view.options[0].ability, 'atk');
+        assert.equal(view.options[0].abilityLabel, '공격력');
+    } finally { pet.plusStat = previous; }
+});
+
+test('공격력 정보는 감소율·0 공격력에서도 원래 수치와 합산%를 표시하고 전투력은 유한하다', async () => {
+    const user = await reset();
+    user.card_slot = []; user.equippedTitle = null; user.statTitle = null; user.statPointStats = {};
+    const baseline = rpg.calculateUserStats(user);
+    const pet = rpg.getDataCache('Pet')[registration.pets.조각], previous = pet.plusStat;
+    user.equipments.pet = [{ id: registration.pets.조각, level: 0 }];
+    try {
+        for (const percent of [-.50, -1, .75]) {
+            pet.plusStat = { atk: percent - baseline.plusStats.atk };
+            await user.save();
+            const profile = (await request('/api/profile')).data;
+            const attack = profile.statGroups.flatMap(group => group.items).find(item => item.label === '공격력');
+            assert.equal(attack.value, Math.round(baseline.baseAtk * (1 + percent)).toLocaleString('en-US'));
+            assert.equal(attack.sub, '수치 ' + Math.round(baseline.baseAtk).toLocaleString('en-US') + ' · ' + (percent >= 0 ? '+' : '') + percent * 100 + '%');
+            const power = rpg.calculateCombatPower(user);
+            assert.ok(Number.isFinite(power.total));
+            assert.ok(Number.isFinite(power.offense));
+        }
+    } finally { pet.plusStat = previous; }
 });
 
 function birthdayClock(t) {

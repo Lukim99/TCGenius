@@ -115,7 +115,7 @@ assert.ok(snapshot.skillIndexes.length >= 2, '전직 카드는 기본 + 전직 �
 assert.strictEqual(snapshot.display.cardName, '글렌첵');
 assert.strictEqual(snapshot.display.skillsMeta[0].name, '글버지');
 assert.strictEqual(snapshot.star, 8);
-assert.strictEqual(typeof snapshot.staticAtkPlus, 'number', '동적 공격력 버프를 솔로 공식대로 합산하려면 정적 공격력% 스냅샷이 필요하다.');
+assert.strictEqual(typeof snapshot.stats.plusStats.atk, 'number', '동적 공격력 버프도 스냅샷의 plusStats.atk에 합산한다.');
 assert.strictEqual(snapshotUser.hp, undefined, '스냅샷은 유저의 hp/mp를 건드리지 않아야 한다.');
 assert.strictEqual(snapshotUser.field, undefined, '스냅샷은 유저의 field를 건드리지 않아야 한다.');
 
@@ -723,7 +723,8 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     simultaneousBattle.result = null;
     [simultaneousBattle.me, simultaneousBattle.opp].forEach(side => {
         side.snapshot.stats = Object.assign({}, side.snapshot.stats, { atk: 100, def: 0, pnt: 0, crit: 0, cmb: 0, maxCmb: 0, avd: 0, takenDamage: 0, damageBonus: 0, finalDamage: 0, extraDamage: 0 });
-        side.snapshot.staticAtkPlus = 0;
+        side.snapshot.stats.plusStats = { atk: 0 };
+        side.snapshot.stats.baseAtk = side.snapshot.stats.atk;
         side.snapshot.slotEffects = Object.assign({}, STUB_SLOT_EFFECTS);
         side.snapshot.equipment = { entries: [], setCounts: {} };
         side.snapshot.passiveIds = [];

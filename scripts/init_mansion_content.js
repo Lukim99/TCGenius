@@ -29,7 +29,7 @@ function appendMansion(before) {
         if (!after.Recipe.some(recipe => recipe && recipe.name === name)) after.Recipe.push({ name, materials: [{ type: '아이템', item_id: materialId, count: MATERIALS[rarity][2] }], crafted: [{ type: '아티팩트', artifact_id: id, count: 1 }] });
     }
     const pets = {};
-    for (const definition of [{ name: '조각', rarity: '유니크', stat: {}, plusStat: { finalAtk: .01 }, desc: '최종 공격력 +1%.', upgrade: [] }, { name: '위플래쉬', rarity: '레전더리', stat: {}, plusStat: { gold: .1 }, desc: '골드 획득량 +10%.', upgrade: [] }]) {
+    for (const definition of [{ name: '조각', rarity: '유니크', stat: {}, plusStat: { atk: .01 }, desc: '공격력 +1%.', upgrade: [] }, { name: '위플래쉬', rarity: '레전더리', stat: {}, plusStat: { gold: .1 }, desc: '골드 획득량 +10%.', upgrade: [] }]) {
         let id = after.Pet.findIndex(pet => pet && pet.name === definition.name && pet.rarity === definition.rarity);
         if (id < 0) { id = after.Pet.length; after.Pet.push(definition); }
         pets[definition.name] = id;

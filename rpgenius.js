@@ -1286,7 +1286,7 @@ const EQUIP_STAT_LABELS = {
     burnDurationFlat: '화상 지속시간',
     critLightBonus: '치명타 시 명속성 추가 피해',
     nonCritLightBonus: '비치명타 시 명속성 추가 피해',
-    manaAmplifierFinalAtk: 'MP 20% 초과 시 최종 공격력',
+    manaAmplifierFinalAtk: 'MP 20% 초과 시 공격력',
     equipmentEffectDurationFlat: '장비 효과 지속시간',
     partyAllElementAtk: '파티원 모든 속성 강화',
     comboCritMul: '연격 추가 타격 치명타 피해',
@@ -1297,7 +1297,7 @@ const EQUIP_STAT_LABELS = {
 };
 const EQUIP_PLUSSTAT_LABELS = {
     wonyoddiShieldChance: '각성 패시브 보호막 획득 확률',
-    atk: '최종 공격력',
+    atk: '공격력',
     def: '최종 방어력',
     hp: '최종 체력',
     mp: '최종 MP',
@@ -1309,7 +1309,7 @@ const EQUIP_PLUSSTAT_LABELS = {
     afterSkill: '스킬 공격 피해',
     '000': '공격 시 10/100/1000 추가 피해 확률',
     exp: '경험치 획득량',
-    finalAtk: '최종 공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해',
+    finalAtk: '공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해',
     mpReduce: 'MP 소모량',
     itemDropChance: '아이템 획득 확률',
     recoveryEfficiency: '회복 효율',
@@ -1373,7 +1373,6 @@ const WILL_ACCESSIBLE_FIELDS = {
             gold: { label: '골드 획득량', valueType: 'ratio' },
             potion: { label: '물약 효율', valueType: 'ratio' },
             afterBasic: { label: '일반 공격 피해', valueType: 'ratio' },
-            finalAtk: { label: '최종 공격력', valueType: 'ratio' },
             afterSkill: { label: '스킬 공격 피해', valueType: 'ratio' },
             avd: { label: '회피 확률', valueType: 'ratio' },
             '000': { label: '공격 시 10/100/1000 추가 피해 확률', valueType: 'ratio' },
@@ -3175,16 +3174,16 @@ function formatCardSlotEffectLines(user) {
         ['defReduction', '방어 관통력'],
         ['ultimateDamage', '궁극기 사용 시 추가 피해'],
         ['nonElementFinalDamage', '[무]속성 공격 시 최종 피해 증가'],
-        ['tenthHitFinalAtk', '10번째 공격마다 최종 공격력 증가'],
+        ['tenthHitFinalAtk', '10번째 공격마다 공격력 증가'],
         ['shieldFinalDamage', '보호막 공격 시 최종 피해 증가'],
         ['expBonus', '경험치 획득 증가량'],
         ['killRecoveryChance', '받은 피해의 20%만큼 체력 회복 확률'],
         ['mpCostReduction', 'MP 소모량 감소'],
         ['damageBonus', '일반 몬스터 대상 피해'],
-        ['finalAttackBonus', '최종 공격력 증가'], ['cmb', '연격 확률 증가'], ['recoveryEfficiency', '회복 효율 증가'],
+        ['finalAttackBonus', '공격력 증가'], ['cmb', '연격 확률 증가'], ['recoveryEfficiency', '회복 효율 증가'],
         ['bossDmg', '보스 추가 피해 증가'], ['defBonus', '방어력 증가'], ['criticalFinalDamage', '치명타 공격 시 최종 피해 증가'],
         ['pnt', '방어 관통력 증가'], ['summonDuration', '소환수 지속 시간 증가'], ['dotDamage', '지속 피해 증가'],
-        ['ilionDeckAttack', '카드덱의 카드 1장당 최종 공격력 증가'], ['firstStrikeDamage', '선제공격 강화'],
+        ['ilionDeckAttack', '카드덱의 카드 1장당 공격력 증가'], ['firstStrikeDamage', '선제공격 강화'],
         ['wonyoddiBasicCooldown', '일반 공격 쿨타임 감소'], ['actionCooldownFlat', '행동 쿨타임 감소'],
         ['shieldAttack', '보호막 유지 중 공격력 강화'], ['mentalRegen', '초당 정신력 회복량'], ['nonCriticalFinalDamage', '비치명타 최종 피해 증가']
     ];
@@ -3953,7 +3952,7 @@ function getMaxExpForLevel(level) {
 }
 
 const STAT_POINT_OPTIONS = {
-    '공격력': { key: 'atk', plusKey: 'atk', flat: 2, plus: 0.01, label: '공격력', plusLabel: '최종 공격력' },
+    '공격력': { key: 'atk', plusKey: 'atk', flat: 2, plus: 0.01, label: '공격력', plusLabel: '공격력' },
     '체력': { key: 'hp', plusKey: 'hp', flat: 10, plus: 0.01, label: '체력', plusLabel: '최종 체력' },
     'MP': { key: 'mp', plusKey: 'mp', flat: 12, plus: 0.01, label: 'MP', plusLabel: '최종 MP' },
     'mp': { key: 'mp', plusKey: 'mp', flat: 12, plus: 0.01, label: 'MP', plusLabel: '최종 MP' },
@@ -4140,7 +4139,7 @@ function formatTitleStatLines(title) {
     const se = title.specialEffect;
     if (se) {
         if (se.type == 'atkPerEnhanceLevel') lines.push('- 장착 무기 강화 1강 당 공격력 +' + comma(Number(se.value || 0)));
-        else if (se.type == 'worldBossAtkPct') lines.push('- 월드보스 토벌 중 최종 공격력 +' + (Math.round(Number(se.value || 0) * 1000) / 10) + '%');
+        else if (se.type == 'worldBossAtkPct') lines.push('- 월드보스 토벌 중 공격력 +' + (Math.round(Number(se.value || 0) * 1000) / 10) + '%');
         else if (se.type == 'worldBossAvoid') lines.push('- 월드보스 토벌 중 회피 확률 +' + (Math.round(Number(se.value || 0) * 1000) / 10) + '%');
         else if (se.type == 'atkPctIfCardStar') lines.push('- ' + cardStarLabel(se.minStar) + ' 이상 캐릭터 카드 장착 시 공격력 +' + (Math.round(Number(se.value || 0) * 1000) / 10) + '%');
     }
@@ -4181,6 +4180,8 @@ function equipTitleByName(user, name) {
     equipTitle(user, title.id);
     return '✅ 칭호 「' + title.name + '」을(를) 장착했습니다.';
 }
+
+const attackStats = require('./attack_stats');
 
 function calculateUserStats(user, _out) {
     if (paradisePower.context(user)) return { ...paradisePower.context(user).stats };
@@ -4306,7 +4307,10 @@ function calculateUserStats(user, _out) {
     if (titleDef && titleDef.specialEffect && titleDef.specialEffect.type == 'atkPerEnhanceLevel') {
         stats.atk = Number(stats.atk || 0) + Number(titleDef.specialEffect.value || 0) * getEquippedWeaponEnhanceLevel(user);
     }
-    ['atk', 'def', 'hp', 'mp'].forEach(key => {
+    // 기존 운영 데이터의 finalAtk는 읽을 때만 공격력%로 합친다.
+    plusStats.atk = Number(plusStats.atk || 0) + Number(plusStats.finalAtk || 0);
+    delete plusStats.finalAtk;
+    ['def', 'hp', 'mp'].forEach(key => {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
@@ -4332,16 +4336,16 @@ function calculateUserStats(user, _out) {
     stats.def = Math.round(Number(stats.def || 0) * (1 + Number(slotEffects.defBonus || 0)));
     if (Number(slotEffects.maxHpBonus || 0) != 0) stats.hp = Math.round(Number(stats.hp || 0) * (1 + Number(slotEffects.maxHpBonus || 0)));
     if (stats.forceZeroCrit) stats.crit = 0;
-    // 칭호 특수 효과 (조건부 % — 최종 공격력에 적용)
+    // 칭호 특수 효과도 동일한 공격력%에 합산한다.
     if (titleDef && titleDef.specialEffect) {
         const se = titleDef.specialEffect;
         if (user.field && user.field.worldBoss && !user.field.skillSelecting) {
-            if (se.type == 'worldBossAtkPct') stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(se.value || 0)));
+            if (se.type == 'worldBossAtkPct') plusStats.atk += Number(se.value || 0);
             else if (se.type == 'worldBossAvoid') stats.avd = Number(stats.avd || 0) + Number(se.value || 0);
         }
         if (se.type == 'atkPctIfCardStar') {
             const star = Number(user.main_card && user.main_card.star || 0);
-            if (star >= Number(se.minStar || 0)) stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(se.value || 0)));
+            if (star >= Number(se.minStar || 0)) plusStats.atk += Number(se.value || 0);
         }
     }
     const rukimActive = isBlessingActive(user, 'rukim');
@@ -4353,7 +4357,11 @@ function calculateUserStats(user, _out) {
         stats.hp = Number(stats.hp || 0) + 1000;
         stats.mp = Number(stats.mp || 0) + 200;
     }
-    if (user.field && user.field.training) Object.assign(stats, user.field.training.overrides || {});
+    if (user.field && user.field.training) {
+        const overrides = user.field.training.overrides || {};
+        Object.assign(stats, overrides);
+        if (overrides.atk != null) plusStats.atk = 0;
+    }
     // 건력 봉인: 상태 동안 최대 HP의 일부 삭제 (회복 상한 포함 모든 최대 HP 소비처에 적용)
     const gunryeokSeal = user.field && user.field.gunryeok;
     if (gunryeokSeal && Date.now() < Number(gunryeokSeal.expired_at || 0)) {
@@ -4364,7 +4372,8 @@ function calculateUserStats(user, _out) {
     const artifactValues = artifactData ? artifacts.evaluate(artifactEquip, artifactData.rarity, user, stats, getEquipmentData).values : {};
     for (const [key, value] of Object.entries(artifactValues)) {
         if (['hp', 'mp', 'pnt'].includes(key)) stats[key] = Math.round(Number(stats[key] || 0) * (1 + value));
-        else if (key !== 'finalAtk') stats[key] = Number(stats[key] || 0) + value;
+        else if (key === 'atk') plusStats.atk += value;
+        else stats[key] = Number(stats[key] || 0) + value;
     }
     if (!rukimActive && getBlessingExpiresAt(user, 'rukim') > 0) {
         if (typeof resources.hp != 'undefined') resources.hp = Math.min(Number(resources.hp || 0), Number(stats.hp || 0));
@@ -4392,10 +4401,12 @@ function calculateUserStats(user, _out) {
         if (counter && Date.now() < Number(counter.expired_at || 0)) awakeningReduction += Number(counter.reduceRate || 0);
         awakeningReduction += Number(getFieldBuffs(user).nextDamageReduction && getFieldBuffs(user).nextDamageReduction.value || 0);
     }
-    stats.awakeningAttackMultiplier = cardAwakening.getAttackMultiplier(stats.awakening, awakeningReduction, Number(user.field && user.field.nmmStacks || 0));
-    stats.finalAtk = (1 + Number(plusStats.finalAtk || 0) + Number(artifactValues.finalAtk || 0)) * (user.battleCryPotion && Date.now() < user.battleCryPotion.expired_at ? 1 + Number(user.battleCryPotion.amount || 0) : 1) - 1;
-    stats.atk = Math.round(Number(stats.atk || 0) * stats.awakeningAttackMultiplier * (1 + Number(slotEffects.finalAttackBonus || 0)) * (1 + stats.finalAtk));
-    if (_out && typeof _out == 'object') _out.plusStats = plusStats;
+    stats.awakeningAttackBonus = cardAwakening.getAttackBonus(stats.awakening, awakeningReduction, Number(user.field && user.field.nmmStacks || 0));
+    plusStats.atk += stats.awakeningAttackBonus + Number(slotEffects.finalAttackBonus || 0);
+    if (user.battleCryPotion && Date.now() < user.battleCryPotion.expired_at) plusStats.atk += Number(user.battleCryPotion.amount || 0);
+    stats.baseAtk = Number(stats.atk || 0);
+    stats.plusStats = plusStats;
+    stats.atk = Math.max(0, Math.round(stats.baseAtk * (1 + plusStats.atk)));
     const hackedCard = paradise.active(user) && user.paradise.mode !== 'hell' && user.paradise.phase === 'combat' ? user.paradise.battle?.hackCard : null;
     stats.ilion = Number(user.main_card?.id) === ilionCards.CARD_ID || hackedCard?.id === ilionCards.CARD_ID;
     stats.ilionStar = Number(user.main_card?.star || 0);
@@ -4410,6 +4421,7 @@ function calculateUserStats(user, _out) {
     const randoShield = !_out?.skipRandoRuntime && getFieldShield(user);
     if (!_out?.skipRandoRuntime) randoCharacters.applyStats(stats, user.field, slotEffects, randoShield && randoShield.expired_at > Date.now() ? randoShield.amount : 0, Date.now());
     paradise.applyStats(user, stats);
+    if (_out && typeof _out == 'object') _out.plusStats = stats.plusStats;
     return transcendEquipment.capPrisonKeyCritical(armorExpansion.applyConditionalStats(stats));
 }
 
@@ -4545,8 +4557,8 @@ function computeCombatPowerFromStats(stats, slot, equipmentModifiers) {
     const cooldownRate = Math.max(0.2, 1 - Number(stats.cooldown || 0));
     const flatCooldownPower = Math.max(-0.8, Math.min(0.8, -Number(stats.skillCooldown || 0) / W.COOLDOWN_DIVISOR));
     const skillFrequencyPower = (1 / cooldownRate - 1 + flatCooldownPower) * W.SKILL_FREQUENCY_RATIO;
-    const specialDamage = Number(stats.attackBuffEfficiency || 0) * W.ATTACK_BUFF_REFERENCE
-        + Number(stats.manaAmplifierFinalAtk || 0) * W.MANA_AMPLIFIER_UPTIME
+    const specialDamage = attackStats.ratio(stats, Number(stats.attackBuffEfficiency || 0) * W.ATTACK_BUFF_REFERENCE
+        + Number(stats.manaAmplifierFinalAtk || 0) * W.MANA_AMPLIFIER_UPTIME) - 1
         + Number(stats.ultimateDamage || 0) * W.ULTIMATE_ACTION_RATIO
         + Number(stats.elementalExtraDamage || 0) * W.ELEMENTAL_ACTION_RATIO
         + Number(stats.lightFinalDamage || 0) * W.LIGHT_ACTION_RATIO
@@ -5000,11 +5012,11 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         const countsAsAttack = isFixedMultiHit ? true : i < comboHitCount;
         const attackOffset = separateBasicAttackHits ? i : (isFixedMultiHit ? 0 : i);
         const isTenthAtk = !!(countsAsAttack && Number(hitExtra.tenthAtkBonus || 0) > 0 && (Number(hitExtra.tenthAtkStart || 0) + attackOffset + 1) % 10 === 0);
-        if (isTenthAtk) hitBonusMul += Number(extra.tenthAtkBonus || 0);
+        const attackBonus = Number(hitExtra.attackPercentBonus || 0) + (isTenthAtk ? Number(hitExtra.tenthAtkBonus || 0) : 0);
         // 명속성 공격 최종 피해(lightFinalDamage): 공격 속성이 명일 때 최종 피해%에 가산 (천공의 갑옷 등 스탯 보유 장비 공통)
         const lightFinalBonus = hitExtra.attackElement == '명' ? Number(stats && stats.lightFinalDamage || 0) : 0;
         const finalDamageMultiplier = 1 + Number(stats && stats.finalDamage || 0) + Number(hitExtra.finalDamageBonus || 0) + lightFinalBonus;
-        const baseDamage = Number(rawDamage || 0) * (1 + hitBonusMul) * finalDamageMultiplier * cardAwakening.basicHitMultiplier(stats, hitExtra);
+        const baseDamage = Number(rawDamage || 0) * attackStats.ratio(hitExtra.attackStats || stats, attackBonus, Number(hitExtra.attackFlatBonus || 0)) * (1 + hitBonusMul) * finalDamageMultiplier * cardAwakening.basicHitMultiplier(stats, hitExtra);
         const isComboExtraHit = !isFixedMultiHit && i > 0 && i < comboHitCount;
         const isAbyssExtraHit = !isFixedMultiHit && i >= comboHitCount;
         const forceComboLastCrit = !!(isComboExtraHit && stats && stats.comboLastCrit && comboHitCount >= maxComboHits && i == comboHitCount - 1);
@@ -6437,7 +6449,7 @@ function applyNmmStackGain(user, extra, hitResult) {
     user.field.nmmStacks = Math.min(9, Number(user.field.nmmStacks || 0) + hits);
 }
 
-// 10번째 공격마다 최종 공격력 증가: 이번 행동에서 실제로 발생한 히트 수만큼 카운터를 전진시켜 저장
+// 10번째 공격마다 공격력 증가: 이번 행동에서 실제로 발생한 히트 수만큼 카운터를 전진시켜 저장
 function applyTenthAtkCounter(user, extra, hitResult) {
     if (!extra || typeof extra.tenthAtkStart == 'undefined' || !user || !user.field) return;
     const hits = Math.max(1, Number(hitResult && hitResult.attackUnitCount || 1));
@@ -7194,6 +7206,8 @@ function activateFieldTcg(user, extra) {
 function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, skill) {
     const resources = paradise.getResources(user);
     const stats = calculateUserStats(user);
+    // 타격 도중 켜진 버프는 perAttackUnitExtras로 더하므로, 보정 기준은 발동 전 공격력이다.
+    extra.attackStats = { atk: stats.atk, baseAtk: stats.baseAtk, plusStats: stats.plusStats };
     const state = getEquipmentCombatState(user);
     const tcgBefore = tcgEquipment.capture(state);
     tcgEquipment.consumeAttack(state, extra);
@@ -7265,7 +7279,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
     if (state.kyochonGoldBuff && Date.now() < Number(state.kyochonGoldBuff.expiredAt || 0)) { extra.goldBonus = Number(extra.goldBonus || 0) + Number(state.kyochonGoldBuff.value || 0); markEquipment('교촌 주머니'); }
     if (state.fortuneExtraDamage && Date.now() < Number(state.fortuneExtraDamage.expiredAt || 0)) { extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(state.fortuneExtraDamage.value || 0); markEquipment('행운의 복주머니'); }
     if (state.ultimatumHatBuff && Date.now() < Number(state.ultimatumHatBuff.expiredAt || 0)) {
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
+        extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
         markEquipment('최후통첩 모자');
     }
     if (Date.now() < Number(state.beomStacksUntil || 0) && Number(state.beomStacks || 0) > 0) {
@@ -7275,7 +7289,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         markEquipment('범부의 대나무');
     }
     if (state.trueBeom) {
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('범부의 대나무', .30, .10) * (1 + Number(stats.attackBuffEfficiency || 0));
+        extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + stepValue('범부의 대나무', .30, .10) * (1 + Number(stats.attackBuffEfficiency || 0));
         if (actionType == 'skill') extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + stepValue('범부의 대나무', .30, .10);
         markEquipment('범부의 대나무');
     }
@@ -7366,7 +7380,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         markEquipment('검은 잔향 하의');
     }
     if (stageOf('강릉함씨 32대손') && user.field.shield && Number(user.field.shield.amount || 0) > 0 && Date.now() < Number(user.field.shield.expired_at || 0)) {
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('강릉함씨 32대손', .18, .05);
+        extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + stepValue('강릉함씨 32대손', .18, .05);
         markEquipment('강릉함씨 32대손');
     }
     // 천공의 갑옷(명속성 공격 최종 피해)은 장비 스탯 lightFinalDamage로 calculateAttackHitResult에서 공통 적용된다
@@ -7402,13 +7416,13 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
     const mpRatio = Number(resources.mp || 0) / Math.max(1, Number(stats.mp || 1));
     if (getEquippedPassiveIds(user).has(4) && mpRatio >= .75) markEquipment('마력 감응');
     if (stageOf('마나 증폭 장치')) {
-        if (mpRatio > .20) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.manaAmplifierFinalAtk || (.10 + .06 * Math.max(0, stageOf('마나 증폭 장치') - 1))) * paradise.equipmentMultiplier(user, '마나 증폭 장치') / paradise.equipmentMultiplier(user, '마나 증폭 장치', 'static');
+        if (mpRatio > .20) extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + Number(stats.manaAmplifierFinalAtk || (.10 + .06 * Math.max(0, stageOf('마나 증폭 장치') - 1))) * paradise.equipmentMultiplier(user, '마나 증폭 장치') / paradise.equipmentMultiplier(user, '마나 증폭 장치', 'static');
         if (mpRatio >= .50) extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + stepValue('마나 증폭 장치', .08, .04);
         if (mpRatio > .20) markEquipment('마나 증폭 장치');
     }
     if (stageOf('포상 정산 반지')) {
         const diff = Math.abs(hpRatio - mpRatio);
-        if (diff >= .30) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('포상 정산 반지', .12, .04);
+        if (diff >= .30) extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + stepValue('포상 정산 반지', .12, .04);
         if (diff >= .50) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stepValue('포상 정산 반지', .16, .04);
         if (diff >= .30) markEquipment('포상 정산 반지');
         const intervalMs = 4000;
@@ -7426,12 +7440,12 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
     if (state.darkAttackBuff && Date.now() < Number(state.darkAttackBuff.expiredAt || 0) && extra.attackElement == '암') { extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(state.darkAttackBuff.value || 0); markEquipment('심연의 신발'); }
     if (state.blackEchoShoesBuff && Date.now() < Number(state.blackEchoShoesBuff.expiredAt || 0) && extra.attackElement == '암') { extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(state.blackEchoShoesBuff.value || 0); markEquipment('검은 잔향 신발'); }
     if (user.field.sunata && Date.now() < Number(user.field.sunata.expired_at || 0) && !(extra && extra.summonAttack)) {
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(user.field.sunata.buff || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
+        extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + Number(user.field.sunata.buff || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
         markTriggeredCombatEffect(extra, 'summon', '수나타 강화');
     }
     const gunryeokBuff = getGunryeokState(user);
     if (gunryeokBuff && !(extra && extra.summonAttack)) {
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(gunryeokBuff.atkBuff || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
+        extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + Number(gunryeokBuff.atkBuff || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
         markTriggeredCombatEffect(extra, 'skill', '건력');
     }
     if (actionType == 'basic' && Number(state.deepNextBasic || 0) > 0) {
@@ -7444,7 +7458,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         if (stageOf('흐르는 피')) { state.flowingBloodNext = stepValue('흐르는 피', .12, .04); tcgEquipment.record(state, '흐르는 피'); }
     };
     const manaBurnConfigs = [
-        ['마나번 햇', 'manaBurnAttackBuff', .02, 'damageBonusMul', stepValue('마나번 햇', .15, .03) * (1 + Number(stats.attackBuffEfficiency || 0))],
+        ['마나번 햇', 'manaBurnAttackBuff', .02, 'attackPercentBonus', stepValue('마나번 햇', .15, .03) * (1 + Number(stats.attackBuffEfficiency || 0))],
         ['마나번 로브', 'manaBurnElementBuff', .02, 'allElementAtk', stepValue('마나번 로브', 60, 10)],
         ['마나번 트라우저', 'manaBurnCritBuff', .02, 'critChanceBonus', stepValue('마나번 트라우저', .10, .02)],
         ['마나번 슈즈', 'manaBurnExtraBuff', .02, 'extraDamageBonus', stepValue('마나번 슈즈', .10, .03)],
@@ -7490,7 +7504,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
             markTriggeredCombatEffect(extra, 'combat', '자해');
             if (stageOf('흐르는 피')) markEquipment('흐르는 피');
         }
-        if (!includedAtStart.bloodHatBuff && state.bloodHatBuff && Date.now() < Number(state.bloodHatBuff.expiredAt || 0)) addUnit(unit, 'damageBonusMul', Number(state.bloodHatBuff.value || 0));
+        if (!includedAtStart.bloodHatBuff && state.bloodHatBuff && Date.now() < Number(state.bloodHatBuff.expiredAt || 0)) addUnit(unit, 'attackPercentBonus', Number(state.bloodHatBuff.value || 0));
 
         if (stageOf('일레이나 전용 동전') && Date.now() >= Number(state.coinReadyAt || 0)) {
             state.coinBuff = Math.random() < .5
@@ -7536,7 +7550,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         }
         if (state.liberationBuff && Date.now() < Number(state.liberationBuff.expiredAt || 0)) {
             const choices = state.liberationBuff.choices || [];
-            if (choices.includes('attack')) addUnit(unit, 'damageBonusMul', stepValue('해방의 열쇠', .10, .03) * (1 + Number(stats.attackBuffEfficiency || 0)));
+            if (choices.includes('attack')) addUnit(unit, 'attackPercentBonus', stepValue('해방의 열쇠', .10, .03) * (1 + Number(stats.attackBuffEfficiency || 0)));
             if (!includedAtStart.liberationBuff && choices.includes('element')) addUnit(unit, 'allElementAtk', Number(state.liberationBuff.elementValue || 0));
         }
 
@@ -7582,7 +7596,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
 
     extra.beforeAttackUnit = ({ hitExtra }) => {
         if (!includedAtStart.encoreBuff && state.encoreBuff && Date.now() < Number(state.encoreBuff.expiredAt || 0)) {
-            hitExtra.damageBonusMul = Number(hitExtra.damageBonusMul || 0) + Number(state.encoreBuff.attack || 0);
+            hitExtra.attackPercentBonus = Number(hitExtra.attackPercentBonus || 0) + Number(state.encoreBuff.attack || 0);
             if (!includedAtStart.encoreCritInStats) hitExtra.critMulBonus = Number(hitExtra.critMulBonus || 0) + Number(state.encoreBuff.critMul || 0);
         }
         if (getEquippedSetCount(user, '잿불의 장송곡') >= 4 && state.burn && Date.now() < Number(state.burn.expiredAt || 0)) { hitExtra.finalDamageBonus = Number(hitExtra.finalDamageBonus || 0) + .10; markSet('잿불의 장송곡'); }
@@ -7623,7 +7637,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         const skills = getMainCardSkills(user).map(entry => entry.skill.name);
         const allCooling = skills.length > 0 && skills.every(name => Number(user.field.skillCooldowns && user.field.skillCooldowns[name] || 0) > Date.now());
         if (allCooling) {
-            extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('쿨다운 목걸이', .12, .03);
+            extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + stepValue('쿨다운 목걸이', .12, .03);
             rawDamage = Math.round(rawDamage * (1 + stepValue('쿨다운 목걸이', .35, .10)));
             if (!isBlackCurtainHealingBlocked(user)) resources.hp = Math.min(Number(stats.hp || 0), Number(resources.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .001 * attackUnitCount * (1 + Number(stats.recoveryEfficiency || 0)) * paradise.equipmentMultiplier(user, '쿨다운 목걸이', 'recovery'))));
             markEquipment('쿨다운 목걸이');
@@ -7699,7 +7713,7 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
     const fieldSlot = calculateCardSlotEffects(user);
     // [무]속성 공격 시 최종 피해 증가
     if (!extra.attackElement && Number(fieldSlot.nonElementFinalDamage || 0) > 0) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(fieldSlot.nonElementFinalDamage || 0);
-    // 10번째 공격마다 최종 공격력 증가 (일반+스킬 모두 카운트, 연격 각각 별도 집계 — 실제 적용/카운터 전진은 build* 단계에서 처리)
+    // 10번째 공격마다 공격력 증가 (일반+스킬 모두 카운트, 연격 각각 별도 집계 — 실제 적용/카운터 전진은 build* 단계에서 처리)
     if (Number(fieldSlot.tenthHitFinalAtk || 0) > 0) {
         extra.tenthAtkBonus = Number(fieldSlot.tenthHitFinalAtk || 0);
         extra.tenthAtkStart = Number(user.field.attackCount || 0);
@@ -9537,7 +9551,7 @@ const SUPPORT_STAT_LABELS = {
     attackBuffEfficiency: '공격력 증가 효과 효율', shieldEfficiency: '보호막 효율',
     ultimateCooldownFlat: '궁극기 쿨타임 감소', burnDurationFlat: '화상 지속시간',
     critLightBonus: '치명타 시 명속성 추가 피해', nonCritLightBonus: '비치명타 시 명속성 추가 피해',
-    manaAmplifierFinalAtk: 'MP 20% 초과 시 최종 공격력', equipmentEffectDurationFlat: '장비 효과 지속시간',
+    manaAmplifierFinalAtk: 'MP 20% 초과 시 공격력', equipmentEffectDurationFlat: '장비 효과 지속시간',
     partyAllElementAtk: '파티원 모든 속성 강화', comboCritMul: '연격 추가 타격 치명타 피해',
     comboDamage: '연격 추가 타격 피해', comboLastCrit: '최대 연격 마지막 타격 치명타 확정',
     comboLastCritMul: '최대 연격 마지막 타격 치명타 피해',
@@ -9546,12 +9560,12 @@ const SUPPORT_STAT_LABELS = {
 
 const SUPPORT_PLUS_STAT_LABELS = {
     wonyoddiShieldChance: '각성 패시브 보호막 획득 확률',
-    atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+    atk: '공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
     pnt: '방어력 관통',
     gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
     avd: '회피 확률', afterSkill: '스킬 공격 피해',
     '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
-    finalAtk: '최종 공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
+    finalAtk: '공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
     itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
     critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
     maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
@@ -12502,7 +12516,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         attackBuffEfficiency: '공격력 증가 효과 효율', shieldEfficiency: '보호막 효율',
         ultimateCooldownFlat: '궁극기 쿨타임 감소', burnDurationFlat: '화상 지속시간',
         critLightBonus: '치명타 시 명속성 추가 피해', nonCritLightBonus: '비치명타 시 명속성 추가 피해',
-        manaAmplifierFinalAtk: 'MP 20% 초과 시 최종 공격력', equipmentEffectDurationFlat: '장비 효과 지속시간',
+        manaAmplifierFinalAtk: 'MP 20% 초과 시 공격력', equipmentEffectDurationFlat: '장비 효과 지속시간',
         partyAllElementAtk: '파티원 모든 속성 강화', comboCritMul: '연격 추가 타격 치명타 피해',
         comboDamage: '연격 추가 타격 피해', comboLastCrit: '최대 연격 마지막 타격 치명타 확정',
         comboLastCritMul: '최대 연격 마지막 타격 치명타 피해',
@@ -12510,12 +12524,12 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     };
     const plusStatNames = {
         wonyoddiShieldChance: '각성 패시브 보호막 획득 확률',
-        atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+        atk: '공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
         pnt: '방어력 관통',
         gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
         avd: '회피 확률', afterSkill: '스킬 공격 피해',
         '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
-        finalAtk: '최종 공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
+        finalAtk: '공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
         itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
         critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
         maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
@@ -13024,7 +13038,7 @@ function applyUseFunc(user, func, useCount, resultLines) {
         return;
     }
     if (func.type == '최종공격력비약') {
-        applyPotionBuff(user, 'battleCryPotion', Number(func.amount || 0), Number(func.duration || 0), '최종 공격력', resultLines);
+        applyPotionBuff(user, 'battleCryPotion', Number(func.amount || 0), Number(func.duration || 0), '공격력', resultLines);
         return;
     }
     if (func.type == '경험치비약') {

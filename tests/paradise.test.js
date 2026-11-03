@@ -1219,7 +1219,10 @@ test('균열의 거래상은 네 선택지를 제공하고 뒤틀림의 대가�
         assert.equal(user.paradise.phase, 'augment'); assert.equal(user.paradise.floor, 1);
         assert.equal(user.paradise.distortion, choice === 'pierce' ? 25 : 20);
         const after = rpg.calculateUserStats(user);
-        if (choice === 'power') assert.equal(after.atk, Math.round(before.atk * 1.25));
+        if (choice === 'power') {
+            assert.equal(after.plusStats.atk, before.plusStats.atk + .25);
+            assert.equal(after.atk, Math.round(before.baseAtk * (1 + before.plusStats.atk + .25)));
+        }
         if (choice === 'vigor') {
             assert.equal(after.hp, Math.round(before.hp * 1.25));
             assert.equal(after.def, Math.round(before.def * 1.25));
@@ -1278,6 +1281,21 @@ test('거울 적은 회랑 강화 없이 동일 스탯·장비·스킬과 100% H
     assert.equal(enemy.mirror.snapshot.skillIndexes.length, rpg.getMainCardSkills(user).length);
     assert.equal(corridor.view(user).run.enemy.mirror, undefined);
 });
+test('거울 적의 공격력 배율은 동적 공격력%가 발동해도 유지된다', async () => {
+    const user = await reset(); user.statPointStats.atk = 50;
+    const base = rpg.calculateUserStats(user);
+    corridor.enter(user, () => .99);
+    user.paradise.relics.push('hourglass'); user.paradise.temporary.push({ id: 'collapse', battles: 3 });
+    corridor.startCombat(user, 'mirror', null, () => .99);
+    const enemy = user.paradise.enemy, mirror = enemy.mirror, pvp = require('../pvp');
+    assert.equal(enemy.atk, Math.round(base.atk * .55) * 2);
+    const saved = structuredClone(mirror.snapshot.stats);
+    mirror.runtime.equipment.manaBurnAttackBuff = { value: .20, until: Date.now() + 10000 };
+    const live = pvp.getCorridorMirrorStats(mirror);
+    assert.equal(live.atk, Math.round(base.baseAtk * enemy.atk / base.atk * (1 + base.plusStats.atk + .20)));
+    assert.deepEqual(mirror.snapshot.stats, saved);
+});
+
 test('연속 전투 보상은 마지막 승리 후 지급하고 999층 마지막 전투 승리로만 완주한다', async () => {
     const user = await reset(); corridor.enter(user, () => .99); forceEvent(user, 'judge'); corridor.chooseEvent(user, 'three', {}, () => .99);
     corridor.victory(user, () => .99); assert.equal(user.paradise.phase, 'combat'); assert.equal(user.paradise.effects.atk, undefined);
@@ -2121,6 +2139,7 @@ test('월야섬은 신규 증강에서 제거하고 이미 진행 중인 전투�
     const enemy = user.paradise.enemy, mirror = enemy.mirror;
     assert.equal(enemy.kind, 'moonDuel'); assert.equal(enemy.characterCard.id, 1); assert.equal(enemy.characterCard.type, '전직');
     assert.equal(mirror.snapshot.equipment.entries.length, 6);
+    assert.equal(Math.round(mirror.snapshot.stats.baseAtk * (1 + mirror.snapshot.stats.plusStats.atk)), mirror.snapshot.stats.atk);
     const target = corridor.recommendedPower(user.paradise.floor) * 1.8;
     assert.ok(Math.abs(rpg.computeCombatPowerFromStats(mirror.snapshot.stats).total / target - 1) < .001);
     corridor.getResources(user).hp = 1e12;
@@ -2226,7 +2245,8 @@ test('영구 천상 장비는 천상 안에서만 적용하고 입장 전 HP·MP
     user.paradiseProgression.weapon = user.paradiseProgression.armor = 25;
     user.hp = 13; user.mp = 7; const outside = rpg.calculateUserStats(user);
     corridor.enter(user, () => .99); const inside = rpg.calculateUserStats(user);
-    assert.equal(inside.atk, outside.atk + 1550); assert.equal(inside.def, outside.def + 465); assert.equal(inside.hp, outside.hp + 9300);
+    assert.equal(inside.baseAtk, outside.baseAtk + 1550); assert.equal(inside.plusStats.atk, outside.plusStats.atk);
+    assert.equal(inside.atk, Math.round((outside.baseAtk + 1550) * (1 + outside.plusStats.atk))); assert.equal(inside.def, outside.def + 465); assert.equal(inside.hp, outside.hp + 9300);
     assert.deepEqual(corridor.getResources(user), { hp: inside.hp, mp: inside.mp });
     assert.ok(p.mutate(user, 'rerollTrait', {}).error);
     const copy = { ...outside }; p.applyStats({ mode: 'hell', celestial: p.snapshot(user) }, copy); assert.deepEqual(copy, outside);
@@ -2297,7 +2317,7 @@ test('회복·층수·뒤틀림·제한시간 특수능력이 실제 천상 전�
     user.paradise.distortion = 20; assert.equal(corridor.sumEffects(user.paradise).extraDamage, .2);
     user.paradise.distortion = 60; assert.equal(corridor.sumEffects(user.paradise).final, .3);
     user = await env.user(['calmStrength','extraTime']); stats = rpg.calculateUserStats(user); corridor.enter(user, () => .99);
-    assert.equal(rpg.calculateUserStats(user).atk, Math.round(stats.atk * 1.1)); assert.equal(corridor.remainingTime(user.paradise), 1500000);
+    assert.equal(rpg.calculateUserStats(user).atk, Math.round(stats.baseAtk * (1 + stats.plusStats.atk + .10))); assert.equal(corridor.remainingTime(user.paradise), 1500000);
     user.paradise.distortion = 1; assert.equal(rpg.calculateUserStats(user).atk, stats.atk);
 });
 
@@ -2540,7 +2560,7 @@ test('구형 혼합 등급 선택지는 한 번만 저장 갱신하고 32개 새
     const latest = await rpg.getRPGUserByName(account.name), before = rpg.calculateUserStats(latest);
     latest.paradise.relics = ['bluntWhetstone', 'quiltPatch', 'tinBuckle', 'brassReceipt'];
     const after = rpg.calculateUserStats(latest);
-    assert.equal(after.atk, Math.round(before.atk * 1.05)); assert.equal(after.hp, Math.round(before.hp * 1.05)); assert.equal(after.def, Math.round(before.def * 1.07));
+    assert.equal(after.atk, Math.round(before.baseAtk * (1 + before.plusStats.atk + .05))); assert.equal(after.hp, Math.round(before.hp * 1.05)); assert.equal(after.def, Math.round(before.def * 1.07));
     corridor.finish(latest); assert.equal(latest.paradise.rewardBonus, .03);
     assert.deepEqual(rpg.calculateUserStats(latest), before);
 });
@@ -2682,7 +2702,7 @@ test('마력의 구슬은 MP 15%를 회복하고 균열의 심장은 정돈된 �
     corridor.getResources(user).mp = 0; corridor.startCombat(user, 'normal');
     assert.equal(corridor.getResources(user).mp, Math.round(base.mp * .15));
     user.paradise.relics = ['riftHeart']; const stats = rpg.calculateUserStats(user);
-    assert.equal(stats.atk, Math.round(base.atk * 1.70));
+    assert.equal(stats.atk, Math.round(base.baseAtk * (1 + base.plusStats.atk + .70)));
     assert.equal(stats.takenDamage, Number(base.takenDamage || 0) - .20);
     corridor.victory(user, () => .99); corridor.finish(user);
     assert.equal(corridor.view(user).run.rewards.find(r => r.type === '골드').count, 200);

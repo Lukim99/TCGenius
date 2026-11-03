@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const GRADES = { '레어': 1, '유니크': 2, '레전더리': 3 };
 const MATERIALS = { '레어': [5, 10, 30], '유니크': [20, 25, 100], '레전더리': [45, 50, 300] };
 const ABILITIES = {
-    finalAtk: '최종 공격력', finalDamage: '최종 피해', hp: '최대 체력', mp: '최대 MP',
+    atk: '공격력', finalDamage: '최종 피해', hp: '최대 체력', mp: '최대 MP',
     pnt: '방어 관통력', crit: '치명타 확률', critMul: '치명타 피해량', afterBasic: '일반 공격 피해량',
     afterSkill: '스킬 피해량', ultimateDamage: '궁극기 피해량', damageBonus: '일반 몬스터 추가 피해',
     eliteDmg: '엘리트 추가 피해', bossDmg: '보스 추가 피해', extraDamage: '추가 피해', dotDamage: '지속 피해', cooldown: '쿨타임 감소'
@@ -13,7 +13,7 @@ const RARITIES = ['일반', '레어', '유니크', '레전더리', '초월', '�
 const FORMS = ['일반', '전직', '각성'];
 const BONUSES = [
     { threshold: 10, key: 'finalDamage', value: .08, label: '최종 피해 +8%' },
-    { threshold: 15, key: 'finalAtk', value: .12, label: '최종 공격력 +12%' },
+    { threshold: 15, key: 'atk', value: .12, label: '공격력 +12%' },
     { threshold: 20, key: 'extraDamage', value: .10, label: '추가 피해 +10%' },
     { threshold: 25, key: 'cooldown', value: .10, label: '스킬 쿨타임 10% 감소' }
 ];
@@ -63,7 +63,10 @@ function evaluate(equip, rarity, user, stats, equipmentData) {
     const options = equip?.artifact?.options || [];
     const active = options.map(option => matches(option, user, stats, equipmentData));
     const values = {};
-    options.forEach((option, i) => { if (active[i] && ABILITIES[option.ability]) values[option.ability] = Number(values[option.ability] || 0) + option.n / 100; });
+    options.forEach((option, i) => {
+        const ability = option.ability === 'finalAtk' ? 'atk' : option.ability;
+        if (active[i] && ABILITIES[ability]) values[ability] = Number(values[ability] || 0) + option.n / 100;
+    });
     const manifestation = rarity === '레전더리' ? options.reduce((sum, option, i) => sum + (active[i] ? option.n : 0), 0) : 0;
     if (rarity === '레전더리') for (const bonus of BONUSES) if (manifestation >= bonus.threshold) values[bonus.key] = Number(values[bonus.key] || 0) + bonus.value;
     return { active, values, manifestation };
@@ -81,7 +84,8 @@ function describe(option, characters) {
     else if (option.type === 'character') { conditionPrefix = '메인 캐릭터가 '; conditionSuffix = '일 때'; conditionValue = characters[option.condition]?.name || '알 수 없는 캐릭터'; }
     else if (option.type === 'cardType') { conditionPrefix = '메인 카드가 '; conditionSuffix = ' 카드일 때'; }
     const conditionLabel = conditionPrefix + conditionValue + conditionSuffix;
-    return { type: option.type, conditionLabel, conditionPrefix, conditionSuffix, conditionValue, ability: option.ability, abilityLabel: ABILITIES[option.ability], n: option.n };
+    const ability = option.ability === 'finalAtk' ? 'atk' : option.ability;
+    return { type: option.type, conditionLabel, conditionPrefix, conditionSuffix, conditionValue, ability, abilityLabel: ABILITIES[ability], n: option.n };
 }
 
 function view(equip, rarity, user, stats, equipmentData, characters) {

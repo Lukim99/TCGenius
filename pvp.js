@@ -264,11 +264,9 @@ function buildDisplay(mainCard, user, skillEntries) {
 function buildSideSnapshot(user, deck) {
     const clone = Object.assign({}, user, { main_card: deck.mainCard, card_slot: deck.cardSlot, field: null, mp: undefined, hp: undefined });
     const skills = rpgenius.getMainCardSkills(clone);
-    const statMeta = {};
-    const stats = rpgenius.calculateUserStats(clone, statMeta);
+    const stats = rpgenius.calculateUserStats(clone);
     return {
         stats,
-        staticAtkPlus: Number(statMeta.plusStats && statMeta.plusStats.atk || 0),
         slotEffects: rpgenius.calculateCardSlotEffects(clone),
         skillIndexes: skills.map(entry => Number(entry.index)),
         elementChain: rpgenius.getEquipmentElementChain(clone),
@@ -517,6 +515,8 @@ function markTriggeredEffect(extra, kind, name) {
 
 // 필드는 매 행동/틱마다 calculateUserStats를 다시 호출해 이미 활성 중인 장비 버프를 스탯에 합산한다.
 // PVP는 스냅샷을 유지하므로 같은 동적 스탯만 현재 시각 기준으로 복원한다.
+const attackStats = require('./attack_stats');
+
 function getLiveEquipmentStats(side, t) {
     const stats = Object.assign({}, side.snapshot.stats || {});
     const state = side.runtime && side.runtime.equipment || {};
@@ -533,10 +533,7 @@ function getLiveEquipmentStats(side, t) {
         + Number(encore && encore.attack || 0)
         + Number(bloodHat && bloodHat.value || 0) + armorExpansion.attackBonus(state, t);
     if (dynamicAtkPlus != 0) {
-        const staticAtkPlus = Number(side.snapshot.staticAtkPlus || 0);
-        const baseMultiplier = 1 + staticAtkPlus;
-        const liveMultiplier = 1 + staticAtkPlus + dynamicAtkPlus;
-        stats.atk = Math.max(0, Math.round(Number(stats.atk || 0) * (Math.abs(baseMultiplier) > .0001 ? liveMultiplier / baseMultiplier : 1 + dynamicAtkPlus)));
+        attackStats.addPercent(stats, dynamicAtkPlus);
     }
     if (manaElement) stats.allElementAtk = Number(stats.allElementAtk || 0) + Number(manaElement.value || 0);
     if (manaCrit) stats.crit = Number(stats.crit || 0) + Number(manaCrit.value || 0);
@@ -608,17 +605,17 @@ function prepareEquipmentAttack(actor, target, extra, t) {
 
     if (active('culprit')) { add('finalDamageBonus', state.culprit.takenFinalDamage); add('defReductionBonus', state.culprit.defReduction); markEquipment('피의 서약'); }
     if (active('fortuneExtraDamage')) { add('extraDamageBonus', state.fortuneExtraDamage.value); markEquipment('행운의 복주머니'); }
-    if (active('ultimatumHatBuff')) { add('damageBonusMul', Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0))); markEquipment('최후통첩 모자'); }
+    if (active('ultimatumHatBuff')) { add('attackPercentBonus', Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0))); markEquipment('최후통첩 모자'); }
     if (active('deepWaterAttackBuff') && attackElement == '수') { add('finalDamageBonus', state.deepWaterAttackBuff.value); markEquipment('심해의 모자'); }
     if (active('darkAttackBuff') && attackElement == '암') { add('finalDamageBonus', state.darkAttackBuff.value); markEquipment('심연의 신발'); }
     if (active('blackEchoShoesBuff') && attackElement == '암') { add('extraDamageBonus', state.blackEchoShoesBuff.value); markEquipment('검은 잔향 신발'); }
     const attackBuffEfficiency = 1 + Number(stats.attackBuffEfficiency || 0);
-    if (actor.runtime.summon && Number(actor.runtime.summon.until || 0) > t && Number(actor.runtime.summon.buff || 0) != 0) { add('damageBonusMul', Number(actor.runtime.summon.buff) * attackBuffEfficiency); markTriggeredEffect(extra, 'summon', '수나타 강화'); }
-    if (actor.runtime.gunryeok && Number(actor.runtime.gunryeok.until || 0) > t && Number(actor.runtime.gunryeok.atkBuff || 0) != 0) { add('damageBonusMul', Number(actor.runtime.gunryeok.atkBuff) * attackBuffEfficiency); markTriggeredEffect(extra, 'skill', '건력'); }
+    if (actor.runtime.summon && Number(actor.runtime.summon.until || 0) > t && Number(actor.runtime.summon.buff || 0) != 0) { add('attackPercentBonus', Number(actor.runtime.summon.buff) * attackBuffEfficiency); markTriggeredEffect(extra, 'summon', '수나타 강화'); }
+    if (actor.runtime.gunryeok && Number(actor.runtime.gunryeok.until || 0) > t && Number(actor.runtime.gunryeok.atkBuff || 0) != 0) { add('attackPercentBonus', Number(actor.runtime.gunryeok.atkBuff) * attackBuffEfficiency); markTriggeredEffect(extra, 'skill', '건력'); }
     if (hasEquipmentPassive(actor, 4) && mpRatio >= .75) { add('finalDamageBonus', .05); markEquipment('마력 감응'); }
     if (Number(state.beomStacksUntil || 0) > t && Number(state.beomStacks || 0) > 0 && attackElement == '명') { add('finalDamageBonus', Math.min(7, Number(state.beomStacks)) * .02); markEquipment('범부의 대나무'); }
     if (state.trueBeom) {
-        add('damageBonusMul', equipmentStep(actor, '범부의 대나무', .30, .10) * (1 + Number(stats.attackBuffEfficiency || 0)));
+        add('attackPercentBonus', equipmentStep(actor, '범부의 대나무', .30, .10) * (1 + Number(stats.attackBuffEfficiency || 0)));
         if (actionType == 'skill') add('extraDamageBonus', equipmentStep(actor, '범부의 대나무', .30, .10));
         markEquipment('범부의 대나무');
     }
@@ -686,7 +683,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
         extra.rawDamageMultiplier = Number(extra.rawDamageMultiplier || 1) * ((currentSkillMul + Number(stats.blackEchoSkillDamage)) / currentSkillMul);
         markEquipment('검은 잔향 하의');
     }
-    if (actor.shield && Number(actor.shield.amount || 0) > 0 && equipmentStage(actor, '강릉함씨 32대손')) { add('damageBonusMul', equipmentStep(actor, '강릉함씨 32대손', .18, .05)); markEquipment('강릉함씨 32대손'); }
+    if (actor.shield && Number(actor.shield.amount || 0) > 0 && equipmentStage(actor, '강릉함씨 32대손')) { add('attackPercentBonus', equipmentStep(actor, '강릉함씨 32대손', .18, .05)); markEquipment('강릉함씨 32대손'); }
     if (equipmentSetCount(actor, '최후 통첩') >= 4) {
         if (targetHpRatio >= .70) add('finalDamageBonus', .10);
         if (targetHpRatio <= .30) add('finalDamageBonus', .18);
@@ -698,7 +695,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
     if (targetHpRatio <= .50 && equipmentStage(actor, '최후통첩 모자') && t >= Number(state.ultimatumHatReadyAt || 0)) {
         state.ultimatumHatBuff = { value: equipmentStep(actor, '최후통첩 모자', .15, .04), until: t + equipmentDurationMs(actor, 8) };
         state.ultimatumHatReadyAt = t + equipmentCooldownMs(actor, 12);
-        add('damageBonusMul', Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0)));
+        add('attackPercentBonus', Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0)));
         markEquipment('최후통첩 모자');
     }
     if (equipmentStage(actor, '과소평가')) {
@@ -708,13 +705,13 @@ function prepareEquipmentAttack(actor, target, extra, t) {
         markEquipment('과소평가');
     }
     if (equipmentStage(actor, '마나 증폭 장치')) {
-        if (mpRatio > .20) add('damageBonusMul', Number(stats.manaAmplifierFinalAtk || equipmentStep(actor, '마나 증폭 장치', .10, .06)));
+        if (mpRatio > .20) add('attackPercentBonus', Number(stats.manaAmplifierFinalAtk || equipmentStep(actor, '마나 증폭 장치', .10, .06)));
         if (mpRatio >= .50) add('extraDamageBonus', equipmentStep(actor, '마나 증폭 장치', .08, .04));
         if (mpRatio > .20) markEquipment('마나 증폭 장치');
     }
     if (equipmentStage(actor, '포상 정산 반지')) {
         const diff = Math.abs(hpRatio - mpRatio);
-        if (diff >= .30) add('damageBonusMul', equipmentStep(actor, '포상 정산 반지', .12, .04));
+        if (diff >= .30) add('attackPercentBonus', equipmentStep(actor, '포상 정산 반지', .12, .04));
         if (diff >= .50) add('finalDamageBonus', equipmentStep(actor, '포상 정산 반지', .16, .04));
         if (diff >= .30) markEquipment('포상 정산 반지');
         if (!state.settlementRecoveryAt) state.settlementRecoveryAt = Number(actor.enteredAt || t) + 4000;
@@ -732,7 +729,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
     if (actionType == 'basic' && equipmentStage(actor, '쿨다운 목걸이')) {
         const skills = sideSkills(actor);
         if (skills.length > 0 && skills.every(entry => Number(actor.skillCooldowns[entry.name] || 0) > t)) {
-            add('damageBonusMul', equipmentStep(actor, '쿨다운 목걸이', .12, .03));
+            add('attackPercentBonus', equipmentStep(actor, '쿨다운 목걸이', .12, .03));
             extra.rawDamageMultiplier = Number(extra.rawDamageMultiplier || 1) * (1 + equipmentStep(actor, '쿨다운 목걸이', .35, .10));
             actor.hp = Math.min(actor.maxHp, actor.hp + Math.max(1, Math.round(actor.maxHp * .001 * Math.max(1, Number(extra.attackUnitCount || 1)) * (1 + Number(stats.recoveryEfficiency || 0)))));
             markEquipment('쿨다운 목걸이');
@@ -740,7 +737,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
         }
     }
     const manaBurn = [
-        ['마나번 햇', 'manaBurnAttackBuff', .02, 'damageBonusMul', equipmentStep(actor, '마나번 햇', .15, .03) * (1 + Number(stats.attackBuffEfficiency || 0))],
+        ['마나번 햇', 'manaBurnAttackBuff', .02, 'attackPercentBonus', equipmentStep(actor, '마나번 햇', .15, .03) * (1 + Number(stats.attackBuffEfficiency || 0))],
         ['마나번 로브', 'manaBurnElementBuff', .02, 'allElementAtk', equipmentStep(actor, '마나번 로브', 60, 10)],
         ['마나번 트라우저', 'manaBurnCritBuff', .02, 'critChanceBonus', equipmentStep(actor, '마나번 트라우저', .10, .02)],
         ['마나번 슈즈', 'manaBurnExtraBuff', .02, 'extraDamageBonus', equipmentStep(actor, '마나번 슈즈', .10, .03)],
@@ -789,7 +786,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
             markTriggeredEffect(extra, 'combat', '자해');
             if (equipmentStage(actor, '흐르는 피')) markEquipment('흐르는 피');
         }
-        if (!includedAtStart.bloodHatBuff && active('bloodHatBuff')) addUnit(unit, 'damageBonusMul', state.bloodHatBuff.value);
+        if (!includedAtStart.bloodHatBuff && active('bloodHatBuff')) addUnit(unit, 'attackPercentBonus', state.bloodHatBuff.value);
         if (equipmentStage(actor, '일레이나 전용 동전') && t >= Number(state.coinReadyAt || 0)) {
             state.coinBuff = Math.random() < .5
                 ? { type: 'water', value: equipmentStep(actor, '일레이나 전용 동전', 250, 50), until: t + equipmentDurationMs(actor, 300) }
@@ -829,7 +826,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
         }
         if (state.liberationBuff && Number(state.liberationBuff.until || 0) > t) {
             const choices = state.liberationBuff.choices || [];
-            if (choices.includes('attack')) addUnit(unit, 'damageBonusMul', equipmentStep(actor, '해방의 열쇠', .10, .03) * (1 + Number(stats.attackBuffEfficiency || 0)));
+            if (choices.includes('attack')) addUnit(unit, 'attackPercentBonus', equipmentStep(actor, '해방의 열쇠', .10, .03) * (1 + Number(stats.attackBuffEfficiency || 0)));
             if (!includedAtStart.liberationBuff && choices.includes('element')) addUnit(unit, 'allElementAtk', state.liberationBuff.elementValue);
         }
         if (equipmentStage(actor, '킹메이커 팔찌')) {
@@ -879,7 +876,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
             rainbowTriggeredUnit = -1;
         }
         if (!includedAtStart.encoreBuff && active('encoreBuff')) {
-            args.hitExtra.damageBonusMul = Number(args.hitExtra.damageBonusMul || 0) + Number(state.encoreBuff.attack || 0);
+            args.hitExtra.attackPercentBonus = Number(args.hitExtra.attackPercentBonus || 0) + Number(state.encoreBuff.attack || 0);
             args.hitExtra.critMulBonus = Number(args.hitExtra.critMulBonus || 0) + Number(state.encoreBuff.critMul || 0);
         }
         if (equipmentSetCount(actor, '잿불의 장송곡') >= 4 && state.burn && Number(state.burn.until || 0) > t) {
@@ -972,7 +969,9 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     let base = Number(rawDamage || 0) * Number(extra.rawDamageMultiplier || 1);
     const awakeningReduction = Number(aSlot.hpDamageReduction || 0) + receivedDamageReduction(attacker, defender) - Number(aStats.takenDamage || 0) + 1 - receivedDamageMul(attacker)
         + Number(attacker.runtime.buffs.nextDamageReduction && attacker.runtime.buffs.nextDamageReduction.value || 0) + (isDefending(attacker, t) ? .5 : 0);
-    base *= cardAwakening.runtimeAttackRatio(aStats, aSlot, attacker.maxHp, attacker.maxMp, awakeningReduction, Number(extra.awakeningStacks ?? attacker.runtime.nmmStacks ?? 0));
+    const awakeningAttack = cardAwakening.runtimeAttackChange(aStats, attacker.maxHp, attacker.maxMp, awakeningReduction, Number(extra.awakeningStacks ?? attacker.runtime.nmmStacks ?? 0));
+    extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + awakeningAttack.percent;
+    extra.attackFlatBonus = Number(extra.attackFlatBonus || 0) + awakeningAttack.flat;
     const invincible = defender.corridorMirror
         ? dStats.awakening?.effect === 'lastStand' && t < Number(defender.runtime.awakeningSurvival?.invincibleUntil || 0)
         : rpgenius.isAwakeningInvincible(defender.name, dStats, t);

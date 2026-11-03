@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const attackStats = require('./attack_stats');
 const rpg = () => require('./rpgenius');
 const TOKEN = '천상의 증표';
 const VALUES = [5,7,9,11,13,15,18,21,24,27,30,35,40,45,50,55,63,71,79,87,95,107,119,131,143,155];
@@ -96,10 +97,10 @@ function snapshot(user) {
 function applyStats(run, stats) {
     if (!run.celestial || run.mode === 'hell') return;
     const weapon = gear('weapon', run.celestial.weapon), armor = gear('armor', run.celestial.armor);
-    stats.atk += weapon.atk; stats.def += armor.def; stats.hp += armor.hp;
+    attackStats.addPercent(stats, has(run, 'calmStrength') && run.distortion === 0 ? .10 : 0, weapon.atk);
+    stats.def += armor.def; stats.hp += armor.hp;
     if (has(run, 'advancedRelic')) stats.hp *= .5;
     if (has(run, 'prismaticAugment')) { stats.hp *= .5; stats.def *= .5; }
-    if (has(run, 'calmStrength') && run.distortion === 0) stats.atk *= 1.10;
     for (const key of ['atk','def','hp']) stats[key] = Math.max(key === 'def' ? 0 : 1, Math.round(stats[key]));
 }
 function movement(run, floors) {

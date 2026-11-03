@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const attackStats = require('./attack_stats');
 const { AUGMENTS, RELICS, EVENTS, EQUIPMENT_NAMES } = require('./paradise_content');
 const EQUIPMENT_AUGMENTS = new Map(AUGMENTS.filter(a => a.equipment).map(a => [a.equipment, a]));
 const wisdom = require('./wisdom_puzzle');
@@ -151,7 +152,7 @@ function applyStats(user, stats) {
     for (const key of ['hp', 'mp', 'def']) stats[key] = Math.max(key === 'mp' ? 0 : 1, Math.round(Number(stats[key] || 0) * Math.max(.05, 1 + Number(effects[key] || 0) + (key === 'hp' ? hpGrowth : 0))));
     const missingHp = 1 - clamp(Number(resources.hp ?? stats.hp) / stats.hp, 0, 1);
     const attackGrowth = effects.victoryAtkGrowth ? Number(run.attackGrowth || 0) : 0;
-    stats.atk = Math.max(1, Math.round(Number(stats.atk || 0) * Math.max(.05, 1 + Number(effects.atk || 0) + Number(run.compass || 0) + attackGrowth + (effects.risk ? missingHp * .50 : 0) + (effects.calmMind && run.distortion <= 24 ? .20 : 0))));
+    attackStats.addPercent(stats, Number(effects.atk || 0) + Number(run.compass || 0) + attackGrowth + (effects.risk ? missingHp * .50 : 0) + (effects.calmMind && run.distortion <= 24 ? .20 : 0));
     stats.finalDamage = Number(stats.finalDamage || 0) + Number(effects.final || 0) + (effects.lastStand && Number(resources.hp ?? stats.hp) <= stats.hp * .30 ? .40 : 0) + (effects.eclipse && run.distortion >= 50 ? .30 : 0);
     stats.takenDamage = Number(stats.takenDamage || 0) + Number(effects.taken || 0) + (missingHp >= .65 ? Number(effects.lowHpGuard || 0) : 0) - (effects.eclipse && run.distortion < 50 ? .10 : 0);
     stats.maxCmb = Number(stats.maxCmb || 0) + Number(effects.maxCmb || 0);
@@ -495,11 +496,15 @@ function startCombat(user, kind = 'normal', sequence = null, random = Math.rando
         const template = { ...mirror.snapshot.stats, ...heavenMonsterStats(run.floor, 'elite') };
         // 낮은 층에서도 전직 궁극기와 일반 스킬을 사용할 수 있는 MP를 확보한다.
         template.mp = Math.max(template.mp, rpg().getMainCardSkills(challenger).reduce((sum, entry) => sum + Number(entry.skill.mp_cost || 0), 0) * 2);
-        const scaled = scale => ({ ...template, atk: Math.max(1, template.atk * scale), hp: Math.max(1, template.hp * scale), def: Math.max(0, template.def * scale), pnt: Math.max(0, template.pnt * scale) });
+        const scaled = scale => {
+            const atk = Math.max(1, template.atk * scale);
+            return { ...template, atk, baseAtk: atk / (1 + Number(template.plusStats?.atk || 0)), hp: Math.max(1, template.hp * scale), def: Math.max(0, template.def * scale), pnt: Math.max(0, template.pnt * scale) };
+        };
         let low = 0, high = 10;
         for (let i = 0; i < 60; i++) { const scale = (low + high) / 2; if (rpg().computeCombatPowerFromStats(scaled(scale)).total < power) low = scale; else high = scale; }
         mirror.snapshot.stats = scaled(high);
         for (const key of ['atk', 'hp', 'def', 'pnt']) mirror.snapshot.stats[key] = Math.round(mirror.snapshot.stats[key]);
+        mirror.snapshot.stats.baseAtk = mirror.snapshot.stats.atk / (1 + Number(mirror.snapshot.stats.plusStats?.atk || 0));
         mirror.maxHp = mirror.hp = mirror.snapshot.stats.hp;
         mirror.maxMp = mirror.mp = mirror.snapshot.stats.mp;
         mirror.name = '월야의 뭔마';
@@ -512,7 +517,12 @@ function startCombat(user, kind = 'normal', sequence = null, random = Math.rando
     if (has(run, 'hourglass')) enemy.atk = Math.round(enemy.atk * .55);
     const collapse = run.temporary.some(buff => buff.id === 'collapse' && buff.battles > 0);
     if (collapse) { enemy.atk *= 2; enemy.traits.push('붕괴, 공격력 2배'); }
-    if (enemy.mirror) enemy.mirror.snapshot.stats.atk = enemy.atk;
+    if (enemy.mirror) {
+        const stats = enemy.mirror.snapshot.stats;
+        if (stats.atk > 0) stats.baseAtk *= enemy.atk / stats.atk;
+        stats.atk = enemy.atk;
+        enemy.baseAtk = stats.baseAtk;
+    }
     if (run.mode !== 'hell' && !enemy.mirror) enemy.recommendedPower = rpg().computeCombatPowerFromStats(enemy).total;
     if (kind === 'elite' && progression.has(run, 'fragileElites') && run.celestial.elites < 2) { enemy.hp = 1; run.celestial.elites++; }
     run.enemy = enemy; run.battle = { firstAttack: true, firstSkill: true, survived: false, comeback: 0, collapse, insurance: run.insurance === true };

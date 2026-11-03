@@ -191,7 +191,7 @@ test('실제 파티 피해: 도태·심판, 부식의 공격자 분리와 균형
     await fixed(.1, () => party.calculateOutgoingDamage(a, monster, room, 1000, { isBasic: true }));
     await fixed(.5, () => assert.equal(party.calculateOutgoingDamage(b, monster, room, 1000, { isBasic: true }).damage, 1650));
     a.runtime.ilion = runtime(['균형']).ilion; ilion.excludeAll(a.runtime, {}, 0, Date.now());
-    await fixed(.5, () => assert.equal(party.calculateOutgoingDamage(a, monster, room, 0, { cardDamage: true }).damage, 1000));
+    await fixed(.5, () => assert.equal(party.calculateOutgoingDamage(a, monster, room, 0, { cardDamage: true }).damage, 1100)); // 메인딜러 공격력 +10% 포함
 });
 
 test('실제 파티 자동 추첨은 MP·행동 대기시간을 소비하지 않고 각성 공격을 발동시키지 않는다', async () => {
