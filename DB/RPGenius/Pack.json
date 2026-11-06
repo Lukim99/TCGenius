@@ -1875,5 +1875,240 @@
       "roll": 0.07692307692307693,
       "type": "아이템"
     }
+  ],
+  [
+    {
+      "type": "아이템",
+      "item_id": 230,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 231,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 232,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 233,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 234,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 235,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 236,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 237,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 238,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 239,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 240,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 241,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 257,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 258,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 430,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 431,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 432,
+      "count": 1,
+      "roll": 0.011764705882352941
+    },
+    {
+      "type": "아이템",
+      "item_id": 416,
+      "count": 1,
+      "roll": 0.2
+    },
+    {
+      "type": "아이템",
+      "item_id": 112,
+      "count": 1,
+      "roll": 0.2
+    },
+    {
+      "type": "아이템",
+      "item_id": 444,
+      "count": 1,
+      "roll": 0.2
+    },
+    {
+      "type": "아이템",
+      "item_id": 1,
+      "count": 1,
+      "roll": 0.2
+    }
+  ],
+  [
+    {
+      "type": "캐릭터카드",
+      "card_type": "일반",
+      "display_star": 5,
+      "count": 1,
+      "roll": 0.5
+    },
+    {
+      "type": "캐릭터카드",
+      "card_type": "일반",
+      "display_star": 6,
+      "count": 1,
+      "roll": 0.3
+    },
+    {
+      "type": "캐릭터카드",
+      "card_type": "일반",
+      "display_star": 7,
+      "count": 1,
+      "roll": 0.15
+    },
+    {
+      "type": "아이템",
+      "item_id": 447,
+      "count": 1,
+      "roll": 0.05
+    }
+  ],
+  [
+    {
+      "type": "캐릭터카드",
+      "card_type": "전직",
+      "display_star": 5,
+      "count": 1,
+      "roll": 0.5
+    },
+    {
+      "type": "캐릭터카드",
+      "card_type": "전직",
+      "display_star": 6,
+      "count": 1,
+      "roll": 0.3
+    },
+    {
+      "type": "캐릭터카드",
+      "card_type": "전직",
+      "display_star": 7,
+      "count": 1,
+      "roll": 0.15
+    },
+    {
+      "type": "아이템",
+      "item_id": 447,
+      "count": 1,
+      "roll": 0.05
+    }
+  ],
+  [
+    {
+      "type": "캐릭터카드",
+      "card_type": "각성",
+      "display_star": 5,
+      "count": 1,
+      "roll": 0.5
+    },
+    {
+      "type": "캐릭터카드",
+      "card_type": "각성",
+      "display_star": 6,
+      "count": 1,
+      "roll": 0.3
+    },
+    {
+      "type": "캐릭터카드",
+      "card_type": "각성",
+      "display_star": 7,
+      "count": 1,
+      "roll": 0.15
+    },
+    {
+      "type": "아이템",
+      "item_id": 447,
+      "count": 1,
+      "roll": 0.05
+    }
+  ],
+  [
+    {
+      "type": "아이템",
+      "item_id": 448,
+      "count": 11,
+      "roll": 0.3333333333333333
+    },
+    {
+      "type": "아이템",
+      "item_id": 449,
+      "count": 11,
+      "roll": 0.3333333333333333
+    },
+    {
+      "type": "아이템",
+      "item_id": 450,
+      "count": 11,
+      "roll": 0.3333333333333333
+    }
   ]
 ]

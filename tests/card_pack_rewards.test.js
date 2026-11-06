@@ -64,6 +64,46 @@ before(async () => {
 });
 after(() => new Promise(resolve => server.close(resolve)));
 
+test('빼빼로 패키지는 정확한 가격·구성·3회 한도와 한 종류 11개 즉시 지급을 적용한다', async () => {
+    const { definitions, randomName, peperoNames } = require('../scripts/register_pepero_packages');
+    for (const [index, definition] of definitions.entries()) {
+        const value = await rpg.getRPGUserByName(seed.name);
+        Object.assign(value, { point: 10000, garnet: 0, mileage: 0, shopPurchases: {}, inventory: { item: [], card: [], pet: [], equipment: [] } });
+        await value.save();
+        const product = rpg.getDataCache('Shop')['패키지'].find(entry => entry.item_id === itemId(definition.name));
+        for (const [draw, roll] of [.1, .5, .9].entries()) {
+            const result = await fixed(roll, () => rpg.purchaseShopItem(value, '패키지', product.shopId, 1, {}));
+            assert.match(result, /^✅/);
+            assert.equal(value.point, 10000 - definition.price * (draw + 1));
+            if (index > 0) assert.equal(rpg.getInventoryItemCount(value, itemId(peperoNames[draw])), 11);
+        }
+        assert.equal(rpg.getInventoryItemCount(value, itemId(index ? '화려한 지옥 열쇠' : '지옥 열쇠')), 3);
+        assert.equal(rpg.getInventoryItemCount(value, itemId(randomName)), 0);
+        assert.equal(rpg.getInventoryItemCount(value, itemId('[이벤트]대왕 빼빼로')), 0);
+        if (index === 0) assert.equal(rpg.getInventoryItemCount(value, itemId(peperoNames[0])), 3);
+        if (index === 1) assert.equal(rpg.getInventoryItemCount(value, itemId('지니어스의 열쇠')), 333);
+        if (index === 2) assert.equal(value.garnet, 3333);
+        const before = structuredClone({ point: value.point, inventory: value.inventory, purchases: value.shopPurchases });
+        assert.match(await rpg.purchaseShopItem(value, '패키지', product.shopId, 1, {}), /^❌/);
+        assert.deepEqual({ point: value.point, inventory: value.inventory, purchases: value.shopPurchases }, before);
+    }
+});
+
+test('빼빼로 패키지 저장 실패는 포인트·보상·구매 횟수를 보존한다', async t => {
+    const value = await rpg.getRPGUserByName(seed.name);
+    Object.assign(value, { point: 10000, garnet: 0, mileage: 0, shopPurchases: {}, inventory: { item: [], card: [], pet: [], equipment: [] } });
+    await value.save();
+    const product = rpg.getDataCache('Shop')['패키지'].find(entry => entry.item_id === itemId('26빼빼로데이3패키지'));
+    const before = structuredClone({ point: value.point, garnet: value.garnet, inventory: value.inventory, purchases: value.shopPurchases });
+    const send = DynamoDBDocumentClient.prototype.send;
+    t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function(command) {
+        if (command.constructor.name === 'UpdateCommand' && command.input.TableName === 'rpgenius_user') throw new Error('isolated package save failure');
+        return send.call(this, command);
+    });
+    assert.match(await rpg.purchaseShopItem(value, '패키지', product.shopId, 1, {}), /^❌/);
+    assert.deepEqual({ point: value.point, garnet: value.garnet, inventory: value.inventory, purchases: value.shopPurchases }, before);
+});
+
 test('일반·전직 카드팩은 운영 등급과 수량대로 즉시 카드가 되고 초과분은 버린다', async () => {
     for (const [name, type, star] of [['8성 카드팩', '일반', 7], ['9성 전직 카드팩', '전직', 8]]) {
         const value = user(2), id = itemId(name);

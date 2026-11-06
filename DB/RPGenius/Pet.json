@@ -238,5 +238,245 @@
     "upgrade": [],
     "rarity": "레전더리",
     "desc": "골드 획득량 +10%."
+  },
+  {
+    "name": "유의게임X 유리사",
+    "rarity": "고유",
+    "desc": "유의게임X 우승자 유리사 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "cardCombineBonus": 0.02
+    }
+  },
+  {
+    "name": "유의게임X 펀쿨섹",
+    "rarity": "레전더리",
+    "desc": "유의게임X 결승 진출자 펀쿨섹 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "hpRegen": 20
+    }
+  },
+  {
+    "name": "유의게임X 겨울",
+    "rarity": "레전더리",
+    "desc": "유의게임X 결승 진출자 겨울 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "autoFragment": 1
+    }
+  },
+  {
+    "name": "유의게임X 은채",
+    "rarity": "레전더리",
+    "desc": "유의게임X 결승 진출자 은채 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "autoPotion": true
+    }
+  },
+  {
+    "name": "유의게임X 홍진호",
+    "rarity": "유니크",
+    "desc": "유의게임X 준결승 진출자 홍진호 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "canShortcut": 2
+    }
+  },
+  {
+    "name": "유의게임X 전술가",
+    "rarity": "유니크",
+    "desc": "유의게임X 준결승 진출자 전술가 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "fishBasket": 100
+    }
+  },
+  {
+    "name": "유의게임X 서출구",
+    "rarity": "유니크",
+    "desc": "유의게임X 준결승 진출자 서출구 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "autoFragment": 0.5
+    }
+  },
+  {
+    "name": "유의게임X 내게팀은없다",
+    "rarity": "유니크",
+    "desc": "유의게임X 준결승 진출자 내게팀은없다 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "fishingSpeed": 0.07
+    }
+  },
+  {
+    "name": "유의게임X 씨잼",
+    "rarity": "레어",
+    "desc": "유의게임X 9위 씨잼 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "canShortcut": 1
+    }
+  },
+  {
+    "name": "유의게임X 동그라미",
+    "rarity": "레어",
+    "desc": "유의게임X 10위 동그라미 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "autoAttend": true
+    }
+  },
+  {
+    "name": "유의게임X 요나",
+    "rarity": "레어",
+    "desc": "유의게임X 11위 요나 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "fishingSpeed": 0.04
+    }
+  },
+  {
+    "name": "유의게임X 리인카네이션",
+    "rarity": "레어",
+    "desc": "유의게임X 12위 리인카네이션 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "autoFragment": 0.25
+    }
+  },
+  {
+    "name": "유의게임X 한국인의밥상",
+    "rarity": "레어",
+    "desc": "유의게임X 13위 한국인의밥상 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {
+      "potion": 0.1
+    },
+    "upgrade": [],
+    "special": {}
+  },
+  {
+    "name": "유의게임X 흑자헬스",
+    "rarity": "레어",
+    "desc": "유의게임X 14위 흑자헬스 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "fishBasket": 50
+    }
+  },
+  {
+    "name": "유의게임X 김영광",
+    "rarity": "레어",
+    "desc": "유의게임X 15위 김영광 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "mpRegen": 40
+    }
+  },
+  {
+    "name": "유의게임X 오타니",
+    "rarity": "레어",
+    "desc": "유의게임X 16위 오타니 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "hpRegen": 40
+    }
+  },
+  {
+    "name": "유의게임X 문철마삼",
+    "rarity": "레어",
+    "desc": "유의게임X 17위 문철마삼 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "fishingSpeed": 0.03
+    }
+  },
+  {
+    "name": "유의게임X 예수",
+    "rarity": "레어",
+    "desc": "유의게임X 18위 예수 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "fishBasket": 30
+    }
+  },
+  {
+    "name": "유의게임X 카즈토",
+    "rarity": "레어",
+    "desc": "유의게임X 19위 카즈토 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "mpRegen": 50
+    }
+  },
+  {
+    "name": "유의게임X 나화진",
+    "rarity": "레어",
+    "desc": "유의게임X 20위 나화진 펫이다.",
+    "set": "유의게임X",
+    "stat": {},
+    "plusStat": {},
+    "upgrade": [],
+    "special": {
+      "hpRegen": 50
+    }
   }
 ]

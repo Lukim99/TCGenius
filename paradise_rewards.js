@@ -3,7 +3,7 @@ const { DynamoDBDocumentClient, ScanCommand, GetCommand, PutCommand, UpdateComma
 const rpg = () => require('./rpgenius');
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'ap-northeast-2', credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_KEY_ID } }));
 let work = null, checkedWeek = null, timer = null;
-const PARTICIPATION_FROM_RANK = 6;
+const PARTICIPATION_FROM_RANK = 8;
 
 function rewardsForRank(config, rank, participationFromRank = PARTICIPATION_FROM_RANK) {
     return [...(config.ranks.find(r => rank >= r.from && rank <= r.to)?.rewards || []), ...(rank >= participationFromRank ? config.participation : [])];

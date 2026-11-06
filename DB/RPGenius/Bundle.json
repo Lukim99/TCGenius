@@ -3531,5 +3531,52 @@
       "display_star": 7,
       "count": 1
     }
+  ],
+  [
+    {
+      "type": "아이템",
+      "item_id": 451,
+      "count": 1
+    },
+    {
+      "type": "아이템",
+      "item_id": 448,
+      "count": 1
+    }
+  ],
+  [
+    {
+      "type": "아이템",
+      "item_id": 452,
+      "count": 1
+    },
+    {
+      "type": "아이템",
+      "item_id": 17,
+      "count": 111
+    },
+    {
+      "type": "아이템",
+      "item_id": 453,
+      "count": 1,
+      "autoUse": true
+    }
+  ],
+  [
+    {
+      "type": "아이템",
+      "item_id": 452,
+      "count": 1
+    },
+    {
+      "type": "가넷",
+      "count": 1111
+    },
+    {
+      "type": "아이템",
+      "item_id": 453,
+      "count": 1,
+      "autoUse": true
+    }
   ]
 ]

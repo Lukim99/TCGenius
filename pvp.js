@@ -519,6 +519,7 @@ const attackStats = require('./attack_stats');
 
 function getLiveEquipmentStats(side, t) {
     const stats = Object.assign({}, side.snapshot.stats || {});
+    require('./reggiero').applyBlackWhite(stats, side.enteredAt, t);
     const state = side.runtime && side.runtime.equipment || {};
     const active = key => state[key] && Number(state[key].until || 0) > t ? state[key] : null;
     const manaAttack = active('manaBurnAttackBuff');

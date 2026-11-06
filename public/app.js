@@ -196,7 +196,7 @@ const GROUPS = [
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
     { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'orb-fusion', 'equipment-synthesis', 'dex', '레벨보상'] },
-    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['포인트 광산', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
+    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['포인트 광산', '퍼스널뽑기', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder', 'directtrade'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
 ];
@@ -260,6 +260,7 @@ function navigatePage(pageId) {
     if (activePage === 'directtrade' && pageId !== 'directtrade') window.DirectTradeUI?.close();
     activePage = pageId;
     document.body.classList.toggle('point-mine-active', pageId === '포인트 광산');
+    if (activePage !== '퍼스널뽑기') window.personalDrawGame?.pause();
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
     if (pageId === 'home') { loadHomeBanners(); refreshGameHome().catch(e => { $('#gameHome').textContent = e.message; }); }
@@ -280,6 +281,7 @@ function navigatePage(pageId) {
     if (pageId === 'pvp') loadPvp();
     if (pageId === 'event') loadEventDice();
     if (pageId === '포인트 광산') loadPointMine();
+    if (pageId === '퍼스널뽑기') loadPersonalDraw();
     if (pageId === '자물쇠') loadLockbox();
     if (pageId === '퀘스트') loadQuests();
     if (pageId === '사냥') renderHuntMenu();
@@ -912,6 +914,7 @@ function openPetModal(pet) {
     if (pet.version && ownEquipContext()) {
         const actions = el('div', { class: 'row game-actions-row' },
             el('button', { type: 'button', class: pet.equipped ? '' : 'primary', onclick: e => changePetEquipment(pet, e.currentTarget) }, pet.equipped ? '장착 해제' : '장착'));
+        if (pet.autoPotion && pet.equipped && !pet.expired) actions.appendChild(el('button', { type: 'button', onclick: openAutoPotionSettings }, '자동 물약 설정'));
         if (pet.extractable) actions.appendChild(el('button', { type: 'button', onclick: e => previewInventoryAction({ action: 'pets-extract', numbers: [pet.number], version: pet.version }, e.currentTarget) }, '추출'));
         $('#modalBody').appendChild(actions);
     }
@@ -2895,6 +2898,50 @@ async function loadPointMine() {
     }
 }
 
+async function loadPersonalDraw() {
+    const root = $('#personalDrawRoot');
+    if (!document.querySelector('link[data-personal-draw]')) {
+        const css = el('link', { rel: 'stylesheet', href: '/static/personal-draw.css' });
+        css.dataset.personalDraw = 'true'; document.head.appendChild(css);
+    }
+    try {
+        if (!window.personalDrawGame) {
+            const { mountPersonalDraw } = await import('/static/personal-draw.js');
+            if (!window.personalDrawGame) window.personalDrawGame = mountPersonalDraw(root, setHeaderPoint);
+        }
+        await window.personalDrawGame.refresh();
+    } catch (error) {
+        window.personalDrawGame?.pause(); window.personalDrawGame = null;
+        root.replaceChildren(el('div', { class: 'empty err' }, error.message, el('button', { onclick: loadPersonalDraw }, '다시 불러오기')));
+    }
+}
+
+async function openAutoPotionSettings() {
+    try {
+        const data = await api('/api/pet/auto-potion');
+        openModal('자동 물약 설정', '사냥 중 보유 물약과 레이드에 가져간 물약을 사용합니다. 공용 대기시간 3초.', []);
+        const body = $('#modalBody'), controls = {};
+        for (const key of ['hp', 'mp']) {
+            const option = data.settings[key];
+            const enabled = el('input', { type: 'checkbox', checked: option.enabled, 'aria-label': key.toUpperCase() + ' 자동 물약 사용' });
+            const threshold = el('input', { type: 'number', min: 1, max: 99, value: option.threshold, 'aria-label': key.toUpperCase() + ' 기준 비율', style: { width: '72px' } });
+            const select = el('select', { 'aria-label': key.toUpperCase() + ' 물약' }, el('option', { value: '' }, '물약 선택'));
+            data.potions.filter(p => p.resources.includes(key)).forEach(p => select.appendChild(el('option', { value: p.id }, p.name + ' (' + p.count + '개)')));
+            select.value = option.itemId ?? '';
+            controls[key] = { enabled, threshold, select };
+            body.appendChild(el('div', { class: 'section' }, el('label', null, enabled, ' ' + key.toUpperCase() + ' 자동 물약'), el('div', { class: 'row' }, threshold, '% 이하일 때', select)));
+        }
+        body.appendChild(el('p', { class: 'muted' }, '동시에 조건을 만족하면 HP 물약을 먼저 사용합니다. 펫이 해제되거나 만료되면 자동 사용이 중지됩니다.'));
+        body.appendChild(el('button', { class: 'primary', disabled: !data.available, onclick: async e => {
+            e.currentTarget.disabled = true;
+            try {
+                const value = Object.fromEntries(Object.entries(controls).map(([key, c]) => [key, { enabled: c.enabled.checked, threshold: Number(c.threshold.value), itemId: c.select.value === '' ? null : Number(c.select.value) }]));
+                await postApi('/api/pet/auto-potion', value); closeModal(); showAlert('자동 물약 설정을 저장했습니다.');
+            } catch (error) { showAlert(error.message); e.currentTarget.disabled = false; }
+        } }, '설정 저장'));
+    } catch (error) { showAlert(error.message); }
+}
+
 // ===== 이벤트: 유생의 주사위 =====
 
 const EVENT_DICE_REWARDS = {
@@ -4357,7 +4404,7 @@ function renderCombineInfo() {
     const stats = el('div', { class: 'fusion-stat-row' });
     if (t) {
         const lucky = combineState.luckyRate != null;
-        const shownRate = lucky ? Math.min(1, t.rate * (1 + combineState.luckyRate)) : t.rate;
+        const shownRate = Math.min(1, t.rate * (lucky ? 1 + combineState.luckyRate : 1) + Number(combineState.meta.petBonus || 0));
         stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '조합 등급'), el('b', null, (grade + 1) + '성')));
         stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '성공 확률'), el('b', { class: 'rate' }, (Math.round(shownRate * 1000) / 10) + '%')));
         stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '필요 골드'), el('b', { class: 'gold' }, shopCurrNode('gold', 16), comma(t.gold))));

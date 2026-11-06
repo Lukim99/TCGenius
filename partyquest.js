@@ -192,6 +192,7 @@ const attackStats = require('./attack_stats');
 function getPartyLiveStats(member, room = getRoomOf(member?.name)) {
     const stats = ilionCards.applyStats(Object.assign({}, member?.baseSnapshot?.stats || {}), member?.runtime,
         member?.baseSnapshot?.slotEffects, Date.now());
+    require('./reggiero').applyBlackWhite(stats, room?.startedAt ?? member?.runtime?.equipmentState?.combatStartedAt);
     attackStats.addPercent(stats, getPositionStatMul(room, member, 'finalAtk') - 1 + getPartyAttackBuffValue(member) + getPartyConditionalFinalAttack(member));
     randoCharacters.tickMental(stats, member?.runtime, member?.baseSnapshot?.slotEffects, Date.now());
     randoCharacters.applyStats(stats, member?.runtime, member?.baseSnapshot?.slotEffects,
@@ -2051,19 +2052,23 @@ async function start(hostName) {
         const finalMpMul = posDef && posDef.stats && posDef.stats.finalMp != null ? Number(posDef.stats.finalMp) : 1;
         const baseHp = Math.max(100, Math.round(Number(m.baseSnapshot.stats.hp || 1000) * finalHpMul));
         const baseMp = Math.max(50, Math.round(Number(m.baseSnapshot.stats.mp || 500) * finalMpMul));
-        let petHpRegenRate = 0, petMpRegenRate = 0;
+        let petHpRegenRate = 0, petMpRegenRate = 0, autoPotion = null, autoPotionExpireAt = 0;
         try {
             const petUser = userMap.get(m.name) || await rpgenius.getRPGUserByName(m.name);
             if (petUser && typeof rpgenius.getActivePetSpecials === 'function') {
                 const sp = rpgenius.getActivePetSpecials(petUser);
                 petHpRegenRate = Number(sp.hpRegenRate || 0);
                 petMpRegenRate = Number(sp.mpRegenRate || 0);
+                if (sp.autoPotion) {
+                    autoPotion = structuredClone(petUser.autoPotion || null);
+                    autoPotionExpireAt = Math.max(0, ...rpgenius.getEquippedPets(petUser).filter(pet => rpgenius.collectPetSpecialObjects(rpgenius.getPetData(pet.id), pet.level).some(effect => effect.autoPotion)).map(pet => Number(pet.expireAt || 0)));
+                }
             }
         } catch (_) {}
         m.runtime = {
             hp: baseHp, hpMax: baseHp,
             mp: baseMp, mpMax: baseMp,
-            petHpRegenRate, petMpRegenRate,
+            petHpRegenRate, petMpRegenRate, autoPotion, autoPotionExpireAt,
             gauge: 0,
             cooldowns: {}, // (deprecated, kept for compat)
             cooldownsUntil: {}, // skillName -> epoch ms
@@ -2508,6 +2513,11 @@ function stepRoom(room) {
                 recordPartyHealing(m, m, r.hp - before);
             }
             if (r.petMpRegenRate > 0 && r.mp < r.mpMax) r.mp = Math.min(r.mpMax, r.mp + r.mpMax * r.petMpRegenRate * dt);
+            if (r.autoPotion && nowMs() < r.autoPotionExpireAt && nowMs() >= Number(r.potionUntil || 0) && !r.sealRemain) {
+                const selected = require('./pet_auto_potion').select(r.autoPotion, r, rpgenius.getDataCache('Item', []),
+                    (id, item) => (m.potions || []).some(p => p.name === item.name && p.count > 0), { hp: canPartyReceiveHealing(m), mp: !m.baseSnapshot?.stats?.kino });
+                if (selected) usePotion(m.name, selected.item.name).catch(error => console.error('[auto-potion]', error.message));
+            }
             if (r.dragonRegen) {
                 const now = nowMs();
                 while (r.dragonRegen.ticksLeft > 0 && now >= Number(r.dragonRegen.nextTickAt || 0)) {

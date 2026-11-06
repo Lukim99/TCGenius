@@ -16,5 +16,23 @@
                 "gold": 0.05
             }
         }
+    ],
+    "유의게임X": [
+        {
+            "stat": {
+                "hp": 100
+            }
+        },
+        {
+            "plusStat": {
+                "atk": 0.01
+            }
+        },
+        {
+            "plusStat": {
+                "exp": 0.05,
+                "itemDropChance": 0.05
+            }
+        }
     ]
 }

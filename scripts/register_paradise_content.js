@@ -13,8 +13,8 @@ const rewardItems = [
 const milestoneRewards = [[1,1],[10,2],[100,3],[200,4],[300,5],[400,6],[500,7],[600,8],[700,10],[800,15],[900,20],[999,30]].map(([floor,count]) => ({ floor, count: count * 100, name: '천상의 증표' }));
 const weeklyRewards = { participation: [{ type: '아이템', name: '지옥 열쇠', count: 3 }], ranks: [
     { from: 1, to: 1, rewards: [{ type: '아이템', name: '찬란한 지옥 열쇠', count: 3 }, { type: '가넷', count: 2000 }] },
-    { from: 2, to: 2, rewards: [{ type: '아이템', name: '화려한 지옥 열쇠', count: 3 }, { type: '가넷', count: 1000 }] },
-    { from: 3, to: 5, rewards: [{ type: '아이템', name: '지옥 열쇠', count: 3 }, { type: '가넷', count: 500 }] }
+    { from: 2, to: 3, rewards: [{ type: '아이템', name: '화려한 지옥 열쇠', count: 3 }, { type: '가넷', count: 1000 }] },
+    { from: 4, to: 7, rewards: [{ type: '아이템', name: '지옥 열쇠', count: 3 }, { type: '가넷', count: 500 }] }
 ] };
 
 function appendContent(before, configureRewards = false, configureHell = false) {

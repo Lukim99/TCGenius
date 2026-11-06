@@ -6,6 +6,7 @@ const path = require('path');
 const express = require('express');
 const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const AWS = require('aws-sdk');
+const pepero = require('../pepero_mansion_content');
 const { appendContent } = require('../scripts/init_intrigue_content');
 const { appendPackages } = require('../scripts/init_chuseok_packages');
 const { prepare: prepareRandoland1, accessory: randolandAccessory } = require('../scripts/register_randoland1_content');
@@ -20,6 +21,8 @@ data.Quest = [];
 data.Shop = {};
 for (const name of ['상급 강화석', '헬 초대장', '헬 도전장']) if (!data.Item.some(item => item.name === name)) data.Item.push({ name, type: '재료' });
 Object.assign(data, appendPackages({ Item: data.Item, Bundle: data.Bundle, Shop: data.Shop }));
+Object.assign(data, pepero.prepare({ ...data, Paradise: { weeklyRewards: require('../scripts/register_paradise_content').weeklyRewards } }));
+data.PeperoEvent.active = false;
 const accounts = ['hunting-test', 'raid-guest'].map((name, index) => ({
     _get: 1, id: name + '-id', name, code: 'TEST', level: 300, logged_in: [],
     avatarMigrated: true, need_character_card_select: false, main_card: { id: 0, star: 6, type: '일반' },
@@ -169,6 +172,163 @@ test('란도랜드1 등록은 운영 스탯·꾸러미 연결·빈 구성을 보
     after.Bundle[2] = [];
     assert.deepEqual(prepareRandoland1(after), after);
     assert.throws(() => prepareRandoland1({}), /초기화하지 않습니다/);
+});
+
+test('빼빼로 등록은 기존 보상·인덱스를 보존하고 낙원 순위 구간만 바꾼다', () => {
+    const before = { Item: ['곡괭이 상자 열쇠', '아바타 상자', '바인드 큐브', '거래권'].map(name => ({ name, type: '사용' })),
+        Pack: [[]], Equipment: { accessory: [] }, Paradise: { weeklyRewards: structuredClone(require('../scripts/register_paradise_content').weeklyRewards), other: '보존' } };
+    before.Item.push({ name: '테스트 캐릭터 변환석', type: '사용', use: '변환', charId: 0 });
+    before.Paradise.weeklyRewards.ranks[1].to = 2;
+    Object.assign(before.Paradise.weeklyRewards.ranks[2], { from: 3, to: 5 });
+    const after = pepero.prepare(before);
+    assert.deepEqual(after.Item.slice(0, before.Item.length), before.Item);
+    assert.deepEqual(after.Pack[0], []);
+    assert.equal(after.Paradise.other, '보존');
+    assert.deepEqual(after.Paradise.weeklyRewards.ranks.map(r => [r.from, r.to]), [[1, 1], [2, 3], [4, 7]]);
+    assert.deepEqual(after.Paradise.weeklyRewards.participation, before.Paradise.weeklyRewards.participation);
+    assert.equal(after.Item.slice(before.Item.length).every(item => item.no_trade === true), true);
+    after.Pack[after.Item.find(item => item.name === pepero.PEPERO_NAMES[0]).pack] = [];
+    after.Equipment.accessory[0].desc = '운영 설명'; after.PeperoEvent.active = false;
+    assert.deepEqual(pepero.prepare(after), after);
+});
+
+test('대왕 빼빼로 보상 5종은 각 20%이고 지정 변환석 그룹 안에서도 균등하다', () => {
+    const pack = data.Pack[data.Item.find(item => item.name === pepero.KING_NAME).pack];
+    const stones = pack.filter(entry => data.Item[entry.item_id]?.use === '변환');
+    assert.ok(stones.length > 0);
+    assert.ok(Math.abs(stones.reduce((sum, entry) => sum + entry.roll, 0) - .2) < 1e-12);
+    assert.equal(new Set(stones.map(entry => entry.roll)).size, 1);
+    assert.deepEqual(pack.filter(entry => data.Item[entry.item_id]?.use !== '변환').map(entry => [data.Item[entry.item_id].name, entry.count, entry.roll]),
+        [['곡괭이 상자 열쇠', 1, .2], ['아바타 상자', 1, .2], ['바인드 큐브', 1, .2], ['거래권', 1, .2]]);
+});
+
+test('빼빼로 실제 사용은 종류별 5/6/7성 또는 대왕을 지급하고 카드 공간 부족 시 보존한다', async t => {
+    for (const [index, name] of pepero.PEPERO_NAMES.entries()) for (const [roll, star] of [[.25, 4], [.65, 5], [.875, 6], [.975, null]]) {
+        const user = await reset(), id = data.Item.findIndex(item => item.name === name);
+        rpg.addInventoryItem(user, id, 1);
+        const random = t.mock.method(Math, 'random', () => roll);
+        const result = await rpg.useItem(user, name, 1);
+        random.mock.restore();
+        assert.ok(!result.startsWith('❌'), result);
+        assert.equal(rpg.getInventoryItemCount(user, id), 0);
+        if (star !== null) {
+            assert.equal(user.inventory.card.length, 1);
+            assert.equal(user.inventory.card[0].star, star);
+            assert.equal(user.inventory.card[0].type, ['일반', '전직', '각성'][index]);
+        } else assert.equal(rpg.getInventoryItemCount(user, data.Item.findIndex(item => item.name === pepero.KING_NAME)), 1);
+    }
+    const user = await reset(), name = pepero.PEPERO_NAMES[0], id = data.Item.findIndex(item => item.name === name);
+    rpg.addInventoryItem(user, id, 1);
+    user.inventory.card = Array.from({ length: rpg.getRemainingCardInventorySpace(user) }, () => ({ id: 0, star: 0, type: '일반' }));
+    t.mock.method(Math, 'random', () => .25);
+    assert.match(await rpg.useItem(user, name, 1), /공간이 부족/);
+    assert.equal(rpg.getInventoryItemCount(user, id), 1);
+});
+
+test('실제 필드 빼빼로는 처치당 5%, 3종 합산 10개, 한국 자정 초기화와 종료 시각을 지킨다', async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-12-11T23:59:59+09:00') });
+    const eventConfig = rpg.getDataCache('PeperoEvent');
+    Object.assign(eventConfig, structuredClone(pepero.EVENT_CONFIG));
+    t.after(() => { Object.assign(eventConfig, structuredClone(pepero.EVENT_CONFIG), { active: false }); });
+    let user = await reset(); user.level = 176; user.statPointStats.atk = 10000; await user.save();
+    async function hunt(roll) {
+        user = await rpg.getRPGUserByName(user.name);
+        user.field = { name: '대저택리턴즈', enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: null };
+        user.fieldCooldowns = { nextActionAt: 0, skillCooldowns: {} }; user.pendingFragment = null;
+        await user.save();
+        const random = t.mock.method(Math, 'random', () => roll);
+        const result = (await request('/api/field/attack', {})).data;
+        random.mock.restore(); assert.equal(result.ok, true, result.message);
+        user = await rpg.getRPGUserByName(user.name);
+    }
+    await hunt(.05); assert.equal(user.peperoDropDaily.count, 0);
+    await hunt(.049999); assert.equal(user.peperoDropDaily.count, 10);
+    await hunt(0); assert.equal(user.peperoDropDaily.count, 10);
+    t.mock.timers.tick(1000);
+    eventConfig.dropChance = 1;
+    await hunt(.5); assert.equal(user.peperoDropDaily.count, 10);
+    assert.equal(rpg.getInventoryItemCount(user, data.Item.findIndex(item => item.name === pepero.PEPERO_NAMES[1])), 10);
+    user.peperoDropDaily.count = 9;
+    await user.save();
+    await hunt(.8); assert.equal(user.peperoDropDaily.count, 10);
+    assert.equal(rpg.getInventoryItemCount(user, data.Item.findIndex(item => item.name === pepero.PEPERO_NAMES[2])), 1);
+    t.mock.timers.tick(86399000); // 12월 12일 23:59:59까지 드랍
+    user.peperoDropDaily.count = 9; await user.save();
+    await hunt(.8); assert.equal(rpg.getInventoryItemCount(user, data.Item.findIndex(item => item.name === pepero.PEPERO_NAMES[2])), 2);
+    t.mock.timers.tick(1000); // 12월 13일 00:00, 이벤트 종료
+    const previous = structuredClone(user.peperoDropDaily);
+    await hunt(0); assert.deepEqual(user.peperoDropDaily, previous);
+});
+
+test('대왕 빼빼로 실제 개봉은 5종 중 하나를 1개 지급한다', async t => {
+    const name = pepero.KING_NAME, id = data.Item.findIndex(item => item.name === name);
+    for (const [roll, expected] of [[.1, null], [.3, '곡괭이 상자 열쇠'], [.5, '아바타 상자'], [.7, '바인드 큐브'], [.9, '거래권']]) {
+        const user = await reset(); rpg.addInventoryItem(user, id, 1);
+        const random = t.mock.method(Math, 'random', () => roll);
+        const result = await rpg.useItem(user, name, 1); random.mock.restore();
+        assert.ok(!result.startsWith('❌'), result); assert.equal(rpg.getInventoryItemCount(user, id), 0);
+        const rewards = user.inventory.item.filter(entry => entry.count > 0);
+        assert.equal(rewards.length, 1); assert.equal(rewards[0].count, 1);
+        if (expected) assert.equal(data.Item[rewards[0].id].name, expected);
+        else assert.equal(data.Item[rewards[0].id].use, '변환');
+    }
+});
+
+test('유스티티아 처치 시 레지에로를 란도랜드1과 같은 5%로 직접 지급한다', async t => {
+    for (const roll of [.049999, .05]) {
+        const user = await reset(); user.level = 176; user.statPointStats.atk = 10000000;
+        const dungeon = rpg.getRegularFieldDungeons().find(field => field.name === '대저택리턴즈');
+        user.field = { name: dungeon.name, nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: { hp: dungeon.elite.hp } }; await user.save();
+        const random = t.mock.method(Math, 'random', () => roll);
+        const result = (await request('/api/field/attack', {})).data; random.mock.restore();
+        assert.equal(result.ok, true, result.message); assert.equal(result.event.eliteDefeated, true);
+        const current = await rpg.getRPGUserByName(user.name);
+        assert.equal(current.inventory.equipment.filter(item => rpg.getEquipmentData(item.type, item.id)?.name === '레지에로').length, roll < .05 ? 1 : 0);
+    }
+});
+
+test('대저택리턴즈는 176부터 입장하며 첨부 배경·엘리트·일던 보상 범위를 제공한다', async () => {
+    for (const route of ['/api/field', '/api/daily-dungeon']) {
+        const user = await reset(); user.level = 175; await user.save();
+        assert.equal((await request(route + '/enter', { fieldName: '대저택리턴즈', confirmed: true })).data.ok, false);
+        user.level = 176; await user.save();
+        const entry = (await request(route + '/enter', { fieldName: '대저택리턴즈', confirmed: true })).data;
+        assert.equal(entry.ok, true, entry.message);
+        assert.equal(entry.state.activeField.levelText, 'Lv. 176');
+        assert.equal(entry.state.activeField.monster.eliteName, '유스티티아');
+        assert.match(decodeURIComponent(entry.state.activeField.backgroundUrl), /대저택리턴즈\.png$/);
+        assert.equal((await fetch(base + entry.state.activeField.backgroundUrl, { headers: { Cookie: cookie() } })).status, 200);
+    }
+    const dungeon = rpg.findDailyDungeonByName('대저택리턴즈');
+    assert.deepEqual([dungeon.atk, dungeon.pnt, dungeon.def, dungeon.hp], [5200, 390, 335, 13405]);
+    assert.deepEqual([dungeon.elite.atk, dungeon.elite.pnt, dungeon.elite.def, dungeon.elite.hp], [17340, 810, 905, 201600]);
+    assert.equal(dungeon.elite.reward.find(reward => reward.accessory_name === '레지에로').roll, .05);
+    const lower = rpg.rollDailyDungeonClearReward(dungeon, () => 0), upper = rpg.rollDailyDungeonClearReward(dungeon, () => 1 - Number.EPSILON);
+    assert.equal(lower.exp, 80000000); assert.equal(lower.gold, 14500000); assert.equal(upper.gold, 16500000);
+    assert.deepEqual(lower.items, { '일반 떡밥': 3000, '강화석': 3000, '상급 강화석': 13, '6성 카드팩': 1, '헬 초대장': 160 });
+    assert.deepEqual(upper.items, { '일반 떡밥': 3500, '강화석': 3500, '상급 강화석': 23, '7성 각성 카드팩': 1, '헬 도전장': 120 });
+    assert.deepEqual(dungeon.dailyDungeon.itemChoices[0].map(entry => entry.weight), [3900, 1000, 100, 3900, 1000, 100]);
+});
+
+test('레지에로 흑백은 필드·레이드·PVP에서 10초마다 전환하고 중복 누적하지 않는다', async t => {
+    const startedAt = Date.parse('2026-11-06T12:00:00+09:00');
+    t.mock.timers.enable({ apis: ['Date'], now: startedAt });
+    const user = await reset(), before = rpg.calculateUserStats(user);
+    user.equipments.accessory = { 0: { id: data.Equipment.accessory.findIndex(item => item.name === '레지에로'), level: 0 } };
+    user.field = { name: '대저택리턴즈', enteredAt: startedAt, skillCooldowns: {} };
+    const snapshot = rpg.calculateUserStats(user);
+    const mirror = require('../pvp').createCorridorMirror(user);
+    const member = { name: user.name, baseSnapshot: { stats: snapshot, slotEffects: {}, mainCardSkills: [] }, runtime: { hp: snapshot.hp, hpMax: snapshot.hp, mp: snapshot.mp, mpMax: snapshot.mp, buffs: [], equipmentState: {} } };
+    for (const [advance, value] of [[0, 100], [9999, 100], [1, -100], [10000, 100]]) {
+        t.mock.timers.tick(advance);
+        for (const current of [rpg.calculateUserStats(user), party.__test.getPartyLiveStats(member, { startedAt }), require('../pvp').getCorridorMirrorStats(mirror)]) {
+            assert.equal(current.darkAtk - before.darkAtk, value);
+            assert.equal(current.lightAtk - before.lightAtk, -value);
+        }
+    }
+    assert.equal(snapshot.blackWhiteApplied, 100, '레이드 원본 스냅샷은 변형하지 않는다.');
+    user.equipments.accessory = {};
+    assert.equal(rpg.calculateUserStats(user).blackWhitePower, undefined);
 });
 
 test('란도랜드1 일반·일던은 171레벨부터 입장하며 배경·신규 몬스터 에셋을 제공한다', async () => {

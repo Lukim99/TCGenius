@@ -1,0 +1,20 @@
+{
+  "active": true,
+  "endsAt": "2026-12-13T00:00:00+09:00",
+  "dropChance": 0.05,
+  "dailyLimit": 10,
+  "drops": [
+    {
+      "name": "[이벤트]빼빼로",
+      "weight": 50
+    },
+    {
+      "name": "[이벤트]누드 빼빼로",
+      "weight": 30
+    },
+    {
+      "name": "[이벤트]아몬드 빼빼로",
+      "weight": 20
+    }
+  ]
+}

@@ -20,6 +20,7 @@ const paradiseRoutes = require('./paradise_routes');
 const shopCatalog = require('./shop_catalog');
 const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
 const { regularCardPackBaseChance } = require('./chuseok_event');
+const { applyBlackWhite } = require('./reggiero');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
@@ -37,7 +38,7 @@ const BLESSING_DEFINITIONS = Object.freeze({
     rukim: Object.freeze({ key: 'rukim', name: '루킴의 축복', price: 990, durationMs: BLESSING_DURATION_MS })
 });
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch', 'Banner', 'Capsule100', 'Quest', 'PointMine', 'Paradise'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch', 'Banner', 'Capsule100', 'Quest', 'PointMine', 'Paradise', 'PersonalDraw', 'PeperoEvent'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -680,6 +681,7 @@ async function loadRpgeniusDataEntry(key, options) {
 
 async function saveRpgeniusDataEntry(key, data, options) {
     if (!RPGENIUS_DATA_KEYS.includes(key)) throw new Error('허용되지 않은 키: ' + key);
+    if (key === 'PersonalDraw') require('./personal_draw_event').validateConfig(data);
     if (key === 'Paradise') { const error = paradise.validateConfig(data); if (error) throw new Error(error); }
     if (key == 'Quest' && Array.isArray(data) && data.some(def => def && (def.rewards || []).some(reward => reward && reward.type == '레이드해금' && getRaidRewardName(reward.raid_id) == '알 수 없는 레이드'))) throw new Error('해금할 레이드 설정을 확인해주세요.');
     if (key == 'Shop') {
@@ -3251,7 +3253,7 @@ function rollCardCombineSuccess(user, kind, star, rate, baseRate) {
     const target = kind == 'pack' ? user.cardPackCombineCounts : user.cardCombineCounts;
     const key = String(star);
     const probCombine = getDataCache('Prob', {}).combine || {};
-    const nicknameBonus = Number(probCombine[user.name] || 0);
+    const nicknameBonus = Number(probCombine[user.name] || 0) + (kind === 'card' ? getActivePetSpecials(user).cardCombineBonus : 0);
     const effectiveRate = Math.min(1, Number(rate || 0) + nicknameBonus);
     const baseEffectiveRate = Math.min(1, Number(baseRate != null ? baseRate : rate) + nicknameBonus);
     const guarantee = getCardCombineGuaranteeCount(star);
@@ -3397,7 +3399,7 @@ function formatCardCombinePreview(user, numberArgs) {
     if (selection.isOmega) {
         lines.push('', '- 100% 확률로 오메가 캐릭터 카드를 획득합니다. (조합 재료 캐릭터 제외)');
     } else {
-        lines.push('', '- ' + formatRatePercent(selection.info.rate) + ' 확률로 ' + formatStar(selection.star + 1) + ' 캐릭터 카드를 획득합니다.');
+        lines.push('', '- ' + formatRatePercent(Math.min(1, selection.info.rate + getActivePetSpecials(user).cardCombineBonus)) + ' 확률로 ' + formatStar(selection.star + 1) + ' 캐릭터 카드를 획득합니다.');
         const guarantee = getCardCombineGuaranteeCount(selection.star);
         if (guarantee) lines.push('- 보정 카운트: ' + comma(getCardCombineCount(user, 'card', selection.star)) + '/' + comma(guarantee));
     }
@@ -4421,6 +4423,11 @@ function calculateUserStats(user, _out) {
     const randoShield = !_out?.skipRandoRuntime && getFieldShield(user);
     if (!_out?.skipRandoRuntime) randoCharacters.applyStats(stats, user.field, slotEffects, randoShield && randoShield.expired_at > Date.now() ? randoShield.amount : 0, Date.now());
     paradise.applyStats(user, stats);
+    const blackWhite = findEquipWithPassiveId(user, transcendEquipment.uniquePassiveIds['흑백']);
+    if (blackWhite) {
+        stats.blackWhitePower = 100 * paradise.equipmentMultiplier(user, blackWhite.name);
+        applyBlackWhite(stats, user.field?.enteredAt);
+    }
     if (_out && typeof _out == 'object') _out.plusStats = stats.plusStats;
     return transcendEquipment.capPrisonKeyCritical(armorExpansion.applyConditionalStats(stats));
 }
@@ -6019,6 +6026,7 @@ function getFieldActionCooldownMs(user, now) {
 }
 
 function setNextFieldActionAt(user) {
+    if (user.autoPotion?.hp?.enabled || user.autoPotion?.mp?.enabled) applyAutoPotion(user, calculateUserStats(user), null);
     const now = Date.now();
     setFieldNextActionAt(user, now + getFieldActionCooldownMs(user, now));
 }
@@ -6281,6 +6289,27 @@ function getPointMineDropDailyState(user) {
     if (!user.pointMineDropDaily || user.pointMineDropDaily.date != today) user.pointMineDropDaily = { date: today, count: 0 };
     user.pointMineDropDaily.count = Number(user.pointMineDropDaily.count || 0);
     return user.pointMineDropDaily;
+}
+
+function grantPeperoFieldDrops(user, killCount, lines) {
+    const config = getDataCache('PeperoEvent', null);
+    if (!config?.active || !(Date.now() < Date.parse(config.endsAt)) || !(config.dropChance > 0 && config.dropChance <= 1) || !Number.isInteger(config.dailyLimit) || config.dailyLimit < 1 || !Array.isArray(config.drops) || !config.drops.length) return;
+    const items = getDataCache('Item', []);
+    const drops = config.drops.map(drop => ({ ...drop, id: items.findIndex(item => item?.name === drop.name) }));
+    if (drops.some(drop => drop.id < 0 || !(drop.weight > 0))) return;
+    const date = getKoreanDateKey(new Date());
+    if (user.peperoDropDaily?.date !== date) user.peperoDropDaily = { date, count: 0 };
+    const daily = user.peperoDropDaily, granted = new Map();
+    const weight = drops.reduce((sum, drop) => sum + drop.weight, 0);
+    for (let i = 0; i < killCount && daily.count < config.dailyLimit; i++) {
+        if (Math.random() >= config.dropChance) continue;
+        let roll = Math.random() * weight;
+        const picked = drops.find(drop => (roll -= drop.weight) < 0) || drops[drops.length - 1];
+        addInventoryItem(user, picked.id, 1);
+        daily.count++;
+        granted.set(picked.name, (granted.get(picked.name) || 0) + 1);
+    }
+    for (const [name, count] of granted) lines.push('- ' + name + ' x' + count + ' 획득! (' + daily.count + '/' + config.dailyLimit + ')');
 }
 
 function getValorTokenItemId() {
@@ -6883,6 +6912,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 lines.push('- 일반 떡밥 x' + comma(baitDropCount));
             }
             grantButagameFieldBonusDrops(user, dungeon, killCount, lines);
+            grantPeperoFieldDrops(user, killCount, lines);
         }
         if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
     }
@@ -8424,6 +8454,7 @@ function executeMainCardSkillInField(user, skillName) {
     const boss = context.boss;
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
+    applyAutoPotion(user, stats, null);
     const maxMp = Number(stats.mp || 0);
     const mp = typeof resources.mp == 'undefined' ? maxMp : Number(resources.mp || 0);
     const equipmentSkill = isHellPillar
@@ -8756,6 +8787,7 @@ function executeMainCardSkillInField(user, skillName) {
 }
 
 function setWorldBossNextActionAt(user) {
+    if (user.autoPotion?.hp?.enabled || user.autoPotion?.mp?.enabled) applyAutoPotion(user, calculateUserStats(user), null);
     let cooldown = 2500;
     const buffs = getFieldBuffs(user);
     const buff = buffs.actionCooldownReduction;
@@ -9391,6 +9423,7 @@ async function runWorldBossSkillTick(userName, bossName) {
         tickLines.push('', '💀 ' + boss.name + '에게 패배하고 필드에서 퇴장했습니다.');
     } else {
         tryLowHpEquipmentEffects(latest, Number(userStats.hp || 0), tickLines);
+        applyAutoPotion(latest, userStats, tickLines);
         tickLines.push('- 남은 체력: ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
     }
     if (latest.field && latest.field.worldBoss) scheduleNextWorldBossSkillTimer(latest, boss);
@@ -10168,6 +10201,8 @@ function collectPetSpecialObjects(petData, level) {
 }
 
 function accumulatePetSpecial(result, sp) {
+    result.cardCombineBonus += Number(sp.cardCombineBonus || 0);
+    if (sp.autoPotion) result.autoPotion = true;
     result.fishingSpeed += Number(sp.fishingSpeed || 0);
     result.fishBasket += Number(sp.fishBasket || 0);
     result.autoFragment += Number(sp.autoFragment || 0);
@@ -10306,7 +10341,7 @@ function getActivePetSetEffects(user) {
 }
 
 function getActivePetSpecials(user) {
-    const result = { fishingSpeed: 0, fishBasket: 0, autoFragment: 0, hpRegenRate: 0, mpRegenRate: 0, autoAttend: false, canShortcut: 0 };
+    const result = { fishingSpeed: 0, fishBasket: 0, autoFragment: 0, hpRegenRate: 0, mpRegenRate: 0, autoAttend: false, canShortcut: 0, cardCombineBonus: 0, autoPotion: false };
     getEquippedPets(user).forEach(pet => {
         if (!isPetEffectActive(pet)) return;
         const data = getPetData(pet.id);
@@ -10338,7 +10373,38 @@ function getEffectiveFishingNetLimit(user) {
     return base + Math.max(0, Math.round(getActivePetSpecials(user).fishBasket));
 }
 
+const petAutoPotion = require('./pet_auto_potion');
+function getAutoPotionState(user) {
+    const items = getDataCache('Item', []);
+    return { available: getActivePetSpecials(user).autoPotion, settings: petAutoPotion.settings(user.autoPotion),
+        potions: items.flatMap((item, id) => {
+            const resources = ['hp', 'mp'].filter(key => petAutoPotion.supports(item, key));
+            return resources.length ? [{ id, name: item.name, count: getInventoryItemCount(user, id), resources }] : [];
+        }) };
+}
+function setAutoPotionSettings(user, value) {
+    if (!getActivePetSpecials(user).autoPotion) return '자동 물약 기능이 있는 유효한 펫을 장착해주세요.';
+    const error = petAutoPotion.validate(value, getDataCache('Item', []));
+    if (error) return error;
+    user.autoPotion = Object.fromEntries(['hp', 'mp'].map(key => [key, { enabled: value[key].enabled, threshold: value[key].threshold, itemId: value[key].itemId ?? null }]));
+    return null;
+}
+function applyAutoPotion(user, stats, lines) {
+    const resources = paradise.getResources(user);
+    if (!user.field || user.field.training || Number(resources.hp ?? stats.hp) <= 0 || Date.now() < Number(user.autoPotionAt || 0) || !getActivePetSpecials(user).autoPotion) return false;
+    if (paradise.active(user) && user.paradise.effects.noHealing || isBlackCurtainHealingBlocked(user)) return false;
+    const selected = petAutoPotion.select(user.autoPotion, { hp: Number(resources.hp ?? stats.hp), mp: Number(resources.mp ?? stats.mp), hpMax: stats.hp, mpMax: stats.mp },
+        getDataCache('Item', []), id => getInventoryItemCount(user, id) > 0, { mp: !stats.kino });
+    if (!selected || !removeInventoryItem(user, selected.id, 1)) return false;
+    const result = [];
+    for (const func of selected.item.use_func) applyUseFunc(user, func, 1, result);
+    user.autoPotionAt = Date.now() + 3000;
+    if (lines) lines.push('🐾 자동 물약: ' + selected.item.name, ...result);
+    return true;
+}
+
 function applyPetRegen(user, stats, lines) {
+    applyAutoPotion(user, stats, lines);
     const resources = paradise.getResources(user);
     if (!user.field) return;
     if (paradise.active(user) && user.paradise.effects.noHealing) return;
@@ -10386,6 +10452,8 @@ function formatPetSpecialLines(sp) {
     if (Number(sp.hpRegen || 0)) lines.push('- ' + Number(sp.hpRegen) + '초마다 최대 체력 1% 회복');
     if (Number(sp.mpRegen || 0)) lines.push('- ' + Number(sp.mpRegen) + '초마다 최대 MP 1% 회복');
     if (sp.autoAttend) lines.push('- 자동 출석체크');
+    if (sp.autoPotion) lines.push('- 자동 물약 사용 가능 (HP/MP 기준 비율 설정)');
+    if (Number(sp.cardCombineBonus || 0)) lines.push('- 카드 조합 성공 확률 +' + pct(sp.cardCombineBonus) + 'p (럭키 카드 적용 후 합산)');
     if (Number(sp.canShortcut || 0)) lines.push('- 단축키 저장 슬롯 ' + comma(Number(sp.canShortcut)) + '개');
     return lines;
 }
@@ -13865,7 +13933,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (typeof limits.weekly == 'number') rec.weekly = Number(rec.weekly || 0) + count;
     if (typeof limits.monthly == 'number') rec.monthly = Number(rec.monthly || 0) + count;
 
-    if (shopType === '레이드' || ['artifact-package', 'rando-release-package', '2026-autumn-release-package'].includes(shopItem.contentKey)) {
+    if (shopType === '레이드' || ['artifact-package', 'rando-release-package', '2026-autumn-release-package', '2026-pepero-package'].includes(shopItem.contentKey)) {
         try { await commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'point', 'mileage', 'shopPurchases']); }
         catch (error) { console.error('[raid shop] purchase:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 상점을 다시 불러와주세요.'; }
     } else await user.save();
@@ -17555,6 +17623,9 @@ module.exports = {
     normalizeSpecialObject,
     collectPetSpecialObjects,
     applyPetRegen,
+    applyAutoPotion,
+    getAutoPotionState,
+    setAutoPotionSettings,
     clonePetInstance,
     addPetInventory,
     isPetTradable,
@@ -17662,6 +17733,7 @@ module.exports = {
     getDailyDungeonDailyState,
     enterDailyDungeon,
     getRegularFieldDungeons,
+    formatDungeonLevelRange,
     getDungeonRecommendedCP,
     getDungeonCPStatus,
     getHellDungeon,

@@ -1387,5 +1387,325 @@
         "count": 1
       }
     ]
+  },
+  {
+    "name": "유의게임X 유리사",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 445,
+        "count": 3
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 21
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 펀쿨섹",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 200
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 22
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 겨울",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 200
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 23
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 은채",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 200
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 24
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 홍진호",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 50
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 25
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 전술가",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 50
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 26
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 서출구",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 50
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 27
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 내게팀은없다",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 50
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 28
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 씨잼",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 29
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 동그라미",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 30
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 요나",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 31
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 리인카네이션",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 32
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 한국인의밥상",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 33
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 흑자헬스",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 34
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 김영광",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 35
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 오타니",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 36
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 문철마삼",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 37
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 예수",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 38
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 카즈토",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 39
+      }
+    ]
+  },
+  {
+    "name": "유의게임X 나화진",
+    "materials": [
+      {
+        "type": "아이템",
+        "item_id": 446,
+        "count": 20
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 40
+      }
+    ]
   }
 ]

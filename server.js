@@ -16,6 +16,7 @@ const cardComposite = require('./card_composite.js');
 const assetStore = require('./asset_store.js');
 const { registerYutRoutes } = require('./yut_event.js');
 const { registerPointMineRoutes } = require('./point_mine_event.js');
+const { registerPersonalDrawRoutes } = require('./personal_draw_event.js');
 const { registerChuseokRoutes } = require('./chuseok_event.js');
 partyquest.setCardImageResolver((card, user, square) => getCardImageUrl(card, user, square));
 const { createWebChat } = require('./webchat.js');
@@ -97,6 +98,7 @@ const BANNER_TARGET_TABS = [
     { value: 'dex', label: '콘텐츠 · 도감' },
     { value: '레벨보상', label: '콘텐츠 · 레벨보상' },
     { value: '포인트 광산', label: '이벤트 · 포인트 광산' },
+    { value: '퍼스널뽑기', label: '이벤트 / 퍼스널뽑기' },
     { value: '자물쇠', label: '이벤트 · 자물쇠' },
     { value: 'shop', label: '거래 · 상점' },
     { value: 'auction', label: '거래 · 팝니다' },
@@ -1498,6 +1500,26 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
 const EVENT_DICE_ITEM_NAME = '유생의 주사위';
 registerYutRoutes(server, { rpgenius, requireUser, getItemDisplayAssets });
 registerPointMineRoutes(server, { rpgenius, requireUser, getItemDisplayAssets, serializeItemUse });
+registerPersonalDrawRoutes(server, { rpgenius, requireUser, getItemDisplayAssets, getPetIconUrl, serializeItemUse });
+server.get('/api/pet/auto-potion', requireUser, async (req, res) => {
+    const user = await rpgenius.getRPGUserByName(req.session.name);
+    if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(rpgenius.getAutoPotionState(user));
+});
+server.post('/api/pet/auto-potion', requireUser, serializeItemUse(async (req, res) => {
+    const seed = await rpgenius.getRPGUserByName(req.session.name);
+    if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+    await rpgenius.enqueueFieldAction(seed, async () => {
+        const user = await rpgenius.getRPGUserByName(seed.name);
+        if (partyquest.getRoomOf(user.name)?.state === 'inProgress') return res.status(409).json({ error: '레이드가 끝난 뒤 설정해주세요.' });
+        const error = rpgenius.setAutoPotionSettings(user, req.body);
+        if (error) return res.status(400).json({ error });
+        const saved = await user.save();
+        if (!saved?.success) return res.status(503).json({ error: '설정을 저장하지 못했습니다. 다시 시도해주세요.' });
+        res.json(rpgenius.getAutoPotionState(user));
+    });
+}));
 // 배포 전에 열려 있던 낙원 화면의 이미지·음원 요청도 S3 동기화 경로로 연결한다.
 server.get(/^\/static\/assets\/paradise\/(.+)$/, requireUser, (req, res) => {
     const file = req.params[0];
@@ -2517,6 +2539,8 @@ function getGeneralFieldAssetUrl(file) {
 }
 
 function getGeneralFieldAtlas(index) {
+    const source = getGeneralFieldDungeons()[index]?.monsterAtlas;
+    if (source) return { atlasUrl: getGeneralFieldAssetUrl(path.join('필드', '몬스터', source.file)), row: source.row, rows: source.rows };
     const atlas = GENERAL_FIELD_ATLASES.find(entry => index >= entry.from && index <= entry.to);
     if (!atlas) return null;
     return {
@@ -2546,7 +2570,7 @@ function getGeneralFieldDescriptor(dungeon, index, user, entryBlocked, combatPow
         name: dungeon.name,
         requireLevel: minLevel,
         maxLevel,
-        levelText: configurationError && !Number.isFinite(dungeon.requireLevel) ? '설정 대기' : maxLevel == null ? 'Lv. ' + minLevel : 'Lv. ' + minLevel + ' ~ ' + maxLevel,
+        levelText: configurationError && !Number.isFinite(dungeon.requireLevel) ? '설정 대기' : rpgenius.formatDungeonLevelRange(dungeon),
         levelAvailable,
         recommendedCP,
         recommendedPower: recommendedCP,
@@ -6153,6 +6177,7 @@ function buildInventoryPets(user) {
             expiryText: formatPetRemainText(pet),
             tradeCount: Number(pet.tradeCount || 0),
             statLines: dexStatLines(rpgenius.formatEquipmentBaseStatLines(data, level)),
+            autoPotion: rpgenius.collectPetSpecialObjects(data, level).some(sp => sp.autoPotion),
             specialLines: rpgenius.collectPetSpecialObjects(data, level).flatMap(sp => rpgenius.formatPetSpecialLines(sp) || []).map(l => l.replace(/^-\s*/, '')),
             setEffect: buildPetSetEffectForUser(data, activeSets),
             iconUrl: getPetIconUrl(data),
@@ -6451,7 +6476,7 @@ function buildCombineMeta(user) {
         if (!count || !(Number(item?.lucky) > 0 || item?.protect)) return [];
         return [{ id, name: item.name, count, luckyRate: Number(item.lucky || 0), protectStar: item.protect ? Number(item.protect.star) : null, ...getItemDisplayAssets(item) }];
     });
-    return { table, protect, lucky, assists, gold: Number(user.gold || 0), bulkRevision: Number(user.bulkCombineReceipt && user.bulkCombineReceipt.revision || 0) };
+    return { table, protect, lucky, assists, petBonus: rpgenius.getActivePetSpecials(user).cardCombineBonus, gold: Number(user.gold || 0), bulkRevision: Number(user.bulkCombineReceipt && user.bulkCombineReceipt.revision || 0) };
 }
 
 function getEquipmentData(type, id) {
@@ -9604,6 +9629,7 @@ function renderUserDashboard(sess, opts) {
     <section class="event-dice-panel"><div id="eventDiceRoot"></div></section>
   </div>
   <div class="page" data-page="포인트 광산"><div id="pointMineRoot"></div></div>
+  <div class="page" data-page="퍼스널뽑기"><div id="personalDrawRoot"></div></div>
   <div class="page" data-page="pvp">
     <div id="pvpRoot"></div>
   </div>

@@ -2368,7 +2368,8 @@ const PET_SPECIAL_NUM_DEFS = [
     { key: 'autoFragment', label: '편린 자동 사용 확률', frac: true, hint: '0.1 = 10%' },
     { key: 'hpRegen', label: 'HP 자동 회복 주기', frac: false, hint: 'N초마다 최대 체력 1%' },
     { key: 'mpRegen', label: 'MP 자동 회복 주기', frac: false, hint: 'N초마다 최대 MP 1%' },
-    { key: 'canShortcut', label: '단축키 저장 슬롯', frac: false, hint: '개수' }
+    { key: 'canShortcut', label: '단축키 저장 슬롯', frac: false, hint: '개수' },
+    { key: 'cardCombineBonus', label: '카드 조합 확률 가산', frac: true, hint: '0.02 = +2%p (럭키 카드 적용 후)' }
 ];
 
 function petSpecialEditor(getter, setter) {
@@ -2398,6 +2399,7 @@ function petSpecialEditor(getter, setter) {
                 onChange: v => { if (v) special.autoAttend = true; else delete special.autoAttend; } })
         )
     ));
+    list.appendChild(el('div', { class: 'nf' }, el('label', null, '자동 물약 기능'), switchToggle({ id: 'pet_autopotion_' + Math.random().toString(36).slice(2), checked: !!special.autoPotion, label: 'HP/MP 기준 설정 가능', onChange: v => { if (v) special.autoPotion = true; else delete special.autoPotion; } })));
     return wrap;
 }
 
