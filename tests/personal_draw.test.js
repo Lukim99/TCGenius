@@ -159,6 +159,39 @@ test('유의게임X 세트와 특수효과는 장착 중에 적용되고 만료�
     assert.deepEqual(set.applied[2].effect.plusStat, { exp: .05, itemDropChance: .05 });
     user.equipments.pet[0].expireAt = 1; assert.equal(rpg.getActivePetSpecials(user).cardCombineBonus, 0);
 });
+
+test('유의게임X 펫 추출 미리보기와 지급은 지나의 축복이며 기존 펫과 함께 추출해도 보상이 섞이지 않는다', async () => {
+    const user = await rpg.getRPGUserByName(seed.name);
+    const oldId = rpg.getDataCache('Pet').findIndex(p => p?.rarity === '레어' && p.set !== '유의게임X');
+    assert.ok(oldId >= 0);
+    user.inventory.pet = [petId('씨잼'), petId('홍진호'), petId('은채'), oldId].map(id => ({ id, level: 0, tradeCount: 1 }));
+    await user.save();
+    const pets = (await request('', undefined, true, '/api/inventory/pet')).data.pet;
+    const input = { action: 'pets-extract', numbers: pets.map(p => p.number), version: pets[0].version };
+    const preview = await request('', input, true, '/api/inventory/actions/preview');
+    assert.equal(preview.status, 200);
+    const rewardCounts = Object.fromEntries(preview.data.rewards.map(r => [r.name, r.count]));
+    assert.deepEqual(rewardCounts, { '지나의 축복': 130, '2024올스타즈 생명체 숨결': 15 });
+    assert.equal(user.inventory.pet.length, 4);
+    const result = await request('', { ...input, token: preview.data.token }, true, '/api/inventory/actions/confirm');
+    assert.equal(result.status, 200);
+    const after = await rpg.getRPGUserByName(seed.name);
+    assert.equal(after.inventory.pet.length, 0);
+    assert.equal(rpg.getInventoryItemCount(after, itemId('지나의 축복')), 130);
+    assert.equal(rpg.getInventoryItemCount(after, 155), 15);
+});
+
+test('추출 보상 재료가 없으면 유의게임X 펫을 소모하지 않는다', async () => {
+    const user = await rpg.getRPGUserByName(seed.name), items = rpg.getDataCache('Item');
+    const id = itemId('지나의 축복'), original = items[id];
+    user.inventory.pet = [{ id: petId('씨잼'), level: 0, tradeCount: 1 }];
+    const inventory = structuredClone(user.inventory);
+    items[id] = null;
+    try {
+        assert.match(rpg.extractPetsByNumbers(user, [1]), /❌.*지나의 축복/);
+        assert.deepEqual(user.inventory, inventory);
+    } finally { items[id] = original; }
+});
 test('유리사 확률은 럭키 카드 곱연산 뒤 2%p 합산한다', async () => {
     const user = await rpg.getRPGUserByName(seed.name), info = rpg.getCardCombineInfo(5);
     user.equipments.pet = [{ id: petId('유리사'), expireAt: Date.now() + 100000 }];

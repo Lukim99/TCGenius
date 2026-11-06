@@ -10541,6 +10541,7 @@ function extractPetsByNumbers(user, numberArgs) {
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
     if (!Array.isArray(user.inventory.pet)) user.inventory.pet = [];
     const all = getAllUserPets(user);
+    const items = getDataCache('Item', []);
     const seen = new Set();
     const targets = [];
     for (const arg of numberArgs) {
@@ -10555,16 +10556,18 @@ function extractPetsByNumbers(user, numberArgs) {
         if (!data) return '❌ 잘못된 펫 데이터입니다: ' + number;
         const amount = PET_EXTRACT_YIELD[data.rarity];
         if (!amount) return '❌ 추출할 수 없는 등급입니다: <' + data.rarity + '> ' + data.name;
-        targets.push({ invIndex: selected.index, data, amount });
+        const itemId = data.set === '유의게임X' ? items.findIndex(item => item?.name === '지나의 축복') : PET_EXTRACT_ITEM_ID;
+        if (itemId < 0) return '❌ 추출 보상 아이템을 찾을 수 없습니다: 지나의 축복';
+        const itemName = items[itemId]?.name || '2024올스타즈 생명체 숨결';
+        targets.push({ invIndex: selected.index, data, amount, itemId, itemName });
     }
     targets.slice().sort((a, b) => b.invIndex - a.invIndex).forEach(t => user.inventory.pet.splice(t.invIndex, 1));
-    const totalAmount = targets.reduce((sum, t) => sum + t.amount, 0);
-    addInventoryItem(user, PET_EXTRACT_ITEM_ID, totalAmount);
-    const items = getDataCache('Item', []);
-    const itemName = (items[PET_EXTRACT_ITEM_ID] && items[PET_EXTRACT_ITEM_ID].name) || '2024올스타즈 생명체 숨결';
+    const totals = new Map();
+    for (const target of targets) totals.set(target.itemId, (totals.get(target.itemId) || 0) + target.amount);
+    for (const [itemId, amount] of totals) addInventoryItem(user, itemId, amount);
     const lines = ['✅ 펫 추출 완료 (' + targets.length + '마리)'];
-    targets.forEach(t => lines.push('- <' + t.data.rarity + '> ' + t.data.name + ' → ' + itemName + ' x' + comma(t.amount)));
-    lines.push('', '[ 획득 결과 ]' + itemName + ' x' + comma(totalAmount));
+    targets.forEach(t => lines.push('- <' + t.data.rarity + '> ' + t.data.name + ' → ' + t.itemName + ' x' + comma(t.amount)));
+    lines.push('', '[ 획득 결과 ]' + Array.from(totals, ([itemId, amount]) => targets.find(t => t.itemId === itemId).itemName + ' x' + comma(amount)).join('\n'));
     return lines.join('\n');
 }
 
