@@ -7,7 +7,7 @@ const express = require('express');
 const AWS = require('aws-sdk');
 const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const data = {};
-for (const key of ['Item', 'Equipment', 'Bundle', 'Recipe', 'Pack']) data[key] = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB/RPGenius', key + '.json'), 'utf8'));
+for (const key of ['Item', 'Equipment', 'Bundle', 'Recipe', 'Pack', 'Pet']) data[key] = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB/RPGenius', key + '.json'), 'utf8'));
 data.Item.push({ type: '티켓', name: '천상의 회랑 입장권' });
 data.Paradise = { enabled: true, baseRewards: [{ type: '골드', count: 100, perFloors: 1 }] };
 data.Quest = []; data.Shop = {};
@@ -817,7 +817,7 @@ test('기존 진행 중 탐험도 현재 저장 수치부터 분리하며 조회
     assert.deepEqual([persisted.get(account.id).hp, persisted.get(account.id).mp], [47, 5]);
 });
 
-test('자동 장비 회복과 물약도 탐험 수치만 회복하며 바깥 수치는 저장 후에도 유지한다', async t => {
+test('천상에서 자동 장비 회복은 유지하고 물약은 차단하며 바깥 수치는 보존한다', async t => {
     let tick;
     t.mock.method(global, 'setInterval', callback => { tick = callback; return { unref() {} }; });
     t.mock.method(Math, 'random', () => .99);
@@ -835,13 +835,68 @@ test('자동 장비 회복과 물약도 탐험 수치만 회복하며 바깥 수
         assert.ok(id >= 0);
         user.paradise.resources[key] = 1; rpg.addInventoryItem(user, id, 1);
         const result = await rpg.useItem(user, data.Item[id].name, 1);
-        assert.ok(!String(result).startsWith('❌'), result);
-        assert.ok(user.paradise.resources[key] > 1);
+        assert.match(result, /^❌ 천상 탐험 중에는 소모품/);
+        assert.equal(user.paradise.resources[key], 1);
+        assert.equal(rpg.getInventoryItemCount(user, id), 1);
         assert.deepEqual([user.hp, user.mp], [19, 7]);
     }
     await user.save();
     assert.deepEqual([persisted.get(account.id).hp, persisted.get(account.id).mp], [19, 7]);
     rpg.clearFieldRuntimeTimers(account.name);
+});
+
+test('천상 탐험 중 화면 밖에서도 소모품 API를 차단하고 귀환 후에는 허용한다', async () => {
+    let user = await reset(); corridor.enter(user);
+    const ids = ['체력회복', '마나회복', '경험치비약'].map(type => data.Item.findIndex(item => item.type === '소모품' && item.use_func?.some(func => func.type === type)));
+    assert.ok(ids.every(id => id >= 0));
+    for (const id of ids) rpg.addInventoryItem(user, id, 2);
+    user.hp = 19; user.mp = 7; user.paradise.resources = { hp: 1, mp: 1 };
+    for (const phase of ['combat', 'augment', 'event', 'outside']) {
+        if (phase === 'outside') user.field = null;
+        else user.paradise.phase = phase;
+        await user.save();
+        for (const id of ids) {
+            const result = await request('/api/inventory/items/' + id + '/use', { count: 1 });
+            assert.equal(result.status, 400, JSON.stringify(result.data));
+            assert.match(result.data.error, /천상 탐험 중에는 소모품/);
+        }
+        user = await rpg.getRPGUserByName(account.name);
+        assert.deepEqual(ids.map(id => rpg.getInventoryItemCount(user, id)), [2, 2, 2]);
+        assert.deepEqual(user.paradise.resources, { hp: 1, mp: 1 });
+        assert.deepEqual([user.hp, user.mp], [19, 7]);
+    }
+    user.field = { paradise: true }; user.paradise.phase = 'augment';
+    assert.ok(!corridor.finish(user).error); await user.save();
+    const result = await request('/api/inventory/items/' + ids[0] + '/use', { count: 1 });
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    user = await rpg.getRPGUserByName(account.name);
+    assert.ok(user.hp > 19); assert.equal(rpg.getInventoryItemCount(user, ids[0]), 1);
+});
+
+test('천상은 자동 물약과 펫 HP·MP 회복을 차단하고 지옥과 일반 필드는 유지한다', async t => {
+    const env = setupHell(t);
+    for (const mode of ['heaven', 'hell', 'field']) {
+        const user = await env.user();
+        user.equipments.pet = ['은채', '펀쿨섹', '김영광'].map(name => ({ id: data.Pet.findIndex(pet => pet.name === '유의게임X ' + name), expireAt: Date.now() + 100000 }));
+        if (mode === 'heaven') assert.ok(!corridor.enter(user).error);
+        else if (mode === 'hell') assert.ok(!env.hell.enter(user, env.hell.KEYS[0].name).error);
+        else user.field = { name: '테스트 필드' };
+        const stats = rpg.calculateUserStats(user), resources = corridor.getResources(user);
+        const hpId = data.Item.findIndex(item => item.type === '소모품' && item.use_func?.some(func => func.type === '체력회복'));
+        rpg.addInventoryItem(user, hpId, 2);
+        user.autoPotionAt = 0;
+        user.autoPotion = { hp: { enabled: true, threshold: 50, itemId: hpId }, mp: { enabled: false, threshold: 50, itemId: null } };
+        resources.hp = 1; resources.mp = 1;
+        assert.equal(rpg.applyAutoPotion(user, stats, []), mode !== 'heaven');
+        assert.equal(rpg.getInventoryItemCount(user, hpId), mode === 'heaven' ? 2 : 1);
+        if (mode !== 'heaven') assert.ok(resources.hp > 1);
+        user.autoPotion.hp.enabled = false;
+        resources.hp = 1; resources.mp = 1;
+        user.field.petRegenAt = Date.now() - 120000;
+        rpg.applyPetRegen(user, stats, []);
+        if (mode === 'heaven') assert.deepEqual(resources, { hp: 1, mp: 1 });
+        else { assert.ok(resources.hp > 1); assert.ok(resources.mp > 1); }
+    }
 });
 
 test('낙원 아이템은 관리자 itemImage를 우선하며 입장권·열쇠·인벤토리가 변경된 이미지 버전을 함께 사용한다', async t => {

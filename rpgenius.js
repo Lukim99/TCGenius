@@ -10405,6 +10405,7 @@ function setAutoPotionSettings(user, value) {
     return null;
 }
 function applyAutoPotion(user, stats, lines) {
+    if (paradise.heavenActive(user)) return false;
     const resources = paradise.getResources(user);
     if (!user.field || user.field.training || Number(resources.hp ?? stats.hp) <= 0 || Date.now() < Number(user.autoPotionAt || 0) || !getActivePetSpecials(user).autoPotion) return false;
     if (paradise.active(user) && user.paradise.effects.noHealing || isBlackCurtainHealingBlocked(user)) return false;
@@ -10419,6 +10420,7 @@ function applyAutoPotion(user, stats, lines) {
 }
 
 function applyPetRegen(user, stats, lines) {
+    if (paradise.heavenActive(user)) return;
     applyAutoPotion(user, stats, lines);
     const resources = paradise.getResources(user);
     if (!user.field) return;
@@ -13184,11 +13186,12 @@ async function useSongpyeon(user, countArg) {
 }
 
 async function useItem(user, itemName, countArg, options = {}) {
-    const resources = paradise.getResources(user);
     const items = getDataCache('Item', []);
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
+    if (item.type === '소모품' && paradise.heavenActive(user)) return '❌ 천상 탐험 중에는 소모품을 사용할 수 없습니다. 탐험을 종료한 뒤 사용해주세요.';
+    const resources = paradise.getResources(user);
     if (item.name === '송편' && item.use === '송편') return '❌ 윷놀이 이벤트가 종료되어 송편을 사용할 수 없습니다.';
     if (item.name === POINT_MINE_DROP_ITEM_NAME) return '❌ 곡괭이 상자 열쇠는 웹 포인트 광산에서 사용할 수 있습니다.\n\nhttps://rpgenius.kro.kr/?tab=' + encodeURIComponent('포인트 광산');
     if (item.name == '봉인된 자물쇠') return '❌ 봉인된 자물쇠는 웹버전에서 이용 가능합니다.\n\nhttps://rpgenius.kro.kr/sealed-lock';

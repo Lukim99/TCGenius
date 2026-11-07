@@ -22,6 +22,7 @@ const CP_ANCHORS = [[1, 10000], [10, 100000], [100, 1000000], [200, 10000000], [
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const pick = (list, random = Math.random) => list[Math.min(list.length - 1, Math.floor(random() * list.length))];
 const active = user => user?.paradise?.status === 'active' && user.field?.paradise === true;
+const heavenActive = user => user?.paradise?.status === 'active' && user.paradise.mode !== 'hell';
 const has = (run, id) => run.relics.includes(id);
 const log = (run, text) => { run.history.unshift({ floor: run.floor, text }); run.history.length = Math.min(60, run.history.length); };
 
@@ -1351,4 +1352,4 @@ function view(user, stats = rpg().calculateUserStats(user), slotEffects) {
     }
     return require('./paradise_hell').decorateView(result, user);
 }
-module.exports = { TICKET, MAX_FLOOR, MIN_LEVEL, TIME_LIMIT_MS, ULTIMATE_START_COOLDOWN_MS, CP_ANCHORS, AUGMENTS, RELICS, EVENTS, active, getResources, validateConfig, recommendedPower, enemyAttackInterval, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, rerollAugment, normalizeAugmentOffer, normalizeRelicOffer, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerRoutes, chooseRoute, offerRelics, chooseRelic, offerAugments, availableAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, dismiss, view, weeklyInfo, recordFloor, buildWeeklyRanking, remainingTime, isTimedOut, advanceTime };
+module.exports = { TICKET, MAX_FLOOR, MIN_LEVEL, TIME_LIMIT_MS, ULTIMATE_START_COOLDOWN_MS, CP_ANCHORS, AUGMENTS, RELICS, EVENTS, active, heavenActive, getResources, validateConfig, recommendedPower, enemyAttackInterval, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, rerollAugment, normalizeAugmentOffer, normalizeRelicOffer, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerRoutes, chooseRoute, offerRelics, chooseRelic, offerAugments, availableAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, dismiss, view, weeklyInfo, recordFloor, buildWeeklyRanking, remainingTime, isTimedOut, advanceTime };
