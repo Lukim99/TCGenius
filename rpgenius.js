@@ -3494,34 +3494,49 @@ function runCardCombine(user) {
     return lines.join('\n');
 }
 
-function getBulkCardCombineSelection(user, star, cardType, assist = null) {
-    const info = Number.isInteger(star) && getCardCombineInfo(star);
-    if (!info || !['일반', '전직', '각성'].includes(cardType)) return { error: '조합할 성급과 카드 종류를 선택해주세요.' };
-    const cards = (user.inventory && user.inventory.card || []).filter(card => Number(card.star || 0) === star && (card.type || '일반') === cardType && !card.locked);
-    const times = Math.floor(cards.length / 3);
+function getBulkCardCombineFilters(stars, cardTypes) {
+    stars = Array.isArray(stars) ? stars : [stars];
+    cardTypes = Array.isArray(cardTypes) ? cardTypes : [cardTypes];
+    const types = ['일반', '전직', '각성'];
+    if (!stars.length || stars.length > CARD_COMBINE_TABLE.length || stars.some(star => !Number.isInteger(star) || !getCardCombineInfo(star))
+        || new Set(stars).size !== stars.length || !cardTypes.length || cardTypes.length > types.length
+        || cardTypes.some(type => !types.includes(type)) || new Set(cardTypes).size !== cardTypes.length) return { error: '조합할 성급과 카드 종류를 선택해주세요.' };
+    return { stars: [...stars].sort((a, b) => a - b), cardTypes: types.filter(type => cardTypes.includes(type)) };
+}
+
+function getBulkCardCombineSelection(user, stars, cardTypes, assist = null) {
+    const filters = getBulkCardCombineFilters(stars, cardTypes);
+    if (filters.error) return filters;
+    const groups = [];
+    for (const star of filters.stars) for (const cardType of filters.cardTypes) {
+        const cards = (user.inventory?.card || []).filter(card => Number(card.star || 0) === star && (card.type || '일반') === cardType && !card.locked);
+        const times = Math.floor(cards.length / 3);
+        if (times) groups.push({ star, cardType, times, gold: times * getCardCombineInfo(star).gold, cards: cards.slice(0, times * 3) });
+    }
+    const times = groups.reduce((sum, group) => sum + group.times, 0);
     if (!times) return { error: '같은 성급·종류의 잠기지 않은 카드가 3장 이상 필요합니다.' };
     let support = null;
     if (assist != null) {
         if (typeof assist !== 'object' || Array.isArray(assist) || !Number.isSafeInteger(assist.itemId) || assist.itemId < 0) return { error: '사용할 보조 카드를 선택해주세요.' };
-        if (star === 11) return { error: '오메가 조합에는 보조 카드를 사용할 수 없습니다.' };
+        if (filters.stars.includes(11)) return { error: '오메가 조합에는 보조 카드를 사용할 수 없습니다.' };
         const item = getDataCache('Item', [])[assist.itemId];
-        if (item?.protect && Number(item.protect.star) === star && Number.isInteger(assist.protectIndex) && assist.protectIndex >= 0 && assist.protectIndex < 3) {
+        if (item?.protect && filters.stars.length === 1 && Number(item.protect.star) === filters.stars[0] && Number.isInteger(assist.protectIndex) && assist.protectIndex >= 0 && assist.protectIndex < 3) {
             support = { itemId: assist.itemId, kind: 'protect', name: item.name, protectIndex: assist.protectIndex, count: times };
         } else if (Number(item?.lucky) > 0 && assist.protectIndex == null) {
             support = { itemId: assist.itemId, kind: 'lucky', name: item.name, luckyRate: Number(item.lucky), count: times };
         } else return { error: '선택한 성급에 맞는 럭키 카드 또는 보호 대상을 선택해주세요.' };
         if (getInventoryItemCount(user, assist.itemId) < times) return { error: support.name + '가 부족합니다. 조합 ' + times + '회에 ' + times + '장이 필요합니다.' };
     }
-    return { star, cardType, times, gold: times * info.gold, cards: cards.slice(0, times * 3), assist: support };
+    return { ...filters, groups, times, gold: groups.reduce((sum, group) => sum + group.gold, 0), assist: support };
 }
 
-function runBulkCardCombine(user, star, cardType, assist = null) {
-    const selection = getBulkCardCombineSelection(user, star, cardType, assist);
+function runBulkCardCombine(user, stars, cardTypes, assist = null) {
+    const selection = getBulkCardCombineSelection(user, stars, cardTypes, assist);
     if (selection.error) return selection;
     if (Number(user.gold || 0) < selection.gold) return { error: '골드가 부족합니다. 필요 골드: ' + comma(selection.gold) };
     const results = [];
-    for (let i = 0; i < selection.cards.length; i += 3) {
-        const numbers = selection.cards.slice(i, i + 3).map(card => user.inventory.card.indexOf(card) + 1);
+    for (const group of selection.groups) for (let i = 0; i < group.cards.length; i += 3) {
+        const numbers = group.cards.slice(i, i + 3).map(card => user.inventory.card.indexOf(card) + 1);
         user.pendingAction = { type: '카드조합', numbers };
         const support = selection.assist;
         if (support?.kind === 'protect') Object.assign(user.pendingAction, { protectIndex: support.protectIndex, protectItemId: support.itemId });
@@ -3529,9 +3544,9 @@ function runBulkCardCombine(user, star, cardType, assist = null) {
         const message = runCardCombine(user);
         if (message.startsWith('❌')) throw new Error(message);
         const card = { ...user.inventory.card[user.inventory.card.length - 1] };
-        const success = star === 11 || card.star > star;
-        const preservedCard = !success && support?.kind === 'protect' ? { ...selection.cards[i + support.protectIndex] } : null;
-        results.push({ card, success, preservedCard });
+        const success = group.star === 11 || card.star > group.star;
+        const preservedCard = !success && support?.kind === 'protect' ? { ...group.cards[i + support.protectIndex] } : null;
+        results.push({ star: group.star, cardType: group.cardType, card, success, preservedCard });
     }
     return { times: selection.times, spentGold: selection.gold, assist: selection.assist, results };
 }
@@ -17720,6 +17735,7 @@ module.exports = {
     getRemainingCardInventorySpace,
     getCardInventoryState,
     getBulkCardCombineSelection,
+    getBulkCardCombineFilters,
     runBulkCardCombine,
     getTradeTicketItemId,
     getCardTicketCost,

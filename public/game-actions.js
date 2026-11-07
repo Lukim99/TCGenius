@@ -476,9 +476,16 @@ async function openBulkCombine() {
     try {
         const data = await api('/api/combine/cards');
         const grades = [...new Map(data.cards.filter(card => card.combinable).map(card => [card.star, card.starText])).entries()].sort((a, b) => a[0] - b[0]);
-        const grade = el('select', { 'aria-label': '일괄 조합 성급' }, ...grades.map(([value, label]) => el('option', { value }, label)));
-        const type = el('select', { 'aria-label': '일괄 조합 카드 종류' }, ...['일반', '전직', '각성'].map(value => el('option', { value }, value)));
+        const selectedGrades = new Set(grades.length ? [grades[0][0]] : []), selectedTypes = new Set(['일반']);
+        const multiChoices = (label, choices, selectedValues) => el('div', { class: 'game-choice-chips bulk-filter-chips', role: 'group', 'aria-label': label },
+            ...choices.map(([value, text]) => el('button', { type: 'button', 'aria-pressed': selectedValues.has(value), onclick: e => {
+                if (selectedValues.has(value)) selectedValues.delete(value); else selectedValues.add(value);
+                e.currentTarget.setAttribute('aria-pressed', selectedValues.has(value)); render();
+            } }, text)));
+        const grade = multiChoices('일괄 조합 성급', grades, selectedGrades);
+        const type = multiChoices('일괄 조합 카드 종류', ['일반', '전직', '각성'].map(value => [value, value]), selectedTypes);
         const summary = el('div', { class: 'bulk-combine-summary', 'aria-live': 'polite' });
+        const groupSummary = el('div', { class: 'bulk-combine-groups', 'aria-live': 'polite' });
         const materials = el('div', { class: 'bulk-combine-materials' });
         const materialLabel = el('summary', null, '재료 카드 확인');
         const supportOptions = el('div', { class: 'bulk-assist-items' });
@@ -492,16 +499,21 @@ async function openBulkCombine() {
         const assistBody = () => selectedAssist ? { itemId: selectedAssist.id, ...(mode.value === 'protect' ? { protectIndex: position.value } : {}) } : null;
         const render = () => {
             request = null;
-            const candidates = data.cards.filter(card => card.combinable && !card.locked && card.star === Number(grade.value) && card.type === type.value).sort((a, b) => a.number - b.number);
-            times = Math.floor(candidates.length / 3);
-            selected = candidates.slice(0, times * 3);
-            const omega = Number(grade.value) === 11;
-            if (omega) mode.value = 'none';
+            const groups = [];
+            for (const [star, label] of grades) if (selectedGrades.has(star)) for (const cardType of ['일반', '전직', '각성']) if (selectedTypes.has(cardType)) {
+                const candidates = data.cards.filter(card => card.combinable && !card.locked && card.star === star && card.type === cardType).sort((a, b) => a.number - b.number);
+                const count = Math.floor(candidates.length / 3);
+                if (count) groups.push({ star, label, cardType, times: count, cards: candidates.slice(0, count * 3), info: data.meta.table[star] });
+            }
+            times = groups.reduce((sum, group) => sum + group.times, 0);
+            selected = groups.flatMap(group => group.cards);
+            const omega = selectedGrades.has(11), singleGrade = selectedGrades.size === 1;
+            const incompatible = mode.value !== 'none' && (omega || mode.value === 'protect' && !singleGrade);
             [...mode.children].forEach((button, index) => {
-                button.disabled = omega && index > 0;
+                button.disabled = index > 0 && (omega || index === 2 && !singleGrade);
                 button.setAttribute('aria-pressed', ['none', 'lucky', 'protect'][index] === mode.value);
             });
-            const options = (data.meta.assists || []).filter(item => mode.value === 'lucky' ? item.luckyRate > 0 : mode.value === 'protect' && item.protectStar === Number(grade.value));
+            const options = incompatible ? [] : (data.meta.assists || []).filter(item => mode.value === 'lucky' ? item.luckyRate > 0 : mode.value === 'protect' && item.protectStar === [...selectedGrades][0]);
             selectedAssist = options.find(item => item.id === assistItemId) || options[0] || null;
             assistItemId = selectedAssist?.id ?? null;
             supportOptions.replaceChildren(...options.map(item => el('button', { type: 'button', class: 'bulk-assist-item', 'aria-pressed': item.id === assistItemId,
@@ -510,18 +522,25 @@ async function openBulkCombine() {
                 el('span', null, el('strong', null, item.name), el('small', null, '보유 ' + comma(item.count) + '장')))));
             supportOptions.hidden = mode.value === 'none';
             positionRow.hidden = mode.value !== 'protect';
-            const missing = mode.value !== 'none' && (!selectedAssist || selectedAssist.count < times);
-            supportInfo.replaceChildren(el('span', { class: missing ? 'err' : '' }, mode.value === 'none'
-                ? (omega ? '오메가 조합은 보조 카드 없이 진행합니다.' : '보조 카드 없이 기본 확률로 조합합니다.')
+            const missing = mode.value !== 'none' && (incompatible || !selectedAssist || selectedAssist.count < times);
+            supportInfo.replaceChildren(el('span', { class: missing ? 'err' : '' }, incompatible
+                ? (omega ? '오메가를 선택하면 보조 카드 없이 조합해야 합니다.' : '보호 카드를 사용하려면 성급을 하나만 선택해주세요.')
+                : mode.value === 'none' ? (omega ? '오메가 조합은 보조 카드 없이 진행합니다.' : '보조 카드 없이 조합합니다.')
                 : selectedAssist ? '필요 ' + times + '장 / 보유 ' + comma(selectedAssist.count) + '장' : '사용할 수 있는 ' + (mode.value === 'lucky' ? '럭키' : '해당 성급의 보호') + ' 카드가 없습니다.'),
                 ...(mode.value === 'none' ? [] : [el('small', null, '성공·실패와 관계없이 매 조합마다 1장씩 소모합니다.') ]));
-            const info = data.meta.table[grade.value];
-            cost = times * Number(info?.gold || 0);
-            const rate = Math.min(1, Number(info?.rate || 0) * (1 + Number(selectedAssist?.luckyRate || 0)));
+            cost = groups.reduce((sum, group) => sum + group.times * Number(group.info?.gold || 0), 0);
+            const petBonus = Number(data.meta.petBonus || 0);
+            for (const group of groups) group.rate = group.star === 11 ? 100 : Math.round(Math.min(1, Number(group.info?.rate || 0) * (1 + Number(selectedAssist?.luckyRate || 0)) + petBonus) * 1000) / 10;
+            const rates = groups.map(group => group.rate), low = Math.min(...rates), high = Math.max(...rates);
+            const rateText = !groups.length ? '—' : (low === high ? low : low + '–' + high) + '%';
             summary.replaceChildren(
                 el('div', null, el('span', null, '조합 횟수'), el('b', null, times + '회'), el('small', null, '재료 ' + selected.length + '장')),
                 el('div', null, el('span', null, '필요 골드'), gameGoldAmount(cost), el('small', { class: cost > data.meta.gold ? 'err' : '' }, '보유 ' + comma(data.meta.gold))),
-                el('div', null, el('span', null, '성공 확률'), el('b', null, (omega ? 100 : Math.round(rate * 1000) / 10) + '%'), el('small', null, info?.guarantee ? '확정 보정 ' + info.count + '/' + info.guarantee : '매 조합 기준')));
+                el('div', null, el('span', null, '성공 확률'), el('b', null, rateText), el('small', null, petBonus && groups.some(group => group.star !== 11) ? '펫 보너스 +' + Math.round(petBonus * 1000) / 10 + '%p 적용' : '매 조합 기준')));
+            groupSummary.replaceChildren(...groups.map(group => el('div', { class: 'bulk-combine-group' },
+                el('span', null, group.label + ' ' + group.cardType), el('span', null, group.times + '회'),
+                el('b', null, group.rate + '%'), el('small', null, group.info?.guarantee ? '확정 보정 ' + group.info.count + '/' + group.info.guarantee : ''))));
+            groupSummary.hidden = !groups.length;
             materialLabel.textContent = '재료 카드 확인 · ' + selected.length + '장';
             materials.replaceChildren(...Array.from({ length: times }, (_, index) => el('div', { class: 'bulk-material-batch' },
                 el('strong', null, (index + 1) + '회'), el('div', { class: 'bulk-material-trio' }, ...selected.slice(index * 3, index * 3 + 3).map((card, cardIndex) => {
@@ -534,15 +553,14 @@ async function openBulkCombine() {
             if (!times) materials.appendChild(el('p', { class: 'empty' }, '같은 성급·종류의 카드가 3장 이상 필요합니다.'));
             warning.hidden = !selected.some(card => card.special);
             submit.disabled = !times || cost > data.meta.gold || missing;
-            submit.textContent = missing ? '보조 카드 부족' : cost > data.meta.gold ? '골드 부족' : times + '회 일괄 조합';
+            submit.textContent = incompatible ? '보조 카드 확인' : missing ? '보조 카드 부족' : cost > data.meta.gold ? '골드 부족' : times + '회 일괄 조합';
         };
         const warning = el('p', { class: 'bulk-combine-warning err' }, '패션·스펙터 카드가 재료에 포함되어 사라질 수 있습니다.');
-        grade.onchange = type.onchange = render;
         submit.onclick = async () => {
             if (combineState.busy || submit.disabled || !times) return;
             const supportText = selectedAssist ? '\n' + selectedAssist.name + ' ' + times + '장 사용' + (mode.value === 'protect' ? ' · 각 묶음의 ' + (position.value + 1) + '번째 카드 보호' : '') : '';
             if (!await showConfirm(selected.length + '장의 재료와 ' + comma(cost) + ' 골드로 ' + times + '회 조합합니다.' + supportText + '\n조합할까요?', '조합')) return;
-            request ||= { requestId: crypto.randomUUID(), star: Number(grade.value), cardType: type.value, assist: assistBody(), version: data.cards[0]?.version, revision: data.meta.bulkRevision };
+            request ||= { requestId: crypto.randomUUID(), stars: [...selectedGrades], cardTypes: [...selectedTypes], assist: assistBody(), version: data.cards[0]?.version, revision: data.meta.bulkRevision };
             combineState.busy = true;
             shell.querySelectorAll('button,select').forEach(node => node.disabled = true);
             try {
@@ -571,9 +589,9 @@ async function openBulkCombine() {
             }
         };
         const shell = el('div', { class: 'bulk-combine-shell' },
-            el('div', { class: 'bulk-combine-controls' }, el('label', null, '성급', grade), el('label', null, '카드 종류', type)),
+            el('div', { class: 'bulk-combine-controls' }, el('div', { class: 'bulk-combine-filter' }, el('span', null, '성급 · 복수 선택'), grade), el('div', { class: 'bulk-combine-filter' }, el('span', null, '카드 종류 · 복수 선택'), type)),
             el('section', { class: 'bulk-combine-assist' }, el('div', { class: 'game-section-head' }, el('strong', null, '보조 카드'), el('span', null, '한 종류만 선택')), mode, supportOptions, positionRow, supportInfo),
-            summary, el('details', { class: 'bulk-material-preview' }, materialLabel, materials), warning,
+            summary, groupSummary, el('details', { class: 'bulk-material-preview' }, materialLabel, materials), warning,
             el('p', { class: 'game-note' }, '잠금 카드는 제외합니다. 획득·보존 카드는 이번 조합의 재료로 다시 쓰지 않습니다.'), submit);
         openRichModal('카드 일괄 조합', '같은 성급·종류의 카드를 3장씩 조합합니다.', [shell]);
         render();

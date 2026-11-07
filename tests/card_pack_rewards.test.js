@@ -497,6 +497,68 @@ test('확장은 가넷 부족·오래된 한도·동시 요청·저장 실패 �
     } finally { DynamoDBDocumentClient.prototype.send = original; }
 });
 
+test('일괄 조합은 유리사 2%p를 럭키 곱연산 이후 적용하고 만료된 펫은 제외한다', async () => {
+    const petId = rpg.getDataCache('Pet').findIndex(p => p?.name === '유의게임X 유리사');
+    const luckyId = rpg.getDataCache('Item').findIndex(item => item?.lucky === .3);
+    const originalEquipment = structuredClone((await rpg.getRPGUserByName(seed.name)).equipments);
+    try {
+        for (const lucky of [false, true]) for (const [active, offset, success] of [[true, .019, true], [true, .021, false], [false, .019, false]]) {
+            const value = await resetWebCards(Array.from({ length: 3 }, () => ({ id: 0, star: 5, type: '일반' })), {
+                cardCombineCounts: {}, equipments: { pet: [{ id: petId, level: 0, expireAt: active ? Date.now() + 60000 : 1 }] }
+            });
+            if (lucky) value.inventory.item = [{ id: luckyId, count: 1 }];
+            await value.save();
+            const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+            assert.equal(data.meta.petBonus, active ? .02 : 0);
+            const roll = rpg.getCardCombineInfo(5).rate * (lucky ? 1.3 : 1) + offset;
+            const result = await fixed(roll, () => post('/api/combine/bulk', { requestId: 'bulk-yurisa-boundary', stars: [5], cardTypes: ['일반'],
+                revision: 0, version: data.cards[0].version, assist: lucky ? { itemId: luckyId } : null }));
+            assert.equal(result.status, 200, JSON.stringify(result.data));
+            assert.equal(result.data.results[0].success, success);
+        }
+    } finally { const value = await rpg.getRPGUserByName(seed.name); value.equipments = originalEquipment; await value.save(); }
+});
+
+test('여러 성급과 종류의 일괄 조합은 처음 재료끼리만 묶고 총 비용·보조 카드·재시도를 한 번씩 처리한다', async () => {
+    const cards = (count, star, type) => Array.from({ length: count }, () => ({ id: 0, star, type }));
+    const value = await resetWebCards([...cards(7, 4, '일반'), ...cards(4, 5, '일반'), ...cards(3, 4, '전직'), ...cards(2, 5, '전직'),
+        ...cards(3, 5, '각성'), { id: 0, star: 4, type: '일반', locked: true }], { cardCombineCounts: {} });
+    const luckyId = rpg.getDataCache('Item').findIndex(item => item?.lucky === .3);
+    value.inventory.item = [{ id: luckyId, count: 4 }]; await value.save();
+    const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+    const body = { requestId: 'bulk-multiple-filters', stars: [5, 4], cardTypes: ['전직', '일반'], revision: 0, version: data.cards[0].version, assist: { itemId: luckyId } };
+    const result = await fixed(0, () => post('/api/combine/bulk', body));
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    assert.equal(result.data.times, 4);
+    assert.equal(result.data.spentGold, 3 * rpg.getCardCombineInfo(4).gold + rpg.getCardCombineInfo(5).gold);
+    assert.deepEqual(result.data.results.map(r => [r.star, r.cardType]), [[4, '일반'], [4, '일반'], [4, '전직'], [5, '일반']]);
+    const replay = await fixed(.99, () => post('/api/combine/bulk', { ...body, stars: [4, 5], cardTypes: ['일반', '전직'] }));
+    assert.equal(replay.status, 200); assert.deepEqual(replay.data.results, result.data.results);
+    assert.equal((await post('/api/combine/bulk', { ...body, stars: [4] })).status, 409);
+    const after = await rpg.getRPGUserByName(seed.name);
+    assert.equal(after.inventory.card.length, 12);
+    assert.equal(after.inventory.card.filter(c => c.locked).length, 1);
+    assert.equal(after.inventory.card.filter(c => c.type === '각성').length, 3);
+    assert.equal(rpg.getInventoryItemCount(after, luckyId), 0);
+    assert.equal(after.gold, 10000000 - result.data.spentGold);
+});
+
+test('여러 성급의 일괄 조합은 전체 비용·보조 재고와 선택값을 소모 전에 검증한다', async () => {
+    const luckyId = rpg.getDataCache('Item').findIndex(item => item?.lucky === .3);
+    const protectId = rpg.getDataCache('Item').findIndex(item => item?.protect?.star === 4);
+    for (const changes of [{ stars: [] }, { stars: [4, 4] }, { cardTypes: [] }, { cardTypes: ['일반', '일반'] },
+        { assist: { itemId: luckyId } }, { assist: { itemId: protectId, protectIndex: 0 } }, { gold: 0 }]) {
+        const value = await resetWebCards([4, 5].flatMap(star => Array.from({ length: 3 }, () => ({ id: 0, star, type: '일반' }))), { gold: changes.gold ?? 10000000 });
+        value.inventory.item = [{ id: luckyId, count: 1 }, { id: protectId, count: 2 }]; await value.save();
+        const snapshot = structuredClone(value.inventory), gold = value.gold;
+        const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+        const result = await post('/api/combine/bulk', { requestId: 'bulk-multiple-invalid', stars: [4, 5], cardTypes: ['일반'], revision: 0, version: data.cards[0].version, ...changes });
+        assert.equal(result.status, 400, JSON.stringify(result.data));
+        const after = await rpg.getRPGUserByName(seed.name);
+        assert.deepEqual(after.inventory, snapshot); assert.equal(after.gold, gold); assert.equal(after.bulkCombineReceipt, null);
+    }
+});
+
 test('일괄 조합은 선택 성급·종류만 처음 카드 3장씩 처리하고 잠금·나머지 카드와 보조 아이템을 보존한다', async () => {
     const cards = [...Array.from({ length: 7 }, (_, id) => ({ id: id % 3, star: 4, type: '일반' })),
         { id: 0, star: 4, type: '일반', locked: true }, { id: 1, star: 4, type: '전직' }, { id: 0, star: 5, type: '일반' }];

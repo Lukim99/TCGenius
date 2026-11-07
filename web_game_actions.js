@@ -170,20 +170,24 @@ function registerGameActionRoutes(server, deps) {
 
     route('post', '/api/combine/bulk', async (user, body) => {
         checkRequestId(body);
+        const filters = rpg.getBulkCardCombineFilters(body.stars ?? body.star, body.cardTypes ?? body.cardType);
+        if (filters.error) fail(filters.error);
         let receipt = user.bulkCombineReceipt;
         if (receipt?.requestId === body.requestId) {
-            if (body.star !== receipt.star || body.cardType !== receipt.cardType || (body.assist?.itemId ?? null) !== (receipt.assist?.itemId ?? null)
+            const previous = rpg.getBulkCardCombineFilters(receipt.stars ?? receipt.star, receipt.cardTypes ?? receipt.cardType);
+            if (JSON.stringify(filters) !== JSON.stringify(previous) || (body.assist?.itemId ?? null) !== (receipt.assist?.itemId ?? null)
                 || (body.assist?.protectIndex ?? null) !== (receipt.assist?.protectIndex ?? null)) fail('이전 조합 요청과 다릅니다.', 409);
         } else {
             if (!Number.isSafeInteger(body.revision) || body.revision !== Number(receipt?.revision || 0)) fail('일괄 조합 내역이 변경되었습니다. 화면을 다시 열어주세요.', 409);
             await rpg.stopFishingForCommand(user);
             assertVersion(user, 'cards', body.version);
-            const selection = rpg.getBulkCardCombineSelection(user, body.star, body.cardType, body.assist);
+            const selection = rpg.getBulkCardCombineSelection(user, filters.stars, filters.cardTypes, body.assist);
             if (selection.error) fail(selection.error);
             if (Number(user.gold || 0) < selection.gold) fail('골드가 부족합니다.');
-            const result = rpg.runBulkCardCombine(user, body.star, body.cardType, body.assist);
+            const result = rpg.runBulkCardCombine(user, filters.stars, filters.cardTypes, body.assist);
             if (result.error) fail(result.error);
-            receipt = user.bulkCombineReceipt = { ...result, star: body.star, cardType: body.cardType, requestId: body.requestId, revision: body.revision + 1 };
+            receipt = user.bulkCombineReceipt = { ...result, ...filters, star: filters.stars.length === 1 ? filters.stars[0] : null,
+                cardType: filters.cardTypes.length === 1 ? filters.cardTypes[0] : null, requestId: body.requestId, revision: body.revision + 1 };
         }
         const displayCard = card => card ? buildCards({ ...user, inventory: { ...user.inventory, card: [card] } })[0] : null;
         return { action: 'cards-bulk-combine', ...receipt, results: receipt.results.map(result => ({ ...result, card: displayCard(result.card), preservedCard: displayCard(result.preservedCard) })),
