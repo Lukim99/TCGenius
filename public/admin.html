@@ -293,6 +293,7 @@ details.collapsible .body{padding:12px}
 .qe-num{width:76px}
 </style>
 <link rel="stylesheet" href="/static/admin-workspace.css">
+<link rel="stylesheet" href="/static/admin-point-usage.css">
 </head>
 <body>
 <div class="app">
@@ -549,25 +550,99 @@ details.collapsible .body{padding:12px}
 
 <div class="panel" data-panel="pointlog"><section><h2>포인트 충전 로그</h2><div class="bar"><input id="pointLogFilter" placeholder="닉네임 검색" style="flex:1;min-width:220px"><button class="btn" id="pointLogReload">다시 불러오기</button><span class="muted" id="pointLogStatus"></span></div><div id="pointLogList" class="list" style="margin-top:14px"></div></section></div>
 
-<div class="panel" data-panel="pointusage"><section>
-  <h2>포인트 사용 통계</h2>
-  <p class="muted">한국 시간 기준 · 관리자 계정 제외 · 과거 복구분은 시각과 금액이 확인된 일부 내역만 포함합니다. 메일 포인트 선물은 이 통계에서 제외하며, 관리자 회수는 소비와 구분합니다.</p>
-  <form id="pointUsageForm" class="bar" style="align-items:end;flex-wrap:wrap">
-    <label>시작일 <input type="date" id="pointUsageFrom" required></label>
-    <label>종료일 <input type="date" id="pointUsageTo" required></label>
-    <label>구분 <select id="pointUsageKind"><option value="consumption">소비</option><option value="adjustment">관리자 회수·충전 취소</option><option value="reversal">취소 복구</option><option value="all">전체 기록</option></select></label>
-    <label>사용처 <select id="pointUsageCategory"><option value="">전체 사용처</option><option value="shop">상점</option><option value="personal_draw">퍼스널뽑기</option><option value="blessing">축복</option><option value="preset">프리셋</option><option value="admin">관리자 회수</option><option value="charge_cancel">충전 취소</option><option value="unclassified">미분류 차감</option></select></label>
-    <label>검색 <input id="pointUsageSearch" maxlength="100" placeholder="닉네임·상품명·계정 ID"></label>
-    <button class="btn primary" type="submit">조회</button>
+<div class="panel pu" data-panel="pointusage">
+  <form id="pointUsageForm" class="pu-card pu-filters" aria-label="조회 조건">
+    <div class="pu-range">
+      <div class="pu-presets" role="group" aria-label="빠른 기간 선택">
+        <button type="button" class="pu-chip" data-preset="today" aria-pressed="false">오늘</button>
+        <button type="button" class="pu-chip" data-preset="week" aria-pressed="false">최근 7일</button>
+        <button type="button" class="pu-chip" data-preset="days30" aria-pressed="false">최근 30일</button>
+        <button type="button" class="pu-chip" data-preset="month" aria-pressed="false">이번 달</button>
+        <button type="button" class="pu-chip" data-preset="lastMonth" aria-pressed="false">지난달</button>
+      </div>
+      <div class="pu-dates">
+        <label class="pu-field"><span>시작일</span><input type="date" id="puFrom" required></label>
+        <span class="pu-tilde" aria-hidden="true">~</span>
+        <label class="pu-field"><span>종료일</span><input type="date" id="puTo" required></label>
+        <button class="btn primary pu-submit" type="submit">조회</button>
+      </div>
+    </div>
+    <details class="pu-extra">
+      <summary>상세 필터 <span id="puFilterCount"></span></summary>
+      <div class="pu-refine">
+        <fieldset class="pu-kind">
+          <legend>구분</legend>
+          <div class="pu-seg">
+            <label><input type="radio" name="puKind" value="consumption" checked><span>소비</span></label>
+            <label><input type="radio" name="puKind" value="adjustment"><span>회수 및 충전 취소</span></label>
+            <label><input type="radio" name="puKind" value="reversal"><span>취소 복구</span></label>
+            <label><input type="radio" name="puKind" value="all"><span>전체</span></label>
+          </div>
+        </fieldset>
+        <label class="pu-field pu-category"><span>사용처</span>
+          <select id="puCategory">
+            <option value="">전체 사용처</option>
+            <option value="shop">상점</option>
+            <option value="personal_draw">퍼스널뽑기</option>
+            <option value="blessing">축복</option>
+            <option value="preset">프리셋</option>
+            <option value="admin">관리자 회수</option>
+            <option value="charge_cancel">충전 취소</option>
+            <option value="unclassified">미분류 차감</option>
+          </select>
+        </label>
+        <label class="pu-field pu-search"><span>검색</span><input type="search" id="puSearch" maxlength="100" placeholder="닉네임, 상품명, 계정 ID" autocomplete="off"></label>
+      </div>
+    </details>
   </form>
-  <p id="pointUsageStatus" class="muted" role="status" aria-live="polite"></p>
-  <div id="pointUsageSummary" class="bar" style="gap:24px;flex-wrap:wrap"></div>
-  <h3>날짜별</h3><div id="pointUsageDaily" style="overflow-x:auto"></div>
-  <h3>사용처별</h3><div id="pointUsageCategories" style="overflow-x:auto"></div>
-  <h3>상품·행동별</h3><div id="pointUsageProducts" style="overflow-x:auto"></div>
-  <h3>상세 사용 내역</h3><p class="muted">처리 건수에는 0P 새로고침도 포함됩니다. 상품 수량과 결제 횟수는 다를 수 있습니다.</p>
-  <div id="pointUsageEntries" style="overflow-x:auto"></div><div id="pointUsagePager" class="pager"></div>
-</section></div>
+
+  <div id="puStatus" class="pu-status" role="status" aria-live="polite"></div>
+
+  <div id="puReport" class="pu-report" hidden>
+    <p id="puPending" class="pu-notice" hidden></p>
+
+    <div class="pu-overview">
+      <section class="pu-card pu-total" aria-labelledby="puTotalLabel">
+        <div class="pu-total-main">
+          <p id="puPeriod" class="pu-period"></p>
+          <h2 id="puTotalLabel"></h2>
+          <p id="puTotal" class="pu-total-value"></p>
+          <p id="puTotalNote" class="pu-total-note" hidden>소비, 회수, 취소 복구 금액을 함께 합산한 값입니다.</p>
+        </div>
+        <dl id="puMetrics" class="pu-metrics"></dl>
+      </section>
+      <section id="puTrend" class="pu-card pu-trend" aria-labelledby="puTrendTitle">
+        <div class="pu-head"><h2 id="puTrendTitle">일별 추이</h2><p id="puReadout" class="pu-readout"></p></div>
+        <div id="puChart" class="pu-chart"></div>
+        <div id="puAxis" class="pu-axis" aria-hidden="true"></div>
+      </section>
+    </div>
+
+    <p id="puEmpty" class="pu-card pu-empty" hidden>조건에 맞는 기록이 없습니다. 기간이나 구분을 바꿔 다시 조회해 보세요.</p>
+
+    <div id="puBreakdown" class="pu-breakdown">
+      <section class="pu-card" aria-labelledby="puCatTitle">
+        <div class="pu-head"><h2 id="puCatTitle">사용처별</h2></div>
+        <ol id="puCats" class="pu-cats"></ol>
+      </section>
+      <section class="pu-card" aria-labelledby="puProdTitle">
+        <div class="pu-head"><h2 id="puProdTitle">상품별 순위</h2><span id="puProdMeta" class="pu-meta"></span></div>
+        <table class="pu-table">
+          <thead><tr><th scope="col" class="pu-rank">순위</th><th scope="col">상품</th><th scope="col" class="pu-num">수량</th><th scope="col" class="pu-num">금액</th><th scope="col" class="pu-num pu-c">건수</th><th scope="col" class="pu-num pu-c">이용자</th></tr></thead>
+          <tbody id="puProducts"></tbody>
+        </table>
+        <button type="button" id="puProdMore" class="pu-more" aria-expanded="false" hidden></button>
+      </section>
+    </div>
+
+    <section id="puEntriesCard" class="pu-card pu-entries" aria-labelledby="puEntriesTitle">
+      <div class="pu-head"><h2 id="puEntriesTitle" tabindex="-1">상세 내역</h2><span id="puEntriesMeta" class="pu-meta"></span></div>
+      <div class="pu-row pu-row-head" aria-hidden="true"><span>시각</span><span>닉네임</span><span>상품</span><span class="pu-num">수량</span><span class="pu-num">금액</span><span></span></div>
+      <div id="puEntries"></div>
+      <nav id="puPager" class="pu-pager" aria-label="상세 내역 페이지"></nav>
+    </section>
+  </div>
+</div>
 
 <div class="panel" data-panel="pitr">
   <section>

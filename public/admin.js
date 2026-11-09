@@ -2910,62 +2910,248 @@ if ($('#pointLogReload')) $('#pointLogReload').onclick = loadPointLog;
 if ($('#pointLogFilter')) $('#pointLogFilter').addEventListener('input', e => { pointLogFilter = e.target.value; PAGE_STATE.pointlog = 0; renderPointLog(); });
 TAB_LOADERS.pointlog = loadPointLog;
 
-// 포인트 사용 통계 — 서버 집계이며 상세 목록만 50건씩 가져온다.
-const POINT_USAGE_CATEGORIES = { shop: '상점', personal_draw: '퍼스널뽑기', blessing: '축복', preset: '프리셋', admin: '관리자 회수', charge_cancel: '충전 취소', unclassified: '미분류 차감' };
-const POINT_USAGE_KINDS = { consumption: '소비', adjustment: '회수', reversal: '복구' };
-let pointUsagePage = 0, pointUsageRequest = 0;
-function pointUsageTable(target, headings, rows) {
-    const box = $(target); box.replaceChildren();
-    if (!rows.length) { box.appendChild(el('p', { class: 'empty' }, '해당 조건의 기록이 없습니다.')); return; }
-    const table = el('table', { style: 'width:100%;border-collapse:collapse;text-align:left;white-space:nowrap' });
-    table.appendChild(el('thead', {}, el('tr', {}, headings.map(h => el('th', { style: 'padding:10px;border-bottom:1px solid var(--line)' }, h)))));
-    table.appendChild(el('tbody', {}, rows.map(row => el('tr', {}, row.map(value => el('td', { style: 'padding:10px;border-bottom:1px solid var(--line)' }, value))))));
-    box.appendChild(table);
+// 포인트 사용 통계: 집계는 조회 조건 전체 기준이고, 상세 내역만 50건씩 가져온다.
+const PU_CATEGORIES = { shop: '상점', personal_draw: '퍼스널뽑기', blessing: '축복', preset: '프리셋', admin: '관리자 회수', charge_cancel: '충전 취소', unclassified: '미분류 차감' };
+const PU_KINDS = { consumption: '소비', adjustment: '회수', reversal: '취소 복구' };
+const PU_TOTAL_LABELS = { consumption: '총 소비', adjustment: '총 회수', reversal: '총 취소 복구', all: '전체 기록 합계' };
+const PU_PAGE_SIZE = 50, PU_TOP = 10;
+const PU_PRESETS = {
+    today: t => [t, t],
+    week: t => [puShift(t, -6), t],
+    days30: t => [puShift(t, -29), t],
+    month: t => [t.slice(0, 8) + '01', t],
+    lastMonth: t => { const end = puShift(t.slice(0, 8) + '01', -1); return [end.slice(0, 8) + '01', end]; },
+};
+// details에서 사람이 읽을 항목만 고른다. 그 밖의 키와 기록 출처는 화면에 내보내지 않는다.
+const PU_DETAIL_FIELDS = [
+    ['unitPrice', '개당 가격', v => puP(v)],
+    ['rewardQuantity', '지급 수량', v => comma(v) + '개'],
+    ['openedCount', '열린 칸', v => comma(v) + '칸'],
+    ['bonusCount', '보너스 칸', v => comma(v) + '칸'],
+    ['durationDays', '사용 기간', v => comma(v) + '일'],
+    ['expiresAt', '축복 만료', v => puTime(v, true)],
+];
+const PU_TIME = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+const pu = { req: 0, key: '', products: [], allProducts: false };
+
+const puP = n => comma(n ?? 0) + ' P';
+const puText = s => String(s ?? '').replace(/ *[\u00b7\u318d\u30fb\u2022] *| +[\u2013\u2014\u3161] +/g, ' ').trim();
+const puCat = c => PU_CATEGORIES[c] || puText(c) || '미분류';
+const puName = r => puText(r.product_name) || puText(r.product_id) || puCat(r.category);
+const puToday = () => new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+const puShift = (day, n) => { const d = new Date(day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const puDay = (day, year) => (year ? day.slice(0, 4) + '년 ' : '') + Number(day.slice(5, 7)) + '월 ' + Number(day.slice(8, 10)) + '일';
+const puByAmount = rows => [...(rows || [])].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || b.count - a.count);
+
+function puTime(value, long) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return puText(value);
+    const p = Object.fromEntries(PU_TIME.formatToParts(date).map(part => [part.type, part.value]));
+    const clock = `${p.hour}:${p.minute}:${p.second}`;
+    return long ? `${p.year}년 ${Number(p.month)}월 ${Number(p.day)}일 ${clock}` : `${p.month}.${p.day} ${clock}`;
 }
-async function loadPointUsage(page = 0) {
-    const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
-    if (!$('#pointUsageFrom').value) $('#pointUsageFrom').value = today.slice(0, 7) + '-01';
-    if (!$('#pointUsageTo').value) $('#pointUsageTo').value = today;
-    const request = ++pointUsageRequest;
-    const query = new URLSearchParams({ from: $('#pointUsageFrom').value, to: $('#pointUsageTo').value,
-        kind: $('#pointUsageKind').value, category: $('#pointUsageCategory').value, search: $('#pointUsageSearch').value.trim(), page: String(page) });
-    $('#pointUsageStatus').textContent = '사용 내역을 불러오는 중...';
+
+function puStatus(text, isError, retry) {
+    const box = $('#puStatus');
+    box.classList.toggle('is-error', !!isError);
+    box.replaceChildren(...(text ? [el('span', {}, text)] : []), ...(retry ? [el('button', { type: 'button', class: 'btn sm', onclick: retry }, '다시 시도')] : []));
+}
+
+function puMarkPreset() {
+    const today = puToday(), range = $('#puFrom').value + '/' + $('#puTo').value;
+    $$('.pu [data-preset]').forEach(b => b.setAttribute('aria-pressed', String(PU_PRESETS[b.dataset.preset](today).join('/') === range)));
+}
+
+async function loadPointUsage(page = 0, force = false) {
+    const from = $('#puFrom'), to = $('#puTo'), today = puToday(), request = ++pu.req;
+    from.max = to.max = today;
+    if (!from.value) from.value = today.slice(0, 8) + '01';
+    if (!to.value) to.value = today;
+    puMarkPreset();
+    if (from.value > to.value) {
+        $('#puReport').hidden = true;
+        $('#puReport').removeAttribute('aria-busy');
+        return puStatus('시작일이 종료일보다 늦습니다. 기간을 다시 선택하세요.', true);
+    }
+    const query = new URLSearchParams({ from: from.value, to: to.value, kind: $('.pu input[name=puKind]:checked').value,
+        category: $('#puCategory').value, search: $('#puSearch').value.trim() });
+    const filterCount = Number(query.get('kind') !== 'consumption') + Number(!!query.get('category')) + Number(!!query.get('search'));
+    $('#puFilterCount').textContent = filterCount ? filterCount + '개 적용' : '';
+    const key = query.toString(), fresh = force || key !== pu.key;
+    if (fresh) page = 0;
+    if (fresh) $('#puReport').hidden = true;
+    query.set('page', String(page));
+    $('#puReport').setAttribute('aria-busy', 'true');
+    puStatus(fresh ? '통계를 불러오는 중입니다.' : '상세 내역을 불러오는 중입니다.');
     try {
         const data = await api('/api/admin/point-usage?' + query);
-        if (request !== pointUsageRequest) return;
-        pointUsagePage = page;
-        const pending = Number(data.delivery?.pending || 0);
-        const first = data.firstRecordedAt ? new Date(data.firstRecordedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '아직 기록 없음';
-        $('#pointUsageStatus').textContent = '관리자 제외 · 확인된 첫 기록: ' + first + (pending ? ' · 전송 대기 ' + comma(pending) + '건: 전송 후 통계에 반영됩니다.' : ' · 전송 대기 없음');
-        const amountLabel = { consumption: '소비액', adjustment: '회수액', reversal: '복구액', all: '기록 금액' }[query.get('kind')];
-        $('#pointUsageSummary').replaceChildren(...[
-            amountLabel + ' ' + comma(data.summary.amount) + ' P', '처리 ' + comma(data.summary.count) + '건',
-            ...(query.get('kind') === 'consumption' ? ['유료 소비 ' + comma(data.summary.paidCount) + '건'] : []),
-            '이용자 ' + comma(data.summary.users) + '명', '과거 복구 ' + comma(data.summary.recoveredCount || 0) + '건'
-        ].map(text => el('strong', { style: 'font-size:18px;padding:12px 0' }, text)));
-        const category = value => POINT_USAGE_CATEGORIES[value] || value;
-        const stats = row => [comma(row.amount) + ' P', comma(row.count), comma(row.users)];
-        pointUsageTable('#pointUsageDaily', ['날짜 (KST)', amountLabel, '건수', '이용자'], data.daily.map(row => [row.date, ...stats(row)]));
-        pointUsageTable('#pointUsageCategories', ['사용처', amountLabel, '건수', '이용자'], data.categories.map(row => [category(row.category), ...stats(row)]));
-        pointUsageTable('#pointUsageProducts', ['사용처', '상품·행동', '수량', amountLabel, '건수', '이용자'], data.products.map(row => [category(row.category), row.product_name, comma(row.quantity), ...stats(row)]));
-        pointUsageTable('#pointUsageEntries', ['일시 (KST)', '기록 방식', '닉네임', '구분', '사용처', '상품·행동', '수량', '금액', '잔액 전 → 후', '세부 정보'], data.entries.map(row => {
-            const detail = el('details', {}, el('summary', {}, '자세히'), el('pre', { style: 'white-space:pre-wrap;max-width:420px;font-size:12px' }, JSON.stringify({ transactionId: row.id, accountId: row.user_id, source: row.source, ...row.details }, null, 2)));
-            return [new Date(row.occurred_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }), row.source === 'backfill' ? '과거 복구' : '자동 기록', row.nickname, POINT_USAGE_KINDS[row.kind] || row.kind,
-                category(row.category), row.product_name, comma(row.quantity), comma(row.amount) + ' P', row.balance_before == null || row.balance_after == null ? '미확인' : comma(row.balance_before) + ' → ' + comma(row.balance_after), detail];
-        }));
-        const pages = Math.max(1, Math.ceil(Number(data.summary.count) / 50));
-        $('#pointUsagePager').replaceChildren(
-            el('button', { class: 'btn', disabled: page === 0, onclick: () => loadPointUsage(pointUsagePage - 1) }, '이전'),
-            el('span', {}, (page + 1) + ' / ' + pages),
-            el('button', { class: 'btn', disabled: page + 1 >= pages, onclick: () => loadPointUsage(pointUsagePage + 1) }, '다음')
-        );
+        if (request !== pu.req) return;
+        pu.key = key;
+        puStatus('');
+        puRender(data, query);
+        puEntries(data.entries);
+        puPager(Number(data.summary?.count) || 0, page);
     } catch (error) {
-        if (request !== pointUsageRequest) return;
-        $('#pointUsageStatus').textContent = error.message;
-        ['Summary', 'Daily', 'Categories', 'Products', 'Entries', 'Pager'].forEach(key => $('#pointUsage' + key).replaceChildren());
+        if (request !== pu.req) return;
+        pu.key = '';
+        $('#puReport').hidden = true;
+        puStatus(error.message || '통계를 불러오지 못했습니다.', true, () => loadPointUsage(0, true));
+    } finally {
+        if (request === pu.req) $('#puReport').removeAttribute('aria-busy');
     }
 }
-if ($('#pointUsageForm')) $('#pointUsageForm').onsubmit = event => { event.preventDefault(); loadPointUsage(0); };
+
+function puRender(data, query) {
+    const kind = query.get('kind'), from = query.get('from'), to = query.get('to'), s = data.summary || {};
+    const count = Number(s.count) || 0, users = Number(s.users) || 0, pending = Number(data.delivery?.pending) || 0;
+    const withYear = from.slice(0, 4) !== to.slice(0, 4) || from.slice(0, 4) !== puToday().slice(0, 4);
+    const span = Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1;
+    $('#puReport').hidden = false;
+    $('#puPending').hidden = !pending;
+    $('#puPending').textContent = `전송 대기 중인 기록 ${comma(pending)}건은 아직 통계에 포함되지 않았습니다.`;
+    $('#puPeriod').textContent = from === to ? puDay(from, withYear) : `${puDay(from, withYear)} ~ ${puDay(to, withYear)}, ${comma(span)}일간`;
+    $('#puTotalLabel').textContent = PU_TOTAL_LABELS[kind] || '합계';
+    $('#puTotal').replaceChildren(comma(s.amount ?? 0), el('span', {}, 'P'));
+    $('#puTotalNote').hidden = kind !== 'all';
+    const consumption = kind === 'consumption';
+    $('#puMetrics').replaceChildren(...[
+        ['건수', comma(count) + '건'],
+        consumption && ['유료 결제', comma(s.paidCount ?? 0) + '건'],
+        ['이용자', comma(users) + '명'],
+        consumption && users > 0 && ['1인 평균', puP(Math.round(Number(s.amount) / users))],
+    ].filter(Boolean).map(([label, value]) => el('div', {}, el('dt', {}, label), el('dd', {}, value))));
+    $('#puEmpty').hidden = count > 0;
+    $('#puBreakdown').hidden = $('#puEntriesCard').hidden = count === 0;
+    puEnsureCategories(data.categories);
+    puTrend(data.daily, from, to, count > 0);
+    puCategories(data.categories, query.get('category'));
+    pu.products = puByAmount(data.products);
+    pu.allProducts = false;
+    puProducts();
+}
+
+function puEnsureCategories(rows) {
+    const select = $('#puCategory'), known = new Set([...select.options].map(option => option.value));
+    for (const r of rows || []) if (r.category && !known.has(r.category)) { known.add(r.category); select.appendChild(el('option', { value: r.category }, puCat(r.category))); }
+}
+
+function puTrend(daily, from, to, visible) {
+    const map = new Map((daily || []).map(d => [d.date, d])), days = [];
+    for (let d = from; d <= to; d = puShift(d, 1)) days.push(map.get(d) || { date: d, amount: 0, count: 0, users: 0 });
+    // 기간이 길면 월 단위로 묶는다. 이용자 수는 날짜별로 더할 수 없으므로 표시하지 않는다.
+    const monthly = days.length > 92, bins = monthly ? [] : days;
+    if (monthly) for (const d of days) {
+        const month = d.date.slice(0, 7), last = bins[bins.length - 1];
+        if (last && last.date === month) { last.amount += Number(d.amount) || 0; last.count += Number(d.count) || 0; }
+        else bins.push({ date: month, amount: Number(d.amount) || 0, count: Number(d.count) || 0 });
+    }
+    $('#puTrend').hidden = !visible || bins.length < 2;
+    if ($('#puTrend').hidden) return;
+    $('#puTrendTitle').textContent = monthly ? '월별 추이' : '일별 추이';
+    const label = b => monthly ? `${b.date.slice(0, 4)}년 ${Number(b.date.slice(5, 7))}월` : puDay(b.date);
+    const max = Math.max(...bins.map(b => Math.abs(b.amount))), signed = bins.some(b => b.amount < 0);
+    $('#puChart').classList.toggle('has-negative', signed);
+    const peak = bins.reduce((top, b) => Math.abs(b.amount) > Math.abs(top.amount) ? b : top);
+    const show = (b, prefix) => $('#puReadout').replaceChildren(...[el('span', { class: 'pu-mut' }, prefix + label(b)), el('strong', {}, puP(b.amount)),
+        el('span', {}, comma(b.count) + '건'), b.users != null ? el('span', {}, comma(b.users) + '명') : null].filter(Boolean));
+    const rest = () => max ? show(peak, signed ? '최대 변동 ' : '최고 ') : $('#puReadout').replaceChildren(el('span', { class: 'pu-mut' }, '기간 내 금액이 모두 0 P입니다.'));
+    $('#puChart').replaceChildren(...bins.map(b => el('button', {
+        type: 'button',
+        class: 'pu-bar' + (b === peak && max ? ' peak' : '') + (Number(b.amount) < 0 ? ' neg' : '') + (Number(b.amount) ? '' : ' zero'),
+        'aria-label': `${label(b)} ${puP(b.amount)}, ${comma(b.count)}건. 이 기간만 조회`,
+        onmouseenter: () => show(b, ''), onfocus: () => show(b, ''), onmouseleave: rest, onblur: rest,
+        onclick: () => {
+            const start = monthly ? b.date + '-01' : b.date, end = monthly ? puShift(puShift(b.date + '-28', 4).slice(0, 8) + '01', -1) : b.date;
+            $('#puFrom').value = start < from ? from : start;
+            $('#puTo').value = end > to ? to : end;
+            loadPointUsage(0);
+        },
+    }, el('i', { style: { height: (max ? Math.abs(b.amount) / max * (signed ? 50 : 100) : 0) + '%' } }))));
+    $('#puAxis').replaceChildren(el('span', {}, label(bins[0])), el('span', {}, label(bins[bins.length - 1])));
+    rest();
+}
+
+function puCategories(rows, selected) {
+    rows = puByAmount(rows);
+    const max = Math.max(0, ...rows.map(r => Math.abs(r.amount))), total = rows.reduce((sum, r) => sum + Math.abs(r.amount), 0);
+    const showShare = rows.every(r => r.amount >= 0);
+    $('#puCats').replaceChildren(...rows.map(r => el('li', {}, el('button', {
+        type: 'button', class: 'pu-cat', 'aria-pressed': String(r.category === selected),
+        onclick: () => { $('#puCategory').value = r.category === selected ? '' : r.category; loadPointUsage(0); },
+    },
+        el('span', { class: 'pu-cat-name' }, puCat(r.category)),
+        el('span', { class: 'pu-num pu-strong' }, puP(r.amount)),
+        el('span', { class: 'pu-track', 'aria-hidden': 'true' }, el('i', { style: { width: (max ? Math.abs(r.amount) / max * 100 : 0) + '%' } })),
+        el('span', { class: 'pu-sub' }, el('span', {}, comma(r.count) + '건'), el('span', {}, comma(r.users) + '명'),
+            showShare && total ? el('span', {}, (Math.abs(r.amount) / total * 100).toFixed(1) + '%') : null)))));
+}
+
+function puProducts() {
+    const rows = pu.products, shown = pu.allProducts ? rows : rows.slice(0, PU_TOP), more = $('#puProdMore');
+    $('#puProdMeta').textContent = rows.length ? `전체 ${comma(rows.length)}개` : '';
+    $('#puProducts').replaceChildren(...shown.map((r, i) => el('tr', {},
+        el('td', { class: 'pu-rank' }, String(i + 1)),
+        el('td', {}, el('span', { class: 'pu-name' }, puName(r)), el('span', { class: 'pu-sub' }, el('span', {}, puCat(r.category)),
+            el('span', { class: 'pu-m' }, comma(r.count) + '건'), el('span', { class: 'pu-m' }, comma(r.users) + '명'))),
+        el('td', { class: 'pu-num' }, r.quantity == null ? '' : comma(r.quantity)),
+        el('td', { class: 'pu-num pu-strong' }, puP(r.amount)),
+        el('td', { class: 'pu-num pu-c' }, comma(r.count)),
+        el('td', { class: 'pu-num pu-c' }, comma(r.users)))));
+    more.hidden = rows.length <= PU_TOP;
+    more.textContent = pu.allProducts ? `상위 ${PU_TOP}개만 보기` : `전체 ${comma(rows.length)}개 보기`;
+    more.setAttribute('aria-expanded', String(pu.allProducts));
+}
+
+function puEntries(rows) {
+    $('#puEntries').replaceChildren(...(rows?.length ? rows.map(r => el('details', { class: 'pu-entry' },
+        el('summary', { class: 'pu-row' },
+            el('span', { class: 'pu-time' }, puTime(r.occurred_at)),
+            el('span', { class: 'pu-nick' }, String(r.nickname ?? r.user_id ?? '')),
+            el('span', { class: 'pu-prod' }, r.kind !== 'consumption' ? el('span', { class: 'pu-kind-tag' }, PU_KINDS[r.kind] || puText(r.kind)) : null,
+                el('span', { class: 'pu-name' }, puName(r)), el('span', { class: 'pu-sub' }, puCat(r.category))),
+            el('span', { class: 'pu-num pu-q' }, r.quantity == null ? '' : comma(r.quantity)),
+            el('span', { class: 'pu-num pu-strong pu-amt' }, puP(r.amount))),
+        puDetail(r))) : [el('p', { class: 'pu-empty' }, '이 페이지에 표시할 내역이 없습니다.')]));
+}
+
+function puDetail(r) {
+    const d = r.details && typeof r.details === 'object' ? r.details : {};
+    const items = [['일시', puTime(r.occurred_at, true)], ['계정 ID', String(r.user_id ?? '')], ['구분', PU_KINDS[r.kind] || puText(r.kind)],
+        ['사용처', puCat(r.category)], ['상품', puName(r)], r.quantity != null && ['수량', comma(r.quantity)], ['금액', puP(r.amount)],
+        r.balance_before != null && r.balance_after != null && ['잔액', `${puP(r.balance_before)} → ${puP(r.balance_after)}`]];
+    for (const [key, label, format] of PU_DETAIL_FIELDS) {
+        if (d[key] != null) items.push([label, format(d[key])]);
+    }
+    const rewards = Array.isArray(d.rewards) ? d.rewards.filter(x => x.name) : [];
+    return el('div', { class: 'pu-detail' },
+        el('dl', {}, items.filter(Boolean).map(([label, value]) => el('div', {}, el('dt', {}, label), el('dd', {}, value)))),
+        rewards.length ? el('div', { class: 'pu-rewards' }, el('h3', {}, '획득 보상'),
+            el('ul', {}, rewards.map(x => el('li', {}, el('span', {}, x.bonus ? el('span', { class: 'pu-kind-tag' }, '보너스') : null, puText(x.name)),
+                x.count != null ? el('span', { class: 'pu-num' }, comma(x.count) + '개') : null)))) : null);
+}
+
+function puPager(count, page) {
+    const pages = Math.max(1, Math.ceil(count / PU_PAGE_SIZE));
+    const go = next => loadPointUsage(next).then(() => $('#puEntriesTitle').focus());
+    $('#puEntriesMeta').textContent = count ? `${comma(count)}건` : '';
+    $('#puPager').hidden = pages < 2;
+    $('#puPager').replaceChildren(
+        el('button', { type: 'button', class: 'btn sm', disabled: page === 0, onclick: () => go(page - 1) }, '이전'),
+        el('span', {}, `${comma(page + 1)} / ${comma(pages)} 페이지`),
+        el('button', { type: 'button', class: 'btn sm', disabled: page + 1 >= pages, onclick: () => go(page + 1) }, '다음'));
+}
+
+if ($('#pointUsageForm')) {
+    $('#pointUsageForm').onsubmit = event => { event.preventDefault(); loadPointUsage(0, true); };
+    $$('.pu [data-preset]').forEach(button => button.onclick = () => {
+        [$('#puFrom').value, $('#puTo').value] = PU_PRESETS[button.dataset.preset](puToday());
+        loadPointUsage(0);
+    });
+    $$('.pu input[name=puKind]').forEach(radio => radio.onchange = () => loadPointUsage(0));
+    $('#puCategory').onchange = () => loadPointUsage(0);
+    $('#puFrom').oninput = $('#puTo').oninput = puMarkPreset;
+    $('#puProdMore').onclick = () => { pu.allProducts = !pu.allProducts; puProducts(); };
+}
 TAB_LOADERS.pointusage = () => loadPointUsage(0);
 
 // ============================================================================
