@@ -9,15 +9,17 @@ const MAX_FLOOR = 999;
 const MIN_LEVEL = 141;
 const JUDGE_MIN_FLOOR = 150;
 const ADVANCED_RELIC_CHANCE = .08;
-const TIME_LIMIT_MS = 20 * 60 * 1000;
+const TIME_LIMIT_MS = 15 * 60 * 1000;
+// true로 바꾸면 증강·유물·갈림길·이벤트 선택 중 시간 정지를 다시 활성화한다.
+const PAUSE_TIMER_OUTSIDE_COMBAT = false;
 const ULTIMATE_START_COOLDOWN_MS = 10000;
 const progression = require('./paradise_progression');
 const routeMechanics = require('./paradise_routes');
 const cardContracts = require('./paradise_contracts');
 const features = require('./paradise_features');
 const stones = require('./paradise_stones');
-const timeLimit = run => TIME_LIMIT_MS + (progression.has(run, 'extraTime') ? 5 * 60 * 1000 : 0);
-const timerPaused = run => ['augment', 'relic', 'route', 'event', 'ended'].includes(run.phase);
+const timeLimit = run => TIME_LIMIT_MS + (progression.has(run, 'extraTime') ? 3 * 60 * 1000 : 0);
+const timerPaused = run => run.phase === 'ended' || PAUSE_TIMER_OUTSIDE_COMBAT && ['augment', 'relic', 'route', 'event'].includes(run.phase);
 const CP_ANCHORS = [[1, 10000], [10, 100000], [100, 1000000], [200, 10000000], [300, 30000000], [400, 90000000], [500, 200000000], [600, 500000000], [700, 1000000000], [800, 3000000000], [900, 5000000000], [999, 10000000000]];
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const pick = (list, random = Math.random) => list[Math.min(list.length - 1, Math.floor(random() * list.length))];
@@ -28,8 +30,9 @@ const log = (run, text) => { run.history.unshift({ floor: run.floor, text }); ru
 
 function remainingTime(run, now = Date.now()) {
     if (!run?.clock) return timeLimit(run);
-    const extension = run.clock.limitMs ? 0 : TIME_LIMIT_MS - 15 * 60 * 1000;
-    return Math.max(0, run.clock.remainingMs + extension - (run.clock.paused || run.status !== 'active' ? 0 : Math.max(0, now - run.clock.updatedAt)));
+    // 저장된 20/25분 시계도 새 제한으로 한 번만 맞춘다. 구형 시계는 원래 15분이었다.
+    const adjustment = run.status === 'active' ? timeLimit(run) - (run.clock.limitMs || 15 * 60 * 1000) : 0;
+    return Math.max(0, run.clock.remainingMs + adjustment - (run.clock.paused || run.status !== 'active' ? 0 : Math.max(0, now - run.clock.updatedAt)));
 }
 function setPhase(user, phase) {
     const run = user.paradise, now = Date.now();
@@ -45,11 +48,10 @@ function advanceTime(user) {
     if (run.phase === 'event' && run.event?.id === 'collapse' && (run.riftDefeated || has(run, 'riftHeart'))) {
         if (collapseEncounter(user)) { run.revision++; return true; }
     }
-    // 기존 15분 탐험에는 남은 시간에 5분을 한 번만 더한다.
-    if (!run.clock?.limitMs) { setPhase(user, run.phase); run.revision++; return true; }
-    const pauseChanged = run.clock.paused !== timerPaused(run);
-    if (pauseChanged) { setPhase(user, run.phase); run.revision++; }
-    if (!isTimedOut(user)) return pauseChanged;
+    // 이전에 정지했던 시간은 소급 차감하지 않고, 동기화 시점부터 새 규칙으로 흐른다.
+    const clockChanged = run.clock?.limitMs !== timeLimit(run) || run.clock.paused !== timerPaused(run);
+    if (clockChanged) { setPhase(user, run.phase); run.revision++; }
+    if (!isTimedOut(user)) return clockChanged;
     finish(user, 'timedOut');
     const result = claim(user);
     if (result.error) run.timeoutClaimError = result.error;

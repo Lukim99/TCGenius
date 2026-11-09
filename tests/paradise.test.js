@@ -1085,6 +1085,8 @@ test('천상 도감은 유물과 모든 증강을 제공하되 등장 조건 안
     assert.equal(result.data.augments.length, 465);
     assert.equal(result.data.traits.length, 47);
     assert.equal(result.data.traits.find(trait => trait.id === 'halfSteps').name, '느린 순례');
+    assert.match(result.data.traits.find(trait => trait.id === 'halfSteps').desc, /2층 덜/);
+    assert.match(result.data.traits.find(trait => trait.id === 'extraTime').desc, /3분/);
     assert.equal(result.data.augments.filter(a => a.category === 'stone').length, 109);
     assert.equal(result.data.augments.filter(a => a.equipment).length, 72);
     // 효과가 발동하는 조건은 설명하되 선택지의 등장 조건은 효과 문구에서 숨긴다.
@@ -1894,51 +1896,53 @@ test('변경 전에 확정한 주간 정산은 기존 참가상과 운영 보상
     persisted.delete(name); delete data['ParadiseSettlement:' + week];
 });
 
-test('20분은 전투와 퍼즐에서 흐르고 증강, 길, 이벤트 선택과 재접속 중에는 멈춘다', async t => {
+test('15분은 전투·증강·갈림길·이벤트·퍼즐과 재접속 중에도 계속 흐른다', async t => {
     const user = await reset();
     let now = Date.now(); t.mock.method(Date, 'now', () => now);
     corridor.enter(user, () => .99);
-    assert.equal(corridor.view(user).run.timer.remainingMs, 1200000);
+    assert.deepEqual(corridor.view(user).run.timer, { remainingMs: 900000, paused: false });
     now += 60000; corridor.victory(user, () => .99);
-    assert.deepEqual(corridor.view(user).run.timer, { remainingMs: 1140000, paused: true });
+    assert.deepEqual(corridor.view(user).run.timer, { remainingMs: 840000, paused: false });
     const round = user.paradise.offerId;
-    now += 3600000;
+    now += 60000;
     assert.equal(corridor.rerollAugment(user, user.paradise.choices[0], () => .4).error, undefined);
     assert.equal(user.paradise.offerId, round);
-    assert.equal(corridor.remainingTime(structuredClone(user.paradise)), 1140000);
+    assert.equal(corridor.remainingTime(structuredClone(user.paradise)), 780000);
     assert.equal(corridor.advanceTime(user), false);
     user.paradise.choices = ['firstStrike']; corridor.chooseAugment(user, 'firstStrike', () => 0);
     assert.equal(user.paradise.phase, 'route');
-    assert.equal(corridor.view(user).run.timer.paused, true);
-    now += 600000; assert.equal(corridor.remainingTime(user.paradise), 1140000);
+    assert.equal(corridor.view(user).run.timer.paused, false);
+    now += 60000; assert.equal(corridor.remainingTime(user.paradise), 720000);
     user.paradise.routes[0].kind = 'event'; delete user.paradise.routes[0].gimmick;
     corridor.chooseRoute(user, user.paradise.routes[0].id, () => 0);
-    assert.equal(user.paradise.phase, 'event'); assert.equal(corridor.view(user).run.timer.paused, true);
-    await user.save(); now += 600000;
+    assert.equal(user.paradise.phase, 'event'); assert.equal(corridor.view(user).run.timer.paused, false);
+    await user.save(); now += 60000;
     const restored = (await request('/api/paradise')).data;
-    assert.deepEqual(restored.run.timer, { remainingMs: 1140000, paused: true });
+    assert.deepEqual(restored.run.timer, { remainingMs: 660000, paused: false });
     now += 20000; forceEvent(user, 'puzzle'); corridor.chooseEvent(user, 'solve');
     assert.equal(corridor.view(user).run.timer.paused, false);
-    now += 10000;
-    corridor.answerPuzzle(user, null);
-    assert.deepEqual(corridor.view(user).run.timer, { remainingMs: 1130000, paused: true });
+    now += 10000; corridor.answerPuzzle(user, null);
+    assert.deepEqual(corridor.view(user).run.timer, { remainingMs: 630000, paused: false });
 });
 
-test('저장된 길, 이벤트, 유물 선택의 시계를 한 번 멈추고 전투 진입 시 다시 진행한다', async t => {
+test('저장된 선택 단계의 시계를 한 번 재개하고 이전 정지 시간은 소급 차감하지 않는다', async t => {
     let now = Date.now(); t.mock.method(Date, 'now', () => now);
-    for (const phase of ['route', 'event', 'relic']) {
+    for (const phase of ['augment', 'route', 'event', 'relic']) {
         const user = await reset(); corridor.enter(user, () => .99);
-        user.paradise.phase = phase; now += 1000;
+        user.paradise.phase = phase;
+        user.paradise.clock = { remainingMs: 1140000, limitMs: 1200000, updatedAt: now - 3600000, paused: true };
         assert.equal(corridor.advanceTime(user), true);
-        assert.equal(user.paradise.clock.paused, true);
-        now += 3600000; assert.equal(corridor.remainingTime(user.paradise), 1199000);
+        assert.equal(user.paradise.clock.paused, false);
+        assert.equal(corridor.remainingTime(user.paradise), 840000);
+        now += 60000; assert.equal(corridor.remainingTime(user.paradise), 780000);
         assert.equal(corridor.advanceTime(user), false);
         corridor.startCombat(user, 'normal', null, () => .99);
-        now += 4000; assert.equal(corridor.remainingTime(user.paradise), 1195000);
+        now += 4000; assert.equal(corridor.remainingTime(user.paradise), 776000);
     }
 });
 
-test('증강 자리마다 1회만 새로고침하며 중복·획득·장착 조건과 동시 요청을 검증한다', async () => {
+test('증강 자리마다 1회만 새로고침하며 중복·획득·장착 조건과 동시 요청을 검증한다', async t => {
+    const now = Date.now(); t.mock.method(Date, 'now', () => now);
     const user = await reset(); corridor.enter(user); corridor.victory(user, () => .99);
     user.paradise.relics.push('riftLens'); user.paradise.distortion = 10;
     corridor.getResources(user).mp = 0;
@@ -1989,14 +1993,15 @@ test('새로고침할 후보가 소진되면 횟수를 쓰지 않고 지옥·전
     assert.equal(corridor.advanceTime(hellUser), false);
 });
 
-test('시간 만료는 전투·이벤트·퍼즐에서도 자동 귀환하고 동시 조회·재요청에 한 번만 정산한다', async () => {
-    for (const phase of ['combat', 'event', 'puzzle']) {
+test('시간 만료는 전투·모든 선택·퍼즐에서도 자동 귀환하고 동시 조회·재요청에 한 번만 정산한다', async () => {
+    for (const phase of ['combat', 'augment', 'route', 'relic', 'event', 'puzzle']) {
         const user = await reset(); corridor.enter(user);
         const outside = [user.hp, user.mp];
         user.paradise.floor = user.paradise.clearedFloor = user.paradise.highestFloor = 100;
         user.paradise.battlesWon = user.paradise.rewardUnits = 1;
         user.paradise.contracts.push({ star: 5, type: '전직', name: '5성 전직 카드' });
         if (phase !== 'combat') { forceEvent(user, 'puzzle'); if (phase === 'puzzle') corridor.chooseEvent(user, 'solve'); }
+        user.paradise.phase = phase;
         const before = Number(user.gold || 0);
         user.paradise.clock = { remainingMs: 100, limitMs: corridor.TIME_LIMIT_MS, updatedAt: Date.now() - 1000, paused: false };
         await user.save();
@@ -2017,12 +2022,12 @@ test('시간 만료는 전투·이벤트·퍼즐에서도 자동 귀환하고 �
     }
 });
 
-test('시간 만료 시 카드 공간 부족은 미수령 보상으로 보존하며 진행 중 구형 탐험은 20분을 부여한다', async () => {
+test('시간 만료 시 카드 공간 부족은 미수령 보상으로 보존하며 진행 중 구형 탐험은 15분을 부여한다', async () => {
     const user = await reset(); corridor.enter(user);
     delete user.paradise.clock;
     user.paradise.startedAt = Date.now() - 86400000;
     assert.equal(corridor.advanceTime(user), true);
-    assert.ok(corridor.remainingTime(user.paradise) > 1199000);
+    assert.ok(corridor.remainingTime(user.paradise) > 899000);
     user.paradise.contracts.push({ star: 5, type: '전직', name: '5성 전직 카드' });
     user.maxCardLimit = 1; user.inventory.card.push({ id: 0, star: 5, type: '일반' });
     user.paradise.clock.updatedAt = Date.now() - corridor.TIME_LIMIT_MS - 1000;
@@ -2128,12 +2133,13 @@ test('천상 진입과 다음 전투에서 전직·스펙터 궁극기는 10초 
     for (const name of ultimates) assert.equal(hellUser.field.skillCooldowns[name], undefined, '지옥은 기존 시작 상태 유지');
 });
 
-test('15분 탐험의 남은 시간에는 5분을 한 번만 더하며 증강 단계에서는 소모하지 않는다', async t => {
-    const now = Date.now(); t.mock.method(Date, 'now', () => now);
+test('구형 15분 시계는 시간을 추가하지 않고 선택 단계에서도 재개한다', async t => {
+    let now = Date.now(); t.mock.method(Date, 'now', () => now);
     const user = await reset(); corridor.enter(user); corridor.offerAugments(user);
     user.paradise.clock = { remainingMs: 120000, updatedAt: now - 3600000, paused: true };
-    assert.equal(corridor.advanceTime(user), true); assert.equal(corridor.remainingTime(user.paradise), 420000);
-    assert.equal(corridor.advanceTime(user), false); assert.equal(corridor.remainingTime(user.paradise), 420000);
+    assert.equal(corridor.advanceTime(user), true); assert.equal(corridor.remainingTime(user.paradise), 120000);
+    assert.equal(corridor.advanceTime(user), false); assert.equal(corridor.remainingTime(user.paradise), 120000);
+    now += 1000; assert.equal(corridor.remainingTime(user.paradise), 119000);
 });
 
 test('보호막 HUD는 겹친 보호막을 합치고 각 만료 시각·흡수 후 잔량을 표시한다', async t => {
@@ -2322,7 +2328,7 @@ test('주요 능력치 샘플의 천상 +25 증가 비율은 전체 층 곡선�
     }
 });
 
-test('시작 유물은 지정 등급으로 지급하고 시작 증강은 같은 등급 3개·개별 새로고침·일시정지를 지원한다', async t => {
+test('시작 유물은 지정 등급으로 지급하고 시작 증강은 같은 등급 3개·개별 새로고침을 지원하며 시간은 계속 흐른다', async t => {
     const env = progressionEnvironment(t); let now = Date.now(); t.mock.method(Date, 'now', () => now);
     let user = await env.user(['ordinaryRelic','advancedRelic']), baseline = rpg.calculateUserStats(user);
     corridor.enter(user, () => .999);
@@ -2338,14 +2344,14 @@ test('시작 유물은 지정 등급으로 지급하고 시작 증강은 같은 
         }
         const view = corridor.view(user); assert.equal(view.run.phase, 'augment'); assert.equal(view.run.startingAugment, true);
         assert.equal(view.run.choices.length, 3); assert.ok(view.run.choices.every(a => a.rarity === rarity && a.floors === 0));
-        const remaining = corridor.remainingTime(user.paradise); now += 600000; assert.equal(corridor.remainingTime(user.paradise), remaining);
+        const remaining = corridor.remainingTime(user.paradise); now += 60000; assert.equal(corridor.remainingTime(user.paradise), remaining - 60000);
         corridor.rerollAugment(user, user.paradise.choices[0], () => .99);
         assert.ok(corridor.view(user).run.choices.every(a => a.rarity === rarity && !corridor.AUGMENTS.find(entry => entry.id === a.id).encounter));
         corridor.chooseAugment(user, user.paradise.choices[0], () => .99);
         if (user.paradise.stoneEntryOffer) corridor.chooseAugment(user, user.paradise.choices[0], () => .99);
     }
     assert.equal(user.paradise.floor, 1); assert.equal(user.paradise.phase, 'combat'); assert.equal(user.paradise.enemy.kind, 'normal');
-    now += 4000; assert.equal(corridor.remainingTime(user.paradise), 1196000);
+    now += 4000; assert.equal(corridor.remainingTime(user.paradise), 776000);
 });
 
 test('첫 정예 2마리는 현재 HP만 1로 시작하고 첫 이벤트만 상자방으로 바뀐다', async t => {
@@ -2360,11 +2366,11 @@ test('회복·층수·뒤틀림·제한시간 특수능력이 실제 천상 전�
     const env = progressionEnvironment(t); let user = await env.user(['woundedAscent','halfSteps']); corridor.enter(user, () => .99);
     let stats = rpg.calculateUserStats(user), resources = corridor.getResources(user), start = resources.hp;
     assert.equal(start, Math.max(1, Math.round(stats.hp * .05)));
-    corridor.move(user, 5); assert.equal(user.paradise.floor, 3); assert.equal(resources.hp, start + Math.round(stats.hp * .10));
-    corridor.move(user, 3); assert.equal(user.paradise.floor, 4);
-    corridor.move(user, 1); assert.equal(user.paradise.floor, 5);
-    corridor.move(user, 20); assert.equal(user.paradise.floor, 22);
-    user.paradise.celestial.traits = ['upwardFate','halfSteps']; corridor.move(user, -10); assert.equal(user.paradise.floor, 23);
+    corridor.move(user, 5); assert.equal(user.paradise.floor, 4); assert.equal(resources.hp, start + Math.round(stats.hp * .15));
+    corridor.move(user, 3); assert.equal(user.paradise.floor, 5);
+    corridor.move(user, 1); assert.equal(user.paradise.floor, 6);
+    corridor.move(user, 20); assert.equal(user.paradise.floor, 24);
+    user.paradise.celestial.traits = ['upwardFate','halfSteps']; corridor.move(user, -10); assert.equal(user.paradise.floor, 25);
     user = await env.user(['augmentHp','augmentMp']); corridor.enter(user, () => .99); stats = rpg.calculateUserStats(user); resources = corridor.getResources(user); resources.hp = resources.mp = 1;
     buff(user, 'firstStrike'); assert.equal(resources.hp, 1 + Math.round(stats.hp * .02)); assert.equal(resources.mp, 1 + Math.round(stats.mp * .02));
     user = await env.user(['distortedEdge','chaosCrown']); corridor.enter(user, () => .99);
@@ -2372,7 +2378,7 @@ test('회복·층수·뒤틀림·제한시간 특수능력이 실제 천상 전�
     user.paradise.distortion = 20; assert.equal(corridor.sumEffects(user.paradise).extraDamage, .2);
     user.paradise.distortion = 60; assert.equal(corridor.sumEffects(user.paradise).final, .3);
     user = await env.user(['calmStrength','extraTime']); stats = rpg.calculateUserStats(user); corridor.enter(user, () => .99);
-    assert.equal(rpg.calculateUserStats(user).atk, Math.round(stats.baseAtk * (1 + stats.plusStats.atk + .10))); assert.equal(corridor.remainingTime(user.paradise), 1500000);
+    assert.equal(rpg.calculateUserStats(user).atk, Math.round(stats.baseAtk * (1 + stats.plusStats.atk + .10))); assert.equal(corridor.remainingTime(user.paradise), 1080000);
     user.paradise.distortion = 1; assert.equal(rpg.calculateUserStats(user).atk, stats.atk);
 });
 
@@ -2383,7 +2389,7 @@ test('느린 순례는 하강 표시를 유지하며 절반 상승과 추가 선
     assert.equal(corridor.view(user).run.choices[0].floors, -10);
     assert.equal(buff(user, 'future').error, undefined);
     assert.equal(user.paradise.floor, 45); assert.equal(user.paradise.phase, 'augment');
-    assert.equal(user.paradise.choices.length, 3); assert.equal(user.paradise.clock.paused, true);
+    assert.equal(user.paradise.choices.length, 3); assert.equal(user.paradise.clock.paused, false);
     assert.equal(new Set(corridor.view(user).run.choices.map(a => a.rarity)).size, 1);
     assert.ok(corridor.chooseAugment(user, 'future').error); assert.equal(user.paradise.floor, 45);
     buff(user, 'puzzleInvite'); assert.equal(user.paradise.floor, 47); assert.equal(user.paradise.phase, 'augment');
@@ -2392,13 +2398,13 @@ test('느린 순례는 하강 표시를 유지하며 절반 상승과 추가 선
     assert.equal(state.run.phase, 'augment'); assert.equal(state.run.floor, 47);
     const resumed = await rpg.getRPGUserByName(account.name);
     buff(resumed, 'firstStrike'); assert.equal(resumed.paradise.event.id, 'puzzle');
-    assert.equal(resumed.paradise.floor, 54, '상승 증강의 3층 감소는 한 번만 적용');
+    assert.equal(resumed.paradise.floor, 55, '상승 증강의 2층 감소는 한 번만 적용');
     assert.equal(resumed.paradise.pendingAugmentEvents.length, 0);
     buff(resumed, 'rewind'); assert.equal(resumed.paradise.phase, 'augment'); assert.equal(resumed.paradise.forceElite, true);
-    assert.equal(resumed.paradise.floor, 62, '15층 하강은 8층 상승으로 전환');
+    assert.equal(resumed.paradise.floor, 63, '15층 하강은 8층 상승으로 전환');
     const floor = resumed.paradise.floor;
     buff(resumed, 'execution'); assert.equal(resumed.paradise.phase, 'combat'); assert.equal(resumed.paradise.enemy.kind, 'elite');
-    assert.equal(resumed.paradise.floor, floor + corridor.AUGMENTS.find(a => a.id === 'execution').floors - 3);
+    assert.equal(resumed.paradise.floor, floor + corridor.AUGMENTS.find(a => a.id === 'execution').floors - 2);
     assert.equal(resumed.paradise.forceElite, false);
     const starting = await env.user(['halfSteps', 'silverAugment']); corridor.enter(starting, () => .99);
     buff(starting, 'rest');
@@ -2411,9 +2417,9 @@ test('느린 순례의 위험 표시는 하강 문구가 아닌 실제 상승 �
     let playerPower = 1;
     t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
     const choices = corridor.view(user).run.choices;
-    assert.deepEqual(choices.map(choice => choice.floors), [-10, 7, -3]);
-    assert.deepEqual(choices.map(choice => choice.powerWarning.floor), [45, 47, 42]);
-    assert.deepEqual(choices.map(choice => choice.powerWarning.recommendedPower), [45, 47, 42].map(corridor.recommendedPower));
+    assert.deepEqual(choices.map(choice => choice.floors), [-10, 8, -3]);
+    assert.deepEqual(choices.map(choice => choice.powerWarning.floor), [45, 48, 42]);
+    assert.deepEqual(choices.map(choice => choice.powerWarning.recommendedPower), [45, 48, 42].map(corridor.recommendedPower));
     playerPower = corridor.recommendedPower(45);
     assert.equal(corridor.view(user).run.choices[0].powerWarning, null);
     corridor.move(user, -3); assert.equal(user.paradise.floor, 37, '증강 이외의 하강은 그대로 유지');
@@ -2528,7 +2534,7 @@ test('강제 엘리트, 지정 이벤트, 붕괴, 999층은 갈림길을 생략�
     }
 });
 
-test('모든 층의 엘리트 유물은 60% 확률로 세 후보를 제공하며 선택 중 시간 정지와 중복 요청을 처리한다', async t => {
+test('모든 층의 엘리트 유물은 60% 확률로 세 후보를 제공하며 선택 중 시간 흐름과 중복 요청을 처리한다', async t => {
     let now = Date.now(); t.mock.method(Date, 'now', () => now);
     let user = await reset(); corridor.enter(user); user.paradise.floor = 1; corridor.startCombat(user, 'elite'); corridor.victory(user, () => .5999);
     assert.equal(user.paradise.phase, 'relic'); assert.equal(user.paradise.relics.length, 0);
@@ -2540,11 +2546,11 @@ test('모든 층의 엘리트 유물은 60% 확률로 세 후보를 제공하며
     assert.equal(state.run.phase, 'relic'); assert.equal(state.run.relicPicksRemaining, 1); assert.equal(state.run.canReturn, false);
     assert.equal(state.run.relicChoices.length, 3); assert.equal(new Set(state.run.relicChoices.map(r => r.id)).size, 3);
     assert.ok(state.run.relicChoices.every(r => !r.special && r.id !== 'necklace'));
-    assert.equal(state.run.timer.paused, true);
+    assert.equal(state.run.timer.paused, false);
     const remaining = state.run.timer.remainingMs;
-    now += 3600000;
+    now += 60000;
     const restored = (await request('/api/paradise')).data;
-    assert.deepEqual(restored.run.timer, { remainingMs: remaining, paused: true });
+    assert.deepEqual(restored.run.timer, { remainingMs: remaining - 60000, paused: false });
     assert.deepEqual(restored.run.relicChoices, state.run.relicChoices);
     const picks = [];
     for (let i = 0; i < 1; i++) {
@@ -2554,7 +2560,7 @@ test('모든 층의 엘리트 유물은 60% 확률로 세 후보를 제공하며
         assert.ok(!picks.includes(choice)); picks.push(choice);
         const selected = await request('/api/paradise/relic', body);
         assert.equal(selected.status, 200); state = selected.data.state;
-        assert.deepEqual(state.run.timer, { remainingMs: remaining, paused: true });
+        assert.deepEqual(state.run.timer, { remainingMs: remaining - 60000, paused: false });
         const retry = await request('/api/paradise/relic', body);
         assert.deepEqual(retry.data.state.run.relics, state.run.relics);
         assert.equal(state.run.relicPicksRemaining, 0);
@@ -2608,7 +2614,7 @@ test('구형 혼합 등급 선택지는 한 번만 저장 갱신하고 32개 새
     user.paradise.phase = 'augment'; user.paradise.clock.paused = true; user.paradise.choices = ['blade', 'firstStrike', 'deathHandshake']; await user.save();
     const oldRevision = user.paradise.revision, state = (await request('/api/paradise')).data;
     assert.equal(new Set(state.run.choices.map(a => a.rarity)).size, 1);
-    assert.equal(state.revision, oldRevision + 1);
+    assert.equal(state.revision, oldRevision + 2); // 시계 재개와 선택지 정규화를 각각 한 번 저장
     assert.equal((await request('/api/paradise')).data.revision, state.revision);
     const added = corridor.RELICS.filter(r => r.effect);
     assert.equal(added.length, 32); assert.ok(added.every(r => r.rarity === 'normal' && r.desc.endsWith('합니다.')));
@@ -2874,7 +2880,7 @@ test('돌 던지기 획득은 입문 세 갈래와 추가 이동 없는 선택�
     assert.equal(state.run.choices.length, 3);
     assert.ok(state.run.choices.every(a => a.isStoneEntry && a.rarity === 'silver' && a.floors === 0));
     assert.equal(new Set(state.run.choices.map(a => a.stoneBranch)).size, 3);
-    assert.equal(state.run.timer.paused, true);
+    assert.equal(state.run.timer.paused, false);
     const floor = state.run.floor, ids = state.run.choices.map(a => a.id);
     const repeat = await request('/api/paradise/augment', rootBody);
     assert.equal(repeat.status, 200); assert.deepEqual(repeat.data.state.run.choices.map(a => a.id), ids);
