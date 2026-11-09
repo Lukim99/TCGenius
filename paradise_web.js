@@ -3,6 +3,7 @@ const hell = require('./paradise_hell');
 const combatEffects = require('./public/combat-effects');
 const progression = require('./paradise_progression');
 const shop = require('./paradise_shop');
+const { requestTiming } = require('./paradise_timing');
 
 function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getCharacterSprite, getMonsterSprite, getEquipmentIconUrl, getItemIconUrl, getCombatView }) {
     const weeklyRewards = require('./paradise_rewards');
@@ -96,17 +97,20 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         res.type('html').send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#05090e"><title>낙원</title><link rel="stylesheet" href="/static/paradise.css"></head><body><main id="paradiseRoot" aria-label="낙원"><canvas id="paScene" aria-hidden="true"></canvas><div id="paBattle" hidden><canvas id="hfCanvas" aria-hidden="true"></canvas><canvas id="hfHud" aria-hidden="true"></canvas></div><canvas id="paHud" aria-hidden="true"></canvas><div id="paControls" aria-label="게임 조작"></div><form id="paPuzzle" hidden></form><div id="paLive" class="sr-only" role="status" aria-live="polite"></div><div id="paFatal" hidden></div></main><noscript>낙원에 입장하려면 JavaScript를 켜주세요.</noscript><script>window.FIELD_MODE="paradise";</script><link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js" defer></script><script src="/static/paradise-audio.js" defer></script><script src="/static/hfield.js" defer></script><script src="/static/paradise-lobby.js" defer></script><script src="/static/paradise-shop.js" defer></script><script src="/static/paradise.js" defer></script></body></html>`);
     });
     server.get('/api/paradise', requireUser, async (req, res) => {
+        const timing = requestTiming('view');
         try {
-            const user = await rpgenius.getRPGUserByName(req.session.name);
-            if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+            const user = await timing.measureAsync('load', () => rpgenius.getRPGUserByName(req.session.name));
+            if (!user) return timing.send(res, 404, { error: '유저를 찾을 수 없습니다.' });
             res.setHeader('Cache-Control', 'no-store');
+            const queuedAt = timing.start();
             const view = await rpgenius.enqueueFieldAction(user, async () => {
-                const latest = await rpgenius.getRPGUserByName(req.session.name);
-                await advanceCombat(latest);
-                return state(latest);
+                timing.end('queue', queuedAt);
+                const latest = await timing.measureAsync('reload', () => rpgenius.getRPGUserByName(req.session.name));
+                await timing.measureAsync('advance', () => advanceCombat(latest));
+                return timing.measure('state', () => state(latest));
             });
-            res.json(view);
-        } catch (error) { console.error('[paradise view]', error.message); res.status(500).json({ error: '회랑 상태를 불러오지 못했습니다.' }); }
+            timing.send(res, 200, view);
+        } catch (error) { console.error('[paradise view]', error.message); timing.send(res, 500, { error: '회랑 상태를 불러오지 못했습니다.' }); }
     });
     server.get('/api/paradise/ranking', requireUser, async (req, res) => {
         try {
@@ -170,20 +174,26 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         server.post('/api/paradise/' + action, requireUser, async (req, res) => {
             const body = req.body || {};
             if (!/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId || '') || !Number.isSafeInteger(body.revision) || body.revision < 0 || body.runId != null && typeof body.runId !== 'string') return res.status(400).json({ error: '낙원 화면을 새로 열어주세요.' });
+            const timing = requestTiming(action);
+            const responseState = user => timing.measure('state', () => state(user));
             try {
-                await weeklyRewards.settleWeekly();
-                const seed = await rpgenius.getRPGUserByName(req.session.name);
-                if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+                // Startup + the minute scheduler own durable weekly settlement and retries.
+                // Interactive actions must not wait for the all-user scan or reward mail.
+                const seed = await timing.measureAsync('load', () => rpgenius.getRPGUserByName(req.session.name));
+                if (!seed) return timing.send(res, 404, { error: '유저를 찾을 수 없습니다.' });
+                const queuedAt = timing.start();
                 const payload = await rpgenius.enqueueFieldAction(seed, async () => {
-                    const user = await rpgenius.getRPGUserByName(req.session.name);
-                    await advanceCombat(user);
+                    timing.end('queue', queuedAt);
+                    const user = await timing.measureAsync('reload', () => rpgenius.getRPGUserByName(req.session.name));
+                    await timing.measureAsync('advance', () => advanceCombat(user));
                     const receipt = user.paradiseReceipt;
                     if (receipt?.id === body.requestId) {
                         if (receipt.action !== action) return { error: '이미 다른 동작에 사용한 요청입니다.' };
-                        return { ok: true, message: receipt.message, reveal: revealView(receipt.reveal, user), state: state(user) };
+                        return { ok: true, message: receipt.message, reveal: revealView(receipt.reveal, user), state: responseState(user) };
                     }
-                    if (Number(user.paradise?.revision || 0) !== body.revision || (user.paradise?.id || null) !== (body.runId || null)) return { error: '다른 화면에서 탐험이 진행되었습니다. 현재 상태를 다시 불러왔습니다.', state: state(user), stale: true };
-                    if (!['enter', 'claim', 'chest', 'dismiss'].includes(action) && !corridor.active(user) && !(action === 'retire' && corridor.view(user).run?.canReturn)) return { error: '진행 중인 낙원 탐험이 없습니다.', state: state(user) };
+                    if (Number(user.paradise?.revision || 0) !== body.revision || (user.paradise?.id || null) !== (body.runId || null)) return { error: '다른 화면에서 탐험이 진행되었습니다. 현재 상태를 다시 불러왔습니다.', state: responseState(user), stale: true };
+                    if (!['enter', 'claim', 'chest', 'dismiss'].includes(action) && !corridor.active(user) && !(action === 'retire' && corridor.view(user).run?.canReturn)) return { error: '진행 중인 낙원 탐험이 없습니다.', state: responseState(user) };
+                    const actionStartedAt = timing.start();
                     let result;
                     if (action === 'enter') result = body.mode === 'hell' ? hell.enter(user, body.key) : body.mode && body.mode !== 'heaven' ? { error: '알 수 없는 낙원 입장입니다.' } : corridor.enter(user);
                     else if (action === 'descend') result = hell.descend(user, body.side);
@@ -200,7 +210,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     else if (action === 'dismiss') result = corridor.dismiss(user);
                     else if (action === 'retire') result = corridor.finish(user);
                     else {
-                        if (user.paradise.phase !== 'combat') return { error: '전투 중에만 공격할 수 있습니다.', state: state(user) };
+                        if (user.paradise.phase !== 'combat') return { error: '전투 중에만 공격할 수 있습니다.', state: responseState(user) };
                         const sequence = Number(user.paradise.combatSequence || 0), enemyId = user.paradise.enemy.id;
                         const message = action === 'attack' ? await rpgenius.useBasicAttackInField(user) : await rpgenius.useSkillInField(user, typeof body.skill === 'string' ? body.skill : '');
                         result = String(message).startsWith('❌') ? { error: String(message).replace(/^❌\s*/, '') } : { message };
@@ -214,7 +224,8 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                             })].slice(-12);
                         }
                     }
-                    if (result.error) return { ...result, state: state(user) };
+                    timing.end('action', actionStartedAt);
+                    if (result.error) return { ...result, state: responseState(user) };
                     if (user.paradise.rewardReveal) {
                         result.reveal ||= user.paradise.rewardReveal;
                         result.message = [result.message, user.paradise.rewardReveal.text].filter(Boolean).join('\n');
@@ -224,13 +235,13 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     user.paradiseReceipt = { id: body.requestId, action, message: result.message || '완료', reveal: result.reveal || null };
                     // 입장권, 탐험 전이, 카드/재화 정산을 동일한 유저 문서에 조건부 저장한다.
                     const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
-                    await rpgenius.commitProtectedUserChange(user, keys);
-                    return { ok: true, message: result.message, reveal: revealView(result.reveal, user), state: state(user) };
+                    await timing.measureAsync('save', () => rpgenius.commitProtectedUserChange(user, keys));
+                    return { ok: true, message: result.message, reveal: revealView(result.reveal, user), state: responseState(user) };
                 });
-                res.status(payload.error ? payload.stale ? 409 : 400 : 200).json(payload);
+                timing.send(res, payload.error ? payload.stale ? 409 : 400 : 200, payload);
             } catch (error) {
                 console.error('[paradise ' + action + ']', error.message);
-                res.status(503).json({ error: '저장 결과를 확인하지 못했습니다. 같은 요청으로 다시 시도해주세요.', retryable: true });
+                timing.send(res, 503, { error: '저장 결과를 확인하지 못했습니다. 같은 요청으로 다시 시도해주세요.', retryable: true });
             }
         });
     }
