@@ -173,13 +173,50 @@
         return canvas;
     }
 
-    let stateLoading = false, rankingLoading = false, stateGeneration = 0;
-    async function fetchState() {
-        if (stateLoading || busy || pending || heavenEntry || transition?.next || document.hidden || performance.now()<battleUntil) return;
-        stateLoading = true; const generation = stateGeneration;
-        try { const response = await fetch('/api/paradise', { cache: 'no-store' }); if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (!response.ok) throw new Error(result.error); if (generation === stateGeneration) accept(result); } catch (error) { if (generation === stateGeneration) announce(error.message); } finally { stateLoading = false; }
+    const REQUEST_TIMEOUT_MS = 12000;
+    let stateLoading = false, rankingLoading = false, stateGeneration = 0, lastStateAttempt = -Infinity, stateFailures = 0;
+    function validState(value) {
+        return value && Number.isFinite(value.serverTime) && Number.isSafeInteger(value.revision)
+            && (value.runId === null || typeof value.runId === 'string') && value.weekly && value.player;
     }
-    async function fetchRanking() { if (rankingLoading) return; rankingLoading = true; try { const response = await fetch('/api/paradise/ranking', { cache: 'no-store' }); if (response.ok) ranking = await response.json(); else announce('주간 랭킹을 불러오지 못했습니다.'); } catch (_) { announce('주간 랭킹 연결을 확인해주세요.'); } finally { rankingLoading = false; } }
+    async function requestJson(url, options = {}) {
+        const controller = new AbortController(); let timer;
+        const timeout = new Promise((_, reject) => { timer = setTimeout(() => {
+            reject(new Error('응답이 늦어지고 있습니다. 같은 요청으로 다시 확인합니다.')); controller.abort();
+        }, REQUEST_TIMEOUT_MS); });
+        try {
+            return await Promise.race([timeout, (async () => {
+                const response = await fetch(url, { ...options, signal: controller.signal });
+                if (response.status === 401) { location.href = '/'; throw Object.assign(new Error('로그인이 필요합니다.'), { auth: true }); }
+                let result;
+                try { result = await response.json(); } catch (_) { throw new Error('서버 응답을 확인하지 못했습니다. 같은 요청으로 다시 확인합니다.'); }
+                if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('서버 응답 형식을 확인하지 못했습니다.');
+                if (result.retryable || response.status >= 500 || [408, 429].includes(response.status)) throw new Error(result.error || '서버 연결이 지연되고 있습니다.');
+                return { response, result };
+            })()]);
+        } finally { clearTimeout(timer); }
+    }
+    async function fetchState() {
+        if (stateLoading || busy || pending || selection || heavenEntry || transition?.next || document.hidden || performance.now()<battleUntil) return;
+        stateLoading = true; lastStateAttempt = performance.now(); const generation = stateGeneration;
+        try {
+            const { response, result } = await requestJson('/api/paradise', { cache: 'no-store' });
+            if (!response.ok || !validState(result)) throw new Error(result.error || '탐험 상태를 확인하지 못했습니다.');
+            if (generation === stateGeneration) { stateFailures = 0; accept(result); }
+        } catch (error) { if (generation === stateGeneration) { stateFailures++; if (!error.auth) announce(error.message); } }
+        finally { stateLoading = false; }
+    }
+    function pollState() {
+        const run = state?.run;
+        const urgent = run?.status === 'active' && (['combat', 'puzzle'].includes(run.phase) || run.timer && (!run.timer.paused || run.timer.remainingMs <= 0));
+        const interval = urgent || state && state.weekly.resetsAt <= now() ? 1000 : run?.status === 'active' ? 15000 : state ? 30000 : 5000;
+        if (performance.now() - lastStateAttempt >= Math.max(interval, stateFailures ? Math.min(30000, 2000 * 2 ** Math.min(stateFailures, 4)) : 0)) fetchState();
+    }
+    async function fetchRanking() {
+        if (rankingLoading || document.hidden) return; rankingLoading = true;
+        try { const { response, result } = await requestJson('/api/paradise/ranking', { cache: 'no-store' }); if (!response.ok) throw new Error(); ranking = result; }
+        catch (_) { announce('주간 랭킹을 불러오지 못했습니다.'); } finally { rankingLoading = false; }
+    }
     // 천상의 다음 조우(전투, 이벤트, 갈림길)가 바뀔 때만 층 이동 연출을 건다. 같은 응답의 재조회는 키가 같아 다시 재생되지 않는다.
     function encounter(run) {
         if (!run || run.mode === 'hell') return null;
@@ -232,11 +269,17 @@
         syncPuzzle(); regionKey = '';
     }
     async function mutate(action, input = {}, retry = false) {
-        if (busy || heavenEntry || transition?.next || pending && !retry) return; busy = true; stateGeneration++; regionKey = '';
+        if (busy || heavenEntry || transition?.next || pending && !retry || retry && !pending) return; busy = true; stateGeneration++; regionKey = '';
         if (!retry) { outcomeReveal = null; pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: action === 'shop/buy' ? state.shop.revision : action.startsWith('progression/') ? state.progression.revision : state.revision, ...(action === 'shop/buy' ? { catalogRevision: state.shop.catalogRevision } : {}), runId: state.runId } }; }
+        const operation = pending; action = operation.action;
         try {
-            const response = await fetch('/api/paradise/' + pending.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending.body) });
-            if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (result.retryable) throw new Error(result.error);
+            const { response, result } = await requestJson('/api/paradise/' + operation.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(operation.body) });
+            // Only a recognized success or explicit business rejection resolves an operation.
+            const rejected = [400, 403, 404, 409, 422].includes(response.status) && typeof result.error === 'string';
+            if (!rejected && (!response.ok || result.ok !== true || !validState(result.state))) throw new Error('처리 결과를 확인하지 못했습니다. 같은 요청으로 다시 확인합니다.');
+            if (result.state && !validState(result.state)) throw new Error('탐험 상태를 확인하지 못했습니다.');
+            const animationLeft = selection && !reduced && !document.hidden ? selection.started + selection.duration - performance.now() : 0;
+            if (animationLeft > 0) await new Promise(resolve => setTimeout(resolve, animationLeft));
             pending = null; if (result.state) accept(result.state); if (result.error) { if (state.run?.outcome !== 'timedOut' || action === 'claim') announce(result.error); selection = null; fall = null; chestPick = null; } else if (result.reveal?.kind === 'rewards') {
                 rewardReveal = { ...result.reveal, page: 0, at: performance.now() };
                 rewardReveal.items.forEach(item => { if (item.iconUrl) renderer.image(item.iconUrl); });
@@ -254,12 +297,20 @@
                 renderer.image(state.ticket.iconUrl); sound('reveal');
             }
             if (['augment', 'event', 'retire', 'claim', 'dismiss'].includes(action)) fetchRanking();
-        } catch (error) { announce(error.message || '연결이 끊겼습니다. 같은 요청으로 재시도해주세요.'); selection = null; fall = null; chestPick = null; }
+        } catch (error) {
+            if (!error.auth) announce(error.message || '연결이 끊겼습니다. 같은 요청으로 재시도해주세요.');
+            selection = null; fall = null; chestPick = null;
+            // At most one automatic recovery. The original request ID/body is never replaced.
+            if (pending === operation && !operation.autoRetried && !error.auth && !document.hidden) {
+                operation.autoRetried = true;
+                setTimeout(() => { if (pending === operation && !busy && !document.hidden) mutate(operation.action, {}, true); }, 1000);
+            }
+        }
         finally { busy = false; regionKey = ''; }
     }
-    function pickRoute(route, index) { if (!route || busy || pending || selection || transition) return; selection = { index, started: performance.now() }; sound('select'); setTimeout(() => mutate('route', { choice: route.id }), reduced ? 0 : 380); }
-    function pickRelic(relic, index) { if (!relic || busy || pending || selection || transition) return; selection = { index, started: performance.now() }; sound('select'); setTimeout(() => mutate('relic', { choice: relic.id }), reduced ? 0 : 420); }
-    function choose(choice, index) { if (!choice || busy || pending || selection) return; selection = { index, started: performance.now() }; sound('select'); setTimeout(() => mutate('augment', { choice: choice.id }), reduced ? 0 : 430); }
+    function pickRoute(route, index) { if (!route || busy || pending || selection || heavenEntry || transition) return; selection = { index, started: performance.now(), duration: 380 }; sound('select'); mutate('route', { choice: route.id }); }
+    function pickRelic(relic, index) { if (!relic || busy || pending || selection || heavenEntry || transition) return; selection = { index, started: performance.now(), duration: 420 }; sound('select'); mutate('relic', { choice: relic.id }); }
+    function choose(choice, index) { if (!choice || busy || pending || selection || heavenEntry || transition) return; selection = { index, started: performance.now(), duration: 430 }; sound('select'); mutate('augment', { choice: choice.id }); }
 
     function syncPuzzle() {
         const event = state?.run?.phase === 'puzzle' ? state.run.event : null;
@@ -1293,8 +1344,8 @@
         if(state?.run?.phase==='combat'&&!overlay)battle.key(event);
         const side = { ArrowLeft: -1, ArrowRight: 1 }[event.key]; if (!side || overlay || state?.run?.mode !== 'hell') return;
         if (state.run.phase === 'descent') descend(side < 0 ? 'left' : 'right'); else if (state.run.phase === 'chests' && !chestPick) chestPage += side; });
-    document.addEventListener('visibilitychange', () => { audio.visibility();if(!document.hidden)fetchState();else{battle.reset();battleUntil=0;} });
+    document.addEventListener('visibilitychange', () => { audio.visibility();if(!document.hidden){if(pending&&!busy)mutate(pending.action,{},true);else fetchState();}else{battle.reset();battleUntil=0;} });
     addEventListener('pagehide',()=>audio.stop());
-    setInterval(() => { if (state?.run?.status === 'active' && (state.run.phase === 'combat' || state.run.timer && (!state.run.timer.paused || state.run.timer.remainingMs <= 0)) || state && state.weekly.resetsAt <= now()) fetchState(); }, 1000);
+    setInterval(pollState, 1000);
     fetchState(); requestAnimationFrame(frame);
 })();

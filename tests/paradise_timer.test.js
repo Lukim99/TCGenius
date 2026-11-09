@@ -7,11 +7,9 @@ const timerSource = source.slice(0, source.indexOf('function getResources('));
 const minute = 60000;
 
 // Evaluate the real timer functions without loading the server or production DB.
-function timer(pauses = false) {
+function timer() {
     let now = 10000000, claims = 0, api;
-    const code = pauses ? timerSource.replace('const PAUSE_TIMER_OUTSIDE_COMBAT = false;', 'const PAUSE_TIMER_OUTSIDE_COMBAT = true;') : timerSource;
-    assert.ok(!pauses || code !== timerSource, 'the documented pause switch must still exist');
-    api = vm.runInNewContext(code + '\n({ TIME_LIMIT_MS, timeLimit, timerPaused, remainingTime, setPhase, advanceTime })', {
+    api = vm.runInNewContext(timerSource + '\n({ TIME_LIMIT_MS, timeLimit, timerPaused, remainingTime, setPhase, advanceTime })', {
         Date: { now: () => now },
         require: name => name === './paradise_content' ? { AUGMENTS: [], RELICS: [], EVENTS: [], EQUIPMENT_NAMES: [] }
             : name === './paradise_progression' ? { has: (run, id) => run?.mode !== 'hell' && !!run?.celestial?.traits?.includes(id) } : {},
@@ -25,13 +23,13 @@ function user(clock, extraTime = false) {
     return { field: { paradise: true }, paradise: { status: 'active', mode: 'heaven', phase: 'augment', revision: 0, relics: [], celestial: { traits: extraTime ? ['extraTime'] : [] }, ...(clock ? { clock } : {}) } };
 }
 
-test('new clocks start at 15 or 18 minutes and every active phase counts down', () => {
+test('new clocks start at 15 or 18 minutes; combat and puzzles count down', () => {
     for (const extra of [false, true]) {
         const t = timer(), u = user(null, extra);
         assert.equal(t.TIME_LIMIT_MS, 15 * minute);
         assert.equal(t.advanceTime(u), true);
         assert.equal(t.remainingTime(u.paradise), (extra ? 18 : 15) * minute);
-        for (const phase of ['combat', 'puzzle', 'augment', 'relic', 'route', 'event']) {
+        for (const phase of ['combat', 'puzzle']) {
             t.setPhase(u, phase); const before = t.remainingTime(u.paradise);
             assert.equal(u.paradise.clock.paused, false, phase);
             t.tick(1000); assert.equal(t.remainingTime(u.paradise), before - 1000, phase);
@@ -39,7 +37,7 @@ test('new clocks start at 15 or 18 minutes and every active phase counts down', 
     }
 });
 
-test('old 20/25 minute clocks lose 5/7 minutes once and keep running through reconnects', () => {
+test('old 20/25 minute clocks normalize once and pause on choice reconnects', () => {
     for (const extra of [false, true]) for (const paused of [false, true]) {
         const t = timer(), u = user({ remainingMs: 10 * minute, limitMs: (extra ? 25 : 20) * minute, updatedAt: t.now - minute, paused }, extra);
         const expected = (extra ? 3 : 5) * minute - (paused ? 0 : minute);
@@ -48,7 +46,7 @@ test('old 20/25 minute clocks lose 5/7 minutes once and keep running through rec
         assert.equal(u.paradise.clock.limitMs, (extra ? 18 : 15) * minute);
         assert.equal(t.advanceTime(u), false);
         t.tick(1000);
-        assert.equal(t.remainingTime(structuredClone(u.paradise)), expected - 1000);
+        assert.equal(t.remainingTime(structuredClone(u.paradise)), expected);
     }
 });
 
@@ -57,7 +55,7 @@ test('legacy missing-limit clocks do not regain five minutes and normalize only 
     assert.equal(t.advanceTime(u), true);
     assert.equal(t.remainingTime(u.paradise), 2 * minute);
     assert.equal(t.advanceTime(u), false);
-    t.tick(1000); assert.equal(t.remainingTime(u.paradise), 2 * minute - 1000);
+    t.tick(1000); assert.equal(t.remainingTime(u.paradise), 2 * minute);
 });
 
 test('shortened and legacy expired clocks finish in the same access and settle only once', () => {
@@ -80,8 +78,8 @@ test('ended clocks and hell mode remain unchanged', () => {
     const before = structuredClone(u); assert.equal(t.advanceTime(u), false); assert.deepEqual(u, before);
 });
 
-test('the retained toggle restores choice pauses but combat and puzzles still tick', () => {
-    const t = timer(true), u = user(); t.advanceTime(u);
+test('choice pauses are enabled by default but combat and puzzles still tick', () => {
+    const t = timer(), u = user(); t.advanceTime(u);
     for (const phase of ['augment', 'relic', 'route', 'event']) {
         t.setPhase(u, phase); const before = t.remainingTime(u.paradise);
         assert.equal(u.paradise.clock.paused, true, phase);
@@ -94,4 +92,20 @@ test('the retained toggle restores choice pauses but combat and puzzles still ti
         t.tick(1000); assert.equal(t.remainingTime(u.paradise), before - 1000, phase);
     }
     t.setPhase(u, 'ended'); assert.equal(u.paradise.clock.paused, true);
+});
+
+
+test('already running choice clocks settle elapsed time once then pause, including reloads', () => {
+    for (const phase of ['augment', 'route', 'event', 'relic']) {
+        const t = timer(), u = user({ remainingMs: 10 * minute, limitMs: 15 * minute, updatedAt: t.now - minute, paused: false });
+        u.paradise.phase = phase;
+        assert.equal(t.advanceTime(u), true);
+        assert.equal(t.remainingTime(u.paradise), 9 * minute);
+        assert.equal(u.paradise.clock.paused, true);
+        t.tick(3600000);
+        assert.equal(t.remainingTime(structuredClone(u.paradise)), 9 * minute);
+        assert.equal(t.advanceTime(u), false);
+        t.setPhase(u, 'combat'); t.tick(1000);
+        assert.equal(t.remainingTime(u.paradise), 9 * minute - 1000);
+    }
 });

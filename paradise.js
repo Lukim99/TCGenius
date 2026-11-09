@@ -10,8 +10,8 @@ const MIN_LEVEL = 141;
 const JUDGE_MIN_FLOOR = 150;
 const ADVANCED_RELIC_CHANCE = .08;
 const TIME_LIMIT_MS = 15 * 60 * 1000;
-// true로 바꾸면 증강·유물·갈림길·이벤트 선택 중 시간 정지를 다시 활성화한다.
-const PAUSE_TIMER_OUTSIDE_COMBAT = false;
+// 증강·유물·갈림길·이벤트 선택 중 정지한다. 전투와 퍼즐은 계속 흐른다.
+const PAUSE_TIMER_OUTSIDE_COMBAT = true;
 const ULTIMATE_START_COOLDOWN_MS = 10000;
 const progression = require('./paradise_progression');
 const routeMechanics = require('./paradise_routes');
@@ -48,7 +48,7 @@ function advanceTime(user) {
     if (run.phase === 'event' && run.event?.id === 'collapse' && (run.riftDefeated || has(run, 'riftHeart'))) {
         if (collapseEncounter(user)) { run.revision++; return true; }
     }
-    // 이전에 정지했던 시간은 소급 차감하지 않고, 동기화 시점부터 새 규칙으로 흐른다.
+    // 기존 시계의 소모 시간을 보존하고, 첫 동기화부터 현재 단계의 정지 규칙을 적용한다.
     const clockChanged = run.clock?.limitMs !== timeLimit(run) || run.clock.paused !== timerPaused(run);
     if (clockChanged) { setPhase(user, run.phase); run.revision++; }
     if (!isTimedOut(user)) return clockChanged;
