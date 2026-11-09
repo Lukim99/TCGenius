@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const pointUsage = require('./point_usage');
 const { inventoryLocks } = require('./yut_event');
 const { PETS } = require('./personal_draw_content');
 const fail = (status, message, extra = {}) => { throw Object.assign(new Error(message), { status, ...extra }); };
@@ -134,6 +135,11 @@ function registerPersonalDrawRoutes(server, { rpgenius: rpg, requireUser, serial
                     }
                     state.revision++;
                     state.lastAction = { requestId: input.requestId, action, ...(action === 'single' ? { index: input.index } : {}), cost, baseCount, results, at: Date.now() };
+                    pointUsage.record(user, { amount: cost, category: 'personal_draw', action, productId: action,
+                        productName: { single: '퍼스널뽑기 · 한 칸', shake: '퍼스널뽑기 · 흔들기', refresh: '퍼스널뽑기 · 새로고침' }[action],
+                        details: { requestId: input.requestId, revision: state.revision, selectedIndex: action === 'single' ? input.index : null,
+                            openedCount: results.length, baseCount, bonusCount: results.length - baseCount,
+                            rewards: results.map(({ type, id, name, count, bonus }) => ({ type, id, name, count, bonus })) } });
                     user.personalDraw = state;
                     await save(user);
                     return status(user, definition);

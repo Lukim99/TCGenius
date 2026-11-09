@@ -38,6 +38,8 @@ const startServer = require('../server');
 let server, base, cookie;
 const petId = name => rpg.getDataCache('Pet').findIndex(pet => pet?.name === '유의게임X ' + name);
 const itemId = name => rpg.getDataCache('Item').findIndex(item => item?.name === name);
+const usageFor = requestId => [...new Map(writes.flatMap(write => Object.values(write.ExpressionAttributeValues?.[':v_pointUsageOutbox'] || {}))
+    .filter(event => event.details.requestId === requestId).map(event => [event.id, event])).values()];
 const body = (revision, expectedCost = 300, extra = {}) => ({ revision, expectedCost, requestId: crypto.randomUUID(), ...extra });
 async function request(action = '', data, authenticated = true, prefix = '/api/personal-draw') {
     const response = await fetch(base + prefix + (action ? '/' + action : ''), { method: data ? 'POST' : 'GET', headers: { ...(authenticated ? { Cookie: cookie } : {}), ...(data ? { 'Content-Type': 'application/json' } : {}) }, body: data ? JSON.stringify(data) : undefined });
@@ -97,6 +99,10 @@ test('단일 개봉 300P, 거래 가능한 재료 지급, 요청 재전송/오�
     assert.equal((await request('single', body(1, 300, { index: 0 }))).status, 400);
     const user = await rpg.getRPGUserByName(seed.name); assert.equal(rpg.getInventoryItemCount(user, itemId('유리사의 잔상')), 1);
     assert.equal(rpg.getBoundItemCount(user, itemId('유리사의 잔상')), 0);
+    const [usage] = usageFor(input.requestId);
+    assert.equal(usageFor(input.requestId).length, 1, '재전송은 새 사용 내역을 만들지 않는다');
+    assert.equal(usage.amount, 300); assert.equal(usage.action, 'single'); assert.equal(usage.details.selectedIndex, 0);
+    assert.equal(usage.details.rewards[0].name, '유리사의 잔상'); assert.equal(usage.details.cells, undefined);
 });
 test('동시 뽑기, 잘못된 비용/좌표, 잔액 부족 요청은 추가 차감하지 않는다', async () => {
     assert.equal((await request('single', body(0, 0, { index: 0 }))).status, 409);
@@ -114,6 +120,9 @@ test('5칸 1500P와 무제한 추가 추첨, 정확한 전체 지급량, 기존 
     result = await fixedRandom(0, () => request('shake', body(0, 1500)));
     assert.equal(result.status, 200); assert.equal(result.data.remaining, 0); assert.equal(result.data.lastAction.results.length, 100);
     assert.equal(result.data.lastAction.results.filter(r => r.bonus).length, 95);
+    const [usage] = usageFor(result.data.lastAction.requestId);
+    assert.equal(usage.amount, 1500); assert.equal(usage.action, 'shake'); assert.equal(usage.details.bonusCount, 95);
+    assert.equal(usage.details.rewards.length, 100);
     assert.equal(result.data.rewards.every(r => r.remaining === 0), true);
     const user = await rpg.getRPGUserByName(seed.name);
     assert.equal(user.inventory.pet.length, 15); assert.ok(user.inventory.pet.every(pet => pet.tradeCount === 1 && !pet.expireAt));
@@ -124,6 +133,8 @@ test('무료 새로고침은 보상/포인트를 보존하고 재고 100칸만 �
     await request('single', body(0, 300, { index: 0 }));
     const beforeUser = await rpg.getRPGUserByName(seed.name), before = structuredClone(beforeUser.inventory);
     const result = await request('refresh', body(1, 0)); assert.equal(result.status, 200); assert.equal(result.data.remaining, 100); assert.equal(result.data.point, 49700);
+    const [usage] = usageFor(result.data.lastAction.requestId);
+    assert.equal(usage.amount, 0); assert.equal(usage.action, 'refresh'); assert.deepEqual(usage.details.rewards, []);
     assert.deepEqual((await rpg.getRPGUserByName(seed.name)).inventory, before);
     assert.equal((await request('single', body(1, 300, { index: 1 }))).status, 409);
 });
@@ -133,6 +144,7 @@ test('저장 실패 후 같은 요청을 재시도해도 차감/보상은 한 �
     failWrites = false;
     const replay = await request('single', input); assert.equal(replay.status, 200); assert.equal(replay.data.replayed, true);
     assert.equal(replay.data.point, 49700); assert.equal(replay.data.remaining, 99);
+    assert.equal(usageFor(input.requestId).length, 1);
 });
 test('현재 판은 운영 설정 변경에도 보존되고 다음 판부터 새 설정을 사용한다', async () => {
     await request('single', body(0, 300, { index: 0 }));

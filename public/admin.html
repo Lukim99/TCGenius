@@ -325,6 +325,7 @@ details.collapsible .body{padding:12px}
     <div class="side-group">로그</div>
     <button class="tab" data-tab="tradelog">거래 로그</button>
     <button class="tab" data-tab="pointlog">포인트 충전 로그</button>
+    <button class="tab" data-tab="pointusage">포인트 사용 통계</button>
     <div class="side-group">시스템</div>
     <button class="tab" data-tab="statedata">상태 데이터</button>
     <button class="tab" data-tab="pitr">PITR 복원</button>
@@ -547,6 +548,26 @@ details.collapsible .body{padding:12px}
 <div class="panel" data-panel="tradelog"><section><h2>거래 로그</h2><div class="bar"><input id="tradeLogFilter" placeholder="구매자, 판매자, 물품명 검색" style="flex:1;min-width:200px"><select id="tradeLogType" style="width:130px;flex:0 0 auto"><option value="">전체 거래타입</option><option value="경매장">경매장</option><option value="삽니다">삽니다</option></select><select id="tradeLogKind" style="width:130px;flex:0 0 auto"><option value="">전체 물품타입</option><option value="card">캐릭터 카드</option><option value="equipment">장비</option><option value="item">아이템</option></select><button class="btn" id="tradeLogReload">다시 불러오기</button><button class="btn danger" id="tradeLogClear">전체 삭제</button><span class="muted" id="tradeLogStatus"></span></div><div id="tradeLogList" class="list" style="margin-top:14px"></div></section></div>
 
 <div class="panel" data-panel="pointlog"><section><h2>포인트 충전 로그</h2><div class="bar"><input id="pointLogFilter" placeholder="닉네임 검색" style="flex:1;min-width:220px"><button class="btn" id="pointLogReload">다시 불러오기</button><span class="muted" id="pointLogStatus"></span></div><div id="pointLogList" class="list" style="margin-top:14px"></div></section></div>
+
+<div class="panel" data-panel="pointusage"><section>
+  <h2>포인트 사용 통계</h2>
+  <p class="muted">한국 시간 기준 · 관리자 계정 제외 · 기록 시작 이후의 실제 차감 내역입니다. 포인트 선물과 관리자 회수는 소비와 구분합니다.</p>
+  <form id="pointUsageForm" class="bar" style="align-items:end;flex-wrap:wrap">
+    <label>시작일 <input type="date" id="pointUsageFrom" required></label>
+    <label>종료일 <input type="date" id="pointUsageTo" required></label>
+    <label>구분 <select id="pointUsageKind"><option value="consumption">소비</option><option value="transfer">포인트 선물</option><option value="adjustment">관리자 회수·충전 취소</option><option value="reversal">취소 복구</option><option value="all">전체 기록</option></select></label>
+    <label>사용처 <select id="pointUsageCategory"><option value="">전체 사용처</option><option value="shop">상점</option><option value="personal_draw">퍼스널뽑기</option><option value="blessing">축복</option><option value="preset">프리셋</option><option value="mail">메일 선물</option><option value="admin">관리자 회수</option><option value="charge_cancel">충전 취소</option><option value="unclassified">미분류 차감</option></select></label>
+    <label>검색 <input id="pointUsageSearch" maxlength="100" placeholder="닉네임·상품명·계정 ID"></label>
+    <button class="btn primary" type="submit">조회</button>
+  </form>
+  <p id="pointUsageStatus" class="muted" role="status" aria-live="polite"></p>
+  <div id="pointUsageSummary" class="bar" style="gap:24px;flex-wrap:wrap"></div>
+  <h3>날짜별</h3><div id="pointUsageDaily" style="overflow-x:auto"></div>
+  <h3>사용처별</h3><div id="pointUsageCategories" style="overflow-x:auto"></div>
+  <h3>상품·행동별</h3><div id="pointUsageProducts" style="overflow-x:auto"></div>
+  <h3>상세 사용 내역</h3><p class="muted">처리 건수에는 0P 새로고침도 포함됩니다. 상품 수량과 결제 횟수는 다를 수 있습니다.</p>
+  <div id="pointUsageEntries" style="overflow-x:auto"></div><div id="pointUsagePager" class="pager"></div>
+</section></div>
 
 <div class="panel" data-panel="pitr">
   <section>

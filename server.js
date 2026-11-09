@@ -5,6 +5,7 @@ const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const { registerParadiseRoutes } = require('./paradise_web');
 const shopCatalog = require('./shop_catalog');
+const pointUsage = require('./point_usage');
 const { createBlackMarket, lotTitle } = require('./black_market');
 const combatEffects = require('./public/combat-effects.js');
 const ilionCards = require('./ilion_cards');
@@ -44,6 +45,7 @@ server.get('/healthz', async (req, res) => {
 const webchat = createWebChat({ onChat: rpgenius.onChat, getUserByName: rpgenius.getRPGUserByName });
 server.use(compression()); // SSE(/api/chat/:roomId/stream)는 Cache-Control: no-transform으로 자동 제외됨
 server.use(express.json({ limit: '5mb' }));
+server.use((req, res, next) => pointUsage.withSource('web', next));
 server.use('/static', express.static(path.join(__dirname, 'public'), {
     setHeaders: (res, filePath) => {
         // assets(이미지·스프라이트)는 1일 캐시, JS/CSS는 ETag 재검증(배포 즉시 반영)
@@ -892,7 +894,8 @@ server.post('/api/blessings/buy', requireUser, async (req, res) => {
             if (!user) return { error: '유저를 찾을 수 없습니다.', notFound: true };
             const purchase = rpgenius.purchaseBlessing(user, req.body && req.body.key);
             if (purchase.error) return purchase;
-            await user.save();
+            const saved = await user.save();
+            if (!saved.success) throw saved.result[0];
             return { ok: true, purchase, profile: buildUserProfile(user) };
         });
         if (payload.error) return res.status(payload.notFound ? 404 : 400).json({ error: payload.error });
@@ -3455,7 +3458,11 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
         user.total_point = prevTotalPoint + amount;
         await user.save();
         const newPoint = Number(user.point || 0);
-        rollback.push(async () => { user.point = prevPoint; user.total_point = prevTotalPoint; await user.save(); });
+        rollback.push(async () => {
+            user.point = prevPoint; user.total_point = prevTotalPoint;
+            pointUsage.record(user, { amount, kind: 'adjustment', category: 'charge_cancel', action: 'charge_rollback', productName: '충전 실패 회수' });
+            await user.save();
+        });
 
         // 3) 차감액 분배 이체 (1% 로또기금 / 1% 익테봇 / 49% Lukim9 / 49% 유치원생)
         await addSupabaseUserBalance('로또기금', lotto);
@@ -5304,7 +5311,9 @@ server.post('/api/users/grant', requireAdmin, async (req, res) => {
             const after = before + amount;
             if (after < 0) return res.status(400).json({ error: '결과가 0보다 작을 수 없습니다. (현재 ' + before + ')' });
             user[kind] = after;
-            await user.save();
+            if (kind === 'point' && amount < 0) pointUsage.record(user, { amount: -amount, kind: 'adjustment', category: 'admin', action: 'deduct', productName: '관리자 포인트 회수', details: { admin: req.session.name } });
+            const saved = await user.save();
+            if (!saved.success) throw saved.result[0];
             return res.json({ ok: true, name: user.name, kind, before, after, delta: amount });
         }
 
@@ -5712,6 +5721,18 @@ server.get('/api/admin/event-dice-logs', requireAdmin, async (req, res) => {
     }
 });
 
+server.get('/api/admin/point-usage', requireAdmin, async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    let params;
+    try { params = pointUsage.filters(req.query); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+    try {
+        params.p_admin_ids = (await rpgenius.getAllRPGUsers()).filter(user => user.isAdmin).map(user => String(user.id));
+        const data = await pointUsage.report(params);
+        res.json({ ...data, delivery: rpgenius.getPointUsageDeliveryStatus(), timezone: 'Asia/Seoul' });
+    } catch (error) { res.status(503).json({ error: error.message }); }
+});
+
 server.get('/api/admin/point-logs', requireAdmin, async (req, res) => {
     try {
         let data = rpgenius.getDataCache('PointLogs', null);
@@ -5760,8 +5781,14 @@ server.post('/api/admin/point-logs/cancel', requireAdmin, async (req, res) => {
         const curTotalPoint = Number(user.total_point || 0);
         user.point = newPoint;
         user.total_point = Math.max(0, curTotalPoint - amount);
-        await user.save();
-        rollback.push(async () => { user.point = curPoint; user.total_point = curTotalPoint; await user.save(); });
+        const usageId = pointUsage.record(user, { amount, kind: 'adjustment', category: 'charge_cancel', action: 'refund', productName: '충전 취소 회수', details: { chargeLogId: id, admin: req.session.name } });
+        const saved = await user.save();
+        if (!saved.success) throw saved.result[0];
+        rollback.push(async () => {
+            user.point = curPoint; user.total_point = curTotalPoint;
+            pointUsage.record(user, { amount: -amount, kind: 'reversal', category: 'charge_cancel', action: 'rollback', productName: '충전 취소 실패 복구', details: { reversesId: usageId, chargeLogId: id } });
+            await user.save();
+        });
 
         // 2) 충전 계정 잔액 환불 (NameMatch 치환 적용)
         const storeNickname = await resolveStoreNickname(entry.nickname);

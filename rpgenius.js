@@ -18,6 +18,7 @@ const paradisePower = require('./paradise_power');
 const paradiseStones = require('./paradise_stones');
 const paradiseRoutes = require('./paradise_routes');
 const shopCatalog = require('./shop_catalog');
+const pointUsage = require('./point_usage');
 const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
 const { regularCardPackBaseChance } = require('./chuseok_event');
 const { applyBlackWhite } = require('./reggiero');
@@ -1044,6 +1045,7 @@ function purchaseBlessing(user, key, nowArg) {
     const applied = extendBlessing(user, def.key, def.durationMs, nowArg);
     if (applied.error) return applied;
     user.point = point - def.price;
+    pointUsage.record(user, { amount: def.price, category: 'blessing', action: 'buy', productId: def.key, productName: def.name, details: { durationDays: 30, expiresAt: applied.expiresAt } });
     const mileageEarned = addPointSpendMileage(user, def.price);
     return { ok: true, key: def.key, name: def.name, price: def.price, expiresAt: applied.expiresAt, point: user.point, mileageEarned };
 }
@@ -11447,6 +11449,7 @@ async function handleAdminCommand(command, adminUser) {
         targetUser[field] = Math.max(0, Number(targetUser[field] || 0) + amount * sign);
         if (field == 'point') {
             targetUser.total_point += amount * sign;
+            if (sign < 0) pointUsage.record(targetUser, { amount: Number(JSON.parse(targetUser.__loaded.point || '0')) - targetUser.point, kind: 'adjustment', category: 'admin', action: 'deduct', productName: '관리자 포인트 회수', details: { admin: adminUser.name, requestedAmount: amount } });
         }
         await targetUser.save();
         const goodsName = field == 'gold' ? '골드' : field == 'garnet' ? '가넷' : '포인트';
@@ -11518,6 +11521,13 @@ function getArtifactView(user, equip) {
 // 신규 재화·최초 지급 처리는 변경한 필드와 원래 값이 함께 맞을 때만 저장한다.
 async function commitProtectedUserChange(user, keys) {
     await flushCachedUser(user.id);
+    const usageEvents = keys.includes('point') ? pointUsage.pending(user, JSON.parse(user.__loaded?.point || '0')) : [];
+    const cacheEntry = userCacheById.get(user.id);
+    if (usageEvents.length) {
+        user[pointUsage.OUTBOX] = pointUsage.append(cacheEntry?.raw[pointUsage.OUTBOX], usageEvents);
+        user.__loaded[pointUsage.OUTBOX] = cacheEntry?.dbSnap[pointUsage.OUTBOX];
+        keys = [...keys, pointUsage.OUTBOX];
+    }
     const names = {}, values = {}, conditions = [], sets = [], changes = {};
     keys.forEach((key, i) => {
         const previous = user.__loaded && user.__loaded[key];
@@ -11535,8 +11545,21 @@ async function commitProtectedUserChange(user, keys) {
             ConditionExpression: 'attribute_exists(id) AND ' + conditions.join(' AND '), ExpressionAttributeNames: names, ExpressionAttributeValues: values }));
         applyDirectDbWriteToCache(user.id, changes);
         for (const key of Object.keys(changes)) user.__loaded[key] = JSON.stringify(changes[key]);
+        pointUsage.clear(user);
+        delete user[pointUsage.OUTBOX];
+        schedulePointUsageDelivery(userCacheById.get(user.id));
         return true;
     } catch (error) {
+        // A timeout may lose only the response. Verify the committed fields before rolling back the instance.
+        if (usageEvents.length) {
+            const latest = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { id: user.id }, ConsistentRead: true })).catch(() => ({}));
+            if (latest.Item && Object.entries(changes).every(([key, value]) => isDeepStrictEqual(latest.Item[key], value))) {
+                const fresh = putUserCacheEntry(latest.Item);
+                for (const key of Object.keys(changes)) user.__loaded[key] = JSON.stringify(changes[key]);
+                pointUsage.clear(user); delete user[pointUsage.OUTBOX]; schedulePointUsageDelivery(fresh);
+                return true;
+            }
+        }
         for (const key of Object.keys(changes)) {
             if (user.__loaded[key] === undefined) delete user[key]; else user[key] = JSON.parse(user.__loaded[key]);
         }
@@ -11544,6 +11567,8 @@ async function commitProtectedUserChange(user, keys) {
             const latest = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { id: user.id }, ConsistentRead: true }));
             if (latest.Item) putUserCacheEntry(latest.Item);
         }
+        pointUsage.clear(user);
+        delete user[pointUsage.OUTBOX];
         throw error;
     }
 }
@@ -13903,6 +13928,11 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
         user[field] = owned - totalPrice;
     }
     const mileageEarned = shopItem.price.goods == 'point' ? addPointSpendMileage(user, totalPrice) : 0;
+    if (shopItem.price.goods == 'point') pointUsage.record(user, {
+        amount: totalPrice, category: 'shop', action: 'purchase', productId: shopItem.shopId || shopCatalog.legacyShopItemId(shopType, itemIndex),
+        productName: shopItem.type === '아이템' ? getDataCache('Item', [])[shopItem.item_id]?.name || '아이템' : shopItem.fashion || formatShopItem({ ...shopItem, count: 1 }), quantity: count,
+        details: { shopType, itemType: shopItem.type, itemId: shopItem.item_id ?? null, unitPrice: Number(shopItem.price.amount), rewardQuantity: Number(shopItem.count || 1) * count }
+    });
 
     let bundleSummary = null;
     if (shopItem.type == '아이템') {
@@ -13957,7 +13987,10 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (shopType === '레이드' || ['artifact-package', 'rando-release-package', '2026-autumn-release-package', '2026-pepero-package'].includes(shopItem.contentKey)) {
         try { await commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'point', 'mileage', 'shopPurchases']); }
         catch (error) { console.error('[raid shop] purchase:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 상점을 다시 불러와주세요.'; }
-    } else await user.save();
+    } else {
+        const saved = await user.save();
+        if (shopItem.price.goods === 'point' && !saved?.success) return '❌ 구매 저장을 확인하지 못했습니다. 상점을 다시 불러와주세요.';
+    }
     if (typeof limits.global == 'number') {
         try { await addShopGlobalCount(shopItem.shopId, count); } catch (e) { console.error('[shop] global counter 저장 실패: ' + e.message); }
     }
@@ -14130,9 +14163,16 @@ async function commitUserToCache(user, opts) {
     }
     const loaded = user.__loaded || {};
     if (!user.__loaded) Object.defineProperty(user, '__loaded', { value: loaded, enumerable: false, writable: true, configurable: true });
+    const previousPoint = Number(JSON.parse(loaded.point || '0'));
+    const usageEvents = pointUsage.pending(user, previousPoint);
+    if (loaded.point !== JSON.stringify(user.point) && previousPoint !== Number(entry.raw.point || 0) && entry.dbSnap.point !== undefined) {
+        pointUsage.clear(user);
+        throw new Error('포인트 잔액이 변경되었습니다. 새로고침 후 다시 시도해주세요.');
+    }
+    const usageOutbox = usageEvents.length ? pointUsage.append(entry.raw[pointUsage.OUTBOX], usageEvents) : null;
     let changed = false;
     for (const k of Object.keys(user)) {
-        if (k === 'id') continue;
+        if (k === 'id' || k === pointUsage.OUTBOX) continue;
         const v = user[k];
         if (typeof v === 'undefined') continue;
         let s; try { s = JSON.stringify(v); } catch (_) { continue; }
@@ -14144,16 +14184,18 @@ async function commitUserToCache(user, opts) {
         }
     }
     for (const k of Object.keys(loaded)) {
-        if (k === 'id') continue;
+        if (k === 'id' || k === pointUsage.OUTBOX) continue;
         if (!Object.prototype.hasOwnProperty.call(user, k) || typeof user[k] === 'undefined') {
             delete entry.raw[k];
             delete loaded[k];
             changed = true;
         }
     }
+    if (usageOutbox) { entry.raw[pointUsage.OUTBOX] = usageOutbox; changed = true; }
+    pointUsage.clear(user);
     if (!changed && !entry.dirty) return { success: true, result: ['noop'] };
     entry.dirty = true;
-    if (opts && opts.defer) {
+    if (opts && opts.defer && !usageEvents.length) {
         scheduleUserFlush(entry);
         return { success: true, result: ['deferred'] };
     }
@@ -14171,7 +14213,7 @@ function scheduleUserFlush(entry) {
 
 // 같은 유저의 flush를 직렬화한다 (즉시 저장과 지연 flush가 겹쳐도 순서 보장).
 function flushUserEntry(entry) {
-    const prev = entry.flushChain || Promise.resolve();
+    const prev = Promise.allSettled([entry.flushChain, entry.usageDelivery].filter(Boolean));
     const next = prev.catch(() => { }).then(() => flushUserEntryNow(entry)).finally(() => {
         if (entry.flushChain === next) entry.flushChain = null;
     });
@@ -14209,16 +14251,67 @@ async function flushUserEntryNow(entry) {
             removeKeys.forEach(k => { names['#' + k] = k; });
         }
         const params = { TableName: TABLE_NAME, Key: { id: entry.raw.id }, UpdateExpression: clauses.join(' '), ExpressionAttributeNames: names };
+        if (setKeys.includes('point')) {
+            params.ConditionExpression = entry.dbSnap.point === undefined ? 'attribute_not_exists(#point)' : '#point = :expectedPoint';
+            if (entry.dbSnap.point !== undefined) values[':expectedPoint'] = JSON.parse(entry.dbSnap.point);
+        }
         if (Object.keys(values).length) params.ExpressionAttributeValues = values;
         await docClient.send(new UpdateCommand(params));
         setKeys.forEach(k => { entry.dbSnap[k] = curStr[k]; });
         removeKeys.forEach(k => { delete entry.dbSnap[k]; });
+        schedulePointUsageDelivery(entry);
         return { success: true, result: ['updated'] };
     } catch (error) {
+        if (error.name === 'ConditionalCheckFailedException' && setKeys.includes('point')) {
+            const latest = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { id: entry.raw.id }, ConsistentRead: true }));
+            if (latest.Item) {
+                const committed = setKeys.every(k => JSON.stringify(latest.Item[k]) === curStr[k]) && removeKeys.every(k => latest.Item[k] === undefined);
+                const fresh = putUserCacheEntry(latest.Item);
+                schedulePointUsageDelivery(fresh);
+                return committed ? { success: true, result: ['updated'] } : { success: false, result: [error] };
+            }
+        }
         entry.dirty = true; // 스윕 타이머가 재시도
         console.error('[user-flush] 실패 (' + entry.raw.id + '):', error && error.message);
         return { success: false, result: [error] };
     }
+}
+
+// The queue is committed in the same wallet update; Supabase UUID conflicts make delivery retry-safe.
+function schedulePointUsageDelivery(entry) {
+    if (!entry || entry.usageDelivery || entry.usageRetryAt > Date.now() || !entry.dbSnap[pointUsage.OUTBOX]) return;
+    const job = (entry.flushChain || Promise.resolve()).catch(() => {}).then(async () => {
+        const events = Object.values(JSON.parse(entry.dbSnap[pointUsage.OUTBOX] || '{}')).slice(0, 100);
+        if (!events.length) return;
+        await pointUsage.publish(events);
+        const names = { '#outbox': pointUsage.OUTBOX };
+        events.forEach((event, i) => { names['#event' + i] = event.id; });
+        await docClient.send(new UpdateCommand({ TableName: TABLE_NAME, Key: { id: entry.raw.id },
+            UpdateExpression: 'REMOVE ' + events.map((_, i) => '#outbox.#event' + i).join(', '), ExpressionAttributeNames: names }));
+        const saved = JSON.parse(entry.dbSnap[pointUsage.OUTBOX] || '{}');
+        for (const event of events) { delete saved[event.id]; if (entry.raw[pointUsage.OUTBOX]) delete entry.raw[pointUsage.OUTBOX][event.id]; }
+        entry.dbSnap[pointUsage.OUTBOX] = JSON.stringify(saved);
+        entry.usageRetryAt = 0;
+    }).catch(error => {
+        entry.usageRetryAt = Date.now() + 15000;
+        console.error('[point-usage] 전송 대기:', error.message);
+    }).finally(() => { entry.usageDelivery = null; });
+    entry.usageDelivery = job;
+}
+
+async function flushPointUsageOutboxes() {
+    for (const entry of userCacheById.values()) schedulePointUsageDelivery(entry);
+    await Promise.all([...userCacheById.values()].map(entry => entry.usageDelivery).filter(Boolean));
+}
+
+function getPointUsageDeliveryStatus() {
+    let pending = 0, oldest = null;
+    for (const entry of userCacheById.values()) for (const event of Object.values(entry.raw[pointUsage.OUTBOX] || {})) {
+        if (entry.raw.isAdmin || event.is_admin) continue;
+        pending++;
+        if (!oldest || event.occurred_at < oldest) oldest = event.occurred_at;
+    }
+    return { pending, oldest };
 }
 
 // DB에 직접 쓴 변경(TransactWrite 등)을 캐시에도 반영한다. changes: { key: value } (value=undefined면 제거)
@@ -14257,6 +14350,7 @@ async function flushAllDirtyUsers() {
 const userFlushSweepTimer = setInterval(() => {
     for (const entry of userCacheById.values()) {
         if (entry.dirty && !entry.timer && !entry.flushChain) flushUserEntry(entry).catch(() => { });
+        schedulePointUsageDelivery(entry);
     }
 }, USER_FLUSH_SWEEP_MS);
 if (typeof userFlushSweepTimer.unref == 'function') userFlushSweepTimer.unref();
@@ -14371,6 +14465,7 @@ class RPGUser {
         for (const k of Object.keys(_src)) { try { _snap[k] = JSON.stringify(_src[k]); } catch (_) { } }
         Object.defineProperty(this, '__loaded', { value: _snap, enumerable: false, writable: true, configurable: true });
         Object.assign(this, data);
+        delete this[pointUsage.OUTBOX];
         if (!Array.isArray(this.logged_in)) this.logged_in = [];
         if (!Array.isArray(this.logged_in_agent)) this.logged_in_agent = [];
         // UA 원문이 무한 누적되지 않게 최근 10개만 유지 (오래된 기기는 코드/OTP로 재로그인)
@@ -15446,6 +15541,12 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     }
 
     const transactItems = [];
+    if (currencyReq.point > 0) {
+        pointUsage.record(sender, { amount: currencyReq.point, kind: 'transfer', category: 'mail', action: 'send', productName: '메일 포인트 선물', details: { recipientId: String(recipient.id), recipientName: recipient.name, mailId: record.id } });
+        const entry = userCacheById.get(sender.id);
+        senderExpected[pointUsage.OUTBOX] = cloneUserRaw(entry?.raw[pointUsage.OUTBOX]);
+        senderChanges[pointUsage.OUTBOX] = pointUsage.append(senderExpected[pointUsage.OUTBOX], pointUsage.pending(sender, senderBefore.point));
+    }
     const changedKeys = Object.keys(senderChanges);
     if (changedKeys.length > 0) {
         const names = {};
@@ -15453,13 +15554,13 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         changedKeys.forEach(key => {
             names['#' + key] = key;
             values[':new_' + key] = senderChanges[key];
-            values[':old_' + key] = senderExpected[key];
+            if (senderExpected[key] !== undefined) values[':old_' + key] = senderExpected[key];
         });
         transactItems.push({ Update: {
             TableName: TABLE_NAME,
             Key: { id: sender.id },
             UpdateExpression: 'SET ' + changedKeys.map(key => '#' + key + '=:new_' + key).join(','),
-            ConditionExpression: 'attribute_exists(id) AND ' + changedKeys.map(key => '#' + key + '=:old_' + key).join(' AND '),
+            ConditionExpression: 'attribute_exists(id) AND ' + changedKeys.map(key => senderExpected[key] === undefined ? 'attribute_not_exists(#' + key + ')' : '#' + key + '=:old_' + key).join(' AND '),
             ExpressionAttributeNames: names,
             ExpressionAttributeValues: values
         } });
@@ -15482,21 +15583,27 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         // 지연 flush로 DB가 캐시보다 뒤처져 있으면 조건 검사가 어긋나므로, 트랜잭션 전에 두 유저를 DB에 정렬한다
         await flushCachedUser(sender.id);
         await flushCachedUser(recipient.id);
-        await docClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+        await docClient.send(new TransactWriteCommand({ ClientRequestToken: crypto.randomUUID(), TransactItems: transactItems }));
     } catch (e) {
-        sender.gold = senderBefore.gold;
-        sender.garnet = senderBefore.garnet;
-        sender.point = senderBefore.point;
-        sender.inventory = senderBefore.inventory;
-        sender.avatars = senderBefore.avatars;
-        sender.main_card = senderBefore.main_card;
-        sender.card_slot = senderBefore.card_slot;
-        console.error('[mail] send transaction 실패 (' + sender.name + ' → ' + recipient.name + '):', e.message);
-        return { error: '보유 정보가 변경되었거나 메일 저장에 실패했습니다. 다시 시도해주세요.' };
+        const savedMail = await docClient.send(new GetCommand({ TableName: MAIL_TABLE_NAME, Key: { id: record.id }, ConsistentRead: true })).catch(() => ({}));
+        if (!savedMail.Item || !isDeepStrictEqual(savedMail.Item, record)) {
+            pointUsage.clear(sender);
+            sender.gold = senderBefore.gold;
+            sender.garnet = senderBefore.garnet;
+            sender.point = senderBefore.point;
+            sender.inventory = senderBefore.inventory;
+            sender.avatars = senderBefore.avatars;
+            sender.main_card = senderBefore.main_card;
+            sender.card_slot = senderBefore.card_slot;
+            console.error('[mail] send transaction 실패 (' + sender.name + ' → ' + recipient.name + '):', e.message);
+            return { error: '보유 정보가 변경되었거나 메일 저장에 실패했습니다. 다시 시도해주세요.' };
+        }
     }
     if (sender.__loaded) changedKeys.forEach(key => { sender.__loaded[key] = JSON.stringify(senderChanges[key]); });
     // DB에 직접 기록된 변경을 캐시에도 반영 (발신자 차감분 + 수신자 메일 엔트리)
     applyDirectDbWriteToCache(sender.id, senderChanges);
+    pointUsage.clear(sender);
+    schedulePointUsageDelivery(userCacheById.get(sender.id));
     const recipientEntry = userCacheById.get(recipient.id);
     const recipientMail = recipientEntry && Array.isArray(recipientEntry.raw.mail) ? recipientEntry.raw.mail : [];
     applyDirectDbWriteToCache(recipient.id, { mail: recipientMail.concat([mailEntry]), mailNotified: false });
@@ -17532,6 +17639,7 @@ function __setQuestDefs(defs) {
 }
 
 module.exports = {
+    flushPointUsageOutboxes, getPointUsageDeliveryStatus,
     isRuntimeReady,
     getEquippedEquipmentData,
     isEquipmentEffectActive,
