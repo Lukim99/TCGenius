@@ -154,3 +154,12 @@ test('a stalled state read unlocks and retries later without stacking requests',
     await c.advance(12000); await read; assert.equal(c.api.loading, false);
     await c.advance(3000); c.api.pollState(); await flush(); assert.equal(c.calls.length, 2); assert.equal(c.accepted.length, 1);
 });
+
+
+test('manual recovery supersedes the queued retry even if it fails before the timer fires', async () => {
+    const c = client(() => Promise.resolve(response(503, { error: 'retry' })));
+    await c.api.mutate('route', { choice: 'left' }); await c.advance(500);
+    await c.api.mutate('route', {}, true); await c.advance(1000);
+    assert.equal(c.calls.length, 2); assert.ok(c.api.pending); assert.equal(c.api.busy, false);
+    assert.equal(c.calls[0].options.body, c.calls[1].options.body);
+});

@@ -277,7 +277,7 @@
     async function mutate(action, input = {}, retry = false) {
         if (busy || heavenEntry || transition?.next || pending && !retry || retry && !pending) return; busy = true; stateGeneration++; regionKey = '';
         if (!retry) { outcomeReveal = null; pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: action === 'shop/buy' ? state.shop.revision : action.startsWith('progression/') ? state.progression.revision : state.revision, ...(action === 'shop/buy' ? { catalogRevision: state.shop.catalogRevision } : {}), runId: state.runId } }; }
-        const operation = pending; action = operation.action;
+        const operation = pending; action = operation.action; clearTimeout(operation.retryTimer);
         try {
             const { response, result } = await requestJson('/api/paradise/' + operation.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(operation.body) });
             // Only a recognized success or explicit business rejection resolves an operation.
@@ -309,7 +309,7 @@
             // At most one automatic recovery. The original request ID/body is never replaced.
             if (pending === operation && !operation.autoRetried && !error.auth && !document.hidden) {
                 operation.autoRetried = true;
-                setTimeout(() => { if (pending === operation && !busy && !document.hidden) mutate(operation.action, {}, true); }, 1000);
+                operation.retryTimer = setTimeout(() => { if (pending === operation && !busy && !document.hidden) mutate(operation.action, {}, true); }, 1000);
             }
         }
         finally { busy = false; regionKey = ''; }
