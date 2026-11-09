@@ -33,6 +33,7 @@
     function displayText(value) { return String(value).replace(/\s*·\s*/g, ', '); }
     function announce(text, visible = true) { live.textContent = displayText(text || ''); message = visible ? live.textContent : ''; messageUntil = performance.now() + (innerWidth < 700 ? 2800 : 4500); }
     function sound(kind) { audio.play(kind); }
+    function setHidden(node, hidden) { if (node.hidden !== hidden) node.hidden = hidden; }
 
     // 기존 필드와 같은 WebGL 장면 + 캔버스 HUD 구조. 증강 카드는 화면 크기 그대로의 텍스처로 올려 글자가 축소되지 않게 한다.
     class CorridorGL {
@@ -53,8 +54,13 @@
             canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); fatal('그래픽 장치 연결이 끊겼습니다. 새로고침하면 저장된 탐험으로 돌아갑니다.'); });
         }
         texture(source) { const gl = this.gl, tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source); return { tex, width: source.width, height: source.height }; }
-        clearCards() { for (const texture of this.cards.values()) this.gl.deleteTexture(texture.tex); this.cards.clear(); }
-        image(url) { if (!url) return null; if (!this.images.has(url)) { const image = new Image(), entry = { image, ready: false }; image.decoding = 'async'; image.onload = () => { Object.assign(entry, this.texture(image), { ready: true }); this.clearCards(); }; image.src = url; this.images.set(url, entry); } return this.images.get(url); }
+        clearCards(iconUrl) {
+            for (const [key, texture] of this.cards) {
+                if (iconUrl !== undefined && texture.iconUrl !== iconUrl) continue;
+                this.gl.deleteTexture(texture.tex); this.cards.delete(key);
+            }
+        }
+        image(url) { if (!url) return null; if (!this.images.has(url)) { const image = new Image(), entry = { image, ready: false }; image.decoding = 'async'; image.onload = () => { Object.assign(entry, this.texture(image), { ready: true }); this.clearCards(url); }; image.src = url; this.images.set(url, entry); } return this.images.get(url); }
         quad(texture, x, y, w, h, tint = [1, 1, 1, 1], uv = [0, 0, 1, 1], tilt = 0) {
             if (!texture?.tex || w <= 0 || h <= 0) return;
             const gl = this.gl, [u, v, uw, vh] = uv, bend = tilt * h * .035;
@@ -66,8 +72,8 @@
         begin(w, h) { const gl = this.gl; gl.viewport(0, 0, this.canvas.width, this.canvas.height); gl.clearColor(.015, .025, .04, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.useProgram(this.program); gl.uniform2f(this.res, w, h); }
         card(choice, w, h) {
             if (!fontsReady) return null;
-            w = Math.round(w); h = Math.round(h); const size = `${w}x${h}@${devicePixelRatio}`; if (size !== this.cardSize) { this.clearCards(); this.cardSize = size; }
-            const key = JSON.stringify(choice); if (!this.cards.has(key)) this.cards.set(key, this.texture(paintCard(choice, this.image(choice.iconUrl), w, h))); return this.cards.get(key);
+            w = Math.round(w); h = Math.round(h); const size = `${w}x${h}@${Math.min(devicePixelRatio || 1, 2)}`; if (size !== this.cardSize) { this.clearCards(); this.cardSize = size; }
+            const key = JSON.stringify(choice); if (!this.cards.has(key)) this.cards.set(key, { ...this.texture(paintCard(choice, this.image(choice.iconUrl), w, h)), iconUrl: choice.iconUrl }); return this.cards.get(key);
         }
     }
     let renderer;
@@ -314,7 +320,7 @@
 
     function syncPuzzle() {
         const event = state?.run?.phase === 'puzzle' ? state.run.event : null;
-        puzzleForm.hidden = !event || overlay != null;
+        setHidden(puzzleForm, !event || overlay != null);
         if (!event) { puzzleKey = ''; return; }
         if (puzzleKey === event.puzzle.id) return; puzzleKey = event.puzzle.id; puzzleForm.replaceChildren();
         const p = event.puzzle; puzzleForm.style.gridTemplateColumns = `repeat(${p.grid?.size || Math.min(7, p.length)},1fr)`;
@@ -457,7 +463,7 @@
         ctx.restore();
     }
     function revealRewards(w, h, t) {
-        regions = []; puzzleForm.hidden = true;
+        regions = []; setHidden(puzzleForm, true);
         const reveal = rewardReveal, mobile = w < 700, per = mobile ? 1 : 3;
         const pages = Math.max(1, Math.ceil(reveal.items.length / per));
         reveal.page = clamp(reveal.page, 0, pages - 1);
@@ -596,7 +602,7 @@
         }
         text(ctx, '천상', cx, cy + gateH * .68, w < 700 ? 24 : 32, '#f2e5c6', 'center', 700);
         ctx.restore();
-        regions = []; puzzleForm.hidden = true;
+        regions = []; setHidden(puzzleForm, true);
     }
     function cardGeometry(w, h) {
         if (w < 700) { const cardW = Math.min(w - 84, 300), y = 104; return { mobile: true, cardW, cardH: Math.min(cardW / .6, h - y - 160), y }; }
@@ -751,7 +757,9 @@
         for (const rows of rules) { rows.forEach((row, i) => text(ctx, row, x + 20, y + i * ruleSize * 1.5, ruleSize, '#c9d3d5')); y += rows.length * ruleSize * 1.5 + 6; }
         if (clues.length) { line(ctx, x + 20, y - 4, x + width - 20, y - 4); y += 8; }
         for (const rows of clues) { rows.forEach((row, i) => text(ctx, row, x + 20, y + i * clueSize * 1.5, clueSize, '#f0e0b6', 'left', 600)); y += rows.length * clueSize * 1.5 + 4; }
-        puzzleForm.style.top = Math.min(h - 240, py + contentH + 46) + 'px'; puzzleForm.hidden = overlay != null;
+        const formTop = Math.min(h - 240, py + contentH + 46) + 'px';
+        if (puzzleForm.style.top !== formTop) puzzleForm.style.top = formTop;
+        setHidden(puzzleForm, overlay != null);
         const bw = mobile ? (w - 44) / 2 : 200, by = h - (mobile ? 116 : 112);
         hitButton(w / 2 - bw - 6, by, bw, 46, '정답 제출', submitPuzzle, { primary: true, size: 15 }); hitButton(w / 2 + 6, by, bw, 46, '건너뛰고 +5층', () => mutate('puzzle', { skip: true }), { size: 15 });
         if (!seconds && !busy && !pending && expiredPuzzle !== e.puzzle.id) { expiredPuzzle = e.puzzle.id; mutate('puzzle', { answer: '' }); }
@@ -1289,16 +1297,22 @@
         }
     }
     function syncRegions() {
-        const children=[...controls.children];
         regions.forEach((region,i)=>{
-            let button=children[i];
-            if(!button){button=document.createElement('button');button.type='button';controls.append(button);}
-            button.setAttribute('aria-label',region.label);button.disabled=region.disabled;
-            button.style.cssText=`left:${region.x}px;top:${region.y}px;width:${region.w}px;height:${region.h}px`;
-            button.onclick=region.fn;
-            button.onfocus=()=>{if(inputMode!=='keyboard')return;const index=state?.run?.choices?.findIndex(c=>region.label.includes(c.name));if(index>=0)keyboardCard=index;};
+            let button=controls.children[i];
+            if(!button){
+                button=document.createElement('button');button.type='button';controls.append(button);
+                // Handlers stay attached, but always use this frame's action and label.
+                button.onclick=event=>button.paradiseRegion.fn.call(button,event);
+                button.onfocus=()=>{if(inputMode!=='keyboard')return;const index=state?.run?.choices?.findIndex(c=>button.paradiseRegion.label.includes(c.name));if(index>=0)keyboardCard=index;};
+            }
+            const previous=button.paradiseRegion;
+            if(!previous||previous.label!==region.label)button.setAttribute('aria-label',region.label);
+            if(!previous||previous.disabled!==region.disabled)button.disabled=region.disabled;
+            if(!previous||previous.x!==region.x||previous.y!==region.y||previous.w!==region.w||previous.h!==region.h)
+                button.style.cssText=`left:${region.x}px;top:${region.y}px;width:${region.w}px;height:${region.h}px`;
+            button.paradiseRegion=region;
         });
-        children.slice(regions.length).forEach(button=>button.remove());
+        while(controls.children.length>regions.length)controls.lastElementChild.remove();
     }
     function frame(t) {
         const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
@@ -1306,7 +1320,7 @@
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h); regions = [];
         const inCombat=!heavenEntry&&(state?.run?.phase==='combat'||t<battleUntil);
         if (!inCombat && !battleRoot.hidden) battle.stopCutscene();
-        battleRoot.hidden=!inCombat; sceneCanvas.hidden=inCombat;
+        setHidden(battleRoot,!inCombat); setHidden(sceneCanvas,inCombat);
         if(!inCombat){renderer.begin(w, h);sceneBackground(w,h,t);}
         if (!state) text(ctx, '불러오는 중…', w / 2, h / 2, 16, '#d8cfb8', 'center', 600);
         else if (heavenEntry) heavenEntryScene(w, h, t);
@@ -1320,7 +1334,7 @@
             if (transitionFx(w, h, t)) regions.forEach(r => { r.disabled = true; });
             gameHud(w, h, t);
             revealOutcome(w,h,t);
-            if (overlay) { puzzleForm.hidden = true; drawOverlay(w, h); }
+            if (overlay) { setHidden(puzzleForm, true); drawOverlay(w, h); }
             if (rewardReveal) revealRewards(w, h, t);
             if (pending && !busy) { hitButton(w / 2 - 140, h / 2 - 24, 280, 48, '저장 확인 후 같은 요청 재시도', () => mutate(pending.action, {}, true), { primary: true }); const r = regions[regions.length - 1]; r.disabled = false; }
         }
