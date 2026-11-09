@@ -14307,7 +14307,7 @@ async function flushPointUsageOutboxes() {
 function getPointUsageDeliveryStatus() {
     let pending = 0, oldest = null;
     for (const entry of userCacheById.values()) for (const event of Object.values(entry.raw[pointUsage.OUTBOX] || {})) {
-        if (entry.raw.isAdmin || event.is_admin) continue;
+        if (entry.raw.isAdmin || event.is_admin || event.category === 'mail' || event.kind === 'transfer') continue;
         pending++;
         if (!oldest || event.occurred_at < oldest) oldest = event.occurred_at;
     }
@@ -15541,12 +15541,6 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     }
 
     const transactItems = [];
-    if (currencyReq.point > 0) {
-        pointUsage.record(sender, { amount: currencyReq.point, kind: 'transfer', category: 'mail', action: 'send', productName: '메일 포인트 선물', details: { recipientId: String(recipient.id), recipientName: recipient.name, mailId: record.id } });
-        const entry = userCacheById.get(sender.id);
-        senderExpected[pointUsage.OUTBOX] = cloneUserRaw(entry?.raw[pointUsage.OUTBOX]);
-        senderChanges[pointUsage.OUTBOX] = pointUsage.append(senderExpected[pointUsage.OUTBOX], pointUsage.pending(sender, senderBefore.point));
-    }
     const changedKeys = Object.keys(senderChanges);
     if (changedKeys.length > 0) {
         const names = {};
@@ -15554,13 +15548,13 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         changedKeys.forEach(key => {
             names['#' + key] = key;
             values[':new_' + key] = senderChanges[key];
-            if (senderExpected[key] !== undefined) values[':old_' + key] = senderExpected[key];
+            values[':old_' + key] = senderExpected[key];
         });
         transactItems.push({ Update: {
             TableName: TABLE_NAME,
             Key: { id: sender.id },
             UpdateExpression: 'SET ' + changedKeys.map(key => '#' + key + '=:new_' + key).join(','),
-            ConditionExpression: 'attribute_exists(id) AND ' + changedKeys.map(key => senderExpected[key] === undefined ? 'attribute_not_exists(#' + key + ')' : '#' + key + '=:old_' + key).join(' AND '),
+            ConditionExpression: 'attribute_exists(id) AND ' + changedKeys.map(key => '#' + key + '=:old_' + key).join(' AND '),
             ExpressionAttributeNames: names,
             ExpressionAttributeValues: values
         } });
@@ -15583,27 +15577,21 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         // 지연 flush로 DB가 캐시보다 뒤처져 있으면 조건 검사가 어긋나므로, 트랜잭션 전에 두 유저를 DB에 정렬한다
         await flushCachedUser(sender.id);
         await flushCachedUser(recipient.id);
-        await docClient.send(new TransactWriteCommand({ ClientRequestToken: crypto.randomUUID(), TransactItems: transactItems }));
+        await docClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
     } catch (e) {
-        const savedMail = await docClient.send(new GetCommand({ TableName: MAIL_TABLE_NAME, Key: { id: record.id }, ConsistentRead: true })).catch(() => ({}));
-        if (!savedMail.Item || !isDeepStrictEqual(savedMail.Item, record)) {
-            pointUsage.clear(sender);
-            sender.gold = senderBefore.gold;
-            sender.garnet = senderBefore.garnet;
-            sender.point = senderBefore.point;
-            sender.inventory = senderBefore.inventory;
-            sender.avatars = senderBefore.avatars;
-            sender.main_card = senderBefore.main_card;
-            sender.card_slot = senderBefore.card_slot;
-            console.error('[mail] send transaction 실패 (' + sender.name + ' → ' + recipient.name + '):', e.message);
-            return { error: '보유 정보가 변경되었거나 메일 저장에 실패했습니다. 다시 시도해주세요.' };
-        }
+        sender.gold = senderBefore.gold;
+        sender.garnet = senderBefore.garnet;
+        sender.point = senderBefore.point;
+        sender.inventory = senderBefore.inventory;
+        sender.avatars = senderBefore.avatars;
+        sender.main_card = senderBefore.main_card;
+        sender.card_slot = senderBefore.card_slot;
+        console.error('[mail] send transaction 실패 (' + sender.name + ' → ' + recipient.name + '):', e.message);
+        return { error: '보유 정보가 변경되었거나 메일 저장에 실패했습니다. 다시 시도해주세요.' };
     }
     if (sender.__loaded) changedKeys.forEach(key => { sender.__loaded[key] = JSON.stringify(senderChanges[key]); });
     // DB에 직접 기록된 변경을 캐시에도 반영 (발신자 차감분 + 수신자 메일 엔트리)
     applyDirectDbWriteToCache(sender.id, senderChanges);
-    pointUsage.clear(sender);
-    schedulePointUsageDelivery(userCacheById.get(sender.id));
     const recipientEntry = userCacheById.get(recipient.id);
     const recipientMail = recipientEntry && Array.isArray(recipientEntry.raw.mail) ? recipientEntry.raw.mail : [];
     applyDirectDbWriteToCache(recipient.id, { mail: recipientMail.concat([mailEntry]), mailNotified: false });

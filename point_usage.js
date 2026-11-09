@@ -69,7 +69,7 @@ function filters(query) {
         if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) throw new Error('날짜를 YYYY-MM-DD 형식으로 입력해주세요.');
     }
     if (from > to) throw new Error('시작일은 종료일보다 늦을 수 없습니다.');
-    const kinds = ['consumption', 'transfer', 'adjustment', 'reversal', 'all'];
+    const kinds = ['consumption', 'adjustment', 'reversal', 'all'];
     const kind = query.kind || 'consumption';
     const category = query.category || '', search = query.search || '';
     if (!kinds.includes(kind) || typeof category !== 'string' || category.length > 80 || typeof search !== 'string' || search.length > 100) throw new Error('조회 조건이 올바르지 않습니다.');

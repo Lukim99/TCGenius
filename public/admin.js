@@ -2911,8 +2911,8 @@ if ($('#pointLogFilter')) $('#pointLogFilter').addEventListener('input', e => { 
 TAB_LOADERS.pointlog = loadPointLog;
 
 // 포인트 사용 통계 — 서버 집계이며 상세 목록만 50건씩 가져온다.
-const POINT_USAGE_CATEGORIES = { shop: '상점', personal_draw: '퍼스널뽑기', blessing: '축복', preset: '프리셋', mail: '메일 선물', admin: '관리자 회수', charge_cancel: '충전 취소', unclassified: '미분류 차감' };
-const POINT_USAGE_KINDS = { consumption: '소비', transfer: '선물', adjustment: '회수', reversal: '복구' };
+const POINT_USAGE_CATEGORIES = { shop: '상점', personal_draw: '퍼스널뽑기', blessing: '축복', preset: '프리셋', admin: '관리자 회수', charge_cancel: '충전 취소', unclassified: '미분류 차감' };
+const POINT_USAGE_KINDS = { consumption: '소비', adjustment: '회수', reversal: '복구' };
 let pointUsagePage = 0, pointUsageRequest = 0;
 function pointUsageTable(target, headings, rows) {
     const box = $(target); box.replaceChildren();
@@ -2936,20 +2936,22 @@ async function loadPointUsage(page = 0) {
         pointUsagePage = page;
         const pending = Number(data.delivery?.pending || 0);
         const first = data.firstRecordedAt ? new Date(data.firstRecordedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '아직 기록 없음';
-        $('#pointUsageStatus').textContent = '관리자 제외 · 기록 시작: ' + first + (pending ? ' · 전송 대기 ' + comma(pending) + '건: 전송 후 통계에 반영됩니다.' : ' · 전송 대기 없음');
+        $('#pointUsageStatus').textContent = '관리자 제외 · 확인된 첫 기록: ' + first + (pending ? ' · 전송 대기 ' + comma(pending) + '건: 전송 후 통계에 반영됩니다.' : ' · 전송 대기 없음');
+        const amountLabel = { consumption: '소비액', adjustment: '회수액', reversal: '복구액', all: '기록 금액' }[query.get('kind')];
         $('#pointUsageSummary').replaceChildren(...[
-            '사용액 ' + comma(data.summary.amount) + ' P', '처리 ' + comma(data.summary.count) + '건',
-            '유료 차감 ' + comma(data.summary.paidCount) + '건', '이용자 ' + comma(data.summary.users) + '명'
+            amountLabel + ' ' + comma(data.summary.amount) + ' P', '처리 ' + comma(data.summary.count) + '건',
+            ...(query.get('kind') === 'consumption' ? ['유료 소비 ' + comma(data.summary.paidCount) + '건'] : []),
+            '이용자 ' + comma(data.summary.users) + '명', '과거 복구 ' + comma(data.summary.recoveredCount || 0) + '건'
         ].map(text => el('strong', { style: 'font-size:18px;padding:12px 0' }, text)));
         const category = value => POINT_USAGE_CATEGORIES[value] || value;
         const stats = row => [comma(row.amount) + ' P', comma(row.count), comma(row.users)];
-        pointUsageTable('#pointUsageDaily', ['날짜 (KST)', '사용액', '건수', '이용자'], data.daily.map(row => [row.date, ...stats(row)]));
-        pointUsageTable('#pointUsageCategories', ['사용처', '사용액', '건수', '이용자'], data.categories.map(row => [category(row.category), ...stats(row)]));
-        pointUsageTable('#pointUsageProducts', ['사용처', '상품·행동', '수량', '사용액', '건수', '이용자'], data.products.map(row => [category(row.category), row.product_name, comma(row.quantity), ...stats(row)]));
-        pointUsageTable('#pointUsageEntries', ['일시 (KST)', '닉네임', '구분', '사용처', '상품·행동', '수량', '차감액', '잔액 전 → 후', '세부 정보'], data.entries.map(row => {
+        pointUsageTable('#pointUsageDaily', ['날짜 (KST)', amountLabel, '건수', '이용자'], data.daily.map(row => [row.date, ...stats(row)]));
+        pointUsageTable('#pointUsageCategories', ['사용처', amountLabel, '건수', '이용자'], data.categories.map(row => [category(row.category), ...stats(row)]));
+        pointUsageTable('#pointUsageProducts', ['사용처', '상품·행동', '수량', amountLabel, '건수', '이용자'], data.products.map(row => [category(row.category), row.product_name, comma(row.quantity), ...stats(row)]));
+        pointUsageTable('#pointUsageEntries', ['일시 (KST)', '기록 방식', '닉네임', '구분', '사용처', '상품·행동', '수량', '금액', '잔액 전 → 후', '세부 정보'], data.entries.map(row => {
             const detail = el('details', {}, el('summary', {}, '자세히'), el('pre', { style: 'white-space:pre-wrap;max-width:420px;font-size:12px' }, JSON.stringify({ transactionId: row.id, accountId: row.user_id, source: row.source, ...row.details }, null, 2)));
-            return [new Date(row.occurred_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }), row.nickname, POINT_USAGE_KINDS[row.kind] || row.kind,
-                category(row.category), row.product_name, comma(row.quantity), comma(row.amount) + ' P', comma(row.balance_before) + ' → ' + comma(row.balance_after), detail];
+            return [new Date(row.occurred_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }), row.source === 'backfill' ? '과거 복구' : '자동 기록', row.nickname, POINT_USAGE_KINDS[row.kind] || row.kind,
+                category(row.category), row.product_name, comma(row.quantity), comma(row.amount) + ' P', row.balance_before == null || row.balance_after == null ? '미확인' : comma(row.balance_before) + ' → ' + comma(row.balance_after), detail];
         }));
         const pages = Math.max(1, Math.ceil(Number(data.summary.count) / 50));
         $('#pointUsagePager').replaceChildren(

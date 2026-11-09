@@ -129,14 +129,16 @@ test('전송 중 다음 구매가 저장되어도 새 미전송 내역을 지우
     assert.ok(rows.has(firstId)); assert.ok(rows.has(secondId)); assert.equal(rpg.getPointUsageDeliveryStatus().pending, 0);
 });
 
-test('메일 선물은 발신 차감과 동일 트랜잭션에 저장하고 소비와 분리한다', async () => {
+test('메일 선물은 정상 차감하되 포인트 사용 원장에는 기록하지 않는다', async () => {
     const user = await rpg.getRPGUserByName('spend');
+    const beforePoint = user.point, beforeCount = rows.size;
     assert.equal((await rpg.sendMail(user, 'recipient', '선물', '', [{ type: 'point', amount: 75 }])).ok, true);
     const tx = writes.findLast(input => input.TransactItems);
     const values = tx.TransactItems[0].Update.ExpressionAttributeValues;
-    const event = Object.values(values[':new_pointUsageOutbox']).find(e => e.category === 'mail');
-    assert.equal(event.kind, 'transfer'); assert.equal(event.amount, 75); assert.equal(event.details.recipientName, 'recipient');
-    await rpg.flushPointUsageOutboxes(); assert.equal(rows.has(event.id), true);
+    assert.equal(values[':new_pointUsageOutbox'], undefined);
+    assert.equal(values[':new_point'], beforePoint - 75);
+    await rpg.flushPointUsageOutboxes(); assert.equal(rows.size, beforeCount);
+    await user.save(); await rpg.flushPointUsageOutboxes(); assert.equal(rows.size, beforeCount);
 });
 
 test('관리자 API는 인증·날짜 경계·현재 관리자 제외를 강제하고 페이지 전체 집계를 그대로 반환한다', async () => {
@@ -144,14 +146,18 @@ test('관리자 API는 인증·날짜 경계·현재 관리자 제외를 강제�
     assert.equal((await fetch(base + '/api/admin/point-usage', { headers: { Cookie: cookie(false) } })).status, 401);
     const headers = { Cookie: cookie(true) };
     assert.equal((await fetch(base + '/api/admin/point-usage?from=2026-02-30', { headers })).status, 400);
-    const sample = [...rows.values()][0];
-    rpcResponse = { summary: { amount: 120100, count: 1201, users: 2, paidCount: 1201 },
+    assert.equal((await fetch(base + '/api/admin/point-usage?kind=transfer', { headers })).status, 400);
+    const sample = { ...[...rows.values()][0], source: 'backfill', balance_before: null, balance_after: null };
+    rpcResponse = { summary: { amount: 120100, count: 1201, users: 2, paidCount: 1201, recoveredCount: 1 },
         daily: [{ date: '2026-11-09', amount: 120100, count: 1201, users: 2 }],
         categories: [{ category: 'shop', amount: 120100, count: 1201, users: 2 }],
         products: [{ category: 'shop', product_name: sample.product_name, amount: 120100, quantity: 1201, count: 1201, users: 2 }],
         entries: [sample], firstRecordedAt: sample.occurred_at };
     const result = await fetch(base + '/api/admin/point-usage?from=2026-11-01&to=2026-11-09&page=2&excludeAdmin=false', { headers });
-    assert.equal(result.status, 200); assert.equal((await result.json()).summary.count, 1201);
+    assert.equal(result.status, 200);
+    const payload = await result.json();
+    assert.equal(payload.summary.count, 1201); assert.equal(payload.summary.recoveredCount, 1);
+    assert.equal(payload.entries[0].balance_before, null);
     assert.equal(rpcBody.p_from, '2026-10-31T15:00:00.000Z'); assert.equal(rpcBody.p_to, '2026-11-09T15:00:00.000Z');
     assert.deepEqual(rpcBody.p_admin_ids, ['admin']); assert.equal(rpcBody.p_offset, 100); assert.equal(rpcBody.p_exclude_admin, undefined);
     const html = await (await fetch(base + '/admin', { headers })).text(); assert.match(html, /pointUsageForm/);
