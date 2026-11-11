@@ -48,12 +48,26 @@ function serializeCard(card) {
     };
 }
 const EQUIP_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
+// 능력치 줄: 실제 서버(formatEquipmentStatLines)와 같은 한글 라벨을 rpgenius.js의 표에서 읽어 쓴다(코드를 실행하지 않고 'key: 라벨' 쌍만 읽음).
+const STAT_LABELS = (() => {
+    const source = fs.readFileSync(path.join(ROOT, 'rpgenius.js'), 'utf8'), read = name => {
+        const start = source.indexOf('const ' + name + ' = {'); if (start < 0) return {};
+        const body = source.slice(start, source.indexOf('};', start)), out = {};
+        for (const m of body.matchAll(/(\w+)\s*:\s*'([^']+)'/g)) out[m[1]] = m[2];
+        return out;
+    };
+    return { stat: read('EQUIP_STAT_LABELS'), plus: read('EQUIP_PLUSSTAT_LABELS') };
+})();
+const statLines = data => [
+    ...Object.entries(data.stat || {}).map(([key, value]) => (STAT_LABELS.stat[key] || key) + ' +' + comma(value)),
+    ...Object.entries(data.plusStat || {}).map(([key, value]) => (STAT_LABELS.plus[key] || STAT_LABELS.stat[key] || key) + (Number(value) < 0 ? ' ' : ' +') + Math.round(Number(value) * 1000) / 10 + '%')
+];
 function serializeEquipment(equip, number) {
     const data = EQUIP[equip.type][equip.id];
     return {
         type: equip.type, typeLabel: EQUIP_LABELS[equip.type], id: equip.id, number, source: 'inventory', index: number - 1, name: data.name, baseName: data.name,
         locked: false, rarity: data.rarity, baseRarity: data.rarity, artifact: null, transcendStage: data.rarity === '초월' ? 1 : null, setName: data.set || null,
-        level: equip.level || 0, equipped: false, statLines: Object.entries(data.stat || {}).map(([key, value]) => key.toUpperCase() + ' +' + comma(value)), description: data.desc || '',
+        level: equip.level || 0, equipped: false, statLines: statLines(data), description: data.desc || '',
         passive: data.passive_id != null || number % 3 === 1 ? { name: '업화의 의지', desc: '공격 시 10% 확률로 10초간 공격력 +12%.\n쿨타임 30초.', cooltime: 30 } : null, potentialLines: [],
         potentialDisplay: equip.potential ? { tierKey: 'unique', tierLabel: equip.potential, entries: [{ gradeLabel: '유니크', text: '공격력 +9%' }, { gradeLabel: '에픽', text: '치명타 확률 +6%' }, { gradeLabel: '에픽', text: '최대 HP +4%' }] } : null, potential: null, canPotential: true,
         soul: number % 4 === 2 ? { name: '불꽃 영혼', expiredAt: Date.now() + 86400000 } : null,

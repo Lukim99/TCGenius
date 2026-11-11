@@ -223,7 +223,7 @@
             for (const c of list) {
                 const cw = Math.min(w, tw(c.text, o.size || 12, 800) + 16);
                 if (cx > x && cx + cw > x + w) { if (o.single) break; cx = x; cy += h + gap; }
-                chip(c.text, cx, cy, c.color || INK, { h, size: o.size, max: w }); cx += cw + gap;
+                if (!o.dry) chip(c.text, cx, cy, c.color || INK, { h, size: o.size, max: w }); cx += cw + gap;
             }
             return cy - y + h;
         }
@@ -288,25 +288,31 @@
             plate(x, y, w, h, 16, { a: o.a ?? .6, tint: info ? info.accent : acc });
             if (!info) { well(x + 10, y + 10, w - 20, h - 20, 12); gem(x + w / 2, y + h / 2, 7, 'rgba(255,255,255,.08)'); if (o.empty) text(o.empty, x + w / 2, y + h / 2 + 26, 14, MUTE, 'center', 600); return; }
             const p = 16, bottom = o.bottom || 0, side = w > 520 && w > h * .95;
-            // 자리가 좁고 옵션이 있으면 그림을 작은 머리로 줄이고 옵션에 높이를 몰아준다.
-            if (!side && (info.lines.length > 2 || h - bottom < 300) && h - bottom < 470) {
+            // 옵션을 한 쪽에 다 보이는 것이 먼저다. 이름, 꼬리표, 옵션이 차지할 높이를 먼저 재고 남는 만큼만 그림에 준다.
+            const fullW = w - p * 2, titleFit = fit(info.title, fullW, 86, 22, 13, 800);
+            const headH = 22 + titleFit.lines.length * titleFit.lh + 8 + chipRow(info.chips, 0, 0, fullW, { h: 24, size: 12, dry: true }) + 10;
+            const artRoom = h - p * 2 - bottom - 12 - headH - measureLines(info, fullW);
+            // 그림이 너무 작아질 만큼 옵션이 많거나 자리가 좁으면, 그림을 작은 머리로 줄이고 옵션에 높이를 몰아준다.
+            if (!side && ((info.lines.length && artRoom < 150) || h - bottom < 300)) {
                 const aw = info.card ? 84 : 92, ah = info.card ? Math.round(84 * 515 / 399) : 92, ax = x + p, ay = y + p;
                 well(ax, ay, aw, ah, 9, rgba(info.accent, .08));
                 const box = info.card ? fitBox(aw - 8, ah - 8, 399 / 515) : { w: aw * .8, h: ah * .8 };
                 A.art(info.art, ax + (aw - box.w) / 2, ay + (ah - box.h) / 2, box.w, box.h, { fx: info.fx, big: true });
-                const tx = ax + aw + 12, tw2 = x + w - p - tx - (o.headRight || 0); let ty = ay;
+                // 상세 버튼은 이름 옆에 둔다. 닫기 버튼과 함께 놓이는 휴대폰 판에서는 눈 아이콘만 보인다.
+                const hasDetail = !!(o.detail && info.detail), iconOnly = !!o.headRight, detailW = iconOnly ? 40 : 72, detailX = x + w - p - (o.headRight || 0) - detailW;
+                const tx = ax + aw + 12, tw2 = x + w - p - tx - (o.headRight || 0) - (hasDetail ? detailW + 8 : 0); let ty = ay;
+                if (hasDetail) btn(o.detail, o.detailId, detailX, ay, detailW, iconOnly ? 40 : 30, iconOnly ? '' : '상세', { glyph: 'eye', size: 12, aria: info.title + ' 상세 정보' });
                 line(info.ribbon ? info.kindLabel + '  ' + info.ribbon.text : info.kindLabel, tx, ty + 8, tw2, 12, info.ribbon ? info.ribbon.color : info.accent, 'left', 800);
                 ty += 20;
                 const f = fit(info.title, tw2, 48, 19, 12, 800); ty += para(f, tx, ty, INK, 'left') + 6;
                 ty += chipRow(info.chips, tx, ty, tw2, { h: 22, size: 11 });
-                let oy = Math.max(ty, ay + ah) + 10;
-                if (o.detail && info.detail) { btn(o.detail, o.detailId, ax, ay + ah + 6, aw, 30, '상세', { glyph: 'eye', size: 12, aria: info.title + ' 상세 정보' }); oy = Math.max(oy, ay + ah + 46); }
+                const oy = Math.max(ty, ay + ah) + 10;
                 optionLines(info, x + p, oy, w - p * 2, y + h - p - bottom - oy);
                 return;
             }
             let tx, ty, tw2, artRect;
             if (side) { const aw = Math.min(w * .42, h - p * 2 - bottom); artRect = [x + p, y + p, aw, h - p * 2 - bottom]; tx = x + p * 2 + aw; ty = y + p; tw2 = w - aw - p * 3; }
-            else { const want = Math.round(h * (info.lines.length > 8 ? .24 : info.lines.length > 5 ? .3 : .46)), ah = clamp(Math.min(want, h - p * 2 - bottom - 124), 64, 330); artRect = [x + p, y + p, w - p * 2, ah]; tx = x + p; ty = y + p + ah + 12; tw2 = w - p * 2; }
+            else { const ah = clamp(Math.min(Math.round(h * .46), artRoom), 150, 330); artRect = [x + p, y + p, w - p * 2, ah]; tx = x + p; ty = y + p + ah + 12; tw2 = w - p * 2; }
             const [ax, ay, aw, ah] = artRect; well(ax, ay, aw, ah, 12, rgba(info.accent, .06));
             const g = C.createRadialGradient(ax + aw / 2, ay + ah * .55, 4, ax + aw / 2, ay + ah * .55, Math.max(aw, ah) * .6); g.addColorStop(0, rgba(info.accent, .26)); g.addColorStop(1, rgba(info.accent, 0));
             C.fillStyle = g; cut(ax, ay, aw, ah, 12); C.fill();
@@ -320,6 +326,16 @@
             ty += chipRow(info.chips, tx, ty, tw2, { h: 24, size: 12 }) + 10;
             optionLines(info, tx, ty, tw2, maxY - ty);
             if (o.detail && info.detail) btn(o.detail, o.detailId, ax + aw - 92 - 8, ay + ah - 40 - 8, 92, 40, '상세', { glyph: 'eye', aria: info.title + ' 상세 정보' });
+        }
+        // 옵션 줄 전체가 차지할 높이(쪽 나눔 없이).
+        function measureLines(info, w) {
+            let total = 0, rows = 0;
+            for (const l of info.lines) {
+                const item = typeof l === 'string' ? { text: l } : l, n = wrap(item.text, w - (item.head ? 0 : 10), item.head ? 12 : 13, item.head ? 800 : 600).length;
+                if (item.head && rows) total += 6;
+                total += n * 19; rows += n;
+            }
+            return total;
         }
         // 옵션 줄: 제목 줄은 색과 굵기로 나누고, 넘치면 쪽으로 넘긴다.
         function optionLines(info, x, y, w, h) {
@@ -448,11 +464,14 @@
         const p = mobile ? 12 : 18, { kind, list, filters } = pickerList(P), kinds = P.config.kinds;
         let y = M.y + 66;
         // 종류 탭
-        const tabW = (M.w - p * 2 - 6 * (kinds.length - 1)) / kinds.length, tabH = mobile ? 42 : 46;
-        kinds.forEach((k, i) => K.btn('picker-kind', k.key, M.x + p + i * (tabW + 6), y, tabW, tabH, k.label, {
-            on: k.key === P.kind, pressed: k.key === P.kind, icon: k.currency && tabW >= 96 ? k.key : null, size: mobile ? 13 : 15, color: k.color,
+        // 탭 이름이 한 줄에 안 들어가면 탭을 두 줄로 나눈다(글자가 세로로 끊기지 않게).
+        const tabSize = mobile ? 13 : 15, tabFits = n => { const tw0 = (M.w - p * 2 - 6 * (n - 1)) / n; return kinds.every(k => K.tw(k.label, tabSize, 700) + 22 <= tw0); };
+        const tabRows = tabFits(kinds.length) ? 1 : 2, perRow = Math.ceil(kinds.length / tabRows);
+        const tabW = (M.w - p * 2 - 6 * (perRow - 1)) / perRow, tabH = mobile ? (tabRows > 1 ? 38 : 42) : 46;
+        kinds.forEach((k, i) => K.btn('picker-kind', k.key, M.x + p + (i % perRow) * (tabW + 6), y + Math.floor(i / perRow) * (tabH + 6), tabW, tabH, k.label, {
+            on: k.key === P.kind, pressed: k.key === P.kind, icon: k.currency && tabW >= 96 ? k.key : null, size: tabSize, color: k.color,
             badge: !k.currency && !mobile ? String((k.entries || []).length) : null, aria: k.label + (k.currency ? '' : ' ' + (k.entries || []).length + '개') }));
-        y += tabH + 10;
+        y += tabRows * (tabH + 6) + 4;
         const foot = M.y + M.h - p;
         if (kind && kind.currency) { drawAmountPanel(K, A, P, kind, M.x + p, y, M.w - p * 2, foot - y, o); return; }
         // 분류와 검색
