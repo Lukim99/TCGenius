@@ -1,8 +1,8 @@
 /* 거래, 메일 무대 (market-stage.js). 그림은 캔버스가 그리고, 여기서는 자리와 보이지 않는 버튼, 입력칸만 다룬다. */
 .page[data-page="directtrade"].active,.page[data-page="mail"].active,.page[data-page="auction"].active,.page[data-page="buyorder"].active{display:block}
-/* 우편함은 화면 전체를 쓴다. */
-.page[data-page="mail"]{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);margin-top:-26px;margin-bottom:-50px}
-@media(max-width:768px){.page[data-page="mail"]{margin-top:-14px;margin-bottom:-30px}}
+/* 우편함과 1:1 거래는 화면 전체를 쓴다. */
+.page[data-page="mail"],.page[data-page="directtrade"]{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);margin-top:-26px;margin-bottom:-50px}
+@media(max-width:768px){.page[data-page="mail"],.page[data-page="directtrade"]{margin-top:-14px;margin-bottom:-30px}}
 main:has(.market-stage-shell){padding-bottom:0}
 .market-stage-host{display:block;min-height:320px;background:#06080c}
 .market-stage-shell{padding:0;overflow:hidden}
