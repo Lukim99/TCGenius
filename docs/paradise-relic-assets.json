@@ -1,0 +1,321 @@
+{
+  "generator": "Built-in image_gen",
+  "format": "512 × 512 WebP with original alpha, centered within 294 × 294 to match item padding",
+  "assets": [
+    {
+      "id": "crown",
+      "file": "DB/RPGenius/ui/낙원/relic-crown.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: An ancient dark gold royal crown, five sharp points, inset ruby and subtle dried crimson streaks, elegant dangerous silhouette. No gore."
+    },
+    {
+      "id": "compass",
+      "file": "DB/RPGenius/ui/낙원/relic-compass.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A worn circular brass compass, aged engraved rim, cracked ivory dial and luminous teal needle, seen in three-quarter view. No letters or numbers."
+    },
+    {
+      "id": "ring",
+      "file": "DB/RPGenius/ui/낙원/relic-ring.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A thick antique gold ring set with an oversized emerald green gemstone, covetous curling gold claws, three-quarter view showing ring band."
+    },
+    {
+      "id": "clock",
+      "file": "DB/RPGenius/ui/낙원/relic-clock.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A shattered antique silver pocket watch with broken hands and a fractured crystal cover, icy cyan light leaking from a crack. No numbers or letters."
+    },
+    {
+      "id": "feather",
+      "file": "DB/RPGenius/ui/낙원/relic-feather.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A single immortal phoenix feather made of pearl white and warm gold filaments, a small amber gemstone at its quill, gently curved, luminous but crisp."
+    },
+    {
+      "id": "orb",
+      "file": "DB/RPGenius/ui/낙원/relic-orb.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A cobalt blue magical orb held by three small ornate silver claws, swirling violet and azure mana inside the glass sphere, rich jewel highlights."
+    },
+    {
+      "id": "dice",
+      "file": "DB/RPGenius/ui/낙원/relic-dice.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A single gambler's ivory six-sided die with deep ruby pips and intricate dark gold corner caps, tipped at a dynamic three-quarter angle. Real circular pips, no lettering."
+    },
+    {
+      "id": "redContract",
+      "file": "DB/RPGenius/ui/낙원/relic-redContract.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: An ancient rolled-open parchment contract tied by a crimson ribbon and closed with a large blood-red wax seal, blackened curled edges, tiny abstract indecipherable ink marks, no readable text."
+    },
+    {
+      "id": "key",
+      "file": "DB/RPGenius/ui/낙원/relic-key.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: An ornate celestial silver and pale gold skeleton key, ring-shaped bow with luminous aquamarine gem and winglike filigree, graceful diagonal composition."
+    },
+    {
+      "id": "hourglass",
+      "file": "DB/RPGenius/ui/낙원/relic-hourglass.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: An upside-down magical hourglass of antiqued bronze and crystal, turquoise sand floating upward, elegant curved supports, slight diagonal tilt."
+    },
+    {
+      "id": "sheath",
+      "file": "DB/RPGenius/ui/낙원/relic-sheath.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A forgotten empty sword scabbard of deep indigo leather with tarnished gold fittings and small pale blue inset stones, worn wrapping, diagonal composition. Empty sheath only, no sword."
+    },
+    {
+      "id": "necklace",
+      "file": "DB/RPGenius/ui/낙원/relic-necklace.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: A cursed obsidian pendant with a purple gemstone shaped like a teardrop, thorned dark silver setting and a short elegantly curved chain, faint violet inner glow."
+    },
+    {
+      "id": "judgment",
+      "file": "DB/RPGenius/ui/낙원/relic-judgment.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: The Judge's sacred stigmata relic: a compact blackened steel and platinum sunburst emblem with a brilliant vertical gold slit in the center, angular severe sacred armor motif, faint gold radiance. A physical collectible emblem, no lettering."
+    },
+    {
+      "id": "riftHeart",
+      "file": "DB/RPGenius/ui/낙원/relic-riftHeart.webp",
+      "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: The Heart of the Rift relic: a jagged faceted violet crystal heart encircled by two broken floating black-gold arcs, a luminous cyan crack through its center, intense contained magical energy. Crystal artifact, not an anatomical organ."
+    },
+    {
+      "id": "meditationCenser",
+      "file": "DB/RPGenius/ui/낙원/relic-meditationCenser.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: An antique celestial bronze incense censer with three short feet, pierced star openings, pale teal light within and one delicate twisting trail of silver vapor."
+    },
+    {
+      "id": "starlightSpool",
+      "file": "DB/RPGenius/ui/낙원/relic-starlightSpool.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A small silver spool wrapped in luminous blue-gold silk thread, a crescent-shaped silver spindle and a few elegant loose glowing threads."
+    },
+    {
+      "id": "echoBell",
+      "file": "DB/RPGenius/ui/낙원/relic-echoBell.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A weathered golden handbell with a sapphire clapper and elegant etched concentric rings, slightly tilted with a subtle blue resonance glow."
+    },
+    {
+      "id": "riftLens",
+      "file": "DB/RPGenius/ui/낙원/relic-riftLens.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: An ornate obsidian and silver handheld magnifying lens containing a luminous violet hairline fracture, a short dark grip, clean strong silhouette."
+    },
+    {
+      "id": "returnLantern",
+      "file": "DB/RPGenius/ui/낙원/relic-returnLantern.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A small antique brass lantern holding a floating cyan star flame, graceful arched handle, faint warm gold edge light and deep blue glass."
+    },
+    {
+      "id": "tuningFork",
+      "file": "DB/RPGenius/ui/낙원/relic-tuningFork.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A ceremonial silver tuning fork with two long golden-edged prongs, a luminous amethyst at the junction, a compact carved handle, gentle violet resonance."
+    },
+    {
+      "id": "runeQuill",
+      "file": "DB/RPGenius/ui/낙원/relic-runeQuill.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A single elegant white-to-midnight-blue feather quill, golden writing tip and silver ornamental collar, tiny glowing cyan motes, no writing."
+    },
+    {
+      "id": "crystalVial",
+      "file": "DB/RPGenius/ui/낙원/relic-crystalVial.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A faceted pale blue crystal vial holding glowing dawn dew, a tiny golden stopper and fine gold leaf collar, soft pearlescent pink-blue light."
+    },
+    {
+      "id": "bag",
+      "file": "DB/RPGenius/ui/낙원/bag.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A compact well-worn dark brown adventurer backpack with two shoulder straps, an elegant brass buckle and a small glowing cyan crystal clasp, front three-quarter view, premium game inventory bag icon."
+    },
+    {
+      "id": "emberSeed",
+      "file": "DB/RPGenius/ui/낙원/relic-emberSeed.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A cracked charcoal seed cradling a vivid orange ember, fine gold root tendrils curling around it."
+    },
+    {
+      "id": "guardianClasp",
+      "file": "DB/RPGenius/ui/낙원/relic-guardianClasp.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A silver wing-shaped cloak clasp holding a luminous ice-blue crystal shield, compact elegant silhouette."
+    },
+    {
+      "id": "hunterBadge",
+      "file": "DB/RPGenius/ui/낙원/relic-hunterBadge.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: An antique bronze hunter badge shaped like three crossed crescent blades, small emerald center gem."
+    },
+    {
+      "id": "alchemistFlask",
+      "file": "DB/RPGenius/ui/낙원/relic-alchemistFlask.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: An ornate small alchemist distillation flask, swirling bright violet and green liquids in separate coiled glass chambers, aged gold stopper."
+    },
+    {
+      "id": "duelGlove",
+      "file": "DB/RPGenius/ui/낙원/relic-duelGlove.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A single black leather duelist gauntlet with crimson gold knuckles, three short glowing red slashes above the fist."
+    },
+    {
+      "id": "oracleLens",
+      "file": "DB/RPGenius/ui/낙원/relic-oracleLens.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A floating faceted crystal eye set in delicate silver orbital rings, pale teal pupil and celestial glints."
+    },
+    {
+      "id": "moonSeal",
+      "file": "DB/RPGenius/ui/낙원/relic-moonSeal.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A crescent moon obsidian seal with an intense violet gemstone, silver moon blades and a faint purple aura."
+    },
+    {
+      "id": "abyssDiadem",
+      "file": "DB/RPGenius/ui/낙원/relic-abyssDiadem.webp",
+      "prompt": "Use case: stylized-concept. Single premium fantasy RPG inventory relic icon, painterly polished realistic game item rendering, crisp silhouette and rich tactile metal/gem detail. One isolated object centered in a square genuinely transparent canvas; the entire item plus subtle glow within central 58% of canvas, generous even 21% empty padding around all edges. NO background, ground, frame, labels, letters or watermark. Match an elegant antique gold/silver celestial-dark fantasy RPG inventory. Subject: A majestic floating black iron diadem of jagged obsidian horns, a red fractured sun gem, restrained magenta rift energy."
+    },
+    {
+      "id": "bluntWhetstone",
+      "file": "DB/RPGenius/ui/낙원/relic-bluntWhetstone.webp",
+      "prompt": "A worn gray whetstone with a dull knife; painterly RPG relic on transparent square, centered with 21% margins."
+    },
+    {
+      "id": "tinBuckle",
+      "file": "DB/RPGenius/ui/낙원/relic-tinBuckle.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A dented square tin belt buckle with a short worn leather strap. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "chippedFang",
+      "file": "DB/RPGenius/ui/낙원/relic-chippedFang.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A small chipped ivory wolf fang on a coarse leather cord. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "quiltPatch",
+      "file": "DB/RPGenius/ui/낙원/relic-quiltPatch.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A roughly stitched small padded linen patch with crossed stitches. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "knottedCord",
+      "file": "DB/RPGenius/ui/낙원/relic-knottedCord.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A short fraying red cord tied with three uneven knots. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "wornSandal",
+      "file": "DB/RPGenius/ui/낙원/relic-wornSandal.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A single worn brown leather sandal with a patched sole. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "emptyWaterskin",
+      "file": "DB/RPGenius/ui/낙원/relic-emptyWaterskin.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A limp empty brown leather waterskin with a wooden stopper. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "rustyNeedle",
+      "file": "DB/RPGenius/ui/낙원/relic-rustyNeedle.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A long rusty sewing needle through a small scrap of dark cloth. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "bentSpoon",
+      "file": "DB/RPGenius/ui/낙원/relic-bentSpoon.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A slightly bent dull tin spoon, battered adventurer cutlery. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "crackedMonocle",
+      "file": "DB/RPGenius/ui/낙원/relic-crackedMonocle.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A cracked brass monocle on a short tarnished chain. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "paperTalisman",
+      "file": "DB/RPGenius/ui/낙원/relic-paperTalisman.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A folded faded ivory paper talisman tied with faded red string, abstract unlettered markings. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "copperThimble",
+      "file": "DB/RPGenius/ui/낙원/relic-copperThimble.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A dented copper sewing thimble with modest worn highlights. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "dryBiscuit",
+      "file": "DB/RPGenius/ui/낙원/relic-dryBiscuit.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: One very dry cracked round hardtack biscuit wrapped partly in coarse cloth. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "blueChalk",
+      "file": "DB/RPGenius/ui/낙원/relic-blueChalk.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A short chipped blue magical chalk stick with a tiny blue powder crumb. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "dullArrow",
+      "file": "DB/RPGenius/ui/낙원/relic-dullArrow.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: One short broken arrow with a dull iron point and ragged feather. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "practiceSword",
+      "file": "DB/RPGenius/ui/낙원/relic-practiceSword.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A tiny battered wooden practice sword with a fraying cloth grip. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "linenRibbon",
+      "file": "DB/RPGenius/ui/낙원/relic-linenRibbon.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A gently folded faded ivory linen ribbon tied into a simple bow. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "sootInk",
+      "file": "DB/RPGenius/ui/낙원/relic-sootInk.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A squat blackened ink bottle with a crude wooden cork and a smudge of charcoal. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "crackedBell",
+      "file": "DB/RPGenius/ui/낙원/relic-crackedBell.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A small cracked dull bronze handbell with a simple wooden handle. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "emptyInkwell",
+      "file": "DB/RPGenius/ui/낙원/relic-emptyInkwell.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: An empty chipped blue ceramic inkwell with an open mouth. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "pebbledMarble",
+      "file": "DB/RPGenius/ui/낙원/relic-pebbledMarble.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A small uneven gray stone marble with a faint thin red vein. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "looseGear",
+      "file": "DB/RPGenius/ui/낙원/relic-looseGear.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: One small brass cogwheel with a loose tooth and faint patina. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "corkStopper",
+      "file": "DB/RPGenius/ui/낙원/relic-corkStopper.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A simple worn cork stopper wrapped with a thin faded blue thread. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "woodenButton",
+      "file": "DB/RPGenius/ui/낙원/relic-woodenButton.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A simple large weathered wooden button with two holes and gray thread. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "frayedBookmark",
+      "file": "DB/RPGenius/ui/낙원/relic-frayedBookmark.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A faded brown leather bookmark with a frayed tasseled end, no text. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "chippedToken",
+      "file": "DB/RPGenius/ui/낙원/relic-chippedToken.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A chipped stone round gaming token with one simple diamond symbol. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "brassReceipt",
+      "file": "DB/RPGenius/ui/낙원/relic-brassReceipt.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A small curled yellowed receipt tied to a plain brass washer, illegible abstract ink strokes. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "ashScarf",
+      "file": "DB/RPGenius/ui/낙원/relic-ashScarf.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A short folded charcoal-gray scarf with pale dusty ashen edges. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "hunterWhistle",
+      "file": "DB/RPGenius/ui/낙원/relic-hunterWhistle.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A short old carved wooden hunter's whistle on a coarse cord. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "smallSandbag",
+      "file": "DB/RPGenius/ui/낙원/relic-smallSandbag.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A tiny patched sack of sand loosely tied with hemp rope. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "chalkDie",
+      "file": "DB/RPGenius/ui/낙원/relic-chalkDie.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A chipped chalk-white cubical die with only small gray circular pips. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    },
+    {
+      "id": "fadedPostcard",
+      "file": "DB/RPGenius/ui/낙원/relic-fadedPostcard.webp",
+      "prompt": "Single standalone humble fantasy RPG inventory relic icon. Subject: A battered blank cream postcard with a faded blue mountain-like abstract illustration and no letters. Painterly polished game item illustration, crisp small-icon silhouette, tactile worn materials, muted gray/brown/aged brass with a subtle accent, ordinary low-tier adventurer keepsake, not ornate legendary treasure. One centered isolated object composition on a square genuinely transparent background. No scene, ground, frame, label, readable letters, watermark or background glow. Keep entire silhouette in the central 58% of canvas with generous even 21% transparent margins. Warm top-left light and a soft cool edge highlight, coherent celestial roguelike game item art."
+    }
+  ]
+}

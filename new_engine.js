@@ -99,7 +99,8 @@ const dynamoClient = new DynamoDBClient({
     region: AWSCFG.region,
     credentials: {
         accessKeyId: AWSCFG.accessKeyId,
-        secretAccessKey: AWSCFG.secretAccessKey
+        secretAccessKey: AWSCFG.secretAccessKey,
+        sessionToken: process.env.AWS_SESSION_TOKEN
     }
 });
 

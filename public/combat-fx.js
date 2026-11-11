@@ -407,6 +407,7 @@ void main(){
         function stage(context, start) {
             const scene = { mirror: context.mirror, axis: context.axis, impact: 0, stopped: false, nodes: [] };
             const S = {
+                t0: start,
                 id: context.id, A: context.A, T: context.T, gA: context.gA, gT: context.gT, U, W, H,
                 role: context.role, event: context.event || {}, hit: context.hit || null, minor: !!context.minor, scale: context.scale || 1, reduced: reduced(),
                 tone: context.tone || [1, .86, .5], seed: context.seed, scene, ease: EASE,
@@ -629,8 +630,8 @@ void main(){
         function run(effectId, options, delay) {
             const definition = definitions.get(effectId) || (fallback && fallback(effectId));
             if (!definition) return null;
-            const ctx = context(effectId, options);
-            const S = stage(ctx, now + (delay || 0));
+            const ctx = context(effectId, options), startAt = now + (delay || 0);
+            const S = stage(ctx, startAt);
             const needs = (definition.images || [effectId]).filter(Boolean).map(id => image(id));
             const begin = () => { try { definition.run(S); } catch (error) { console.warn('[combat-fx]', effectId, error); } kick(); };
             const pending = needs.filter(entry => !entry.ready && !entry.failed);
@@ -639,7 +640,7 @@ void main(){
                 // 그림이 아직 오지 않았으면 잠깐 기다린다. 너무 늦으면 그 장면은 건너뛴다.
                 let left = pending.length;
                 const started = performance.now();
-                pending.forEach(entry => entry.waiting.push(() => { if (--left === 0 && performance.now() - started < 900) { const fresh = stage(ctx, now); fresh.late = true; try { definition.run(fresh); } catch (error) { console.warn('[combat-fx]', effectId, error); } kick(); } }));
+                pending.forEach(entry => entry.waiting.push(() => { if (--left === 0 && performance.now() - started < 900) { const fresh = stage(ctx, Math.max(now, startAt)); fresh.late = true; try { definition.run(fresh); } catch (error) { console.warn('[combat-fx]', effectId, error); } kick(); } }));
             }
             return definition;
         }
@@ -647,6 +648,7 @@ void main(){
         // 돌려주는 delay(ms)는 주 장면이 대상에 닿는 순간이다. 호스트는 그때 수치와 피격 반응을 낸다.
         const resolve = effectId => definitions.get(effectId) || (fallback && fallback(effectId)) || null;
         const staged = { until: 0, x: -1 };
+        let heldUntil = 0;
         function play(effectIds, options) {
             const o = options || {}, real = performance.now();
             if (recent.size > 160) recent.forEach((until, token) => { if (real > until + 3000) recent.delete(token); });
@@ -664,7 +666,9 @@ void main(){
             const lead = ranked.length ? resolve(ranked[0]).impact || 0 : 0, target = Number((o.dst || o.src).x);
             // 앞선 주 장면이 아직 대상에 닿지 않았으면, 뒤따르는 치명타나 속성 같은 곁장면은 그 순간에 맞춰 터뜨린다.
             const waits = role === 'target' && real < staged.until && Math.abs(target - staged.x) < .08 ? (staged.until - real) / 1000 : 0;
-            const base = Math.max(0, waits - lead);
+            // 궁극기 컷씬처럼 화면을 가리는 연출이 있으면 그것이 끝난 뒤에 시작한다.
+            const held = Math.max(0, heldUntil - real) / 1000;
+            const base = Math.max(held, waits - lead);
             let sounded = false, count = 0;
             ranked.forEach((effectId, index) => {
                 const minor = index > 0 || !!o.minor || waits > 0;
@@ -676,7 +680,7 @@ void main(){
                 if (!index) sounded = resolve(effectId).sound !== false;
             });
             // 이미 재생 중이라 건너뛴 경우에도, 앞선 주 장면이 닿을 때까지 남은 시간을 알려 준다.
-            const delay = count ? Math.round((base + lead) * 1000) : Math.round(waits * 1000);
+            const delay = count ? Math.round((base + lead) * 1000) : Math.round(Math.max(waits, 0) * 1000);
             if (count && !waits && lead > .12) { staged.until = real + delay; staged.x = target; }
             kick();
             return { delay, sound: sounded, count };
@@ -704,6 +708,8 @@ void main(){
             const later = () => root.requestIdleCallback ? root.requestIdleCallback(build, { timeout: 1500 }) : setTimeout(build, 200);
             if (entry.ready) later(); else if (!entry.failed) entry.waiting.push(ok => { if (ok) later(); });
         }
+        // ms 동안 새 장면의 시작을 미룬다. 이미 시작한 장면과 곁에 떠 있는 소환수는 그대로 움직인다.
+        function hold(ms) { heldUntil = Math.max(heldUntil, performance.now() + Math.max(0, Number(ms) || 0)); }
         function preload(effectIds, sounds) {
             (effectIds || []).forEach(effectId => {
                 const definition = definitions.get(effectId) || (fallback && fallback(effectId));
@@ -726,7 +732,7 @@ void main(){
         }
         resize();
         const instance = {
-            canvas, play, persist, preload, clear, destroy, sound, unlock, shake, hitstop, loadSound, kick,
+            canvas, play, persist, preload, hold, clear, destroy, sound, unlock, shake, hitstop, loadSound, kick,
             get time() { return now; }, get unit() { return U; }, get size() { return { W, H }; },
             get busy() { return busy(); }, get count() { return nodes.length; },
             // 검증용: 지금부터 seconds 뒤의 화면에서 시간을 멈춘다. null이면 다시 흐른다.

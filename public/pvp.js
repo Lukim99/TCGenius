@@ -7,6 +7,7 @@
 
     const uiAsset = file => '/rpg-ui?file=' + encodeURIComponent(file);
     const effectCatalog = window.CombatEffects || null;
+    const ultimateCutscene = window.UltimateCutscene?.create({ now: () => Date.now() + clockOffset });
     const combatFx = window.CombatFX || null;
     // 연출이 대상에 닿기까지 걸리는 시간(ms). 그만큼 수치와 타격음을 늦춘다.
     const leadOf = played => typeof played === 'number' ? played : played ? played.delay : 0;
@@ -475,9 +476,9 @@
         }
         oppPlate(w){
             if(stage!=='battle'||!view||!view.opp)return;
-            const side=view.opp,narrow=w<700,pw=narrow?Math.min(226,w*.6):300,ph=narrow?86:94,p=narrow?12:22,x=w-pw-p,y=p+(narrow?40:44),c=this.ctx;
+            const side=view.opp,narrow=w<700,pw=narrow?Math.min(226,w*.6):300,ph=(narrow?86:94)+(side.attackOrder?28:0),p=narrow?12:22,x=w-pw-p,y=p+(narrow?40:44),c=this.ctx;
             this.panel(x,y,pw,ph,'rgba(224,101,92,.6)');
-            const ps=narrow?46:54,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardImageUrl);
+            const ps=narrow?46:54,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardIconUrl || side.cardImageUrl);
             c.save();this.cutPath(px,py,ps,ps,6);c.clip();if(portrait)c.drawImage(portrait,px,py,ps,ps);else{c.fillStyle='#11141b';c.fillRect(px,py,ps,ps);}c.restore();
             this.cutPath(px,py,ps,ps,6);c.strokeStyle='rgba(224,101,92,.7)';c.stroke();
             this.text(side.name,infoX,y+15,narrow?12:14,900,'left','#ffeae5',infoW-52);
@@ -489,16 +490,18 @@
             this.text(number(side.hp)+' / '+number(side.maxHp),infoRight,hpY-8,8,800,'right','#e9e5dc');
             this.bar(infoX,mpY,infoW,6,side.resource??side.mp,side.maxResource??side.maxMp,'#147fc4');
             this.text((side.resourceLabel||'MP')+' '+number(side.resource??side.mp),infoRight,mpY-8,8,800,'right','#a9b6c4');
+            if(effectCatalog&&side.attackOrder)effectCatalog.drawAttackOrder(this,side.attackOrder,x+8,y+ph-25,pw-16);
         }
         myPlate(w,h){
             if(stage!=='battle'||!view||!view.me)return;
-            const side=view.me,narrow=w<700,c=this.ctx,pw=narrow?Math.min(238,w*.62):304,ph=narrow?84:94,x=narrow?12:24,y=h-(narrow?172:178);
+            const side=view.me,narrow=w<700,c=this.ctx,pw=narrow?Math.min(238,w*.62):304,orderHeight=side.attackOrder?28:0,ph=(narrow?84:94)+orderHeight,x=narrow?12:24,y=h-(narrow?172:178)-orderHeight;
             this.panel(x,y,pw,ph,'rgba(232,176,75,.58)');
-            const ps=narrow?50:58,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardImageUrl);
+            const ps=narrow?50:58,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardIconUrl || side.cardImageUrl);
             c.save();this.cutPath(px,py,ps,ps,6);c.clip();if(portrait)c.drawImage(portrait,px,py,ps,ps);else{c.fillStyle='#11141b';c.fillRect(px,py,ps,ps);}c.restore();
             this.cutPath(px,py,ps,ps,6);c.strokeStyle='rgba(232,176,75,.72)';c.stroke();
             this.text(side.name,infoX,y+16,narrow?13:15,900,'left','#fff5df',infoW-52);
-            if(Number(side.defendUntil||0)>now())this.badge(infoRight,y+9,'방어 중','#7ec4ff');
+            this.text('Lv. '+number(side.level),infoRight,y+16,9,800,'right','#c9c8c5');
+            if(Number(side.defendUntil||0)>now())this.badge(px+ps,y+68,'방어 중','#7ec4ff');
             this.text(side.cardFormatted||[side.cardSkin,side.cardName].filter(Boolean).join(' '),infoX,y+34,narrow?8:10,700,'left','#aeb4bf',infoW);
             const hpTextY=y+(narrow?48:52),hpBarY=y+(narrow?54:59),mpTextY=y+(narrow?65:71),mpBarY=y+(narrow?71:78);
             this.text('HP',infoX,hpTextY,8,800,'left','#bbb1a0');
@@ -507,6 +510,7 @@
             this.text('MP',infoX,mpTextY,8,800,'left','#bbb1a0');
             this.text(number(side.mp),infoRight,mpTextY,8,800,'right','#e9e5dc');
             this.bar(infoX,mpBarY,infoW,6,side.resource??side.mp,side.maxResource??side.maxMp,'#147fc4');
+            if(effectCatalog&&side.attackOrder)effectCatalog.drawAttackOrder(this,side.attackOrder,x+8,y+ph-25,pw-16);
         }
         // 소환수·표식·버프 배지를 각 캐릭터 머리 위에 표시
         sideBadges(w,h){
@@ -526,7 +530,7 @@
         }
         combatLog(w,h){
             if(stage!=='battle'||!logs.length)return;
-            const narrow=w<700,lines=logs.slice(-4),x=narrow?12:26,base=h-(narrow?182:196),lineH=narrow?14:16;
+            const narrow=w<700,lines=logs.slice(-4),x=narrow?12:26,base=h-(narrow?182:196)-(view?.me?.attackOrder?28:0),lineH=narrow?14:16;
             lines.forEach((entry,index)=>{
                 const alpha=.42+(index+1)/lines.length*.58,col=entry.tone==='bad'?'224,101,92':entry.tone==='good'?'240,197,110':'220,224,230';
                 this.text(entry.text,x,base-(lines.length-1-index)*lineH,narrow?9:10,entry.tone==='good'?800:650,'left','rgba('+col+','+alpha+')',Math.min(narrow?w-24:460,w*.48));
@@ -551,7 +555,7 @@
         }
         vsCard(side,x,y,cw,ch,accent,narrow){
             const c=this.ctx;this.panel(x,y,cw,ch,accent,true);
-            const art=Math.min(cw-26,ch*.52),ax=x+(cw-art)/2,ay=y+16,portrait=this.image(side&&side.cardImageUrl);
+            const art=Math.min(cw-26,ch*.52),ax=x+(cw-art)/2,ay=y+16,portrait=this.image(side&&(side.cardIconUrl || side.cardImageUrl));
             c.save();this.cutPath(ax,ay,art,art,8);c.clip();if(portrait)c.drawImage(portrait,ax,ay,art,art);else{c.fillStyle='#11141b';c.fillRect(ax,ay,art,art);}c.restore();
             this.cutPath(ax,ay,art,art,8);c.strokeStyle=accent;c.lineWidth=1;c.stroke();
             this.text(side&&side.name||'-',x+cw/2,ay+art+20,narrow?13:16,900,'center','#f7f2e8',cw-16);
@@ -602,12 +606,12 @@
                 const p=(time-pop.start)/950;
                 if(p<0)return true;
                 if(p>=1)return false;
-                const ease=1-Math.pow(1-clamp(p,0,1),3),x=w*sideX(pop.side,narrow),y=h*pop.y-ease*62,
-                    alpha=clamp(Math.min(p*8,(1-p)*3.4),0,1),scale=.7+Math.sin(Math.min(1,p)*Math.PI)*.36;
+                const ease=1-Math.pow(1-clamp(p,0,1),3),x=w*sideX(pop.side,narrow),y=h*pop.y-(pop.dot?(reducedMotion?p*18:Math.sin(p*Math.PI)*30+p*10):ease*62),
+                    alpha=clamp(Math.min(p*8,(1-p)*3.4),0,1),scale=pop.dot?(reducedMotion?1:.9+Math.sin(p*Math.PI)*.1):.7+Math.sin(Math.min(1,p)*Math.PI)*.36;
                 this.ctx.save();this.ctx.globalAlpha=alpha;this.ctx.translate(x,y);this.ctx.scale(scale,scale);
                 if(pop.label)this.text(pop.label,0,-26,narrow?10:12,900,'center','#ffb0a8');
                 this.text(pop.text,0,0,narrow?pop.size*.76:pop.size,900,'center',pop.color);
-                if(pop.sub)this.text(pop.sub,0,25,narrow?9:11,800,'center','#efe4cd');
+                if(pop.sub)this.text(pop.sub,0,pop.dot?17:25,pop.dot?(narrow?8:9):(narrow?9:11),800,'center','#efe4cd');
                 this.ctx.restore();
                 return true;
             });
@@ -700,6 +704,7 @@
 
     function applyView(next, options) {
         if (!next) return;
+        if (view?.id !== next.id) ultimateCutscene?.reset();
         const silent = !!(options && options.silent);
         clockOffset = Number(next.serverNow || Date.now()) - Date.now();
         const events = (next.events || []).filter(event => Number(event.seq || 0) > lastSeq).sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
@@ -708,6 +713,8 @@
         view = next;
         stage = next.result ? 'result' : 'battle';
         if (renderer) renderer.setSides(next.me, next.opp);
+        ultimateCutscene?.prepare(next.me?.skills, next.me?.cardName);
+        ultimateCutscene?.prepare(next.opp?.skills, next.opp?.cardName);
         if (silent) events.forEach(event => addLog(event.text));
         else {
             let delay = 0;
@@ -738,6 +745,9 @@
             if (skill && skill.element) event.effectElement = skill.element;
         }
         if (effectCatalog) effectCatalog.annotateEvent(event);
+        // 궁극기 컷씬이 화면을 가리는 동안에는 연출을 미뤘다가, 컷씬이 끝나면 이어서 재생한다.
+        const cut = ultimateCutscene?.play(event, view?.[actor]?.cardName) || 0;
+        if (cut && renderer && renderer.fx) renderer.fx.hold(cut);
         const skillAudience = action === 'skill' && effectCatalog && effectCatalog.skillTarget ? effectCatalog.skillTarget(event) : action === 'skill' ? 'target' : null;
         const hasTargetImpact = Number(event.damage || 0) > 0 || (Array.isArray(event.hits) && event.hits.some(hit => Number(hit && hit.damage || 0) > 0));
         addLog(event.text, actor === 'opp' && Number(event.damage || 0) > 0 ? 'bad' : action === 'start' ? 'good' : '');
@@ -772,10 +782,10 @@
                 const land = () => {
                 hud.addPop({
                     side: target,
-                    text: shieldAbsorb ? '흡수 ' + number(hit.damage) : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
-                    color: shieldAbsorb ? '#b8d8ff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : '#ffd88a',
-                    size: shieldAbsorb || summonAbsorb ? 22 : 24,
-                    sub: hit.label || (index === 0 ? event.skillName || (action === 'dot' ? '지속 피해' : '소환수') : '')
+                    dot: action === 'dot', text: shieldAbsorb ? '(-' + number(hit.damage) + ')' : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
+                    color: shieldAbsorb || effectCatalog.damageStyle(event,hit).fixed ? '#ffffff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : '#ffd88a',
+                    size: action === 'dot' ? 23 : shieldAbsorb || summonAbsorb ? 22 : 24,
+                    sub: shieldAbsorb ? '' : hit.label || (index === 0 ? event.skillName || (action === 'dot' ? '지속 피해' : '소환수') : '')
                 });
                 if (!shieldAbsorb && !summonAbsorb) { hud.impact(false); audio.hit(); }
                 };
@@ -801,9 +811,9 @@
                 const lead = renderer ? leadOf(shieldAbsorb || summonAbsorb ? renderer.combatEffect(target,event,presentationHit,actor) : renderer.strike(target, Object.assign({}, event, { criticalCount: hitCritical ? 1 : 0 }),presentationHit,actor)) : 0;
                 const land = () => {
                 hud.addPop({
-                    side: target, text: shieldAbsorb ? '흡수 ' + number(hit.damage) : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
-                    color: shieldAbsorb ? '#b8d8ff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : hitCritical ? '#ff5d4d' : '#ffe06e',
-                    size: shieldAbsorb || summonAbsorb ? 24 : target === 'me' ? 28 : hitCritical ? 46 : 34, label: hitCritical ? '치명타' : '', sub: hit.label || (index === 0 ? event.skillName || '' : '')
+                    side: target, text: shieldAbsorb ? '(-' + number(hit.damage) + ')' : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
+                    color: shieldAbsorb || effectCatalog.damageStyle(event,hit).fixed ? '#ffffff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : hitCritical ? '#ff5d4d' : '#ffe06e',
+                    size: shieldAbsorb || summonAbsorb ? 24 : target === 'me' ? 28 : hitCritical ? 46 : 34, label: hitCritical && !shieldAbsorb ? '치명타' : '', sub: shieldAbsorb ? '' : hit.label || (index === 0 ? event.skillName || '' : '')
                 });
                 if (!shieldAbsorb && !summonAbsorb) {
                     audio.hit();
@@ -815,8 +825,8 @@
                 };
                 if (index === 0) hitLead = present(); else setTimeout(present, hitLead + index * 95);
             });
-            if (action === 'skill' && !(renderer && renderer.fx)) audio.play('skill', .68);
-        } else if (action === 'skill' && !(renderer && renderer.fx)) audio.play('skill', .68);
+            if (action === 'skill' && (cut || !(renderer && renderer.fx))) audio.play('skill', .68);
+        } else if (action === 'skill' && (cut || !(renderer && renderer.fx))) audio.play('skill', .68);
         const reflectedHits = Array.isArray(event.reflectedHits) ? event.reflectedHits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
         reflectedHits.forEach((hit, index) => setTimeout(() => { if(renderer)renderer.combatEffect(actor,{action:'dot',skillName:'가시 반사',effectElement:'암',effectIds:hit.effectIds},hit,target);hud.addPop({ side: actor, text: '-' + number(hit.damage), color: '#d7a2ff', size: 22, y: combatPopY(), sub: hit.label || '가시 반사' }); }, (hits.length + index) * 95));
         if (reflectedHits.length === 0 && Number(event.selfDamage || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','자해')],{role:'target'});hud.addPop({ side: actor, text: '-' + number(event.selfDamage), color: '#ff8f87', size: 22, y: combatPopY(), delay: 120 }); }
@@ -826,6 +836,7 @@
     }
 
     async function loadLobby() {
+        ultimateCutscene?.reset();
         stage = 'lobby';
         try {
             const payload = await request('/api/pvp');
@@ -843,7 +854,7 @@
         const card = me.mainCard || {};
         return {
             name: me.name, level: me.level, rating: me.rating, spriteUrl: card.spriteUrl || '',
-            cardName: card.name, cardFormatted: card.formatted, cardImageUrl: card.imageUrl, cardStar: card.star, cardType: card.type
+            cardName: card.name, cardFormatted: card.formatted, cardImageUrl: card.imageUrl, cardIconUrl: card.iconUrl, cardStar: card.star, cardType: card.type
         };
     }
 

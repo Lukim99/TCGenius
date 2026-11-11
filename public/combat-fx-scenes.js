@@ -1217,7 +1217,8 @@
         fire(S, name) {
             const entry = companions.find(S, name, S.A), u = S.U, bot = name === '익테봇', home = entry ? { x: S.A.x + (entry.pos.x - entry.owner.x), y: entry.pos.y } : companions.home(S, name);
             const c = bot ? [.35, .85, 1] : [.75, .5, 1], x = S.T.x, y = S.T.y, t = bot ? .2 : .22;
-            if (entry) { entry.state.aim = S.host.time + .55; entry.state.kick = S.host.time + t - .04; }
+            // 시각은 이 장면이 시작하는 때(S.t0) 기준이다. 장면이 미뤄지면 소환수의 조준과 반동도 함께 미뤄진다.
+            if (entry) { entry.state.aim = S.t0 + .55; entry.state.kick = S.t0 + t - .04; }
             else {
                 const id = bot ? skill('익테봇 소환') : skill('수나타 소환');
                 S.part(bot ? 'bot' : 'sunata', { x: home.x, y: home.y, size: SPOT[name][2] * u, alpha: 0, glow: .4, edge: c, z: 2 }, 0, id).to({ alpha: 1 }, .1).wait(.5).to({ alpha: 0, dis: 1 }, .3).end();
@@ -1247,7 +1248,7 @@
         guard(S) {
             const entry = companions.find(S, '익테봇', S.T), u = S.U, c = [.4, .85, 1];
             const x = S.T.x - .2 * u, y = S.T.y - .02 * u;
-            if (entry) { entry.state.block = { x: entry.owner.x + .24 * u, y: entry.owner.y - .02 * u, until: S.host.time + .5 }; entry.state.hide = S.host.time + .5; }
+            if (entry) { entry.state.block = { x: entry.owner.x + .24 * u, y: entry.owner.y - .02 * u, until: S.t0 + .5 }; entry.state.hide = S.t0 + .5; }
             S.sfx('servo', 0, { vol: v(S, .3), rate: 1.6 }); S.sfx('metal_b', .1, { vol: v(S, .6) }); S.sfx('field', .08, { vol: v(S, .4), rate: 1.3 });
             const n = S.sprite({ x, y, size: .44 * u * k(S), mode: 1, center: [.44, .49], head: 0, soft: .2, sx: .8, sy: .8, glow: .6, edge: c, z: 2 }, .06);
             n.to({ head: 1.8, sx: 1.05, sy: 1.05 }, .1, 'out3').set({ flash: .6 }).to({ flash: 0, sx: 1, sy: 1, x: x + .02 * u }, .1).wait(.16).to({ dis: 1 }, .26, 'in').end();
@@ -1262,7 +1263,7 @@
             for (const entry of companions.of(S.host).values()) {
                 if (!entry.S || entry.state.gone || Math.abs(entry.real - x) > S.U * .2) continue;
                 any = true;
-                entry.state.dive = { x: entry.owner.x + (S.T.x - S.A.x), y: S.T.y, from: S.host.time + t - .22, until: S.host.time + t };
+                entry.state.dive = { x: entry.owner.x + (S.T.x - S.A.x), y: S.T.y, from: S.t0 + t - .22, until: S.t0 + t };
             }
             return any;
         }

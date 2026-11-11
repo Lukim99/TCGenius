@@ -1,4 +1,5 @@
 'use strict';
+const attackStats = require('./attack_stats');
 
 const CARD_ID = 14;
 const cards = [
@@ -66,7 +67,7 @@ function applyStats(stats, runtime, slots, now) {
         const card = cards.find(card => card.name === held.name);
         for (const [key, value] of Object.entries(card?.stats || {})) stats[key] = Number(stats[key] || 0) + value;
     }
-    stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(slots?.ilionDeckAttack || 0) * (runtime?.ilion?.deck || []).length));
+    attackStats.addPercent(stats, Number(slots?.ilionDeckAttack || 0) * (runtime?.ilion?.deck || []).length);
     if (active(runtime, '도태', now)) { stats.crit = 1; stats.ilionForceCritical = true; }
     if (Number(runtime?.ilion?.motherCritUntil || 0) > now) stats.crit = Number(stats.crit || 0) + .10;
     return stats;

@@ -178,7 +178,10 @@ test('채굴 → 내구도 소모 → 선택한 광물 전체 판매 → 1회 �
     assert.equal(rewardReplay.data.exchanges.card9, 1);
     const user = await rpg.getRPGUserByName(fixture.name);
     const rewardId = rpg.getDataCache('Item').findIndex(item => item?.name === '9성 카드팩');
-    assert.equal(rpg.getInventoryItemCount(user, rewardId), 1);
+    assert.equal(rpg.getInventoryItemCount(user, rewardId), 0);
+    assert.equal(user.inventory.card.length, 1);
+    assert.equal(user.inventory.card[0].star, 8);
+    assert.deepEqual(rewardReplay.data.lastAction.result, exchanged.data.lastAction.result);
     assert.equal((await request('exchange', body(4, { rewardId: 'card9' }))).status, 400);
     assert.equal(user.yutEvent.laps, 3);
     assert.ok(writes.some(write => /#inventory/.test(write.UpdateExpression || '') && /#pointMine/.test(write.UpdateExpression || '')));
@@ -358,18 +361,22 @@ test('변경된 15종 보상의 가격·수량·1회/3회/5회 한도와 기존 
         const rounds = limit ? limit - initial : 2;
         for (let i = 0; i < rounds; i++) {
             const points = state.points, inventoryCount = rpg.getInventoryItemCount(user, itemId);
+            const cardCount = user.inventory.card.length;
+            const converted = rpg.isCardPackItem(itemId);
             const input = body(state.revision, { rewardId: id });
             const result = await request('exchange', input);
             assert.equal(result.status, 200, id); state = result.data;
             user = await rpg.getRPGUserByName(fixture.name);
             assert.equal(state.points, points - cost);
             assert.equal(state.exchanges[id], initial + i + 1);
-            assert.equal(rpg.getInventoryItemCount(user, itemId), inventoryCount + count);
+            assert.equal(rpg.getInventoryItemCount(user, itemId), inventoryCount + (converted ? 0 : count));
+            assert.equal(user.inventory.card.length, cardCount + (converted ? count : 0));
             const replay = await request('exchange', input);
             assert.equal(replay.data.replayed, true);
             assert.equal(replay.data.points, state.points);
             user = await rpg.getRPGUserByName(fixture.name);
-            assert.equal(rpg.getInventoryItemCount(user, itemId), inventoryCount + count);
+            assert.equal(rpg.getInventoryItemCount(user, itemId), inventoryCount + (converted ? 0 : count));
+            assert.equal(user.inventory.card.length, cardCount + (converted ? count : 0));
         }
         if (limit) {
             assert.equal((await request('exchange', body(state.revision, { rewardId: id }))).status, 400);

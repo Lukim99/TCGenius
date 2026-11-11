@@ -18,6 +18,7 @@
     let supportBarSig = '';
     let raidEffects = null;
     let partyEffects = null;
+    let ultimateCutscene = null;
     let birthdayEffects = null;
     let sceneObserver = null;
     const raidImages = new Map();
@@ -180,7 +181,7 @@
         }
         for (const m of currentRoom.members || []) {
             const buffs = m.runtime && Array.isArray(m.runtime.buffs) ? m.runtime.buffs : [];
-            for (const b of buffs) { if (b.remain == null) continue; b.remain = Math.max(0, Number(b.remain || 0) - dt); }
+            for (const b of buffs) { if (b.remain == null || m.runtime.ilionPaused && String(b.id).startsWith('ilion:')) continue; b.remain = Math.max(0, Number(b.remain || 0) - dt); }
             if (m.runtime && Number(m.runtime.sealRemain || 0) > 0) m.runtime.sealRemain = Math.max(0, Number(m.runtime.sealRemain) - dt);
         }
         if (currentRoom.voteState) {
@@ -982,6 +983,11 @@
             pendingCD.action = false; pendingCD.potion = false;
         }
         currentRoom = snap;
+        if (!ultimateCutscene && window.UltimateCutscene) ultimateCutscene = UltimateCutscene.create({
+            host: document.querySelector('.pq-game-stagewrap'), now: () => Date.now() - (cooldownClockOffset || 0)
+        });
+        if (previous?.id !== snap.id || previous?.startedAt !== snap.startedAt || previous?.phaseIndex !== snap.phaseIndex || snap.state !== 'inProgress') ultimateCutscene?.reset();
+        for (const member of snap.members || []) ultimateCutscene?.prepare(member.skills, member.card?.name);
         $('#frame').classList.toggle('spectating', !!snap.spectating);
         const watchBadge = $('#pqSpectatorBadge');
         if (watchBadge) { watchBadge.hidden = !snap.spectating; watchBadge.textContent = '관전'; }
@@ -1356,7 +1362,7 @@
         members.forEach((member, index) => {
             const card = member.card || {};
             const portrait = el('div', { class: 'pq-damage-portrait' });
-            if (card.imageUrl) portrait.append(el('img', { src: card.imageUrl, alt: card.name || member.name || '' }));
+            if (card.iconUrl || card.imageUrl) portrait.append(el('img', { src: card.iconUrl || card.imageUrl, alt: card.name || member.name || '' }));
             else portrait.append(el('span', null, String(index + 1)));
             const share = totalDamage > 0 ? Number(member.damage || 0) / totalDamage * 100 : 0;
             graph.append(el('div', { class: 'pq-damage-player' },
@@ -2396,6 +2402,14 @@
             stream.addEventListener('party-effect', e => {
                 try { partyEffects?.enqueue(JSON.parse(e.data)); } catch (_) {}
             });
+            stream.addEventListener('skill-cast', e => {
+                try {
+                    const event = JSON.parse(e.data);
+                    if (currentRoom?.state !== 'inProgress' || event.roomId !== currentRoom.id
+                        || event.startedAt !== currentRoom.startedAt || event.phaseIndex !== currentRoom.phaseIndex) return;
+                    ultimateCutscene?.play(event, event.cardName);
+                } catch (_) {}
+            });
             stream.addEventListener('kill', e => {
                 try {
                     const k = JSON.parse(e.data);
@@ -2503,6 +2517,7 @@
         syncBgm(null);
         raidEffects?.reset();
         partyEffects?.reset();
+        ultimateCutscene?.reset();
         birthdayEffects?.reset();
         lastRoomState = null;
         myCD.action = 0; myCD.potion = 0; myCD.skills = {};

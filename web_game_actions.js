@@ -21,7 +21,7 @@ function createGamePresentation({ inventories, card, itemAssets, rpg }) {
             const key = JSON.stringify([kind, entry.id, entry.type, entry.star, entry.level, entry.skin,
                 entry.potentialDisplay, entry.specter, entry.orb, entry.soul, entry.expireAt, entry.statLines]);
             entries.push({ key, kind, name: entry.name, detail: (entry.starText || entry.rarity || entry.typeLabel || '') + (entry.level > 0 ? ' · +' + entry.level : ''),
-                iconUrl: entry.imageUrl || entry.iconUrl, frameUrl: entry.frameUrl, count: kind === 'items' ? entry.count : 1 });
+                iconUrl: entry.iconUrl || entry.imageUrl, frameUrl: entry.frameUrl, count: kind === 'items' ? entry.count : 1 });
         }));
         for (const [key, name] of Object.entries(currencies)) entries.push({ key, kind: 'currency', name, count: Number(user[key] || 0) });
         (user.avatars || []).forEach(avatar => entries.push({ key: 'avatar:' + avatar.name, kind: '아바타', name: avatar.name, count: 1 }));
@@ -72,7 +72,7 @@ function registerGameActionRoutes(server, deps) {
             items: Object.entries(user.fishingNet || {}).filter(([, count]) => count > 0).map(([id, count]) => ({
                 name: items[id] ? items[id].name : '알 수 없는 아이템', count,
                 ...itemAssets(items[id])
-            })).concat(buildCards({ ...user, inventory: { ...user.inventory, card: user.fishingCards || [] } }).map(card => ({ name: card.formatted, count: 1, kind: 'card', iconUrl: card.imageUrl })))
+            })).concat(buildCards({ ...user, inventory: { ...user.inventory, card: user.fishingCards || [] } }).map(card => ({ name: card.formatted, count: 1, kind: 'card', iconUrl: card.iconUrl })))
         };
     }
     function state(user) {
@@ -98,7 +98,8 @@ function registerGameActionRoutes(server, deps) {
                     const before = !options.read && !options.preview ? presentation.snapshot(user) : null;
                     const result = await handler(user, req.body || {}, req);
                     if (!options.read && !options.preview) {
-                        await user.save();
+                        const saved = await user.save();
+                        if (options.receipt && !saved?.success) fail('저장을 확인하지 못했습니다. 같은 버튼을 다시 누르면 추가 소모 없이 저장을 재시도합니다.', 503);
                         return { ok: true, ...result, changes: presentation.changes(before, user), state: state(user), profile: buildProfile(user) };
                     }
                     return result;
@@ -147,6 +148,52 @@ function registerGameActionRoutes(server, deps) {
         return { cards: buildCards(user), numbers: selected.numbers };
     }, { read: true });
 
+    function checkRequestId(body) {
+        if (typeof body.requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId)) fail('화면을 다시 열고 시도해주세요.');
+    }
+    route('post', '/api/inventory/cards/expand', (user, body) => {
+        checkRequestId(body);
+        let receipt = user.cardInventoryReceipt;
+        if (receipt?.requestId === body.requestId) {
+            if (body.limit !== receipt.previousLimit) fail('이전 확장 요청과 다릅니다.', 409);
+        } else {
+            const capacity = rpg.getCardInventoryState(user);
+            if (body.limit !== capacity.limit) fail('보유 한도가 변경되었습니다. 인벤토리를 다시 열어주세요.', 409);
+            if (capacity.nextCost == null) fail('카드 인벤토리는 최대 300칸까지 확장할 수 있습니다.');
+            if (Number(user.garnet || 0) < capacity.nextCost) fail('가넷이 부족합니다.');
+            user.garnet = Number(user.garnet || 0) - capacity.nextCost;
+            user.maxCardLimit = Math.min(capacity.maxLimit, capacity.limit + capacity.step);
+            receipt = user.cardInventoryReceipt = { requestId: body.requestId, previousLimit: capacity.limit, limit: user.maxCardLimit, cost: capacity.nextCost };
+        }
+        return { action: 'cards-expand', expansion: receipt, capacity: rpg.getCardInventoryState(user) };
+    }, { receipt: true });
+
+    route('post', '/api/combine/bulk', async (user, body) => {
+        checkRequestId(body);
+        const filters = rpg.getBulkCardCombineFilters(body.stars ?? body.star, body.cardTypes ?? body.cardType);
+        if (filters.error) fail(filters.error);
+        let receipt = user.bulkCombineReceipt;
+        if (receipt?.requestId === body.requestId) {
+            const previous = rpg.getBulkCardCombineFilters(receipt.stars ?? receipt.star, receipt.cardTypes ?? receipt.cardType);
+            if (JSON.stringify(filters) !== JSON.stringify(previous) || (body.assist?.itemId ?? null) !== (receipt.assist?.itemId ?? null)
+                || (body.assist?.protectIndex ?? null) !== (receipt.assist?.protectIndex ?? null)) fail('이전 조합 요청과 다릅니다.', 409);
+        } else {
+            if (!Number.isSafeInteger(body.revision) || body.revision !== Number(receipt?.revision || 0)) fail('일괄 조합 내역이 변경되었습니다. 화면을 다시 열어주세요.', 409);
+            await rpg.stopFishingForCommand(user);
+            assertVersion(user, 'cards', body.version);
+            const selection = rpg.getBulkCardCombineSelection(user, filters.stars, filters.cardTypes, body.assist);
+            if (selection.error) fail(selection.error);
+            if (Number(user.gold || 0) < selection.gold) fail('골드가 부족합니다.');
+            const result = rpg.runBulkCardCombine(user, filters.stars, filters.cardTypes, body.assist);
+            if (result.error) fail(result.error);
+            receipt = user.bulkCombineReceipt = { ...result, ...filters, star: filters.stars.length === 1 ? filters.stars[0] : null,
+                cardType: filters.cardTypes.length === 1 ? filters.cardTypes[0] : null, requestId: body.requestId, revision: body.revision + 1 };
+        }
+        const displayCard = card => card ? buildCards({ ...user, inventory: { ...user.inventory, card: [card] } })[0] : null;
+        return { action: 'cards-bulk-combine', ...receipt, results: receipt.results.map(result => ({ ...result, card: displayCard(result.card), preservedCard: displayCard(result.preservedCard) })),
+            cards: buildCards(user), revision: receipt.revision };
+    }, { receipt: true });
+
     const kinds = { 'cards-sell': 'cards', 'items-sell': 'items', 'equipment-disassemble': 'equipment', 'pets-extract': 'pet' };
     function preview(user, body) {
         if (!Object.prototype.hasOwnProperty.call(kinds, body.action)) fail('지원하지 않는 작업입니다.');
@@ -179,7 +226,7 @@ function registerGameActionRoutes(server, deps) {
         }
         const targets = inventories[kind](user).filter(entry => kind === 'items' ? entry.id === body.id : numbers.includes(entry.number))
             .map(entry => ({ name: entry.name, detail: entry.starText || entry.rarity || entry.typeLabel || '',
-                iconUrl: entry.imageUrl || entry.iconUrl, frameUrl: entry.frameUrl, count: kind === 'items' ? body.count : 1 }));
+                iconUrl: entry.iconUrl || entry.imageUrl, frameUrl: entry.frameUrl, count: kind === 'items' ? body.count : 1 }));
         const token = crypto.createHash('sha256').update(JSON.stringify([body.action, body.version, numbers, body.id, body.count, targets, rewards])).digest('hex');
         return { token, action: body.action, targets, rewards };
     }

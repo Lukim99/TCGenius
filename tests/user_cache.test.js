@@ -55,6 +55,15 @@ const rpg = require('../rpgenius');
     const all = await rpg.getAllRPGUsers();
     assert.strictEqual(all.length, 2, '전체 조회는 캐시 전체를 돌려줘야 한다');
 
+    byName.paradiseWeekly = { week: '2026-10-19', bestFloor: 100, reachedAt: 123 };
+    await byName.save();
+    const records = await rpg.getParadiseWeeklyRecords();
+    assert.strictEqual(records.length, 2);
+    const record = records.find(row => row.name === byName.name);
+    assert.deepStrictEqual(Object.keys(record).sort(), ['name', 'paradiseWeekly']);
+    record.paradiseWeekly.bestFloor = 999;
+    assert.strictEqual((await rpg.getRPGUserByName(byName.name)).paradiseWeekly.bestFloor, 100, '랭킹 응답 수정으로 캐시 원본이 바뀌면 안 된다');
+
     // 2) 기본 save = 즉시 flush (변경 키 포함)
     const before = updates.length;
     byName.gold = 200;

@@ -1,0 +1,59 @@
+{
+  "active": true,
+  "singleCost": 300,
+  "shakeCost": 1500,
+  "refreshCost": 0,
+  "rewards": [
+    {
+      "id": "trace",
+      "name": "유리사의 잔상",
+      "type": "item",
+      "stock": 1,
+      "count": 1,
+      "grade": "first"
+    },
+    {
+      "id": "legendary",
+      "name": "유의게임X 랜덤 펫",
+      "type": "pet",
+      "rarity": "레전더리",
+      "stock": 2,
+      "count": 1,
+      "grade": "upper"
+    },
+    {
+      "id": "unique",
+      "name": "유의게임X 랜덤 펫",
+      "type": "pet",
+      "rarity": "유니크",
+      "stock": 3,
+      "count": 1,
+      "grade": "upper"
+    },
+    {
+      "id": "rare",
+      "name": "유의게임X 랜덤 펫",
+      "type": "pet",
+      "rarity": "레어",
+      "stock": 10,
+      "count": 1,
+      "grade": "normal"
+    },
+    {
+      "id": "blessing2",
+      "name": "지나의 축복",
+      "type": "item",
+      "stock": 16,
+      "count": 2,
+      "grade": "normal"
+    },
+    {
+      "id": "blessing1",
+      "name": "지나의 축복",
+      "type": "item",
+      "stock": 68,
+      "count": 1,
+      "grade": "normal"
+    }
+  ]
+}

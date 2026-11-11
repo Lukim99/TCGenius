@@ -1,0 +1,182 @@
+[
+  {
+    "category": "itemImage",
+    "file": "보주/요나 보주.png",
+    "sha256": "eb0432f0dff7c01c75205e75321a0636eca6484d58685d3ef6c3fabbe93a7c16"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/한국인의밥상 보주.png",
+    "sha256": "cb41ccac3cf9967ad009bbda8d30b41cf8ccc357dcbe1673521c1cf0c3bca4a4"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/예수 보주.png",
+    "sha256": "b4d15e4263f32f3bcca4f80c139303ff7d5f7fb51c51eeb83d92566f64688a73"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/나화진 보주.png",
+    "sha256": "597d60a5f4f5fbfc6996dc43d9d0a960a8b2fd60e482fbadcbee8e598796b637"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/펀쿨섹 보주.png",
+    "sha256": "2cab323fdfdce9d00b33737f96d301fa5c97a00420745ad5208f1ba1c89994c9"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/은채 보주.png",
+    "sha256": "9af2c43777115248191453503f61bd48e07cfe8667ca90a138f07c2a07ae02d4"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/서출구 보주.png",
+    "sha256": "f680bffc2886dc1c37ee9e15f6539afac4aee63f138730ada18df49e34c1ef83"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/리인카네이션 보주.png",
+    "sha256": "1b89520be83c5c37c9ce302d4be8af4db43b0da7564fb830e16caf8eb7bd24f1"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/겨울 보주.png",
+    "sha256": "8a59f6a704d34fd55a8b3d7d0a076c5b13576489c7b89cdbd520dd9da2bbb339"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/홍진호 보주.png",
+    "sha256": "79062f63918dbd1d2d49bc2416031072839db552240e41a7c732a2b8f21202a9"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/전술가 보주.png",
+    "sha256": "f3d1a57bf22d46449e5f7725438b7237f164025fcbdbd0748e188645cfcf8e06"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/내게팀은없다 보주.png",
+    "sha256": "1c89015c052dc7552d6f843c2419a50355b661e510784b824b2e844aac922e00"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/유리사 보주.png",
+    "sha256": "321caa8e4154184909f847739a2bb62888dca3139faedef630a308bc91c46d91"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/동그라미 보주.png",
+    "sha256": "08463681a2b890d30f6a7d1ca7ee9a14f28921569167c03efcbf4f9c2ac7dd50"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/흑자헬스 보주.png",
+    "sha256": "bc922d4469f18fb4a70a590fe7f1e3f329022d0a052b1e8bf150239a833638eb"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/김영광 보주.png",
+    "sha256": "a60e3deb1de5a9801178c51102a383a740d828a85a170ed964eca1fc3689a908"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/씨잼 보주.png",
+    "sha256": "ed606f19907f047d44ce75a839133bfd225ef747d3946404ae507de4c5bb535a"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/오타니 보주.png",
+    "sha256": "9d67e59eb808cade4ccbcdec32cd354d460e34b7715811b4c0ba78b89693d296"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/문철마삼 보주.png",
+    "sha256": "78c453f0162264ad0ba5237185e3e22e04b26a9d88cafcc9f023eb95c671b23d"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/카즈토 보주.png",
+    "sha256": "03d492d9d6e3707d1e81168e4d20e1795353f7f3cf2436ff446c692a30ff17c6"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/범부의킬각 보주.png",
+    "sha256": "4f2888f228e5c3d9919a2d8e157eeda30ec3963ca32a44d6797f58b777ad5a9a"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/조깡시파 보주.png",
+    "sha256": "f73dd36262068ccf348a1835a620f44fbf98245550f33b038160ea3d078ebd4c"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/지미나이 보주.png",
+    "sha256": "e6ce371dd635132a72b044d129611dfcd8c3a3f3dc5ae9761181e5b95d46106e"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/킹익 셋과 미필보이 보주.png",
+    "sha256": "1b982cf083022d7198d00310f52409cd379077c4eb70b8291f6fc65654883ea0"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/R.U.C.A 보주.png",
+    "sha256": "4c7eaa0a5e7ad68c8e15694b5a243a1b5b41a9b2a440924a1fa579cc7c23ef10"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/콩나무리 보주.png",
+    "sha256": "65fec6537b6e54281d40f462ed180607bee1fb4007c23b6ca37732ce383680d4"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/여우와깡통단 보주.png",
+    "sha256": "f48f8434bec82f70ec194aeb8590b75b9bddb1c1d6f23eb991aad2b02e6bc30b"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/수피아조씨와 리정현 기사단 보주.png",
+    "sha256": "fcf0c95a97ee9781e8fd1de46837daba367a5a51d68c7ec7e97d4e557d997659"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/워뇨띠/전직 아이돌 워뇨띠.png",
+    "sha256": "f8aca467159744648cec5807199b6c6e62f45acd0353bf44d190cbe17bd3fa4d"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/워뇨띠/전직 고급 아이돌 워뇨띠.png",
+    "sha256": "b10a81976737f8032c92ee6a21e2abf3de751b6710af47f8bef4fe6a44d6f35c"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/키노/전직 아이돌 키노.png",
+    "sha256": "f712e61c2156705eab2d4caba13092fe0d081783700aad3f103e8d022fd0e4fd"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/키노/전직 고급 아이돌 키노.png",
+    "sha256": "5022d2c47adc40d9cba8076920eb9afa7838cd6a6adcb66c644a29c5f96900cd"
+  },
+  {
+    "category": "ui",
+    "file": "필드/캐릭터/워뇨띠__전직__고급 아이돌.png",
+    "sha256": "125747865a4f12c06ba29b2e6248115403bef72a055b09efd30561e2f4cb07ab"
+  },
+  {
+    "category": "ui",
+    "file": "필드/캐릭터/키노__전직__아이돌.png",
+    "sha256": "19065c7b3fe34855590e4afd2f1f3a82cb15bf08d11ef0cf8c586c7640374172"
+  },
+  {
+    "category": "ui",
+    "file": "필드/캐릭터/키노__전직__고급 아이돌.png",
+    "sha256": "cbe26d63589c122df3855136bf94288abc2ad23b6633b336be4ecc6b69e6ea71"
+  },
+  {
+    "category": "ui",
+    "file": "필드/캐릭터/워뇨띠__전직__아이돌.png",
+    "sha256": "7b267ec3efc382e1f54fc02c1be3e8b76148608186c93be8ed7d2ccc0eed7a29"
+  }
+]

@@ -1242,6 +1242,48 @@
       },
       "shopId": "shop_352f63039f0f477aa7a23539154172a6",
       "type": "아이템"
+    },
+    {
+      "shopId": "shop_18de67181a2948e291887cda2179658e",
+      "contentKey": "2026-pepero-package",
+      "type": "아이템",
+      "item_id": 454,
+      "count": 1,
+      "price": {
+        "goods": "point",
+        "amount": 111
+      },
+      "limits": {
+        "max": 3
+      }
+    },
+    {
+      "shopId": "shop_84d3fb4154304732804d5853dd96f3c0",
+      "contentKey": "2026-pepero-package",
+      "type": "아이템",
+      "item_id": 455,
+      "count": 1,
+      "price": {
+        "goods": "point",
+        "amount": 1111
+      },
+      "limits": {
+        "max": 3
+      }
+    },
+    {
+      "shopId": "shop_1582b5c43b854f5a8f6be1aa2ddec7a9",
+      "contentKey": "2026-pepero-package",
+      "type": "아이템",
+      "item_id": 456,
+      "count": 1,
+      "price": {
+        "goods": "point",
+        "amount": 1111
+      },
+      "limits": {
+        "max": 3
+      }
     }
   ],
   "포인트": [

@@ -8,6 +8,8 @@ const ROOT = path.join(__dirname, '..', '..');
 const PUBLIC = path.join(ROOT, 'public');
 // 이미지 자산은 git 밖(S3 동기화 폴더)에 있다. 다른 작업 사본에서 돌릴 때는 RPG_UI_DIR로 그 폴더를 가리킨다.
 const UI = process.env.RPG_UI_DIR || path.join(ROOT, 'DB', 'RPGenius', 'ui');
+// 궁극기 컷씬처럼 위 폴더에 없는 자산을 찾을 추가 폴더들(읽기 전용, path.delimiter로 구분).
+const UI_FALLBACK = (process.env.RPG_UI_FALLBACK || '').split(path.delimiter).filter(Boolean);
 const PORT = Number(process.env.PORT || 4173);
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp3': 'audio/mpeg', '.json': 'application/json; charset=utf-8' };
 
@@ -91,13 +93,14 @@ const DEBUG_HOOK = `<script>
 const FIELD_PAGE = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>모의 필드</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<link rel="stylesheet" href="/static/hfield.css"></head><body>
+<link rel="stylesheet" href="/static/hfield.css"><link rel="stylesheet" href="/static/combat-shortcuts.css"></head><body>
 <main id="hFieldRoot" class="hf-root"><canvas id="hfCanvas"></canvas><canvas id="hfHud"></canvas></main>
 <script>window.HFIELD_ME="실험실";</script>
-<script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
 ${DEBUG_HOOK}
+<script src="/static/combat-shortcuts.js"></script>
 <script src="/static/hfield.js"></script>
 </body></html>`;
 
@@ -140,16 +143,17 @@ function wbAction(pathname, body) {
 const WB_PAGE = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>모의 월드보스</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<link rel="stylesheet" href="/static/worldboss.css"></head><body>
+<link rel="stylesheet" href="/static/worldboss.css"><link rel="stylesheet" href="/static/combat-shortcuts.css"></head><body>
 <main id="worldBossRoot" class="wb-root"><canvas id="wbCanvas"></canvas><canvas id="wbHud" tabindex="-1"></canvas>
   <section id="wbSelection" class="wb-selection" hidden><div class="wb-selection-content"><header><h1 id="wbSelectionTitle"></h1></header><div id="wbSkillCards" class="wb-skill-cards"></div><button id="wbCancelSelection" type="button">선택 취소</button></div></section>
 </main>
 <dialog id="wbRewardDialog"><h2 id="wbRewardTitle"></h2><p id="wbRewardSummary"></p><ul id="wbRewardList"></ul><details id="wbRewardDetails"><summary></summary><p id="wbRewardMessage"></p></details><button id="wbRewardClose" type="button">확인</button></dialog>
 <script>window.WORLD_BOSS_ME="실험실";</script>
-<script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
 ${DEBUG_HOOK}
+<script src="/static/combat-shortcuts.js"></script>
 <script src="/static/worldboss.js"></script>
 </body></html>`;
 
@@ -189,7 +193,7 @@ const PVP_PAGE = `<!doctype html>
 <link rel="stylesheet" href="/static/pvp.css"></head><body>
 <main id="pvpStage" class="pvp-root"><canvas id="pvpCanvas"></canvas><canvas id="pvpHud"></canvas></main>
 <script>window.PVP_ME="실험실";window.PVP_OPPONENT="상대";</script>
-<script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
 ${DEBUG_HOOK}
@@ -228,7 +232,10 @@ http.createServer((req, res) => {
         req.on('end', () => { let body = {}; try { body = JSON.parse(raw || '{}'); } catch (_) {} res.writeHead(200, { 'Content-Type': TYPES['.json'] }); res.end(JSON.stringify(mockAction(url.pathname, body))); });
         return;
     }
-    if (url.pathname === '/rpg-ui') { const file = inside(UI, url.searchParams.get('file') || ''); return file ? send(res, file) : (res.writeHead(400), res.end()); }
+    if (url.pathname === '/rpg-ui') {
+        const name = url.searchParams.get('file') || '', file = [UI, ...UI_FALLBACK].map(base => inside(base, name)).find(candidate => candidate && fs.existsSync(candidate)) || inside(UI, name);
+        return file ? send(res, file) : (res.writeHead(400), res.end());
+    }
     if (url.pathname.startsWith('/static/')) { const file = inside(PUBLIC, decodeURIComponent(url.pathname.slice(8))); return file ? send(res, file) : (res.writeHead(400), res.end()); }
     if (url.pathname === '/lab/effects') {
         const base = path.join(UI, '필드', '이펙트'), kinds = { skill: '스킬', summon: '소환수', element: '속성', combat: '전투', set: '세트', equipment: '장비' }, out = {};

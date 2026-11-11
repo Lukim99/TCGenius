@@ -2,6 +2,9 @@
 // 채팅은 유저 발화만 보관/방송. 시스템/전투 진행은 'notice'로 휘발성 송출.
 
 const fs = require('fs');
+const tcgEquipment = require('./tcg_equipment_effects');
+const armorExpansion = require('./armor_expansion');
+const transcendEquipment = require('./transcend_equipment');
 const path = require('path');
 const crypto = require('crypto');
 const rpgenius = require('./rpgenius.js');
@@ -146,8 +149,8 @@ function getPartyAttackBuffValue(member) {
         if (buff && Date.now() < Number(buff.expiredAt || 0)) equipmentValue += Number(buff.value || 0);
     }
     const equipmentState = member && member.runtime && member.runtime.equipmentState;
-    if (equipmentState && Date.now() < Number(equipmentState.trueBeomUntil || 0)) equipmentValue += scalePartyAttackBuff(member, getTranscendStageValue(member, '범부의 대나무', .30, .05));
-    return runtimeValue + equipmentValue;
+    if (equipmentState && equipmentState.trueBeom) equipmentValue += scalePartyAttackBuff(member, getTranscendStageValue(member, '범부의 대나무', .30, .10));
+    return runtimeValue + equipmentValue + armorExpansion.attackBonus(equipmentState);
 }
 
 function scalePartyAttackBuff(source, value) {
@@ -184,17 +187,22 @@ function getPartyDynamicDefenseStats(member) {
     return stats;
 }
 
-function getPartyLiveStats(member) {
+const attackStats = require('./attack_stats');
+
+function getPartyLiveStats(member, room = getRoomOf(member?.name)) {
     const stats = ilionCards.applyStats(Object.assign({}, member?.baseSnapshot?.stats || {}), member?.runtime,
         member?.baseSnapshot?.slotEffects, Date.now());
+    require('./reggiero').applyBlackWhite(stats, room?.startedAt ?? member?.runtime?.equipmentState?.combatStartedAt);
+    attackStats.addPercent(stats, getPositionStatMul(room, member, 'finalAtk') - 1 + getPartyAttackBuffValue(member) + getPartyConditionalFinalAttack(member));
     randoCharacters.tickMental(stats, member?.runtime, member?.baseSnapshot?.slotEffects, Date.now());
-    return randoCharacters.applyStats(stats, member?.runtime, member?.baseSnapshot?.slotEffects,
+    randoCharacters.applyStats(stats, member?.runtime, member?.baseSnapshot?.slotEffects,
         member?.runtime ? refreshMemberShield(member) : 0, Date.now());
+    return transcendEquipment.capPrisonKeyCritical(armorExpansion.applyConditionalStats(stats));
 }
 
 function tickPartyKino(room, member) {
     if (!member.baseSnapshot.stats.kino) return;
-    const stats = getPartyLiveStats(member), dot = member.runtime.kino?.dot;
+    const stats = getPartyLiveStats(member, room), dot = member.runtime.kino?.dot;
     if (!dot) return;
     const monster = getPhaseCombatMonster(room);
     const targetKey = 'party:' + room.phaseIndex + ':' + (monster?.name || '');
@@ -203,7 +211,7 @@ function tickPartyKino(room, member) {
     for (let i = 0; i < ticks && room.state === 'inProgress'; i++) {
         if (!monster || targetKey !== 'party:' + room.phaseIndex + ':' + (getPhaseCombatMonster(room)?.name || '')) break;
         const extra = { skillName: '카스 살포', isSkill: true, hitCount: 1, dotAttack: true, summonAttack: true, disableCritical: true, disableEquipmentBonusDamage: true, triggeredEffectIds: ['skill:카스 살포'] };
-        const raw = Math.round(stats.atk * dot.rate * (1 + Number(stats.dotDamage || 0)) * getPositionStatMul(room, member, 'finalAtk') * getPositionStatMul(room, member, 'skillDmg') * (1 + getPartyAttackBuffValue(member)));
+        const raw = Math.round(stats.atk * dot.rate * (1 + Number(stats.dotDamage || 0)) * getPositionStatMul(room, member, 'skillDmg'));
         if (phase?.type === 'mob') applyMobPhaseDamage(room, member, monster, calculateOutgoingDamage(member, monster, room, raw, extra), 'skill', '카스 살포', false);
         else {
             const result = dealSkillDamageToMonster(room, member, raw, extra);
@@ -220,6 +228,9 @@ function tickPartyIlion(room, member) {
     const drawn = ilionCards.tick(member.runtime, member.runtime.cooldownsUntil, stage, motherStage,
         Number(member.runtime.equipmentState?.combatStartedAt || Date.now()), Date.now());
     if (!drawn) return;
+    const equipmentState = member.runtime.equipmentState || (member.runtime.equipmentState = {});
+    tcgEquipment.record(equipmentState, '무한홀덤덱');
+    tcgEquipment.outsideAttack(equipmentState, extra => activatePartyTcg(room, member, extra));
     pushCombat(room, member.name + ' [무한홀덤덱] ' + drawn.text, 'buff');
     const monster = getPhaseCombatMonster(room);
     if (monster && Number(member.runtime.ilion.balanceHits || 0) > 0) {
@@ -231,6 +242,25 @@ function tickPartyIlion(room, member) {
             applyPlayerDamageToBoss(room, room.monster, member, result.damage, result);
             broadcast(room, 'hit', { by: member.name, type: 'skill', skill: '무한홀덤덱', damage: result.damage, crit: !!result.isCrit, hitDetails: result.hitDetails || [], monster: serializeMonster(room.monster) });
             if (room.monster && room.monster.hp <= 0) onMonsterDefeated(room);
+        }
+    }
+}
+
+function pausePartyIlion(room, paused) {
+    const now = nowMs();
+    for (const member of room.members) {
+        if (!member.runtime || !member.baseSnapshot?.stats.ilion) continue;
+        const r = member.runtime;
+        ilionCards.autoDrawAt(r, Number(getTranscendEquipmentEntry(member, '무한홀덤덱')?.stage || 0), Number(r.equipmentState?.combatStartedAt || now));
+        if (!r.ilion) continue;
+        if (paused) {
+            if (r.ilion.pausedAt == null) r.ilion.pausedAt = now;
+        } else if (r.ilion.pausedAt != null) {
+            const from = r.ilion.pausedAt, elapsed = Math.max(0, now - from);
+            for (const card of r.ilion.deck) if (card.until > from) card.until += elapsed;
+            for (const key of ['autoDrawAt', 'motherCritUntil']) if (r.ilion[key] > from) r.ilion[key] += elapsed;
+            if (r.ilion.corrosion?.until > from) r.ilion.corrosion.until += elapsed;
+            delete r.ilion.pausedAt;
         }
     }
 }
@@ -311,6 +341,13 @@ function applyTranscendAllyEffect(room, source, target, kind, shield) {
             source.runtime.mp = Math.min(source.runtime.mpMax, source.runtime.mp + Math.max(1, Math.round(source.runtime.mpMax * .02)));
         }
     }
+    if (sanctuaryHat > 0) tcgEquipment.record(sourceState, '성역의 인도자 모자');
+    if (kind === 'shield') {
+        if (getTranscendEquipmentEntry(source, '성역의 인도자 아머') && Number(target.runtime.hp || 0) / Math.max(1, Number(target.runtime.hpMax || 1)) <= .50 && canPartyApplyShield(source, target)) tcgEquipment.record(sourceState, '성역의 인도자 아머');
+        if (getTranscendEquipmentEntry(source, '성역의 인도자 트라우저')) tcgEquipment.record(sourceState, '성역의 인도자 트라우저');
+        if (getTranscendEquipmentEntry(source, '구원자의 하의')) tcgEquipment.record(sourceState, '구원자의 하의');
+    }
+    tcgEquipment.outsideAttack(sourceState, extra => activatePartyTcg(room, source, extra, target));
 }
 
 // 장비 효과 지속시간 증가/쿨타임 감소는 스탯(equipmentEffectDurationFlat: 행운의 복주머니 등, equipmentEffectCooldownFlat: TCG의 유산 2세트)으로 공통 적용 (솔로와 동일)
@@ -322,7 +359,7 @@ function getEquipmentEffectCooldownReduction(member) {
     return Number(member && member.baseSnapshot && member.baseSnapshot.stats && member.baseSnapshot.stats.equipmentEffectCooldownFlat || 0);
 }
 
-function applyPartyCurrentShoesOnSkillHit(room, member, skillName) {
+function applyPartyCurrentShoesOnSkillHit(room, member, skillName, extra) {
     if (!skillName || !getTranscendEquipmentEntry(member, '해류를 거스르는 신발')) return;
     const runtime = member.runtime;
     const state = runtime.equipmentState || (runtime.equipmentState = {});
@@ -334,12 +371,15 @@ function applyPartyCurrentShoesOnSkillHit(room, member, skillName) {
     runtime.cooldownsUntil[skillName] = Math.max(now, cooldownEnd - reduction);
     runtime.mp = Math.min(runtime.mpMax, Number(runtime.mp || 0) + Math.max(1, Math.round(Number(runtime.mpMax || 0) * .03)));
     state.currentShoesReadyAt = now + Math.max(0, 8 - getEquipmentEffectCooldownReduction(member)) * 1000;
+    tcgEquipment.record(state, '해류를 거스르는 신발');
+    activatePartyTcg(room, member, extra || {});
     pushCombat(room, member.name + ' [해류를 거스르는 신발] 쿨타임 ' + (reduction / 1000).toFixed(1) + '초 감소 / MP 3% 회복', 'buff');
 }
 
 function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
     const runtime = member.runtime;
     const state = JSON.parse(JSON.stringify(runtime.equipmentState || {}));
+    const tcgBefore = tcgEquipment.capture(state);
     const now = Date.now();
     const sinceSkill = now - Number(state.lastSkillAt || state.combatStartedAt || now);
     const extra = {};
@@ -347,7 +387,7 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
     let virtualHp = Number(runtime.hp || 0);
     const durationBonus = getEquipmentEffectDurationBonus(member);
     const cooldownReduction = getEquipmentEffectCooldownReduction(member);
-    const markHpCost = () => { if (getTranscendEquipmentEntry(member, '흐르는 피')) state.flowingBloodNext = getTranscendStageValue(member, '흐르는 피', .12, .04); };
+    const markHpCost = () => { if (getTranscendEquipmentEntry(member, '흐르는 피')) { state.flowingBloodNext = getTranscendStageValue(member, '흐르는 피', .12, .04); tcgEquipment.record(state, '흐르는 피'); } };
     const spendHp = rate => {
         const cost = Math.max(1, Math.floor(virtualHp * Number(rate || 0)));
         virtualHp = Math.max(1, virtualHp - cost);
@@ -384,11 +424,11 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
     if (skillName === '백억이요' && getTranscendEquipmentEntry(member, '범부의 대나무')) {
         if (now >= Number(state.beomStacksUntil || 0)) state.beomStacks = 0;
         state.beomStacks = Math.min(7, Number(state.beomStacks || 0) + 1);
-        state.beomStacksUntil = now + (10 + durationBonus) * 1000;
-        if (state.beomStacks >= 7) state.trueBeomUntil = now + (10 + durationBonus) * 1000;
+        state.beomStacksUntil = now + (120 + durationBonus) * 1000;
+        if (state.beomStacks >= 7) state.trueBeom = true;
     }
     if (getTranscendEquipmentEntry(member, '운명의 주사위') && now >= Number(state.destinyDiceReadyAt || 0)) {
-        const types = getTranscendSetCount(member, 'TCG의 유산') >= 4 ? ['crit', 'critMul'] : [Math.random() < .5 ? 'crit' : 'critMul'];
+        const types = [Math.random() < .5 ? 'crit' : 'critMul'];
         state.destinyDiceBuff = { types, expiredAt: now + (8 + durationBonus) * 1000 };
         state.destinyDiceReadyAt = now + Math.max(0, 15 - cooldownReduction) * 1000;
     }
@@ -398,7 +438,7 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
         if (types.includes('critMul')) extra.critMulBonus = Number(extra.critMulBonus || 0) + getTranscendStageValue(member, '운명의 주사위', .30, .08);
     }
     if (getTranscendEquipmentEntry(member, '심판의 주사위') && now >= Number(state.judgeDiceReadyAt || 0)) {
-        const types = getTranscendSetCount(member, 'TCG의 유산') >= 4 ? ['crit', 'critMul'] : [Math.random() < .5 ? 'crit' : 'critMul'];
+        const types = [Math.random() < .5 ? 'crit' : 'critMul'];
         state.judgeDiceBuff = { types, expiredAt: now + (10 + durationBonus) * 1000 };
         state.judgeDiceReadyAt = now + Math.max(0, 14 - cooldownReduction) * 1000;
     }
@@ -408,10 +448,6 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
         if (types.includes('critMul')) extra.critMulBonus = Number(extra.critMulBonus || 0) + .50;
     }
     if (skillName === '자인' && getTranscendEquipmentEntry(member, '궁택토')) result.cooldownOverride = 0;
-    if (getTranscendEquipmentEntry(member, '감옥열쇠')) {
-        const overflowCrit = Math.max(0, Number(member.baseSnapshot.stats.crit || 0) - 1);
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + overflowCrit * getTranscendStageValue(member, '감옥열쇠', .20, .10);
-    }
     if (isUltimate) {
         // 궁극기 스킬 피해(ultimateDamage) / 궁극기 쿨타임 감소(ultimateCooldownFlat, ms): 초심권 등 스탯 보유 장비 공통 (솔로와 동일 규칙)
         const memberStats = member.baseSnapshot && member.baseSnapshot.stats || {};
@@ -424,7 +460,7 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
     }
     if (skillName === '청정수 투척' && getTranscendEquipmentEntry(member, '정수 필터망')) {
         extra.pntBonus = Number(extra.pntBonus || 0) + getTranscendStageValue(member, '정수 필터망', 25, 10);
-        state.cleanWaterBuff = { value: getTranscendStageValue(member, '정수 필터망', .08, .03), expiredAt: now + (6 + durationBonus) * 1000 };
+        state.cleanWaterBuff = { value: getTranscendStageValue(member, '정수 필터망', .15, .05), expiredAt: now + (15 + durationBonus) * 1000 };
     }
     if (skillName === '비리' && getTranscendEquipmentEntry(member, '치명적인 매력')) {
         const crit = Math.max(0, Number(member.baseSnapshot.stats.crit || 0));
@@ -447,7 +483,7 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
     }
     if (getTranscendSetCount(member, '심해의 순환') >= 4 && now >= Number(state.deepSetReadyAt || 0)) {
         result.reduceUltimateCooldown = 3;
-        state.deepSetReadyAt = now + Math.max(0, 12 - cooldownReduction) * 1000;
+        state.deepSetReadyAt = now + Math.max(0, 4 - cooldownReduction) * 1000;
     }
     if (getTranscendEquipmentEntry(member, '심해의 신발')) {
         result.selfCooldownRate = getTranscendStageValue(member, '심해의 신발', .04, .01);
@@ -468,7 +504,7 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
     if (getTranscendSetCount(member, '검은 잔향') >= 4 && now >= Number(state.blackEchoSetReadyAt || 0)) {
         spendHp(.02);
         result.shadowDamageRate = virtualHp / Math.max(1, Number(runtime.hpMax || 1)) <= .50 ? .50 : .35;
-        state.blackEchoSetReadyAt = now + Math.max(0, 12 - cooldownReduction) * 1000;
+        state.blackEchoSetReadyAt = now + Math.max(0, 4 - cooldownReduction) * 1000;
     }
     if (getTranscendEquipmentEntry(member, '심연의 신발')) {
         if (virtualHp / Math.max(1, Number(runtime.hpMax || 1)) > .50) spendHp(.02);
@@ -492,6 +528,21 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
         }
     }
     state.lastSkillAt = now;
+    if (result.noMp) tcgEquipment.record(state, '불량 배터리');
+    if (getTranscendEquipmentEntry(member, '모노레일 타이머') && sinceSkill >= 15000) tcgEquipment.record(state, '모노레일 타이머');
+    if (getTranscendEquipmentEntry(member, '결합 타이머') && sinceSkill >= 10000) tcgEquipment.record(state, '결합 타이머');
+    if (getTranscendEquipmentEntry(member, '십결모 타이머') && sinceSkill >= 10000) tcgEquipment.record(state, '십결모 타이머');
+    if (getTranscendEquipmentEntry(member, 'DMC 마이크') && state.dmcSkillCount % 3 === 0) tcgEquipment.record(state, 'DMC 마이크');
+    if (result.selfShield) tcgEquipment.record(state, '심해의 갑옷');
+    if (result.selfCooldownRate) tcgEquipment.record(state, '심해의 신발');
+    if (skillName === '비리' && getTranscendEquipmentEntry(member, '치명적인 매력')) tcgEquipment.record(state, '치명적인 매력');
+    if (skillName === '불사조' && getTranscendEquipmentEntry(member, '감옥열쇠')) tcgEquipment.record(state, '감옥열쇠');
+    if (skillName === '느억맘' && getTranscendEquipmentEntry(member, '어머니의 마음')) tcgEquipment.record(state, '어머니의 마음');
+    if (skillName === '감사합니다 친구야' && getTranscendEquipmentEntry(member, '강릉함씨 32대손')) tcgEquipment.record(state, '강릉함씨 32대손');
+    if (skillName === '범인은 이 안에' && getTranscendEquipmentEntry(member, '피의 서약')) tcgEquipment.record(state, '피의 서약');
+    if (skillName === '청정수 투척' && getTranscendEquipmentEntry(member, '썩어버린 물')) tcgEquipment.record(state, '썩어버린 물');
+    tcgEquipment.collect(state, tcgBefore);
+    tcgEquipment.consumeSkill(state, result, true);
     return result;
 }
 
@@ -647,10 +698,8 @@ function grantPartyQuestPackReward(user, reward, summary) {
             frameUrl: '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('[장비]' + rarity + '.png') };
     }
     if (reward.type === '아이템') {
-        rpgenius.addInventoryItem(user, reward.item_id, count);
-        const item = items[reward.item_id];
-        addPartyQuestRewardSummary(summary, 'item:' + reward.item_id, item ? item.name : '알 수 없는 아이템', count);
-        return { kind: 'item', itemId: Number(reward.item_id), name: item ? item.name : '알 수 없는 아이템', count };
+        const granted = rpgenius.grantItemReward(user, reward.item_id, count, summary);
+        return { ...granted, ...getPartyQuestItemAsset(reward.item_id, 0) };
     }
     if (reward.type === '캐릭터카드') {
         if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
@@ -665,7 +714,7 @@ function grantPartyQuestPackReward(user, reward, summary) {
             last = card;
             addPartyQuestRewardSummary(summary, 'card:' + card.id + ':' + card.star + ':' + (card.type || '일반') + ':' + (card.skin || ''), rpgenius.formatUserCard(card), 1);
         }
-        return last ? { kind: 'card', card: last, name: rpgenius.formatUserCard(last), count, iconUrl: cardImageUrlResolver ? cardImageUrlResolver(last, user) : null } : null;
+        return last ? { kind: 'card', card: last, name: rpgenius.formatUserCard(last), count, iconUrl: cardImageUrlResolver ? cardImageUrlResolver(last, user, true) : null } : null;
     }
     if (reward.type === '골드') {
         user.gold = Number(user.gold || 0) + count;
@@ -1105,7 +1154,9 @@ function serializeMember(m) {
                 label: b.label,
                 remain: Number(b.remain || 0) >= PERMANENT_BUFF_SEC ? null : Math.max(0, Math.round(b.remain * 10) / 10),
                 stack: Math.max(0, Math.round(Number(b.stack || 0)))
-            })).concat(ilionCards.views(m.runtime, nowMs()).map(card => ({ id: 'ilion:' + card.name, label: card.label, remain: card.active && card.until ? remainSeconds(card.until) : null, stack: 0 }))),
+            })).concat(ilionCards.views(m.runtime, m.runtime.ilion?.pausedAt ?? nowMs()).map(card => ({ id: 'ilion:' + card.name, label: card.label, remain: card.active && card.until ? Math.max(0, (card.until - (m.runtime.ilion?.pausedAt ?? nowMs())) / 1000) : null, stack: 0 })),
+                m.runtime.ilion?.autoDrawAt ? [{ id: 'ilion:auto', label: '무한홀덤덱 · 다음 추첨', remain: Math.max(0, (m.runtime.ilion.autoDrawAt - (m.runtime.ilion.pausedAt ?? nowMs())) / 1000), stack: 0 }] : []),
+            ilionPaused: m.runtime.ilion?.pausedAt != null,
             shield: Math.round(m.runtime.shield || 0),
             sealRemain: Math.max(0, Math.round(Number(m.runtime.sealRemain || 0) * 10) / 10),
             dead: !!m.runtime.dead,
@@ -1668,7 +1719,8 @@ function buildMemberCard(user) {
     try {
         if (cardImageUrlResolver) imageUrl = cardImageUrlResolver({ id: mc.id, star: mc.star, type: mc.type, skin: mc.skin }, user);
     } catch (_) {}
-    return { name: data.name, star: Number(mc.star || 0), type: mc.type || '일반', imageUrl };
+    const iconUrl = cardImageUrlResolver ? cardImageUrlResolver(mc, user, true) : null;
+    return { name: data.name, star: Number(mc.star || 0), type: mc.type || '일반', imageUrl, iconUrl };
 }
 
 function shuffleBirthdayCards(room) {
@@ -1719,6 +1771,7 @@ async function createRoom(hostName, questId, password) {
     try {
         const user = await rpgenius.getRPGUserByName(hostName);
         if (!user) return { error: '캐릭터 정보를 불러올 수 없습니다.' };
+        if (user.field?.paradise) return { error: '낙원 탐험을 마친 후 이용해주세요.' };
         const unlockError = rpgenius.getRaidUnlockError(user, quest.id);
         if (unlockError) return { error: unlockError };
         const level = user ? Number(user.level || 1) : 1;
@@ -1793,6 +1846,7 @@ async function joinRoom(roomId, name, password) {
     try {
         const user = await rpgenius.getRPGUserByName(name);
         if (!user || !quest) return { error: '레이드 입장 정보를 불러올 수 없습니다.' };
+        if (user.field?.paradise) return { error: '낙원 탐험을 마친 후 이용해주세요.' };
         const unlockError = rpgenius.getRaidUnlockError(user, quest.id);
         if (unlockError) return { error: unlockError };
         const level = user ? Number(user.level || 1) : 1;
@@ -1988,8 +2042,8 @@ async function start(hostName) {
             const manaResonance = user ? getManaResonanceSnapshot(user) : null;
             const thorns = user ? getThornsSnapshot(user) : null;
             const elementChain = user && typeof rpgenius.getEquipmentElementChain === 'function' ? rpgenius.getEquipmentElementChain(user) : null;
-            const transcendEquipment = user && typeof rpgenius.getTranscendEquipmentSnapshot === 'function' ? rpgenius.getTranscendEquipmentSnapshot(user) : { entries: [], setCounts: {} };
-            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance, thorns, elementChain, transcendEquipment };
+            const transcendEquipment = user && typeof rpgenius.getTranscendEquipmentSnapshot === 'function' ? rpgenius.getTranscendEquipmentSnapshot(user, { includeAllActive: true }) : { entries: [], setCounts: {} };
+            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance, thorns, elementChain, transcendEquipment, uniqueCutscene: user ? rpgenius.getUniqueAvatarCutscene(user) : null };
         } catch (_) {
             m.baseSnapshot = { stats: { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: {}, mainCardSkills: [], immortalArmor: null };
         }
@@ -1998,19 +2052,23 @@ async function start(hostName) {
         const finalMpMul = posDef && posDef.stats && posDef.stats.finalMp != null ? Number(posDef.stats.finalMp) : 1;
         const baseHp = Math.max(100, Math.round(Number(m.baseSnapshot.stats.hp || 1000) * finalHpMul));
         const baseMp = Math.max(50, Math.round(Number(m.baseSnapshot.stats.mp || 500) * finalMpMul));
-        let petHpRegenRate = 0, petMpRegenRate = 0;
+        let petHpRegenRate = 0, petMpRegenRate = 0, autoPotion = null, autoPotionExpireAt = 0;
         try {
             const petUser = userMap.get(m.name) || await rpgenius.getRPGUserByName(m.name);
             if (petUser && typeof rpgenius.getActivePetSpecials === 'function') {
                 const sp = rpgenius.getActivePetSpecials(petUser);
                 petHpRegenRate = Number(sp.hpRegenRate || 0);
                 petMpRegenRate = Number(sp.mpRegenRate || 0);
+                if (sp.autoPotion) {
+                    autoPotion = structuredClone(petUser.autoPotion || null);
+                    autoPotionExpireAt = Math.max(0, ...rpgenius.getEquippedPets(petUser).filter(pet => rpgenius.collectPetSpecialObjects(rpgenius.getPetData(pet.id), pet.level).some(effect => effect.autoPotion)).map(pet => Number(pet.expireAt || 0)));
+                }
             }
         } catch (_) {}
         m.runtime = {
             hp: baseHp, hpMax: baseHp,
             mp: baseMp, mpMax: baseMp,
-            petHpRegenRate, petMpRegenRate,
+            petHpRegenRate, petMpRegenRate, autoPotion, autoPotionExpireAt,
             gauge: 0,
             cooldowns: {}, // (deprecated, kept for compat)
             cooldownsUntil: {}, // skillName -> epoch ms
@@ -2035,7 +2093,7 @@ async function start(hostName) {
             battleStats: createPartyBattleStats()
         };
         const potion = userMap.get(m.name)?.battleCryPotion;
-        if (potion && Date.now() < potion.expired_at) upsertMemberBuff(m, { id: 'battleCry', label: '투신의 함성 (최종 공격력 +25%)', value: Number(potion.amount || 0), remain: (potion.expired_at - Date.now()) / 1000 });
+        if (potion && Date.now() < potion.expired_at) upsertMemberBuff(m, { id: 'battleCry', label: '투신의 함성 (공격력 +25%)', value: Number(potion.amount || 0), remain: (potion.expired_at - Date.now()) / 1000 });
         m.skills = posDef && posDef.baseSkill ? [posDef.baseSkill] : [];
         m.skillDefs = {};
         for (const entry of (m.baseSnapshot.mainCardSkills || [])) {
@@ -2067,6 +2125,7 @@ async function start(hostName) {
     room.result = null;
     room.startedAt = Date.now();
     room.introUntil = Date.now() + INTRO_GRACE_MS;
+    pausePartyIlion(room, true);
     room.phaseTransition = null;
     room.combatLog = [];
     // 퀘스트: 파티 퀘스트 참여 집계 (진행도가 변한 유저만 저장)
@@ -2117,6 +2176,7 @@ function setupPhase(room) {
 
 function endPhase(room) {
     stopTick(room);
+    pausePartyIlion(room, true);
     const quest = getQuestById(room.questId);
     const next = quest.phases[room.phaseIndex + 1];
     if (room.questId !== birthdayEvent.ID) pushNotice(room, (quest.phases[room.phaseIndex] && quest.phases[room.phaseIndex].name) + ' 클리어', 'big', 4500);
@@ -2323,7 +2383,7 @@ function attackMobPhase(name) {
     if (me.runtime && me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
     if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
     if (me.runtime && nowMs() < (me.runtime.actionUntil || 0)) return { error: '행동 쿨타임 중입니다.' };
-    const randoStats = getPartyLiveStats(me);
+    const randoStats = getPartyLiveStats(me, room);
     if (randoStats.kino && me.runtime.kino.exhausted) return { error: '정신력이 30까지 회복될 때까지 전투불능 상태입니다.' };
     if (randoStats.wonyoddi && nowMs() < Number(me.runtime.basicUntil || 0)) return { error: '일반 공격 쿨타임 중입니다.' };
     if (randoStats.wonyoddi) me.runtime.basicUntil = nowMs() + randoCharacters.basicCooldown(randoStats, me.runtime, me.baseSnapshot.slotEffects, getActionCooldownSeconds(me) * 1000);
@@ -2361,7 +2421,7 @@ function applyMobPhaseDamage(room, attacker, monster, result, type, skillName, c
     const remaining = Math.max(0, room.killTarget - room.sharedKillCount);
     const kills = damage > 0 ? Math.min(remaining, Math.max(1, Math.floor(damage / mobHp))) : 0;
     room.sharedKillCount += kills;
-    randoCharacters.onHit(getPartyLiveStats(attacker), attacker.runtime, 0, { dotAttack: true, skillName }, kills, nowMs());
+    randoCharacters.onHit(getPartyLiveStats(attacker, room), attacker.runtime, 0, { dotAttack: true, skillName }, kills, nowMs());
     const payload = {
         by: attacker.name,
         total: room.sharedKillCount,
@@ -2413,8 +2473,9 @@ function stopTick(room) {
 
 function stepRoom(room) {
     if (room.state !== 'inProgress') { stopTick(room); return; }
-    if (room.awaitingChoices) return;
+    if (room.awaitingChoices) { pausePartyIlion(room, true); return; }
     const dt = TICK_MS / 1000;
+    pausePartyIlion(room, isIntroActive(room));
     if (mansionRaid.transition(room, dt)) { broadcastRoom(room); return; }
     if (isIntroActive(room)) {
         if (birthdayRaid.transition(room)) broadcastRoom(room);
@@ -2452,6 +2513,11 @@ function stepRoom(room) {
                 recordPartyHealing(m, m, r.hp - before);
             }
             if (r.petMpRegenRate > 0 && r.mp < r.mpMax) r.mp = Math.min(r.mpMax, r.mp + r.mpMax * r.petMpRegenRate * dt);
+            if (r.autoPotion && nowMs() < r.autoPotionExpireAt && nowMs() >= Number(r.potionUntil || 0) && !r.sealRemain) {
+                const selected = require('./pet_auto_potion').select(r.autoPotion, r, rpgenius.getDataCache('Item', []),
+                    (id, item) => (m.potions || []).some(p => p.name === item.name && p.count > 0), { hp: canPartyReceiveHealing(m), mp: !m.baseSnapshot?.stats?.kino });
+                if (selected) usePotion(m.name, selected.item.name).catch(error => console.error('[auto-potion]', error.message));
+            }
             if (r.dragonRegen) {
                 const now = nowMs();
                 while (r.dragonRegen.ticksLeft > 0 && now >= Number(r.dragonRegen.nextTickAt || 0)) {
@@ -2477,6 +2543,8 @@ function stepRoom(room) {
                         if (healedAmount > 0) healed.push(ally.name);
                     }
                     if (healed.length > 0) pushCombat(room, m.name + ' [솔로 인페르노] → ' + healed.join(', ') + ' HP +' + comma(amount), 'heal');
+                    tcgEquipment.record(equipmentState, '솔로 인페르노');
+                    tcgEquipment.outsideAttack(equipmentState, extra => activatePartyTcg(room, m, extra));
                     equipmentState.soloInfernoNextAt += 15000;
                     if (equipmentState.soloInfernoNextAt <= Date.now()) equipmentState.soloInfernoNextAt = Date.now() + 15000;
                 }
@@ -2490,6 +2558,8 @@ function stepRoom(room) {
                     const mpRatio = Number(r.mp || 0) / Math.max(1, Number(r.mpMax || 1));
                     if (hpRatio < mpRatio) healMember(m, Math.max(1, Math.round(r.hpMax * .01 * getPartyRecoveryMultiplier(m))));
                     else if (mpRatio < hpRatio) r.mp = Math.min(r.mpMax, r.mp + Math.max(1, Math.round(r.mpMax * .01)));
+                    if (hpRatio !== mpRatio) tcgEquipment.record(equipmentState, '포상 정산 반지');
+                    tcgEquipment.outsideAttack(equipmentState, extra => activatePartyTcg(room, m, extra));
                     equipmentState.settlementRecoveryAt = Date.now() + intervalMs;
                 }
             }
@@ -2503,7 +2573,7 @@ function stepRoom(room) {
                         const lightMul = typeof rpgenius.getElementDamageMultiplier === 'function'
                             ? rpgenius.getElementDamageMultiplier('명', m.baseSnapshot.stats || {}, target.stats || {})
                             : 1;
-                        let damage = Math.max(1, Math.round(Number(judgment.damage) * .15 * lightMul));
+                        let damage = Math.max(1, Math.round(Number(judgment.damage) * .05 * lightMul));
                         if (room.monster) {
                             damage = applyPlayerDamageToBoss(room, room.monster, m, damage);
                             recordPartyDamage(m, { damage, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '심판 폭발');
@@ -2544,7 +2614,7 @@ function stepRoom(room) {
                 const phase = quest && quest.phases[room.phaseIndex];
                 if (!targetMon && phase && phase.type === 'mob') targetMon = getPhaseCombatMonster(room);
                 if (targetMon && targetMon.hp > 0 && !m.runtime.dead) {
-                    const botDamage = Math.max(1, Math.round(Number(m.baseSnapshot.stats.atk || 0) * r.iktaeBot.atkMul));
+                    const botDamage = Math.max(1, Math.round(Number(getPartyLiveStats(m, room).atk || 0) * r.iktaeBot.atkMul));
                     const res = calculateOutgoingDamage(m, targetMon, room, botDamage, { isSkill: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1 });
                     const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
                     if (invincible) res.damage = 0;
@@ -2575,7 +2645,7 @@ function stepRoom(room) {
                 const phase = quest && quest.phases[room.phaseIndex];
                 if (!targetMon && phase && phase.type === 'mob') targetMon = getPhaseCombatMonster(room);
                 if (targetMon && targetMon.hp > 0 && !m.runtime.dead) {
-                    const dmg = Math.max(1, Math.round(Number(m.baseSnapshot.stats.atk || 0) * r.sunata.atkMul));
+                    const dmg = Math.max(1, Math.round(Number(getPartyLiveStats(m, room).atk || 0) * r.sunata.atkMul));
                     const res = calculateOutgoingDamage(m, targetMon, room, dmg, { isSkill: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1 });
                     const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
                     if (invincible) res.damage = 0;
@@ -2701,7 +2771,7 @@ function healExpiredShield(room, member, layer) {
 
 function expireBuff(member, buff) {
     const r = member.runtime;
-    if (buff.id === 'battleCry') member.baseSnapshot.stats.atk /= 1 + Number(buff.value || 0);
+    if (buff.id === 'battleCry') attackStats.addPercent(member.baseSnapshot.stats, -Number(buff.value || 0));
     if (buff.id === 'actCdMul') r.actCdMul = getActiveBuffValue(r, 'actCdMul', 1);
     if (buff.id === 'atkBuff') r.atkBuff = getActiveBuffValue(r, 'atkBuff', 0);
     if (buff.id === 'takenDmgSelf') r.takenDmgMul = getActiveBuffValue(r, 'takenDmgSelf', 1);
@@ -2780,9 +2850,8 @@ function stepMonsterDebuffs(room, monster, dt) {
     return false;
 }
 
-function getFinalDamageMul(attacker, options) {
+function getFinalDamageMul(attacker) {
     let mul = 1;
-    const summonAttack = !!(options && options.summonAttack);
     if (attacker.runtime) {
         mul *= 1 + Number(attacker.runtime.mansionDictationDamage || 0);
         for (const buff of attacker.runtime.buffs || []) if (['mansionBlessing', 'mansionTrial'].includes(buff.id) && buff.remain > 0) mul *= 1 + Number(buff.value || 0);
@@ -2792,14 +2861,6 @@ function getFinalDamageMul(attacker, options) {
         const r = attacker.runtime;
         const missingPct = r.hpMax > 0 ? Math.max(0, (r.hpMax - r.hp) / r.hpMax) : 0;
         mul *= 1 + missingPct * 0.4;
-    }
-    // 수나타 소환: 소환 중 본인 공격력(피해) +buff — 소환수 자동공격에는 미적용 (솔로와 동일)
-    if (!summonAttack && attacker.runtime && attacker.runtime.sunata && Date.now() < Number(attacker.runtime.sunata.expired_at || 0)) {
-        mul *= 1 + Number(attacker.runtime.sunata.buff || 0);
-    }
-    // 건력: 상태 동안 공격력 증가 — 소환수 자동공격에는 미적용 (솔로와 동일)
-    if (!summonAttack && attacker.runtime && attacker.runtime.gunryeok) {
-        mul *= 1 + Number(attacker.runtime.gunryeok.atkBuff || 0);
     }
     return mul;
 }
@@ -2877,9 +2938,63 @@ function getReducedDefenseRate(stats, slotEffects, extraRate) {
     return Math.max(0, Math.min(1, Number(stats && stats.pntPercent || 0) + Number(slotEffects && slotEffects.defReduction || 0) + Number(extraRate || 0)));
 }
 
+function activatePartyTcg(room, member, extra, allyTarget) {
+    const runtime = member.runtime, state = runtime.equipmentState || (runtime.equipmentState = {});
+    const equipment = member.baseSnapshot.transcendEquipment || {};
+    if (!state.tcgSources?.length || Number(equipment.setCounts?.['TCG의 유산'] || 0) < 4) { delete state.tcgSources; return []; }
+    const stats = getPartyLiveStats(member), now = Date.now();
+    const monster = getPhaseCombatMonster(room);
+    const dot = (id, label, ratio, milliseconds) => {
+        if (monster) addMonsterDebuff(monster, { id: id + ':' + member.name, label, type: 'dot', element: '화', disableCritical: true,
+            dmg: Math.max(1, Math.round(Number(stats.atk || 0) * ratio * (1 + Number(stats.dotDamage || 0) + (id === 'emberBurn' ? Number(stats.burnDamage || 0) : 0)))),
+            interval: 2, tick: 2, remain: milliseconds / 1000, sourceName: member.name, sourceSkill: label });
+    };
+    return tcgEquipment.activate(tcgEquipment.context({
+        mode: 'party', state, runtime, actor: runtime, stats, now, extra,
+        entries: equipment.entries, setCount: equipment.setCounts?.['TCG의 유산'] || 0,
+        maxHp: runtime.hpMax, maxMp: runtime.mpMax, cooldowns: runtime.cooldownsUntil,
+        heal: amount => healMember(member, amount),
+        shield: (amount, until, name) => { if (canPartyApplyShield(member, member)) grantMemberShield(room, member, member, Math.round(amount * getPartyShieldMultiplier(member)), { source: 'equipment:' + name, expiresAt: until }); },
+        gold: amount => { runtime.pendingEquipmentGold = Number(runtime.pendingEquipmentGold || 0) + amount; },
+        element: element => rpgenius.getElementDamageMultiplier(element, stats, monster?.stats || {}),
+        startTimer: () => { runtime.dragonRegen = state.dragonRegen; },
+        defense: (value, milliseconds) => { if (monster) addMonsterDebuff(monster, { id: 'kingmaker:' + member.name, type: 'defReduce', value, remain: milliseconds / 1000 }); },
+        culprit: (takenFinalDamage, defReduction, milliseconds) => {
+            if (!monster) return;
+            addMonsterDebuff(monster, { id: 'culpritDamage:' + member.name, type: 'takenDamage', value: takenFinalDamage, remain: milliseconds / 1000 });
+            addMonsterDebuff(monster, { id: 'culpritDefense:' + member.name, type: 'defReduce', value: defReduction, remain: milliseconds / 1000 });
+        },
+        prisonKey: until => { runtime.takenDmgMul = 1.5; upsertMemberBuff(member, { id: 'takenDmgSelf', label: '불사조 (피해증가)', value: 1.5, remain: (until - now) / 1000 }); extra.critChanceBonus = Number(extra.critChanceBonus || 0) + .10; extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .30; },
+        burn: (ratio, milliseconds) => dot('emberBurn', '화상', ratio, milliseconds),
+        detonate: (rate, mythic) => {
+            const burn = monster?.debuffs?.find(d => d.id === 'emberBurn:' + member.name && d.type === 'dot');
+            if (burn) {
+                const ticks = Math.max(0, Math.floor((Number(burn.remain || 0) - Number(burn.tick || 0)) / Number(burn.interval || 2) + 1 + 1e-9));
+                extra.oneTimeFinalDamage = Number(extra.oneTimeFinalDamage || 0) + Math.round(Number(burn.dmg || 0) * ticks * rate);
+                monster.debuffs = monster.debuffs.filter(d => d !== burn);
+            }
+            if (mythic) dot('hellfire', '겁화', .50, 6000);
+        },
+        ally: (kind, value, milliseconds) => {
+            const available = Object.values(room.members || {}).filter(target => target !== member && target.runtime && !target.runtime.dead);
+            const selected = available.includes(allyTarget) ? allyTarget : available[Math.floor(Math.random() * available.length)];
+            for (const target of kind === 'heal' ? available : selected ? [selected] : []) {
+                const r = target.runtime;
+                if (kind === 'heal') healMember(target, Math.round(runtime.hpMax * value * getPartyRecoveryMultiplier(member)));
+                if (kind === 'mp') r.mp = Math.min(r.mpMax, r.mp + Math.max(1, Math.round(r.mpMax * value)));
+                if (kind === 'attack') (r.equipmentAtkBuffs || (r.equipmentAtkBuffs = {})).sanctuaryHat = { value, expiredAt: now + milliseconds };
+                if (kind === 'shield' && canPartyApplyShield(member, target)) grantMemberShield(room, member, target, Math.round(r.hpMax * value * getPartyShieldMultiplier(member)), { source: 'equipment:성역의 인도자 아머', expiresAt: now + milliseconds });
+            }
+        }
+    }));
+}
+
 function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
     const runtime = attacker.runtime;
     const state = runtime.equipmentState || (runtime.equipmentState = {});
+    const tcgBefore = tcgEquipment.capture(state);
+    tcgEquipment.consumeAttack(state, extra);
+    extra.onEquipmentProc = name => tcgEquipment.record(state, name);
     const isFixedMultiHit = !!(extra && extra.hitCount);
     const comboHitCount = isFixedMultiHit ? 1 : Math.max(1, Number(extra.comboHitCount || getComboHitCount(stats)));
     extra.comboHitCount = comboHitCount;
@@ -2902,9 +3017,9 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
         state.judgment = { phaseIndex: room && room.phaseIndex, damage: 0, expiresAt: Date.now() + duration(8) * 1000 };
         state.judgmentReadyAt = Date.now() + cooldown(15) * 1000;
     }
-    const markHpCost = () => { if (stage('흐르는 피')) state.flowingBloodNext = value('흐르는 피', .12, .04); };
+    const markHpCost = () => { if (stage('흐르는 피')) { state.flowingBloodNext = value('흐르는 피', .12, .04); tcgEquipment.record(state, '흐르는 피'); } };
     const manaBurnConfigs = [
-        ['마나번 햇', 'manaBurnAttack', .02, 'damageBonusMul', scalePartyAttackBuff(attacker, value('마나번 햇', .15, .03))],
+        ['마나번 햇', 'manaBurnAttack', .02, 'attackPercentBonus', scalePartyAttackBuff(attacker, value('마나번 햇', .15, .03))],
         ['마나번 로브', 'manaBurnElement', .02, 'allElementAtk', value('마나번 로브', 60, 10)],
         ['마나번 트라우저', 'manaBurnCrit', .02, 'critChanceBonus', value('마나번 트라우저', .10, .02)],
         ['마나번 슈즈', 'manaBurnExtra', .02, 'extraDamageBonus', value('마나번 슈즈', .10, .03)],
@@ -2942,7 +3057,7 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
             state.bloodHatReadyAt = Date.now() + cooldown(15) * 1000;
             markHpCost();
         }
-        if (!activeAttackBuffAtStart.bloodHat && attackBuffs.bloodHat && Date.now() < Number(attackBuffs.bloodHat.expiredAt || 0)) add(unit, 'damageBonusMul', Number(attackBuffs.bloodHat.value || 0));
+        if (!activeAttackBuffAtStart.bloodHat && attackBuffs.bloodHat && Date.now() < Number(attackBuffs.bloodHat.expiredAt || 0)) add(unit, 'attackPercentBonus', Number(attackBuffs.bloodHat.value || 0));
 
         if (stage('일레이나 전용 동전') && Date.now() >= Number(state.coinReadyAt || 0)) {
             state.coinBuff = Math.random() < .5
@@ -2956,9 +3071,10 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
         }
 
         if (stage('메가카운트 추첨기')) {
+            tcgEquipment.record(state, '메가카운트 추첨기');
             const pool = ['extra', 'final', 'mp', 'gold'];
             const picked = [];
-            const count = getTranscendSetCount(attacker, 'TCG의 유산') >= 4 ? 2 : 1;
+            const count = 1;
             while (picked.length < count) {
                 const choice = pool[randomInt(0, pool.length - 1)];
                 if (!picked.includes(choice)) picked.push(choice);
@@ -2977,7 +3093,7 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
         if (stage('해방의 열쇠') && Date.now() >= Number(state.liberationReadyAt || 0)) {
             const pool = ['element', 'attack', 'resist'];
             const choices = [];
-            const count = getTranscendSetCount(attacker, 'TCG의 유산') >= 4 ? 2 : 1;
+            const count = 1;
             while (choices.length < count) {
                 const choice = pool[randomInt(0, pool.length - 1)];
                 if (!choices.includes(choice)) choices.push(choice);
@@ -2987,17 +3103,18 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
         }
         if (state.liberationBuff && Date.now() < Number(state.liberationBuff.expiredAt || 0)) {
             const choices = state.liberationBuff.choices || [];
-            if (choices.includes('attack')) add(unit, 'damageBonusMul', scalePartyAttackBuff(attacker, value('해방의 열쇠', .10, .03)));
+            if (choices.includes('attack')) add(unit, 'attackPercentBonus', scalePartyAttackBuff(attacker, value('해방의 열쇠', .10, .03)));
             if (choices.includes('element')) add(unit, 'allElementAtk', Number(state.liberationBuff.elementValue || 0));
         }
 
+        if (stage('킹메이커 팔찌') && monster) tcgEquipment.record(state, '킹메이커 팔찌');
         if (stage('킹메이커 팔찌') && monster) addMonsterDebuff(monster, { id: 'kingmaker:' + attacker.name, type: 'defReduce', value: value('킹메이커 팔찌', .10, .02), remain: duration(5) });
 
         const totalElement = ['fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].reduce((sum, key) => sum + Number(stats[key] || 0) + Number(stats.allElementAtk || 0), 0)
             + getActiveKingElementBonus(attacker) * 4
             + Number(perAttackUnitExtras[unit].allElementAtk || 0) * 4 + Number(perAttackUnitExtras[unit].waterAtk || 0);
         if (stage('레인보우 프리즘') && totalElement >= 1000) {
-            add(unit, 'finalDamageBonus', value('레인보우 프리즘', .15, .05));
+            add(unit, 'finalDamageBonus', value('레인보우 프리즘', .12, .04));
             if (Date.now() >= Number(state.rainbowReadyAt || 0)) {
                 add(unit, 'rainbowAttackRatio', value('레인보우 프리즘', 1.8, .4));
                 state.rainbowReadyAt = Date.now() + cooldown(5) * 1000;
@@ -3006,11 +3123,12 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
 
         state.attackCount = Number(state.attackCount || 0) + 1;
         if (stage('예고편')) {
+            tcgEquipment.record(state, '예고편');
             add(unit, 'finalDamageBonus', -.04 + Number(state.previewNextFinal || 0));
             state.previewNextFinal = value('예고편', .06, .02);
         }
-        if (stage('예고의 예고') && state.attackCount % 2 == 0) add(unit, 'extraDamageBonus', value('예고의 예고', .15, .05));
-        if (stage('예고의 예고의 예고') && state.attackCount % 3 == 0) add(unit, 'critChanceBonus', value('예고의 예고의 예고', .10, .05));
+        if (stage('예고의 예고') && state.attackCount % 2 == 0) { add(unit, 'extraDamageBonus', value('예고의 예고', .15, .05)); tcgEquipment.record(state, '예고의 예고'); }
+        if (stage('예고의 예고의 예고') && state.attackCount % 3 == 0) { add(unit, 'critChanceBonus', value('예고의 예고의 예고', .10, .05)); tcgEquipment.record(state, '예고의 예고의 예고'); }
         if (getTranscendSetCount(attacker, '복선 회수') >= 4) {
             const cycle = stage('리턴즈파겜') ? ((state.attackCount % 3) + 1) : (((state.attackCount - 1) % 3) + 1);
             if (cycle == 1) add(unit, 'finalDamageBonus', -.08);
@@ -3022,7 +3140,7 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
     extra.perAttackUnitExtras = perAttackUnitExtras;
     extra.beforeAttackUnit = ({ hitExtra }) => {
         if (!activeAttackBuffAtStart.encore && attackBuffs.encore && Date.now() < Number(attackBuffs.encore.expiredAt || 0)) {
-            hitExtra.damageBonusMul = Number(hitExtra.damageBonusMul || 0) + Number(attackBuffs.encore.value || 0);
+            hitExtra.attackPercentBonus = Number(hitExtra.attackPercentBonus || 0) + Number(attackBuffs.encore.value || 0);
             hitExtra.critMulBonus = Number(hitExtra.critMulBonus || 0) + .20;
         }
         const burn = monster && Array.isArray(monster.debuffs) && monster.debuffs.find(d => d.id == 'emberBurn:' + attacker.name && d.type == 'dot');
@@ -3032,7 +3150,9 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
         }
     };
     extra.afterAttackUnit = ({ isCritical }) => {
+        const tcgHitBefore = tcgEquipment.capture(state);
         let additionalDamage = 0;
+        if (stage('앵콜') && isCritical) tcgEquipment.record(state, '앵콜');
         if (stage('앵콜') && isCritical) attackBuffs.encore = { value: scalePartyAttackBuff(attacker, value('앵콜', .12, .03)), expiredAt: Date.now() + duration(6) * 1000 };
         if (stage('왓 타임 이즈 잇 나우')) {
             const stacks = Math.min(4, Number(state.dropoutStacks || 0));
@@ -3041,14 +3161,17 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
                 state.dropoutStacks = 0;
             } else state.dropoutStacks = Math.min(4, stacks + 1);
         }
-        if (stage('진사이') && Math.random() < .05) healMember(attacker, Math.round(200 * getPartyRecoveryMultiplier(attacker)));
+        if (stage('진사이') && Math.random() < .05) { healMember(attacker, Math.round(200 * getPartyRecoveryMultiplier(attacker))); tcgEquipment.record(state, '진사이'); }
         if (stage('잿불 모자') && monster && Date.now() >= Number(state.burnReadyAt || 0)) {
             const burnDamage = Math.max(1, Math.round(Number(stats.atk || 0) * value('잿불 모자', .30, .05) * (1 + Number(stats.dotDamage || 0) + Number(stats.burnDamage || 0) + (getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? .35 : 0))));
             addMonsterDebuff(monster, { id: 'emberBurn:' + attacker.name, label: '화상', type: 'dot', element: '화', disableCritical: true, dmg: burnDamage, interval: 2, tick: 2, remain: duration(8 + Number(stats.burnDurationFlat || 0) + (stage('행운의 복주머니') ? 3 : 0)), explodeDamage: getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? Number(stats.atk || 0) : 0, explodeLabel: '장송곡 폭발', sourceName: attacker.name, sourceSkill: '화상' });
             state.burnReadyAt = Date.now() + cooldown(6) * 1000;
         }
+        additionalDamage += tcgEquipment.finishHit(state, tcgHitBefore, extra, post => activatePartyTcg(room, attacker, post));
         return { additionalDamage };
     };
+    tcgEquipment.collect(state, tcgBefore);
+    activatePartyTcg(room, attacker, extra);
 }
 
 function getPositionStatMul(room, member, key) {
@@ -3177,16 +3300,15 @@ function applyDamageVariance(damage) {
 
 function computeBasicDamage(attacker, monster, room) {
     const snapshot = (attacker && attacker.baseSnapshot) || {};
-    const stats = getPartyLiveStats(attacker);
+    const stats = getPartyLiveStats(attacker, room);
     const slotEffects = snapshot.slotEffects || {};
     const quest = getQuestById(room && room.questId) || {};
     const posDef = (quest.positions && attacker && quest.positions[attacker.position]) || {};
     const runtime = (attacker && attacker.runtime) || {};
-    const finalAtkMul = (posDef && posDef.stats && posDef.stats.finalAtk) || 1;
     const dealtDmgMul = (posDef && posDef.stats && posDef.stats.dealtDmg) || 1;
     const nextBasicBonus = Number(runtime.nextBasicDamageBonus || 0);
     if (runtime.nextBasicDamageBonus) runtime.nextBasicDamageBonus = 0;
-    let finalAttackBonus = 0;
+    let attackPercentBonus = 0;
     let equipmentBasicBonus = 0;
     let cooldownNecklaceActive = false;
     if (getTranscendEquipmentEntry(attacker, '쿨다운 목걸이')) {
@@ -3196,12 +3318,12 @@ function computeBasicDamage(attacker, monster, room) {
         });
         cooldownNecklaceActive = activeSkills.length > 0 && activeSkills.every(name => Number(runtime.cooldownsUntil && runtime.cooldownsUntil[name] || 0) > Date.now());
         if (cooldownNecklaceActive) {
-            finalAttackBonus = getTranscendStageValue(attacker, '쿨다운 목걸이', .12, .03);
+            attackPercentBonus = getTranscendStageValue(attacker, '쿨다운 목걸이', .12, .03);
             equipmentBasicBonus = getTranscendStageValue(attacker, '쿨다운 목걸이', .35, .10);
         }
     }
-    let rawDamage = Math.round(Number(stats.atk ?? 100) * finalAtkMul * (1 + getPartyAttackBuffValue(attacker)) * (1 + getPartyConditionalFinalAttack(attacker) + finalAttackBonus) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0) + nextBasicBonus + equipmentBasicBonus));
-    const extra = { isBasic: true };
+    let rawDamage = Math.round(Number(stats.atk ?? 100) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0) + nextBasicBonus + equipmentBasicBonus));
+    const extra = { isBasic: true, attackPercentBonus };
     const equipmentState = runtime.equipmentState || {};
     if (equipmentState.bribeNextBasic) {
         rawDamage = Math.round(rawDamage * (1 + Number(equipmentState.bribeNextBasic.damage || 0)));
@@ -3225,7 +3347,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     const originalRawDamage = rawDamage;
     const isDirectAttack = !extra.summonAttack && !extra.dotAttack;
     const snapshot = (attacker && attacker.baseSnapshot) || {};
-    const stats = getPartyLiveStats(attacker);
+    const stats = getPartyLiveStats(attacker, room);
     const slotEffects = snapshot.slotEffects || {};
     const quest = getQuestById(room && room.questId) || {};
     const posDef = (quest.positions && attacker && quest.positions[attacker.position]) || {};
@@ -3238,7 +3360,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         if (typeof extra.previewNextBefore !== 'undefined') runtime.equipmentState.previewNextFinal = Number(extra.previewNextBefore || 0);
         return { damage: 0, isCrit: false, hitCount: 0, criticalCount: 0, dodged: true };
     }
-    if (extra && extra.isSkill && !extra.summonAttack) applyPartyCurrentShoesOnSkillHit(room, attacker, extra.skillName);
+    if (extra && extra.isSkill && !extra.summonAttack) applyPartyCurrentShoesOnSkillHit(room, attacker, extra.skillName, extra);
     randoCharacters.prepareAttack(stats, runtime, extra);
     const mainSkills = (snapshot.mainCardSkills || []).map(entry => entry.skill && entry.skill.name).filter(Boolean);
     const attackKind = extra.skillName && mainSkills.length > 1 && extra.skillName === mainSkills[mainSkills.length - 1] ? 'ultimate' : extra.isSkill ? 'skill' : 'basic';
@@ -3250,7 +3372,13 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     const awakeningHpRatio = Number(runtime.hp || 0) / Math.max(1, Number(runtime.hpMax || 1));
     if (awakeningHpRatio <= .50) awakeningReduction += Number(stats.bloodFlowReduction || 0) * (awakeningHpRatio <= .30 ? 2 : 1);
     if (monster && Number(monster.hp || 0) / Math.max(1, Number(monster.hpMax || 1)) <= .50) awakeningReduction += getTranscendStageValue(attacker, '최후통첩 아머', .10, .04);
-    rawDamage *= cardAwakening.runtimeAttackRatio(stats, slotEffects, runtime.hpMax, runtime.mpMax, awakeningReduction, Number(extra.awakeningStacks ?? (runtime.stackCounters && runtime.stackCounters['나인멘스']) ?? 0));
+    const awakeningAttack = cardAwakening.runtimeAttackChange(stats, runtime.hpMax, runtime.mpMax, awakeningReduction, Number(extra.awakeningStacks ?? (runtime.stackCounters && runtime.stackCounters['나인멘스']) ?? 0));
+    extra.attackPercentBonus = Number(extra.attackPercentBonus || 0) + awakeningAttack.percent;
+    extra.attackFlatBonus = Number(extra.attackFlatBonus || 0) + awakeningAttack.flat;
+    if (!extra.summonAttack) {
+        if (runtime.sunata && Date.now() < Number(runtime.sunata.expired_at || 0)) extra.attackPercentBonus += Number(runtime.sunata.buff || 0);
+        if (runtime.gunryeok) extra.attackPercentBonus += Number(runtime.gunryeok.atkBuff || 0);
+    }
     const dealtDmgMul = (posDef && posDef.stats && posDef.stats.dealtDmg) || 1;
     let contextMul = 1;
     if (!monster || monster.type === 'mob') contextMul *= (1 + Number(slotEffects.damageBonus || 0)) * (1 + Number(stats.damageBonus || 0));
@@ -3272,7 +3400,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
             && actionElement === '명') {
             extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + Math.min(7, Number(equipmentStateForTrigger.beomStacks || 0)) * .02;
         }
-        if (Date.now() < Number(equipmentStateForTrigger.trueBeomUntil || 0) && extra && extra.isSkill) {
+        if (equipmentStateForTrigger.trueBeom && extra && extra.isSkill) {
             extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + getTranscendStageValue(attacker, '범부의 대나무', .30, .10);
         }
         if (equipmentStateForTrigger.fortuneExtraDamage && Date.now() < Number(equipmentStateForTrigger.fortuneExtraDamage.expiredAt || 0)) {
@@ -3285,6 +3413,8 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
                 expiredAt: Date.now() + (8 + getEquipmentEffectDurationBonus(attacker)) * 1000
             };
             equipmentStateForTrigger.ultimatumHatReadyAt = Date.now() + Math.max(0, 12 - getEquipmentEffectCooldownReduction(attacker)) * 1000;
+            tcgEquipment.record(equipmentStateForTrigger, '최후통첩 모자');
+            activatePartyTcg(room, attacker, extra);
         }
         if (getTranscendSetCount(attacker, '최후 통첩') >= 4) {
             if (targetHpRatio >= .70) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + .10;
@@ -3297,21 +3427,21 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         }
         if (attackerHpRatio <= .50) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.bloodyShoesExtraDamage || 0) + Number(stats.vladimirExtraDamage || 0);
         if (attackerHpRatio <= .20 && getTranscendEquipmentEntry(attacker, '진사이')) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + getTranscendStageValue(attacker, '진사이', .30, .05);
-        if (extra && extra.isSkill && attackerHpRatio <= .60 && Number(stats.blackEchoSkillDamage || 0) > 0) {
+        if (extra && extra.isSkill && attackerHpRatio <= .80 && Number(stats.blackEchoSkillDamage || 0) > 0) {
             const currentSkillMul = Math.max(.01, 1 + Number(stats.afterSkill || 0));
             contextMul *= (currentSkillMul + Number(stats.blackEchoSkillDamage)) / currentSkillMul;
         }
         if (attackerHpRatio <= .50 && equipmentStateForTrigger.abyssBuff && Date.now() < Number(equipmentStateForTrigger.abyssBuff.expiredAt || 0)) contextMul *= 1.08;
         if (getTranscendEquipmentEntry(attacker, '마나 증폭 장치')) {
             const mpRatio = Number(runtime.mp || 0) / Math.max(1, Number(runtime.mpMax || 1));
-            if (mpRatio > .20) contextMul *= 1 + Number(stats.manaAmplifierFinalAtk || 0);
+            if (mpRatio > .20) extra.attackPercentBonus += Number(stats.manaAmplifierFinalAtk || 0);
             if (mpRatio >= .50) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + getTranscendStageValue(attacker, '마나 증폭 장치', .08, .04);
         }
         if (getTranscendEquipmentEntry(attacker, '포상 정산 반지')) {
             const hpRatio = Number(runtime.hp || 0) / Math.max(1, Number(runtime.hpMax || 1));
             const mpRatio = Number(runtime.mp || 0) / Math.max(1, Number(runtime.mpMax || 1));
             const diff = Math.abs(hpRatio - mpRatio);
-            if (diff >= .30) contextMul *= 1 + getTranscendStageValue(attacker, '포상 정산 반지', .12, .04);
+            if (diff >= .30) extra.attackPercentBonus += getTranscendStageValue(attacker, '포상 정산 반지', .12, .04);
             if (diff >= .50) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + getTranscendStageValue(attacker, '포상 정산 반지', .16, .04);
         }
     }
@@ -3323,14 +3453,14 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     if (/월도랜드/.test(String(quest.name || ''))) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.waldolandDmg || 0);
     // 향후 추가될 '부타게임' 파티 퀘스트에서만 적용되는 추가 피해
     if (/부타게임/.test(String(quest.name || '') + ' ' + String(quest.id || ''))) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.butagamePartyQuestDmg || 0);
-    // 10번째 공격마다 최종 공격력 증가 (흠시원; 소환수 자동공격 제외, 연격 각각 별도 집계해 해당 타격에만 적용)
+    // 10번째 공격마다 공격력 증가 (흠시원; 소환수 자동공격 제외, 연격 각각 별도 집계해 해당 타격에만 적용)
     const tenthAtk = Number(slotEffects.tenthHitFinalAtk || 0);
     const tenthAtkStart = (isDirectAttack && tenthAtk > 0) ? Number(runtime.attackCounter || 0) : null;
     // [무]속성 공격 시 최종 피해 증가 + 범인은 이 안에(다음 공격 최종 피해)
     let extraFinalDamage = Number(extra && extra.finalDamageBonus || 0);
     const equipmentState = runtime.equipmentState || {};
     if (isDirectAttack && equipmentState.cleanWaterBuff && Date.now() < Number(equipmentState.cleanWaterBuff.expiredAt || 0) && actionElement === '수') {
-        extraFinalDamage += Number(equipmentState.cleanWaterBuff.value || 0);
+        extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(equipmentState.cleanWaterBuff.value || 0);
     }
     if (isDirectAttack && equipmentState.deepWaterAttackBuff && Date.now() < Number(equipmentState.deepWaterAttackBuff.expiredAt || 0) && actionElement === '수') {
         extraFinalDamage += Number(equipmentState.deepWaterAttackBuff.value || 0);
@@ -3577,7 +3707,7 @@ function applyPlayerDamageToBoss(room, mon, attacker, damage, result) {
         }
     }
     const applied = applyBossHpDamage(room, mon, damage, result ? { birthdayHits: result.hitDetails?.filter(hit => hit.damage > 0).length || result.hitCount || 1 } : undefined);
-    if (attacker) randoCharacters.onHit(getPartyLiveStats(attacker), attacker.runtime, 0, { dotAttack: true, skillName: result?.skillName }, mon.hp <= 0 ? 1 : 0, nowMs());
+    if (attacker) randoCharacters.onHit(getPartyLiveStats(attacker, room), attacker.runtime, 0, { dotAttack: true, skillName: result?.skillName }, mon.hp <= 0 ? 1 : 0, nowMs());
     if (st?.birthday && result?.hitDetails) {
         let remaining = applied;
         for (const detail of result.hitDetails) if (detail.damage > 0) detail.damage = remaining-- > 0 ? 1 : 0;
@@ -4693,7 +4823,7 @@ function computeMonsterDamage(room, mon, target) {
     const quest = getQuestById(room.questId);
     const posDef = (quest.positions && quest.positions[target.position]) || {};
     const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
-    const targetStats = getPartyLiveStats(target);
+    const targetStats = getPartyLiveStats(target, room);
     const targetSlotEffects = target.baseSnapshot.slotEffects || {};
     const monStats = mon.stats || {};
     if (Number(targetStats.avd || 0) > 0 && Math.random() < Math.max(0, Number(targetStats.avd || 0))) return 0;
@@ -4855,6 +4985,9 @@ function applyDamageToMember(room, member, dmg, source) {
         const reflect = Math.max(1, Math.round(Number(tStats.def || 50) * finalDefMul * thornSnap.ratio));
         const dealt = applyBossHpDamage(room, room.monster, reflect);
         recordPartyDamage(member, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '가시 반사');
+        const tcgState = r.equipmentState || (r.equipmentState = {});
+        tcgEquipment.record(tcgState, '가시');
+        if (r.hp > 0) tcgEquipment.outsideAttack(tcgState, extra => activatePartyTcg(room, member, extra));
         pushCombat(room, '가시 반사 → ' + room.monster.name + ' [-' + dealt + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
@@ -4881,6 +5014,13 @@ function applyDamageToMember(room, member, dmg, source) {
 }
 
 function maybeStartImmortalArmorRegen(room, member) {
+    const runtime = member.runtime, stats = member.baseSnapshot?.stats || {};
+    if (runtime && !runtime.dead && armorExpansion.triggerHellfire(stats, runtime.equipmentState ||= {}, runtime.hp, runtime.hpMax)) {
+        upsertMemberBuff(member, { id: 'hellfireRage', label: '업화 (공격력 +20%)', remain: 5 });
+        tcgEquipment.record(runtime.equipmentState, '불멸하는 업화의 하의');
+        tcgEquipment.outsideAttack(runtime.equipmentState, extra => activatePartyTcg(room, member, extra));
+        pushNotice(room, member.name + ' 업화 발동! 5초 동안 공격력이 20% 증가합니다.', 'success', 3000);
+    }
     const snap = member.baseSnapshot && member.baseSnapshot.immortalArmor;
     if (!snap) return;
     const r = member.runtime;
@@ -4888,8 +5028,11 @@ function maybeStartImmortalArmorRegen(room, member) {
     if (r.dragonRegen) return;
     const now = nowMs();
     if (Number(snap.readyAt || 0) > now) return;
-    snap.readyAt = now + IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS;
+    snap.readyAt = now + Math.max(0, IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS - getEquipmentEffectCooldownReduction(member) * 1000);
     r.dragonRegen = { ticksLeft: IMMORTAL_DRAGON_ARMOR_REGEN_TICKS, nextTickAt: now + 1000 };
+    const equipmentState = r.equipmentState || (r.equipmentState = {});
+    tcgEquipment.record(equipmentState, '불굴');
+    tcgEquipment.outsideAttack(equipmentState, extra => activatePartyTcg(room, member, extra));
     pushNotice(room, member.name + ' [' + IMMORTAL_DRAGON_ARMOR_NAME + '] ' + IMMORTAL_DRAGON_ARMOR_REGEN_TICKS + '초간 초당 ' + Math.round(IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * 100) + '% 회복', 'success', 4500);
     persistImmortalArmorCooldown(member.name, snap.readyAt);
 }
@@ -4984,7 +5127,7 @@ function useSkill(name, skillName, targetName) {
     if (!me || me.runtime.dead) return { error: '행동할 수 없습니다.' };
     if (me.runtime.stunRemain > 0) return { error: '기절 상태입니다.' };
     if (me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
-    if (getPartyLiveStats(me).kino && me.runtime.kino.exhausted) return { error: '정신력이 30까지 회복될 때까지 전투불능 상태입니다.' };
+    if (getPartyLiveStats(me, room).kino && me.runtime.kino.exhausted) return { error: '정신력이 30까지 회복될 때까지 전투불능 상태입니다.' };
     if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
     if (room.monster?.bossState?.birthday && room.monster.bossState.candles) return { error: '지금은 스킬을 사용할 수 없습니다.' };
     if (skillName === '자폭') return usePartySelfDestruct(room, me);
@@ -5000,7 +5143,7 @@ function useSkill(name, skillName, targetName) {
     }
     const quest = getQuestById(room.questId);
     const posDef = (quest.positions && quest.positions[me.position]) || {};
-    const stats = getPartyLiveStats(me);
+    const stats = getPartyLiveStats(me, room);
     const slotEffects = me.baseSnapshot.slotEffects || {};
     const mainCardSkillNames = (me.baseSnapshot.mainCardSkills || []).map(entry => entry.skill && entry.skill.name).filter(Boolean);
     const equipmentSkill = preparePartyTranscendSkill(me, skillName, mainCardSkillNames.length > 0 && mainCardSkillNames[mainCardSkillNames.length - 1] === skillName, room);
@@ -5039,6 +5182,16 @@ function useSkill(name, skillName, targetName) {
     if (Number(equipmentSkill.selfShield || 0) > 0 && canPartyApplyShield(me, me)) {
         grantMemberShield(room, me, me, Number(equipmentSkill.selfShield), { source: 'equipment:심해의 갑옷', durationMs: Number(equipmentSkill.selfShieldDuration || 5) * 1000, hits: 99 });
     }
+    equipmentSkill.extra.skillName = skillName;
+    equipmentSkill.extra.mpCost = mp;
+    activatePartyTcg(room, me, equipmentSkill.extra);
+    room.skillCastSerial = Number(room.skillCastSerial || 0) + 1;
+    broadcast(room, 'skill-cast', {
+        id: room.id + ':' + room.startedAt + ':skill-' + room.skillCastSerial,
+        roomId: room.id, startedAt: room.startedAt, phaseIndex: room.phaseIndex,
+        at: nowMs(), action: 'skill', skillName, actor: me.name, cardName: me.card?.name,
+        uniqueCutscene: me.baseSnapshot.uniqueCutscene?.skillName === skillName ? me.baseSnapshot.uniqueCutscene : null
+    });
     executeSkillEffect(room, me, skillName, def, targetName, equipmentSkill);
     broadcastRoom(room);
     return { ok: true };
@@ -5070,9 +5223,9 @@ function usePartySelfDestruct(room, member) {
     runtime.iktaeBot = null;
     runtime.sunata = null;
     runtime.actionUntil = now + getActionCooldownSeconds(member) * 1000;
-    const stats = member.baseSnapshot.stats || {};
+    const stats = getPartyLiveStats(member, room);
     const slotEffects = member.baseSnapshot.slotEffects || {};
-    const finalAtk = Number(stats.atk || 0) * getPositionStatMul(room, member, 'finalAtk') * (1 + getPartyAttackBuffValue(member)) * (1 + getPartyConditionalFinalAttack(member));
+    const finalAtk = Number(stats.atk || 0);
     const ratio = getTranscendStageValue(member, '카카오의 계략', 3.30, .30);
     const rawDamage = Math.max(1, Math.round(finalAtk * ratio * (Number(botActive) + Number(sunataActive)) * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0)) * getPositionStatMul(room, member, 'skillDmg')));
     const extra = Object.assign({}, equipmentSkill.extra || {}, { isSkill: true, skillName: '자폭' });
@@ -5110,11 +5263,10 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
         executeMainCardSkillEffect(room, caster, skillName, def, targetName, equipmentSkill);
         return;
     }
-    const stats = getPartyLiveStats(caster);
+    const stats = getPartyLiveStats(caster, room);
     const slotEffects = caster.baseSnapshot.slotEffects || {};
     const quest = getQuestById(room.questId);
     const posDef = (quest.positions && quest.positions[caster.position]) || {};
-    const finalAtkMul = (posDef && posDef.stats && posDef.stats.finalAtk) || 1;
     let skillDmgMul = (posDef && posDef.stats && posDef.stats.skillDmg) || 1;
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
     if (def.countAsBasic) skillDmgMul = 1;
@@ -5124,7 +5276,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
     if (def.hits) extra.hitCount = Number(def.hits || 1);
     if (def.extraOnCrit) extra.extraOnCrit = def.extraOnCrit;
     const ctx = {
-        atk: Number(stats.atk || 100) * finalAtkMul * (1 + getPartyAttackBuffValue(caster)) * (1 + getPartyConditionalFinalAttack(caster)),
+        atk: Number(stats.atk || 100),
         def: Number(stats.def || 50),
         targetMaxHp: room.monster ? room.monster.hpMax : 0
     };
@@ -5294,10 +5446,9 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
             Number(getTranscendEquipmentEntry(caster, '어머니의 마음').stage || 1), Date.now());
         pushCombat(room, caster.name + ' [어머니의 마음] ' + excluded.join(', ') + ' 제외', 'buff');
     }
-    const stats = getPartyLiveStats(caster);
+    const stats = getPartyLiveStats(caster, room);
     const slotEffects = caster.baseSnapshot.slotEffects || {};
-    const finalAtkMul = getPositionStatMul(room, caster, 'finalAtk');
-    let finalAtk = Number(stats.atk || 0) * finalAtkMul * (1 + getPartyAttackBuffValue(caster)) * (1 + getPartyConditionalFinalAttack(caster));
+    let finalAtk = Number(stats.atk || 0);
     let skillDmgMul = getPositionStatMul(room, caster, 'skillDmg');
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
     let multiplier = skillName === '헤즈업' ? Number(stats.awakening?.effect === 'headsUpDamage' ? stats.awakening.value : 0) : getSkillValue(skill, 0, star);
@@ -5309,7 +5460,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         if (mode.shield && canPartyApplyShield(caster, caster)) {
             grantMemberShield(room, caster, caster, mode.shield, { source: 'awakening:워뇨띠', durationMs: 7000, hits: 99 });
         }
-        finalAtk = Number(getPartyLiveStats(caster).atk || 0) * finalAtkMul * (1 + getPartyAttackBuffValue(caster)) * (1 + getPartyConditionalFinalAttack(caster));
+        finalAtk = Number(getPartyLiveStats(caster, room).atk || 0);
         multiplier = mode.skillRate;
         extra.modeFixedDamage = mode.fixed;
         extra.modeSwitchDamage = true;
@@ -5412,7 +5563,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
             extra.critChanceBonus = Number(extra.critChanceBonus || 0) + .10;
             extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .30;
         }
-        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '불사조 (피해증가)', value: caster.runtime.takenDmgMul, remain: prisonKey ? 8 + getEquipmentEffectDurationBonus(caster) : 4 });
+        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '불사조 (피해증가)', value: caster.runtime.takenDmgMul, remain: prisonKey ? 8 + getEquipmentEffectDurationBonus(caster) : 6 });
     }
     if (skillName === '피아스트') {
         // 8초간 최대 MP의 ${2}만큼 본인 보호막 (솔로와 동일; 파티 전용 효과는 아래 공격력/MP)
@@ -5443,6 +5594,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         pushCombat(room, caster.name + ' [안면강타] → 시벌론 활성화', 'buff');
     }
     if (skillName === '감사합니다 친구야') {
+        extra.disableCritical = true;
         const shieldBonus = getTranscendStageValue(caster, '강릉함씨 32대손', .08, .02);
         const shieldAmt = Math.max(1, Math.round(caster.runtime.hpMax * getSkillValue(skill, 1, star) * getPartyShieldMultiplier(caster) * (1 + shieldBonus)));
         for (const m of room.members) {
@@ -5480,9 +5632,9 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     }
     if (skillName === '54버스트') extra.forceCritical = true;
     if (skillName === '처형박수') {
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.crit || 0); // 치명타 확률만큼 피해 증가
-        caster.runtime.takenDmgMul = 2.0; // 받는 피해 100% 증가
-        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '처형박수 (피해증가)', value: 2.0, remain: 4 });
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.crit || 0) * .5; // 치명타 확률의 50%만큼 피해 증가
+        caster.runtime.takenDmgMul = 1.5; // 받는 피해 50% 증가
+        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '처형박수 (피해증가)', value: 1.5, remain: 12 });
     }
     if (skillName === '핫식스의정력') {
         const shieldAmt = Math.max(1, Math.round(caster.runtime.hpMax * getSkillValue(skill, 1, star) * getPartyShieldMultiplier(caster)));
@@ -5529,7 +5681,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     if (skillName === '유서새김') {
         if (combatMonster) {
             const defDown = getSkillValue(skill, 0, star) + getTranscendStageValue(caster, '흐음티콘', .12, .04);
-            const dotMul = 1 + Number(stats.dotDamage || 0) + getTranscendStageValue(caster, '흐음티콘', .40, .15);
+            const dotMul = 1 + Number(stats.dotDamage || 0) + getTranscendStageValue(caster, '흐음티콘', .30, .10);
             const dotDmg = Math.max(1, Math.round(Number(stats.atk || 0) * getSkillValue(skill, 1, star) * dotMul));
             addMonsterDebuff(combatMonster, { id: '유서새김-def', type: 'defReduce', value: defDown, remain: 10 });
             addMonsterDebuff(combatMonster, { id: '유서새김', label: '유서새김', type: 'dot', dmg: dotDmg, interval: 2, tick: 2, remain: 10, sourceName: caster.name, sourceSkill: '유서새김' });
@@ -5746,7 +5898,7 @@ async function getAvailablePotions(name) {
 
 function potionFuncDesc(func) {
     if (!func) return '';
-    if (func.type === '최종공격력비약') return Number(func.duration || 0) + '초간 최종 공격력 +' + Math.round(Number(func.amount || 0) * 100) + '%';
+    if (func.type === '최종공격력비약') return Number(func.duration || 0) + '초간 공격력 +' + Math.round(Number(func.amount || 0) * 100) + '%';
     if (func.type === '체력회복') return 'HP +' + func.amount;
     if (func.type === '마나회복') return 'MP +' + func.amount;
     if (func.type === '체력회복%') return 'HP +' + Math.round(Number(func.amount || 0) * 100) + '%';
@@ -5805,8 +5957,8 @@ async function usePotion(name, potionName) {
             const current = me.runtime.buffs.find(buff => buff.id === 'battleCry' && buff.remain > 0);
             const value = Number(func.amount || 0);
             if (current) current.remain += Number(func.duration || 0);
-            else { me.baseSnapshot.stats.atk *= 1 + value; upsertMemberBuff(me, { id: 'battleCry', label: '투신의 함성 · 최종 공격력 +' + Math.round(value * 100) + '%', value, remain: Number(func.duration || 0) }); }
-            parts.push('최종 공격력 +' + Math.round(value * 100) + '%');
+            else { attackStats.addPercent(me.baseSnapshot.stats, value); upsertMemberBuff(me, { id: 'battleCry', label: '투신의 함성 · 공격력 +' + Math.round(value * 100) + '%', value, remain: Number(func.duration || 0) }); }
+            parts.push('공격력 +' + Math.round(value * 100) + '%');
         } else if (func.type === '체력회복') {
             const amt = Math.max(1, Math.round(Number(func.amount || 0) * potionMul));
             parts.push('+' + healMember(me, amt) + ' HP');
@@ -5902,7 +6054,7 @@ module.exports = {
     getRoomOf,
     POSITION_LIST,
     __test: {
-        executeMainCardSkillEffect, getPartyLiveStats, tickPartyIlion, tickPartyKino, serializeMember,
+        executeMainCardSkillEffect, getPartyLiveStats, tickPartyIlion, tickPartyKino, serializeMember, pausePartyIlion,
         proceedToNextPhase,
         applyDamageToMember,
         healMember,

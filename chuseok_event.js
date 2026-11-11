@@ -70,7 +70,7 @@ function registerChuseokRoutes(server, { rpgenius: rpg, requireUser, now = Date.
         const items = rpg.getDataCache('Item', []);
         const id = items.findIndex(item => item?.name === REWARD_NAME);
         if (id < 0) throw Object.assign(new Error('선물을 준비 중입니다. 잠시 후 다시 눌러주세요.'), { status: 503 });
-        rpg.addInventoryItem(user, id, 1);
+        rpg.grantItemReward(user, id, 1);
         user.chuseok2026 = { ...user.chuseok2026, claimedAt: now() };
         // 아이템과 수령 기록을 같은 유저 레코드에 저장. 실패 시 캐시의 기록을 보존해 재지급을 막는다.
         await save(user);

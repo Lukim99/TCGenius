@@ -1,0 +1,398 @@
+[
+  {
+    "file": "casino.webp",
+    "sha256": "d1e34f5295408e08a2673092d6dcfcffc94dfe73150f27c56179a9e776eb7746"
+  },
+  {
+    "file": "chests.webp",
+    "sha256": "cc86a1f747b508afccd2be75877497f84028dda8612233689f41b24d0c657f75"
+  },
+  {
+    "file": "corridor.webp",
+    "sha256": "5040c77ff7fbacb62e01adfb5a582646a87bbce7f8f2dadd797f7d6c7c6fbc7e"
+  },
+  {
+    "file": "final-warden.webp",
+    "sha256": "6e569d2367ebfcded3f6df9c759b61cf632506b8f339129c59c5136226d27384"
+  },
+  {
+    "file": "forge.webp",
+    "sha256": "edaf11366225bc8a02be347c327276589daa242eb999af1ab4200539bdfb7a84"
+  },
+  {
+    "file": "gambler.webp",
+    "sha256": "c02775b2ce3de2b768442b885f761013e7e08b100e3821988bc8f4945270ba17"
+  },
+  {
+    "file": "heaven-token.webp",
+    "sha256": "fc94b7bed634928dfd15044b37bd4d43cd3cac26c427d6c8b9c8d02041c41653"
+  },
+  {
+    "file": "hell-chest-rich.webp",
+    "sha256": "4d1b2758cfe955a534c015ce341f1118faf3f91b4eba0f75921fe58920b84ce6"
+  },
+  {
+    "file": "hell-chest.webp",
+    "sha256": "591bc564fe89c4fdb476351da90ebead3fc78d71d0d9f220aa12d7c5c550e82f"
+  },
+  {
+    "file": "hell-key-ornate.webp",
+    "sha256": "8657e71a3b38298b5479d03045bcbf8094a2aeecb312b5fefb7cf256b9dcb527"
+  },
+  {
+    "file": "hell-key-radiant.webp",
+    "sha256": "99f3272e077adb657f9cca0cb823daecd197b6b1607ed3c00d63ea985c9aa0a8"
+  },
+  {
+    "file": "hell-key.webp",
+    "sha256": "1fef66d71798fae3dbf1e7b8e177c70d4640cf9e13577265e6d0564dc8f20f17"
+  },
+  {
+    "file": "hell.webp",
+    "sha256": "a60a528376a73684521f62cbb9cb25963733b05f57be5d92b6b4dcd25fba1d37"
+  },
+  {
+    "file": "judge-boss.webp",
+    "sha256": "51849cdff6fa9dd4e54cbc6da50b945f09856dbbcf083ac32994b5724a238c86"
+  },
+  {
+    "file": "judge.webp",
+    "sha256": "2a1bb8bea099b689c80d1ccf3a352af3c77f2c3d7eb6cb230c61e30f596ab218"
+  },
+  {
+    "file": "mirror.webp",
+    "sha256": "ea6af7af938168d0f2108398ad8fcfce3ac4d05a02a88d2d285bc2ce65e4db3f"
+  },
+  {
+    "file": "paradise.webp",
+    "sha256": "54787e1a2b96bc1f9cd3284c14447a9af6dc343c7eb3ec4eb80d2aa4e06731c6"
+  },
+  {
+    "file": "puzzle.webp",
+    "sha256": "aab71870403fd8d774a171ad3f32234399b711a56db21a37a724a1f64f21b1ce"
+  },
+  {
+    "file": "rift-boss.webp",
+    "sha256": "6fab00c1a3b10c039a5086826e5f09a23c4f424d0d389bb1ae8e503aed6fbcfc"
+  },
+  {
+    "file": "ticket.webp",
+    "sha256": "797886ebf2d967915eef6e9455fccce435b9e974192c3bd8e18613ca5cc7e1e3"
+  },
+  {
+    "file": "well.webp",
+    "sha256": "088c59f9b30916918c0aee48d7544544f6b1f1542daacb27ceb5b043e2466662"
+  },
+  {
+    "file": "audio/chest.mp3",
+    "sha256": "c20977240c5b3006b5ca1a6c0a5812c66950cd352449770e0b5954068f05b3b0"
+  },
+  {
+    "file": "audio/descent.mp3",
+    "sha256": "f0f1403c21493c8712a343b30c24392841725bec00d2fe3b676d863516c56efe"
+  },
+  {
+    "file": "audio/heaven.mp3",
+    "sha256": "4bb538b0dd3439ffcda1d1abf408ad87db95586c9cda41fc26a131a015259a06"
+  },
+  {
+    "file": "audio/hell.mp3",
+    "sha256": "bf27b2527db88e7b5cfdfb0fe017c583e22e7965c406733f3a6253ee03bdddea"
+  },
+  {
+    "file": "audio/hover.mp3",
+    "sha256": "a5b09494dc59932486685ecb978831740a88682204fa4e5b71650944ebf3d59c"
+  },
+  {
+    "file": "audio/land.mp3",
+    "sha256": "915d90187b303374a4c221a992e754a1ece643eb61cdbaea8cf978c955b26088"
+  },
+  {
+    "file": "audio/reveal.mp3",
+    "sha256": "4f5f384fe48608edb6a9aaf45d0efecba2b98450c3efb81b0448a0cbcee39cb7"
+  },
+  {
+    "file": "audio/select.mp3",
+    "sha256": "e1fe192342d5b4280f4adf0df710c0e6a92afa9ed13950fc6d2049f4f06062ff"
+  },
+  {
+    "file": "relic-crown.webp",
+    "sha256": "2f5d7f5e649a41dbe574757ed4a5b277e113bad15d262f7f73b551c2453102f8"
+  },
+  {
+    "file": "relic-compass.webp",
+    "sha256": "1ec6d30f318ca010dcbe030041281b302fab420d21cf760eb35fb02a0f1e842c"
+  },
+  {
+    "file": "relic-ring.webp",
+    "sha256": "e8c4da71164bd6df62f36e888e7e7fb4e6a9b3ec623599a4eb9e9a16751357f5"
+  },
+  {
+    "file": "relic-clock.webp",
+    "sha256": "9b496e2bc02ed4dfda16a5287f6bfc39eaae4b35f9e914a50b0619682faeb6be"
+  },
+  {
+    "file": "relic-feather.webp",
+    "sha256": "cc8f929f0752c4392513044eb004234e6a7ce65570bbf7fba840050fa30b5ef5"
+  },
+  {
+    "file": "relic-orb.webp",
+    "sha256": "4f19f5bcc5af04e204a70ea328840f1a8e75755df465311a5b19ae920d713561"
+  },
+  {
+    "file": "relic-dice.webp",
+    "sha256": "130578e32537640f672b4c77eddfd7decb1200590efecf37bc4352a48ea31027"
+  },
+  {
+    "file": "relic-redContract.webp",
+    "sha256": "de444831d7e7d6cbaafdd44bdef3fb68c99193288b005f708e2973ba3d344ab0"
+  },
+  {
+    "file": "relic-key.webp",
+    "sha256": "30214084aba74135d57643fde107fef6b36b80522ecae89dd7537f8bdf3a2bb2"
+  },
+  {
+    "file": "relic-hourglass.webp",
+    "sha256": "dd839892513ad5da5c687d9e86e433e98461e8eb7f357eb0acf64217b0fa0eaa"
+  },
+  {
+    "file": "relic-sheath.webp",
+    "sha256": "9a5be061ad90a2e32baa20ab8281e86bc06be61f8cb739f01f0c7b01e6db3312"
+  },
+  {
+    "file": "relic-necklace.webp",
+    "sha256": "6ee367250772fc054a64433775a01ddb65496e04574a590b7d9253ee41adc505"
+  },
+  {
+    "file": "relic-judgment.webp",
+    "sha256": "37820486978337ae7d6a733e427908dbc46904067a76fdab351fff0067b86bbe"
+  },
+  {
+    "file": "relic-riftHeart.webp",
+    "sha256": "179f552d7c2b6bd93741e9895b2db775e6b593486e73112bb274a4a4a45fe562"
+  },
+  {
+    "file": "relic-meditationCenser.webp",
+    "sha256": "874c8261eab7aa3a2336054f76cc022ecd652fbb0690090bcd9e3566d90e5fd5"
+  },
+  {
+    "file": "relic-starlightSpool.webp",
+    "sha256": "48e6152ff9e547b13f02c1aadd2ef30852548a22cfa228ebc41436f62ccced6f"
+  },
+  {
+    "file": "relic-echoBell.webp",
+    "sha256": "c4d5c24f4181b08ea4488505f163c638c1a9ba5919d460204f6d83ca9ffe0b5f"
+  },
+  {
+    "file": "relic-riftLens.webp",
+    "sha256": "9607577359f029c8904171f5f202f7e17840c1f88d1ed55afa500d9f6c6ea246"
+  },
+  {
+    "file": "relic-returnLantern.webp",
+    "sha256": "64153d1b5f4e8ab8f82f3e7fcc09262f5f655d2bd52179e504a9264eac07ff82"
+  },
+  {
+    "file": "relic-tuningFork.webp",
+    "sha256": "e8784dd445f109bf4752b1788e3105f7349237d83738f43a610edb9de8642bdb"
+  },
+  {
+    "file": "relic-runeQuill.webp",
+    "sha256": "ef3a3ba59c7bfb283a1e7e69d6eda70ebe73b4086539a846dce3469b36d1555c"
+  },
+  {
+    "file": "relic-crystalVial.webp",
+    "sha256": "6f975f5fc2d6ebaf3a156385f8f6a9971e5de071ee20222f08a013e27fa68706"
+  },
+  {
+    "file": "bag.webp",
+    "sha256": "eeb000fc88837e028a277123b324160b0496d390fd6a27da1fcf8ac16c49d2ee"
+  },
+  {
+    "file": "hell-hd-v2.webp",
+    "sha256": "9cbe69db46da6cc581629c6ec264aac6561b299c5dc0095715349b3eb3f2a2ae"
+  },
+  {
+    "file": "relic-emberSeed.webp",
+    "sha256": "9faa8c14467de9fe2f0bb1d223a1f62febbec60372401e8e10c09bc121fe2cbb"
+  },
+  {
+    "file": "relic-guardianClasp.webp",
+    "sha256": "f64ee314bfde4f514f80fe9db6a99b762f5c1606ae688ce48c8adf4447a4851d"
+  },
+  {
+    "file": "relic-hunterBadge.webp",
+    "sha256": "705899eb69b7c6a94a42008b3835dbe08bde78e4907300cd1051d75fbbe430af"
+  },
+  {
+    "file": "relic-alchemistFlask.webp",
+    "sha256": "091fea4e819848dd4a68a3b471838582b46c3f297e35925e1de3d3fcef760107"
+  },
+  {
+    "file": "relic-duelGlove.webp",
+    "sha256": "5d5e6ccbbb7b03da33f01954e71f98880cec25859175b55349b7120bdc93c969"
+  },
+  {
+    "file": "relic-oracleLens.webp",
+    "sha256": "1527223b059fcab033e2f9de2470895c8f5d44617c102052013437e1b3ed64d8"
+  },
+  {
+    "file": "relic-moonSeal.webp",
+    "sha256": "83fd0159525574391b85204cca28b6ee7497a821023987db854c653b67da9140"
+  },
+  {
+    "file": "relic-abyssDiadem.webp",
+    "sha256": "0708aa2345cad47b7ed7407027850edac0889f6ccbde25a6af0caf10cbd608ee"
+  },
+  {
+    "file": "celestial-weapon.webp",
+    "sha256": "8aba48b6a0105022e65714d79744212ee2032adc5969cadcea0b48db17583abd"
+  },
+  {
+    "file": "celestial-armor.webp",
+    "sha256": "ea4e4c6a8955ae5d6c2f89d86c30c430049d420b1bdb6095246b652688559cfb"
+  },
+  {
+    "file": "celestial-abilities.webp",
+    "sha256": "c7ef42f9f1358fb92975ebe888d11cc0cbd4280ec903de1984e02b9ca7aa610e"
+  },
+  {
+    "file": "relic-bluntWhetstone.webp",
+    "sha256": "cb5ee54c33265f2fcb0117c9fdc2fa8a98ec3e19c3874b3e38e9fd8ac134f13a"
+  },
+  {
+    "file": "relic-tinBuckle.webp",
+    "sha256": "abbe5dc233b12ffb72756bce82830f914d5e7490cf9747aef5f942333b1636de"
+  },
+  {
+    "file": "relic-chippedFang.webp",
+    "sha256": "1efbc31713398fe4cf30a470704ad1fa85571d9468256224e2ab448cebe1bc40"
+  },
+  {
+    "file": "relic-quiltPatch.webp",
+    "sha256": "bf243dfdff9ad79fc4ea8e756173114cbf517243102ce37358fa4b31a65e4bb6"
+  },
+  {
+    "file": "relic-knottedCord.webp",
+    "sha256": "b1de24122a8748fcbe05a3d332c039e8afba47d61ca3848d55e38d6c8af2dca0"
+  },
+  {
+    "file": "relic-wornSandal.webp",
+    "sha256": "7ba6bde4a18f238bf56f3f6462220d8bcff1eb982b10fed558c1a202397e093d"
+  },
+  {
+    "file": "relic-emptyWaterskin.webp",
+    "sha256": "93d654dd0e5c2a98b0abb8f7f56d6ccda76618bd37757c270d6fb0a8c9ed431a"
+  },
+  {
+    "file": "relic-rustyNeedle.webp",
+    "sha256": "c1dc702bd8ac3ab72798e9272a0560f8e2839c01d463463a33ab49d4c41cef8a"
+  },
+  {
+    "file": "relic-bentSpoon.webp",
+    "sha256": "255dac191d9ee6f2329c49185f1658c74d960ad0671e901eb949f8a6c37d25d6"
+  },
+  {
+    "file": "relic-crackedMonocle.webp",
+    "sha256": "7cfa0d684920db1b7668b430375e8447a131404fa91d59f6f1beb785bc7eb25e"
+  },
+  {
+    "file": "relic-paperTalisman.webp",
+    "sha256": "6ebdb3d2f097c95845369e416f8ca43b01735a140e9f1e30ea48a12e64334fbc"
+  },
+  {
+    "file": "relic-copperThimble.webp",
+    "sha256": "80c46ce8102140b6664bbbeee4280db3f617d27d082ea0aa6149b5d65da9d209"
+  },
+  {
+    "file": "relic-dryBiscuit.webp",
+    "sha256": "9b62a3f84026ba33bd5e1e158007a3b5449986b70b012d5baeb3eb6809657bbd"
+  },
+  {
+    "file": "relic-blueChalk.webp",
+    "sha256": "eb24c0820645a58d15aa055266a1e16175da11af8bd493c2bc02ac50519d1ab4"
+  },
+  {
+    "file": "relic-dullArrow.webp",
+    "sha256": "daf27ceb7fa8e27c665052464562e8aee9ac0d42d572af60c0d7362385931328"
+  },
+  {
+    "file": "relic-practiceSword.webp",
+    "sha256": "53ac3a15fecde93d72220b10efe0f446174e5931b3c733b19c170a4f94bcb29c"
+  },
+  {
+    "file": "relic-linenRibbon.webp",
+    "sha256": "85ceb539c87c29135f62f6b57671232014b8f04d0e89afcc22435f83ba788048"
+  },
+  {
+    "file": "relic-sootInk.webp",
+    "sha256": "306e32e4feb9721c809164af0a80cb222a348989bca385b278c3a824271ae3c8"
+  },
+  {
+    "file": "relic-crackedBell.webp",
+    "sha256": "79771878e4e86fe975e036138bf3a9d679e262c469857142643873b8e4420126"
+  },
+  {
+    "file": "relic-emptyInkwell.webp",
+    "sha256": "3ef85fb94b4a86d73add100a2f674156dcbe6bfb06abb02c1a4df2f279c158f8"
+  },
+  {
+    "file": "relic-pebbledMarble.webp",
+    "sha256": "8ec41c0ab9c76fc08595a9f998df2751f34b94e7ffc90f9616d4646990adab87"
+  },
+  {
+    "file": "relic-looseGear.webp",
+    "sha256": "bf0000218e42ae8ce7c22c20805ab44a44cd71f266f679dbc299b0ece411a33c"
+  },
+  {
+    "file": "relic-corkStopper.webp",
+    "sha256": "8b98f19de9cbbdf9f2aca911c493eed698b8ac11cb88bbadb6624151040e09d8"
+  },
+  {
+    "file": "relic-woodenButton.webp",
+    "sha256": "bacd859416b9f8df5659f26546d300f15b555a21735dcfbdbed6651e6ebc50ae"
+  },
+  {
+    "file": "relic-frayedBookmark.webp",
+    "sha256": "4c05f448491bc50e1e658f71f2c968dd4f6e9236bbf7b3fa83459d21279d650a"
+  },
+  {
+    "file": "relic-chippedToken.webp",
+    "sha256": "687437a5e53cde872862a79d30b5d85495e50f9c972428bcef1ecfd95030b280"
+  },
+  {
+    "file": "relic-brassReceipt.webp",
+    "sha256": "9f4bfc3af02d314ebfb01c740d357bc43e63e6ae95bd12fc6e1569a64fcf79d2"
+  },
+  {
+    "file": "relic-ashScarf.webp",
+    "sha256": "a7590648db610d52b81ab6eb90785a803a4c7cd267866f2006d437710bdbe020"
+  },
+  {
+    "file": "relic-hunterWhistle.webp",
+    "sha256": "ff9e82292e812bfffc18754ffa7f96c7fe1529136927734d5d3f94bf5f290d72"
+  },
+  {
+    "file": "relic-smallSandbag.webp",
+    "sha256": "b50a0478845e0391a7eaca42d2c08534dc7b44dc6d2bc849c7b7d06ce6b08339"
+  },
+  {
+    "file": "relic-chalkDie.webp",
+    "sha256": "c8a688fb8cd93a4c8473fc291bb23edb66844e7b6bc706e7c0cec3879350112b"
+  },
+  {
+    "file": "relic-fadedPostcard.webp",
+    "sha256": "8822f418fca67826d1e6cf377ef21f0a71c190f2ff882411cac799380e294a05"
+  },
+  {
+    "file": "audio/purchase-v1.mp3",
+    "sha256": "a774da552f04598bd8c56a34961e4b0d4c6c28987342bdb18f3331ce554872a3"
+  },
+  {
+    "file": "riftTrader.webp",
+    "sha256": "91c80d774d81b2a26cc3c54870a47d89a22997173c2a160ee7a58f338edb51ed"
+  },
+  {
+    "file": "collapse.webp",
+    "sha256": "4ec456a5c6d9f450a65c5a56905eecf9d219197cc80b8807ab9fe2518674f305"
+  }
+]

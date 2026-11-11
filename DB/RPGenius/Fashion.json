@@ -397,7 +397,9 @@
       }
     },
     "primary_card": [
-      9
+      9,
+      15,
+      16
     ],
     "requireStar": 6,
     "type": "전직"
@@ -413,7 +415,9 @@
       }
     },
     "primary_card": [
-      9
+      9,
+      15,
+      16
     ],
     "requireStar": 6,
     "type": "전직"

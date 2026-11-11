@@ -1,4 +1,5 @@
 'use strict';
+const attackStats = require('./attack_stats');
 
 const WONYODDI_ID = 15;
 const KINO_ID = 16;
@@ -48,7 +49,12 @@ function spendMental(stats, runtime, amount, now) {
     const s = mentalState(stats, runtime, now);
     if (s.exhausted || s.value < amount) return false;
     s.value = Math.max(0, s.value - amount);
-    if (s.value === 0) { s.exhausted = true; s.berserk = Number(stats.randoEquipment?.['청심환'] || 0) > 0; }
+    if (!s.berserk && Number(stats.randoEquipment?.['청심환'] || 0) > 0 && s.value <= Number(stats.mental || 100) * .20) {
+        s.value = 0;
+        s.berserk = true;
+        s.tcgProc = true;
+    }
+    if (s.value === 0) s.exhausted = true;
     return true;
 }
 
@@ -56,21 +62,24 @@ function mentalCost(stats, skill) {
     return Math.max(0, Number(skill.mental_cost ?? skill.mp_cost ?? skill.mp ?? 0)) + (Number(stats.randoEquipment?.['청심환'] || 0) > 0 ? 10 : 0);
 }
 
-function applyStats(stats, runtime, slots, shield, now) {
-    if (Number(shield || 0) > 0) stats.atk = Math.round(stats.atk * (1 + Number(slots?.shieldAttack || 0)));
+function applyStats(stats, runtime, slots, shield, now, combatStartedAt) {
+    if (Number(shield || 0) > 0) attackStats.addPercent(stats, Number(slots?.shieldAttack || 0));
     if (stats.wonyoddi) {
         const mode = runtime?.wonyoddi?.mode || '기본', star = stats.randoStar;
         const base = { '즐리': .60, '쉐비': 1, '럭키비키': .77, '원영적사고': 1 + .10 * star }[mode] || 0;
         const stage = Number(stats.randoEquipment?.['존버의 미학'] || 0);
         const rates = { '즐리': [.06, .015], '쉐비': [.36, .09], '럭키비키': [.48, .12], '원영적사고': [.84, .21] }[mode];
         stats.afterBasic = Number(stats.afterBasic || 0) + base + (rates ? step(stage, ...rates) : 0);
+        const equipmentState = runtime?.equipmentState || runtime?.equipment || {};
+        const lastSkillAt = equipmentState.lastSkillAt ?? combatStartedAt ?? runtime?.enteredAt ?? equipmentState.combatStartedAt;
+        if (stage > 0 && lastSkillAt != null && now - lastSkillAt >= 10000) stats.afterBasic += .20;
         if (mode === '쉐비') stats.modeDefReduction = .30;
         if (mode === '럭키비키') stats.crit = Number(stats.crit || 0) + .77;
         if (mode === '원영적사고') { stats.crit = Number(stats.crit || 0) + .10 + .02 * star; stats.critMul = Number(stats.critMul || 0) + .30 + .02 * star; }
     }
     if (stats.kino && runtime) {
         const s = mentalState(stats, runtime, now), stage = Number(stats.randoEquipment?.['청심환'] || 0);
-        if (stats.awakening?.effect === 'mentalAttack') stats.atk = Math.round(stats.atk * (1 + Math.floor(s.value / 15) * stats.awakening.value));
+        if (stats.awakening?.effect === 'mentalAttack') attackStats.addPercent(stats, Math.floor(s.value / 15) * stats.awakening.value);
         if (s.berserk && stage > 0) { stats.finalDamage = Number(stats.finalDamage || 0) + step(stage, .20, .05); stats.critMul = Number(stats.critMul || 0) + step(stage, .30, .05); }
     }
     return stats;
@@ -82,6 +91,10 @@ function switchMode(stats, runtime, cooldowns, skillName, now, rng = Math.random
     else { s.cycle = (Number(s.cycle || 0) + 1) % 3; s.mode = rng() < .07 ? '럭키비키' : modes[s.cycle]; }
     s.firstDamage = .30 + .03 * stats.randoStar;
     s.nextBasicExtra = step(Number(stats.randoEquipment?.['가면 스위처'] || 0), .20, .10);
+    if (Number(stats.randoEquipment?.['가면 스위처'] || 0) > 0) {
+        const equipmentState = runtime.equipmentState || runtime.equipment || (runtime.equipmentState = {});
+        (equipmentState.tcgSources || (equipmentState.tcgSources = [])).push('가면 스위처');
+    }
     if (!stats.randoEquipment?.['존버의 미학']) {
         for (const key of Object.keys(cooldowns || {})) cooldowns[key] = now + Math.max(0, Number(cooldowns[key]) - now) * .70;
         for (const key of ['basicUntil', 'nextActionAt', 'actionUntil']) if (runtime[key] > now) runtime[key] = now + (runtime[key] - now) * .70;
@@ -94,6 +107,11 @@ function switchMode(stats, runtime, cooldowns, skillName, now, rng = Math.random
 function prepareAttack(stats, runtime, extra) {
     if (extra.randoPrepared) return;
     extra.randoPrepared = true;
+    if (runtime?.kino?.tcgProc) {
+        delete runtime.kino.tcgProc;
+        const equipmentState = runtime.equipmentState || runtime.equipment || (runtime.equipmentState = {});
+        (equipmentState.tcgSources || (equipmentState.tcgSources = [])).push('청심환');
+    }
     const direct = !(extra.dotAttack || extra.summonAttack || extra.counterDamage || extra.isBotAutoAttack || extra.modeSwitchDamage);
     if (stats.kino && runtime?.kino?.berserk && stats.randoEquipment?.['청심환']) {
         extra.triggeredEffectIds = [...new Set([...(extra.triggeredEffectIds || []), 'equipment:청심환'])];

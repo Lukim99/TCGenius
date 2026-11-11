@@ -194,6 +194,7 @@ function createMansionRaid(engine) {
         const shift = value => {
             if (!value || typeof value !== 'object') return;
             for (const key of Object.keys(value)) {
+                if (key === 'ilion') continue; // 카드와 추첨 시각은 partyquest의 일리온 일시정지 처리에서 함께 보존한다.
                 if (typeof value[key] === 'number' && /(?:Until|ReadyAt|ExpireAt|expired_at|expiredAt|expiresAt|nextTickAt)$/.test(key) && value[key] > Date.now() - 1000) value[key] += dt * 1000;
                 else if (key === 'cooldownsUntil') for (const skill of Object.keys(value[key] || {})) value[key][skill] += dt * 1000;
                 else if (value[key] && typeof value[key] === 'object') shift(value[key]);

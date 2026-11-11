@@ -5,7 +5,7 @@ const path = require('node:path');
 const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const characters = require('../DB/RPGenius/CharacterCards.json');
 const awakening = require('../card_awakening');
-const items = [...require('../scripts/init_awakening_items').definitions, ...require('../DB/RPGenius/Item.json').filter(i => i.use === '변환' || ['캐릭터 변환석', '[7월]만능 캐릭터 변환석'].includes(i.name))];
+const items = [...require('../scripts/init_awakening_items').definitions, ...require('../scripts/init_black_market_items').definitions, ...require('../DB/RPGenius/Item.json').filter(i => i.use === '변환' || ['캐릭터 변환석', '[7월]만능 캐릭터 변환석'].includes(i.name))];
 const equipment = structuredClone(require('../DB/RPGenius/Equipment.json'));
 equipment.weapon.push(...require('../transcend_equipment').definitions.weapon.filter(i => ['초심권', '엘리멘탈 부스터'].includes(i.name)));
 const writes = [];
@@ -42,6 +42,104 @@ async function rolls(value, fn) {
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, actual + ' ≠ ' + expected);
 test.before(() => rpg.initRpgeniusData());
 
+test('공격력%는 스탯포인트·각성·슬롯·포션을 plusStats.atk에 합산한다', () => {
+    const u = user('오버라이드');
+    const flat = rpg.calculateUserStats({ ...u, main_card: { ...u.main_card, type: '전직' } }).atk + 40;
+    u.statPointStats.atk = 20;
+    u.card_slot = [card('빵귤')];
+    u.battleCryPotion = { amount: .25, expired_at: Date.now() + 60000 };
+    const meta = {};
+    const stats = rpg.calculateUserStats(u, meta);
+    const bonus = .20 + passive('오버라이드').attackValue + rpg.calculateCardSlotEffects(u).finalAttackBonus + .25;
+    near(meta.plusStats.atk, bonus);
+    assert.equal(stats.atk, Math.round(flat * (1 + bonus)));
+    assert.equal(stats.finalAtk, undefined);
+    u.battleCryPotion.expired_at = Date.now() - 1;
+    const expired = rpg.calculateUserStats(u);
+    near(expired.plusStats.atk, bonus - .25);
+    assert.equal(expired.atk, Math.round(flat * (1 + bonus - .25)));
+});
+
+test('훈련장에 직접 입력한 공격력은 장비·스탯포인트%를 다시 적용하지 않는다', () => {
+    const u = user('빵귤', 4, '일반');
+    u.statPointStats.atk = 100;
+    u.field = { training: { overrides: { atk: 1000 } } };
+    const meta = {}, stats = rpg.calculateUserStats(u, meta);
+    assert.equal(stats.atk, 1000); assert.equal(stats.baseAtk, 1000);
+    assert.equal(meta.plusStats.atk, 0);
+});
+
+test('조건부·타격별·10번째 공격력%도 하나의 합계이며 최종 피해와는 구분한다', async () => {
+    const stats = { atk: 2000, baseAtk: 1000, plusStats: { atk: 1 }, crit: 0, finalDamage: .20 };
+    const saved = structuredClone(stats);
+    await rolls(.5, () => {
+        const hit = rpg.calculateAttackHitResult(stats.atk, 0, 0, stats, {}, {
+            isBasic: true, comboHitCount: 2, tenthAtkStart: 8, tenthAtkBonus: .50,
+            attackPercentBonus: .30, damageBonusMul: .25,
+            perAttackUnitExtras: [{ attackPercentBonus: .10 }, { attackPercentBonus: .10 }]
+        }, {});
+        assert.deepEqual(hit.hitDamages, [3600, 4350]); // 2400/2900 × 피해 1.25 × 최종 피해 1.20
+        assert.deepEqual(hit.hitDetails.map(detail => detail.isTenthAtk), [false, true]);
+    });
+    assert.deepEqual(stats, saved);
+});
+
+test('파티 역할·버프·보호막 공격력은 정적 공격력%와 합산하며 스냅샷을 보존한다', () => {
+    const member = {
+        name: '합산 테스트', position: '메인딜러',
+        baseSnapshot: { stats: { atk: 1500, baseAtk: 1000, plusStats: { atk: .50 } }, slotEffects: { shieldAttack: .04 },
+            transcendEquipment: { entries: [{ name: '강릉함씨 32대손', stage: 1 }], setCounts: {} } },
+        runtime: { atkBuff: .20, equipmentAtkBuffs: {}, shield: 100, shieldHits: 10, shieldExpireAt: Date.now() + 10000 }
+    };
+    const room = { questId: 'blackHodu' };
+    const saved = structuredClone(member.baseSnapshot);
+    const stats = party.getPartyLiveStats(member, room);
+    near(stats.plusStats.atk, .50 + .10 + .20 + .18 + .04);
+    assert.equal(stats.atk, 2020);
+    assert.deepEqual(member.baseSnapshot, saved);
+    assert.equal(party.getPartyLiveStats(member, room).atk, 2020);
+});
+
+test('각성 자원·중첩 변화와 전투력의 조건부 공격력도 합산 공식을 따른다', () => {
+    const stacks = { atk: 2100, baseAtk: 1000, plusStats: { atk: 1.10 }, awakening: { effect: 'stackAttack', value: .10 }, awakeningAttackBonus: .10 };
+    near(awakening.runtimeAttackRatio(stacks, {}, 0, 0, 0, 3), 2300 / 2100);
+    const hp = { atk: 2020, baseAtk: 1010, plusStats: { atk: 1 }, hp: 10000, awakening: { effect: 'hpAttack', value: 10 } };
+    near(awakening.runtimeAttackRatio(hp, {}, 20000, 0, 0, 0), 2040 / 2020);
+    const base = { atk: 2000, baseAtk: 1000, plusStats: { atk: 1 } };
+    const power = rpg.computeCombatPowerFromStats(base, {}, {}).offense;
+    const amplified = rpg.computeCombatPowerFromStats({ ...base, manaAmplifierFinalAtk: .10 }, {}, {}).offense;
+    const noPercent = rpg.computeCombatPowerFromStats({ atk: 2000, manaAmplifierFinalAtk: .10 }, {}, {}).offense;
+    assert.ok(amplified > power && amplified < noPercent);
+});
+
+test('공격 도중 발동한 마나번 공격력은 해당 타격과 다음 행동에 한 번씩 적용한다', async () => {
+    const u = user('빵귤', 4, '일반'); u.level = 300; u.statPointStats.atk = 100;
+    u.equipments.hat = { id: equipment.hat.findIndex(item => item.name === '마나번 햇'), transcendStage: 1 };
+    assert.ok(u.equipments.hat.id >= 0);
+    u.field = { name: '공격력 테스트', buffs: {}, equipmentState: {} };
+    const before = rpg.calculateUserStats(u), extra = { isBasic: true, attackUnitCount: 1, disableCritical: true };
+    u.hp = before.hp; u.mp = before.mp;
+    await rolls(.5, () => {
+        const raw = rpg.applyTranscendPreAttack(u, { type: 'normal' }, before.atk, extra, 'basic', null);
+        const after = rpg.calculateUserStats(u);
+        near(after.plusStats.atk, before.plusStats.atk + .15);
+        const expected = Math.round(before.baseAtk * (1 + before.plusStats.atk + .15));
+        assert.equal(rpg.calculateAttackHitResult(raw, 0, 0, after, {}, extra, {}).finalDamage, expected);
+        assert.equal(after.atk, expected);
+    });
+});
+
+test('PVP의 동적 공격력도 plusStats.atk에 더하며 원본 스냅샷을 보존한다', () => {
+    const side = { snapshot: { stats: { atk: 1500, baseAtk: 1000, plusStats: { atk: .50 } }, slotEffects: {} },
+        runtime: { equipment: { manaBurnAttackBuff: { value: .20, until: Date.now() + 10000 } } } };
+    const saved = structuredClone(side.snapshot);
+    assert.equal(pvp.getCorridorMirrorStats(side).atk, 1700);
+    near(pvp.getCorridorMirrorStats(side).plusStats.atk, .70);
+    assert.deepEqual(side.snapshot, saved);
+    side.runtime.equipment.manaBurnAttackBuff.until = Date.now() - 1;
+    assert.equal(pvp.getCorridorMirrorStats(side).atk, 1500);
+});
+
 test('15종 × 8등급의 패시브·슬롯·스킬과 각성 이미지 레이어', () => {
     const compositor = require('../card_composite');
     for (const definition of awakening.definitions) for (let star = 4; star <= 11; star++) {
@@ -70,14 +168,14 @@ test('글렌첵·일레이나의 원래 기준 및 소수 배수, 오버라이�
         const normal = rpg.calculateUserStats({ ...u, main_card: { ...u.main_card, type: '전직' } });
         const awakened = rpg.calculateUserStats(u);
         assert.equal(awakened.atk, Math.round(normal.atk + normal[stat] / divisor * 20));
-        near(awakening.runtimeAttackRatio({ atk: 100, hp: 10000, mp: 1000, awakening: passive(name), awakeningAttackMultiplier: 1 }, {}, 15000, 1500, 0, 0), 1.1);
+        near(awakening.runtimeAttackRatio({ atk: 100, hp: 10000, mp: 1000, awakening: passive(name), awakeningAttackBonus: 0 }, {}, 15000, 1500, 0, 0), 1.1);
     }
-    near(awakening.getAttackMultiplier(passive('오버라이드', 11), 0, 0), 1.29);
-    near(awakening.getAttackMultiplier(passive('진필규', 11), .4 - .1, 0), 1.18);
-    near(awakening.getAttackMultiplier(passive('진필규'), -.1, 0), 1);
-    near(awakening.getAttackMultiplier(passive('안성재', 11), 0, 12), 1.153);
+    near(awakening.getAttackBonus(passive('오버라이드', 11), 0, 0), .29);
+    near(awakening.getAttackBonus(passive('진필규', 11), .4 - .1, 0), .18);
+    near(awakening.getAttackBonus(passive('진필규'), -.1, 0), 0);
+    near(awakening.getAttackBonus(passive('안성재', 11), 0, 12), .153);
     const jin = user('진필규'); jin.field = { buffs: { receivedDamageReduction: { value: .4, expired_at: Date.now() + 10000 }, receivedDamageMultiplier: { value: 1.1, expired_at: Date.now() + 10000 } } };
-    near(rpg.calculateUserStats(jin).awakeningAttackMultiplier, 1.075);
+    near(rpg.calculateUserStats(jin).awakeningAttackBonus, .075);
 });
 
 test('빵귤 공격 종류 전환·첫 공격 제외·간접 피해 제외·실제 피해 기준 추가 피해', async () => {
@@ -296,6 +394,23 @@ test('각성 카드 등급 상승 및 일반 변환석 차단·만능 변환석 
             assert.notEqual(u.inventory.card[0].id, card('빵귤').id);
             assert.equal(u.inventory.card[0].type, '각성'); assert.equal(u.inventory.card[0].star, 5);
         }
+    }
+});
+
+test('제타·시그마 각성 변환석은 등급 제한을 웹 선택과 실제 변환 모두에 적용한다', async () => {
+    for (const [tier, allowed] of [['제타', 9], ['시그마', 10]]) {
+        const u = user('빵귤');
+        u.inventory.card = [card('빵귤', allowed), card('빵귤', allowed + 1), card('빵귤', allowed, '전직')];
+        const name = tier + ' 각성 캐릭터 변환석', id = items.findIndex(item => item.name === name);
+        rpg.addInventoryItem(u, id, 1);
+        await rpg.useItem(u, name, 1);
+        assert.equal(rpg.getWebItemUsePending(u).options.length, 1);
+        assert.match(rpg.resolveWebItemUsePending(u, 2), /사용할 수 없습니다/);
+        assert.ok(u.pendingAction);
+        assert.match(rpg.resolveWebItemUsePending(u, 1), /변환되었습니다/);
+        assert.equal(u.inventory.card[0].star, allowed);
+        assert.equal(u.inventory.card[0].type, '각성');
+        assert.notEqual(u.inventory.card[0].id, card('빵귤').id);
     }
 });
 

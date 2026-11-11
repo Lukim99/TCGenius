@@ -175,6 +175,7 @@ if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
 const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '자물쇠': '자물쇠', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
 PAGE_LABELS.awakeningcombine = '각성조합';
+PAGE_LABELS['orb-fusion'] = '보주합성';
 PAGE_LABELS['낚시'] = '낚시';
 PAGE_LABELS.directtrade = '1:1거래';
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
@@ -194,8 +195,8 @@ const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
-    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['포인트 광산', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'orb-fusion', 'equipment-synthesis', 'dex', '레벨보상'] },
+    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['포인트 광산', '퍼스널뽑기', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder', 'directtrade'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
 ];
@@ -259,6 +260,7 @@ function navigatePage(pageId) {
     if (activePage === 'directtrade' && pageId !== 'directtrade') window.DirectTradeUI?.close();
     activePage = pageId;
     document.body.classList.toggle('point-mine-active', pageId === '포인트 광산');
+    if (activePage !== '퍼스널뽑기') window.personalDrawGame?.pause();
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
     if (pageId === 'home') { loadHomeBanners(); refreshGameHome().catch(e => { $('#gameHome').textContent = e.message; }); }
@@ -279,15 +281,17 @@ function navigatePage(pageId) {
     if (pageId === 'pvp') loadPvp();
     if (pageId === 'event') loadEventDice();
     if (pageId === '포인트 광산') loadPointMine();
+    if (pageId === '퍼스널뽑기') loadPersonalDraw();
     if (pageId === '자물쇠') loadLockbox();
     if (pageId === '퀘스트') loadQuests();
     if (pageId === '사냥') renderHuntMenu();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
     if (pageId === 'awakeningcombine') loadAwakeningCombine();
+    if (pageId === 'orb-fusion') window.OrbFusionUI.mount($('#orbFusionRoot'), { api, postApi }); else window.OrbFusionUI?.unmount();
     if (pageId === 'equipment-synthesis') loadEquipmentSynthesis();
     if (pageId === '레벨보상') loadLevelRewards();
-    if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
+    if (pageId === 'shop') loadShop(); else { window.ShopSceneUI?.unmount(); }
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
     if (pageId === 'directtrade') window.DirectTradeUI?.open();
@@ -589,13 +593,21 @@ async function loadHomeBanners() {
     }
 }
 
+function cardNameContent(value) {
+    const text = String(value || ''), start = text.indexOf('할로윈 ');
+    if (start < 0) return text;
+    return el('span', null, text.slice(0, start), el('span', { class: 'card-name-halloween' }, '할로윈'), text.slice(start + 3));
+}
+
 function cardNode(card, compact, onClick) {
     if (!card || !card.name) return el('div', { class: 'empty-card' }, '카드 없음');
     const props = { class: 'card-tile ' + (compact ? 'compact' : '') };
-    if (typeof onClick === 'function') props.onclick = () => onClick(card);
+    if (typeof onClick === 'function') Object.assign(props, { role: 'button', tabindex: 0, onclick: () => onClick(card), onkeydown: e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(card); }
+    } });
     return el('div', props,
         card.imageUrl ? el('img', { src: card.imageUrl, alt: card.formatted }) : el('div', { class: 'no-img' }, card.name),
-        el('div', { class: 'card-name' }, card.formatted)
+        el('div', { class: 'card-name' }, cardNameContent(card.formatted))
     );
 }
 
@@ -902,6 +914,7 @@ function openPetModal(pet) {
     if (pet.version && ownEquipContext()) {
         const actions = el('div', { class: 'row game-actions-row' },
             el('button', { type: 'button', class: pet.equipped ? '' : 'primary', onclick: e => changePetEquipment(pet, e.currentTarget) }, pet.equipped ? '장착 해제' : '장착'));
+        if (pet.autoPotion && pet.equipped && !pet.expired) actions.appendChild(el('button', { type: 'button', onclick: openAutoPotionSettings }, '자동 물약 설정'));
         if (pet.extractable) actions.appendChild(el('button', { type: 'button', onclick: e => previewInventoryAction({ action: 'pets-extract', numbers: [pet.number], version: pet.version }, e.currentTarget) }, '추출'));
         $('#modalBody').appendChild(actions);
     }
@@ -1039,7 +1052,7 @@ async function closeModal() {
 function openRichModal(title, sub, nodes) {
     modalRequestToken++;
     setModalVariant();
-    $('#modalTitle').textContent = title;
+    $('#modalTitle').replaceChildren(title || '');
     $('#modalSub').textContent = sub || '';
     $('#modalSub').style.display = sub ? '' : 'none';
     $('#modalBody').replaceChildren(el('div', { class: 'mc-body' }, ...nodes));
@@ -1140,113 +1153,67 @@ async function appendAvatarSection(avatarRef) {
     }
     const avatars = data.avatars || [];
     if (!avatars.length) { wrap.replaceChildren(); return; }
-    const grid = el('div', { class: 'avatar-grid' });
-    avatars.forEach(av => {
-        const tile = el('div', {
-            class: 'avatar-tile' + (av.equipped ? ' equipped' : '') + (!av.unlocked ? ' locked' : ''),
-            title: (av.statLines || []).join('\n'),
-            onclick: () => openAvatarDetailModal(av, avatarRef)
-        },
-            el('div', { class: 'avatar-tile-thumb' },
-                av.imageUrl ? el('img', { src: av.imageUrl, alt: av.name }) : el('span', { class: 'avatar-tile-fallback' }, '?'),
-                !av.unlocked ? el('span', { class: 'avatar-tile-lock' }, '🔒') : null,
-                av.equipped ? el('span', { class: 'avatar-tile-on' }, '장착 중') : null,
-                av.statApplied ? el('span', { class: 'avatar-tile-stat' }, '능력치') : null
-            ),
-            el('div', { class: 'avatar-tile-name' }, av.name),
-            el('div', { class: 'avatar-tile-meta' + (av.grade === '한정' ? ' limited' : av.grade === '프레스티지' ? ' prestige' : '') },
-                av.grade + (av.unlocked && !av.starOk ? ' · ' + av.requireStarText + ' 필요' : ''))
-        );
-        grid.appendChild(tile);
-    });
-    wrap.replaceChildren(cardSectionNode('아바타'), grid,
-        el('div', { class: 'avatar-hint' }, '아바타를 누르면 상세 정보와 장착/해제 버튼이 표시됩니다.'));
+    window.UniqueAvatarUI.renderWardrobe(wrap, avatars, { select: av => openAvatarDetailModal(av, avatarRef) });
 }
 
-// 아바타 타일 클릭 → 이중 모달: 미리보기 + 스탯 + 장착/해제 버튼
+async function openAvatarSynthesis(cubeName) {
+    try {
+        const model = await api('/api/avatars/synthesis');
+        model.initialCubeId = model.cubes.find(cube => cube.name === cubeName)?.id;
+        let pendingRequest;
+        window.UniqueAvatarUI.closeShowroom();
+        closePresetNestedModal(); closeModal();
+        window.UniqueAvatarUI.open(model, {
+            close: () => {},
+            shop: () => { window.UniqueAvatarUI.close(); shopTab = '포인트'; activatePage('shop'); },
+            synthesize: async body => {
+                const signature = JSON.stringify([model.version, body]);
+                if (pendingRequest?.signature !== signature) pendingRequest = { signature, id: crypto.randomUUID() };
+                const result = await postApi('/api/avatars/synthesis', { ...body, version: model.version, requestId: pendingRequest.id });
+                pendingRequest = null;
+                Object.assign(model, result.state);
+                if (result.profile) renderProfile(result.profile);
+                if (pageIsActive('inventory')) loadInventory('items').catch(() => {});
+                return result;
+            }
+        });
+    } catch (error) { showAlert(error.message); }
+}
+
+// 아바타 타일 클릭 → 전체 화면 쇼룸(UniqueAvatarUI.showroom). 화면은 모듈이, 서버 호출은 여기서.
+// 실패는 Error로 던져 쇼룸 안에 표시하고, 성공이 확인된 뒤에만 쇼룸을 닫는다.
 function openAvatarDetailModal(av, avatarRef) {
-    const nodes = [];
-    if (av.imageUrl) nodes.push(el('div', { class: 'avatar-detail-preview' }, el('img', { src: av.imageUrl, alt: av.name })));
-    const statBox = el('div', { class: 'avatar-detail-stats' });
-    const statLines = av.statLines || [];
-    if (statLines.length) statLines.forEach(line => statBox.appendChild(el('div', { class: 'avatar-detail-stat' }, line)));
-    else statBox.appendChild(el('div', { class: 'avatar-detail-stat none' }, '추가 스탯 없음'));
-    if (Number(av.requireStar || 0) > 0) statBox.appendChild(el('div', { class: 'avatar-detail-stat cond' }, '장착 조건: ' + av.requireStarText + ' 이상'));
-    nodes.push(statBox);
-    nodes.push(el('div', { class: 'avatar-hint' }, '아바타 스탯은 메인카드에 장착했을 때만 적용됩니다.'));
-    if (!av.unlocked) {
-        if (av.shop && av.shop.price) {
-            const p = av.shop.price;
-            const priceLabel = p.goods === 'item'
-                ? (p.name || '아이템') + ' ×' + comma(Number(p.amount || 0))
-                : comma(Number(p.amount || 0)) + (p.goods === 'point' ? 'P' : p.goods === 'gold' ? ' 골드' : p.goods === 'garnet' ? ' 가넷' : p.goods === 'mileage' ? ' 마일리지' : '');
-            const buyBtn = el('button', {
-                class: 'primary',
-                style: 'width:100%',
-                disabled: !!av.shop.soldOut,
-                onclick: async e => {
-                    const button = e.currentTarget;
-                    button.disabled = true;
-                    try {
-                        // 클릭 시점의 최신 상점 데이터로 재검증 (가격·품절·판매 여부 실시간 반영)
-                        const data = await api('/api/shop');
-                        shopData = data;
-                        const shopItem = (data.shop[av.shop.shopType] || []).find(it => it.type === '아바타' && it.fashion === av.name);
-                        if (!shopItem) throw new Error('현재 판매하지 않는 상품입니다.');
-                        if (shopItem.owned) throw new Error('이미 보유한 아바타입니다.');
-                        if (shopItem.soldOut) throw new Error('품절된 상품입니다.');
-                        shopTab = av.shop.shopType;
-                        closePresetNestedModal();
-                        openShopBuyModal(shopItem);
-                    } catch (err) {
-                        showAlert(err.message);
-                        button.disabled = false;
-                    }
-                }
-            }, av.shop.soldOut ? '품절 (' + priceLabel + ')' : '구매 (' + priceLabel + ')');
-            nodes.push(el('div', { class: 'row', style: 'margin-top:10px' }, buyBtn));
-            if (av.shop.shopType && av.shop.shopType !== '아바타') {
-                nodes.push(el('div', { class: 'avatar-hint' }, av.shop.shopType + ' 상점에서 판매 중입니다.'));
-            }
-        } else {
-            nodes.push(el('div', { class: 'avatar-detail-note' }, '미보유'));
+    window.UniqueAvatarUI.showroom(av, {
+        synthesis: openAvatarSynthesis,
+        setOption: async (avatarId, option) => {
+            const result = await postApi('/api/avatars/option', { avatarId, option });
+            if (result.profile) renderProfile(result.profile);
+            return result.avatar.option;
+        },
+        apply: async body => {
+            const res = await postApi('/api/cards/avatar', Object.assign({ source: avatarRef.source, number: avatarRef.number }, body));
+            window.UniqueAvatarUI.closeShowroom();
+            closeModal();
+            if (res.profile) renderProfile(res.profile);
+            if (pageIsActive('inventory')) await loadInventory('cards');
+        },
+        buy: async () => {
+            // 클릭 시점의 최신 상점 데이터로 재검증 (가격·품절·판매 여부 실시간 반영)
+            const data = await api('/api/shop');
+            shopData = data;
+            const shopItem = (data.shop[av.shop.shopType] || []).find(it => it.type === '아바타' && it.fashion === av.name);
+            if (!shopItem) throw new Error('현재 판매하지 않는 상품입니다.');
+            if (shopItem.soldOut) throw new Error('품절된 상품입니다.');
+            shopTab = av.shop.shopType;
+            window.UniqueAvatarUI.closeShowroom();
+            openShopBuyModal(shopItem);
         }
-    } else if (!av.equipped && !av.starOk) {
-        nodes.push(el('div', { class: 'avatar-detail-note' }, '⚠️ ' + av.requireStarText + ' 이상 카드에만 장착할 수 있습니다.'));
-    } else {
-        const sendAvatarAction = async (button, body) => {
-            button.disabled = true;
-            try {
-                const res = await postApi('/api/cards/avatar', Object.assign({ source: avatarRef.source, number: avatarRef.number }, body));
-                closePresetNestedModal();
-                closeModal();
-                if (res.profile) renderProfile(res.profile);
-                if (pageIsActive('inventory')) await loadInventory('cards');
-            } catch (err) {
-                showAlert(err.message);
-                button.disabled = false;
-            }
-        };
-        const buttons = [];
-        if (av.equipped) {
-            buttons.push(el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: '' }) }, '해제'));
-        } else {
-            buttons.push(el('button', { class: 'primary', style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: av.name }) }, '장착'));
-            buttons.push(av.statApplied
-                ? el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: '', statsOnly: true }) }, '능력치 적용 해제')
-                : el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: av.name, statsOnly: true }) }, '능력치만 적용'));
-        }
-        nodes.push(el('div', { class: 'row', style: 'margin-top:10px;display:flex;gap:8px' }, ...buttons));
-        if (!av.equipped) {
-            nodes.push(el('div', { class: 'avatar-hint' }, '능력치만 적용: 외형은 현재 장착 중인 아바타를 유지하고, 능력치만 이 아바타로 적용됩니다.'));
-        }
-    }
-    openPresetNestedModal(av.name, '아바타 · ' + av.grade + (av.equipped ? ' · 장착 중' : (av.unlocked ? (av.statApplied ? ' · 능력치 적용 중' : '') : ' · 미보유')), nodes, 'avatar');
+    });
 }
 
 function openMainCardModal(card, avatarRef) {
     const nodes = mainCardDetailNodes(card);
-    openRichModal(card && card.formatted ? card.formatted : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬' : '스킬', nodes);
+    openRichModal(card && card.formatted ? cardNameContent(card.formatted) : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬' : '스킬', nodes);
     if (avatarRef) appendAvatarSection(avatarRef);
 }
 
@@ -1269,7 +1236,7 @@ function cardSlotDetailNodes(card) {
 
 function openCardSlotModal(card, slotNumber) {
     const nodes = cardSlotDetailNodes(card);
-    openRichModal(card.formatted, (card.starText || '') + ' · 카드 슬롯 효과', nodes);
+    openRichModal(cardNameContent(card.formatted), (card.starText || '') + ' · 카드 슬롯 효과', nodes);
     if (Number(slotNumber || 0) > 0 && myName && currentProfileName === myName) {
         appendAvatarSection({ source: 'slot', number: slotNumber });
         const row = el('div', { class: 'row modal-action-row' });
@@ -1280,7 +1247,9 @@ function openCardSlotModal(card, slotNumber) {
 }
 
 function emptyCardSlotNode() {
-    return el('div', { class: 'card-tile compact slot-addable', onclick: () => openCardSlotPicker(null, null) },
+    return el('div', { class: 'card-tile compact slot-addable', role: 'button', tabindex: 0, onclick: () => openCardSlotPicker(null, null), onkeydown: e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCardSlotPicker(null, null); }
+    } },
         el('div', { class: 'empty-card slot-add' },
             el('span', { class: 'slot-add-plus' }, '+'),
             el('span', { class: 'slot-add-label' }, '카드 장착')
@@ -1694,309 +1663,208 @@ async function awakenPotential(eq, event) {
     }
 }
 
-// ===== 잠재능력 재설정 모달 (강화 모달 스타일) =====
-let potentialState = { eq: null, info: null, jewel: 'none', busy: false };
-
-const JEWEL_META = {
-    none:  { cls: 'none',     name: '쥬얼 미사용' },
-    jewel: { cls: 'advanced', name: '쥬얼' },
-    white: { cls: 'blessed',  name: '화이트 쥬얼' }
-};
-
-// 쥬얼 아이콘 노드 (none은 빈 표시, jewel/white는 실제 이미지)
-function jewelIconNode(key) {
-    const info = potentialState.info || {};
-    const icons = info.jewelIcons || {};
-    const url = key === 'jewel' ? icons.jewel : key === 'white' ? icons.white : null;
-    if (url) return el('img', { class: 'jewel-icon-img', src: url, alt: '' });
-    return el('span', { class: 'jewel-icon-none' }, '–');
+// ===== 잠재능력 각인 공방 (시각 디자인: Claude Opus 5.5) =====
+let potentialState = null;
+function potentialModel(state) {
+    return { equipment: state.eq, info: state.info, jewel: state.jewel, targets: state.targets,
+        goldLimit: state.goldLimit, speed: state.speed, busy: state.busy, error: state.error,
+        run: state.auto && state.auto.run, result: state.lastResult };
 }
-
-// 모바일에서 스크롤 없이 화면에 맞도록 zoom으로 자동 축소 (reflow)
-function potAvailHeight() {
-    const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-    return vh * 0.92;
-}
-function potFitZoom(elem, reservedHeight = 0) {
-    if (!elem) return { z: 1, natural: 0 };
-    elem.style.zoom = '1';
-    const natural = elem.scrollHeight;
-    const avail = Math.max(0, potAvailHeight() - reservedHeight);
-    const z = natural > avail ? avail / natural : 1;
-    elem.style.zoom = String(z);
-    return { z, natural };
-}
-function refitPotential() {
-    const ov = $('#potentialOverlay');
-    if (!ov || !ov.classList.contains('active')) return;
-    const wrap = ov.querySelector('.enhance-wrap');
-    if (!wrap) return;
-    if ($('#potentialResultOverlay').classList.contains('active')) {
-        const inner = $('#potentialResultOverlay').querySelector('.pot-result-inner');
-        if (inner) {
-            const resultPadding = 40;
-            const { z, natural } = potFitZoom(inner, resultPadding);
-            wrap.style.height = (natural * z + resultPadding) + 'px';
-        }
-    } else {
-        wrap.style.height = '';
-        potFitZoom($('#potentialContent'));
-    }
-}
-window.addEventListener('resize', refitPotential);
-if (window.visualViewport) window.visualViewport.addEventListener('resize', refitPotential);
-
-function potEntriesNode(data, label, cls) {
-    const tierKey = data && data.tierKey || 'rare';
-    const block = el('div', { class: 'pot-block tier-' + tierKey + ' ' + (cls || '') });
-    block.style.setProperty('--pot-tier', POTENTIAL_TIER_COLORS[tierKey] || '#94a3b8');
-    block.appendChild(el('div', { class: 'pot-title' },
-        el('span', null, label),
-        el('span', { class: 'pot-tier-label' }, (data && data.tierLabel) || '')
-    ));
-    (data && data.entries || []).forEach(entry => {
-        block.appendChild(el('div', { class: 'pot-row' },
-            el('span', { class: 'pot-grade ' + (entry.grade || 'bronze') }, entry.gradeLabel || ''),
-            el('span', { class: 'pot-text' }, entry.text || '')
-        ));
+function renderRerollSetup() {
+    const state = potentialState;
+    if (!state || state.closed || !state.info) return;
+    PotentialForge.renderSetup($('#potentialContent'), potentialModel(state), {
+        onJewel: key => { if (state.busy) return; state.jewel = key; renderRerollSetup(); },
+        onTarget: (index, target) => { state.targets[index] = target; },
+        onBudget: value => { state.goldLimit = value; },
+        onSpeed: value => { state.speed = value; },
+        onSingle: doReroll, onAuto: startPotentialAutoClient, onClose: closeRerollModal
     });
-    return block;
 }
-
+function renderPotentialRunning(state) {
+    if (state !== potentialState || state.closed) return;
+    const frame = state.displayFrame;
+    const model = potentialModel(state);
+    if (frame) Object.assign(model, { run: frame.run, result: frame.result, info: { ...model.info, gold: frame.gold, jewels: frame.jewels } });
+    PotentialForge.renderRunning($('#potentialContent'), model, { onStop: stopPotentialAutoClient, onSpeed: value => { state.speed = value; } });
+}
+function showRerollResult(data) {
+    const state = potentialState;
+    if (!state || state.closed) return;
+    state.lastResult = data;
+    PotentialForge.renderResult($('#potentialContent'), potentialModel(state), {
+        onKeep: () => finishReroll('cancel'), onApply: () => finishReroll('confirm'), onClose: closeRerollModal,
+        onAgain: () => state.auto ? finishReroll('cancel') : loadRerollInfo()
+    });
+}
 function openRerollModal(eq) {
-    potentialState = { eq, info: null, jewel: 'none', busy: false };
-    $('#potentialOverlay').classList.add('active');
+    if (potentialState && !potentialState.closed) return;
+    potentialState = { eq, info: null, jewel: 'none', targets: [null, null, null], goldLimit: '', speed: 1, busy: false, auto: null, lastResult: null, closed: false };
+    const overlay = $('#potentialOverlay');
+    overlay.classList.add('active');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '잠재능력 각인 공방');
+    $('#potentialResultOverlay').classList.remove('active');
+    $('#potentialResultOverlay').replaceChildren();
+    const wrap = overlay.querySelector('.enhance-wrap');
+    wrap.style.height = ''; wrap.classList.remove('result-mode');
+    $('#potentialContent').style.zoom = '1';
     document.body.style.overflow = 'hidden';
     loadRerollInfo();
 }
-
 function closeRerollModal() {
+    const state = potentialState;
+    if (!state) return;
+    state.closed = true; state.stopRequested = true;
+    if (state.auto && state.auto.run.status === 'running' && !state.busy) {
+        postApi('/api/potential/auto/stop', { id: state.auto.run.id }).catch(() => {});
+    }
+    PotentialForge.destroy($('#potentialContent'));
     $('#potentialOverlay').classList.remove('active');
     document.body.style.overflow = '';
-    const wrap = $('#potentialOverlay').querySelector('.enhance-wrap');
-    if (wrap) { wrap.style.height = ''; wrap.classList.remove('result-mode'); }
-    const c = $('#potentialContent'); if (c) c.style.zoom = '1';
-    potentialState = { eq: null, info: null, jewel: 'none', busy: false };
     if (pageIsActive('inventory')) loadInventory('equipment').catch(() => {});
 }
-
+function acceptPotentialAutoResponse(state, data) {
+    state.auto = data;
+    state.lastResult = data.result;
+    if (data.info && !data.info.error) state.info = { ...state.info, ...data.info };
+    if (state.info && state.info.equipment) state.eq = state.info.equipment;
+    if (data.number) state.eq = { ...state.eq, number: data.number };
+    if (data.jewel) state.jewel = data.jewel;
+    if (data.targets) state.targets = data.targets;
+    state.goldLimit = data.run.goldLimit == null ? '' : String(data.run.goldLimit);
+}
 async function loadRerollInfo() {
-    $('#potentialContent').replaceChildren(el('div', { class: 'loading', style: 'padding:60px 0;text-align:center' }, '불러오는 중...'));
-    $('#potentialResultOverlay').classList.remove('active');
-    const wrap = $('#potentialOverlay').querySelector('.enhance-wrap');
-    if (wrap) wrap.classList.remove('result-mode');
+    const state = potentialState;
+    if (!state || state.closed) return;
     try {
-        const data = await api('/api/potential/reroll-info/' + potentialState.eq.number);
-        potentialState.info = data;
-        if (potentialState.jewel === 'jewel' && !data.options.jewel.available) potentialState.jewel = 'none';
-        if (potentialState.jewel === 'white' && !data.options.white.available) potentialState.jewel = 'none';
+        const data = await api('/api/potential/reroll-info/' + state.eq.number);
+        if (state !== potentialState || state.closed) return;
+        state.info = data; state.eq = data.equipment || state.eq; state.busy = false; state.error = null;
+        if (data.auto) {
+            acceptPotentialAutoResponse(state, { ...data.auto, info: data });
+            // 닫기·재접속 시 자동으로 지출을 재개하지 않고 마지막 후보를 복구한다.
+            if (state.auto.run.status === 'running') {
+                acceptPotentialAutoResponse(state, await postApi('/api/potential/auto/stop', { id: state.auto.run.id }));
+            }
+            return showRerollResult(state.lastResult);
+        }
+        state.auto = null;
+        if (data.pendingResult) return showRerollResult(data.pendingResult);
+        state.lastResult = null;
+        if (state.jewel !== 'none' && !data.options[state.jewel].available) state.jewel = 'none';
         renderRerollSetup();
-    } catch (e) {
+    } catch (error) {
+        if (state !== potentialState || state.closed) return;
         $('#potentialContent').replaceChildren(el('div', { class: 'enhance-error-wrap' },
-            el('div', { class: 'empty err' }, e.message),
-            el('button', { class: 'enhance-cancel-btn', style: 'margin-top:12px;width:100%', onclick: closeRerollModal }, '닫기')
-        ));
+            el('div', { class: 'empty err' }, error.message),
+            el('button', { class: 'primary', onclick: loadRerollInfo }, '결과 다시 불러오기'),
+            el('button', { onclick: closeRerollModal }, '닫기')));
     }
 }
-
-function buildJewelCard() {
-    const { info, jewel } = potentialState;
-    const meta = JEWEL_META[jewel];
-    const opt = info.options[jewel];
-    const card = el('div', { class: 'enhance-protect ' + meta.cls + ' clickable', onclick: openJewelPicker });
-    card.appendChild(el('div', { class: 'enhance-protect-icon' }, jewelIconNode(jewel)));
-    const detail = jewel === 'none' ? '할인 없음 · 클릭하여 쥬얼 선택' : ('골드 -' + opt.discountPct + '% · 승급 확률/카운트 2배');
-    card.appendChild(el('div', { class: 'enhance-protect-text' },
-        el('div', { class: 'enhance-protect-name' }, meta.name),
-        el('div', { class: 'enhance-protect-detail' }, detail)
-    ));
-    if (jewel !== 'none') card.appendChild(el('div', { class: 'enhance-protect-badge' }, '보유 ' + (jewel === 'white' ? info.jewels.white : info.jewels.jewel) + '개'));
-    card.appendChild(el('div', { class: 'enhance-protect-pick-arrow' }, '▾'));
-    return card;
-}
-
-function openJewelPicker() {
-    const { info, jewel } = potentialState;
-    const body = el('div', { class: 'protect-picker' });
-    const makeRow = (key, detail, count, available) => {
-        const row = el('div', {
-            class: 'protect-pick-row' + (jewel === key ? ' selected' : '') + (available ? '' : ' disabled'),
-            onclick: available ? () => { potentialState.jewel = key; closeModal(); renderRerollSetup(); } : null
-        });
-        row.appendChild(el('div', { class: 'protect-pick-icon' }, jewelIconNode(key)));
-        row.appendChild(el('div', { class: 'protect-pick-text' },
-            el('div', { class: 'protect-pick-name' }, JEWEL_META[key].name),
-            el('div', { class: 'protect-pick-detail' }, detail)));
-        if (count != null) row.appendChild(el('div', { class: 'protect-pick-count' }, count + '개'));
-        if (jewel === key) row.appendChild(el('div', { class: 'protect-pick-check' }, '✓'));
-        return row;
-    };
-    body.appendChild(makeRow('none', '쥬얼을 사용하지 않습니다', null, true));
-    body.appendChild(makeRow('jewel', '골드 -' + info.options.jewel.discountPct + '% · 승급 2배', info.jewels.jewel, info.options.jewel.available));
-    body.appendChild(makeRow('white', '골드 -' + info.options.white.discountPct + '% · 승급 2배', info.jewels.white, info.options.white.available));
-    $('#modalTitle').textContent = '쥬얼 선택';
-    $('#modalSub').style.display = 'none';
-    $('#modalBody').replaceChildren(body);
-    $('#modalBg').classList.add('active');
-}
-
-function buildCostBox() {
-    const { info, jewel } = potentialState;
-    const opt = info.options[jewel];
-    const lack = info.gold < opt.cost;
-    const box = el('div', { class: 'pot-cost-box' });
-    const goldImg = info.goldIcon ? el('img', { class: 'pot-gold-icon', src: info.goldIcon, alt: '' }) : null;
-    box.appendChild(el('div', { class: 'pot-cost-line' + (lack ? ' lack' : '') },
-        '소모 ', goldImg, ' ' + comma(opt.cost) + (lack ? ' (보유 ' + comma(info.gold) + ')' : ' / ' + comma(info.gold))));
-    if (info.upgrade) {
-        const jewelBonus = jewel !== 'none' && info.currentTier !== 'unique';
-        box.appendChild(el('div', { class: 'pot-upg-line' },
-            '승급 ' + info.currentTierLabel + ' → ' + info.upgrade.next + ' · 확정까지 ' + comma(info.upgrade.failCount) + '/' + comma(info.upgrade.guarantee) + (jewelBonus ? ' (쥬얼 2배)' : '')));
-    }
-    return box;
-}
-
-function renderRerollSetup() {
-    const { eq, info, jewel } = potentialState;
-    const opt = info.options[jewel];
-    const lack = info.gold < opt.cost;
-
-    const thumbParts = [];
-    if (eq.frameUrl) thumbParts.push(el('img', { class: 'auc-frame', src: eq.frameUrl, alt: '' }));
-    if (eq.iconUrl) thumbParts.push(el('img', { class: 'auc-item-img', src: eq.iconUrl, alt: eq.name }));
-    const header = el('div', { class: 'pot-mod-head tier-' + info.currentTier },
-        el('button', { class: 'enhance-close-btn', onclick: closeRerollModal }, '✕'),
-        el('div', { class: 'auc-thumb square' }, ...thumbParts),
-        el('div', { class: 'pot-mod-title' }, eq.name + (eq.level > 0 ? ' +' + eq.level : '')),
-        el('div', { class: 'pot-mod-tier' }, info.currentTierLabel)
-    );
-    header.style.setProperty('--pot-tier', POTENTIAL_TIER_COLORS[info.currentTier] || '#94a3b8');
-
-    const confirmBtn = el('button', { class: 'pot-confirm-btn', disabled: lack ? true : false, onclick: e => doReroll(e) }, '재설정');
-
-    $('#potentialContent').replaceChildren(
-        header,
-        el('div', { class: 'enhance-info' },
-            el('div', { class: 'enhance-section-label' }, '현재 잠재능력'),
-            potEntriesNode(info.current, '현재', 'cur'),
-            el('div', { class: 'enhance-section-label' }, '쥬얼'),
-            buildJewelCard(),
-            el('div', { class: 'enhance-section-label' }, '소모 / 승급'),
-            buildCostBox()
-        ),
-        el('div', { class: 'enhance-footer' },
-            el('button', { class: 'enhance-cancel-btn', onclick: closeRerollModal }, '닫기'),
-            confirmBtn
-        )
-    );
-    requestAnimationFrame(refitPotential);
-}
-
-async function doReroll(event) {
-    if (potentialState.busy) return;
-    potentialState.busy = true;
-    const btn = event && event.currentTarget;
-    if (btn) btn.disabled = true;
+async function doReroll() {
+    const state = potentialState;
+    if (!state || state.busy) return;
+    state.busy = true; state.error = null; renderRerollSetup();
     try {
-        const data = await postApi('/api/potential/reroll', { number: potentialState.eq.number, jewel: potentialState.jewel });
-        potentialState.busy = false;
+        const data = await postApi('/api/potential/reroll', { number: state.eq.number, jewel: state.jewel });
+        state.busy = false;
+        if (state !== potentialState || state.closed) return;
+        state.info.gold -= data.cost;
         showRerollResult(data);
-    } catch (e) {
-        potentialState.busy = false;
-        if (btn) btn.disabled = false;
-        showAlert(e.message);
+    } catch (error) {
+        state.busy = false;
+        if (state !== potentialState || state.closed) return;
+        await showAlert(error.message);
+        loadRerollInfo();
     }
 }
-
-function showRerollResult(data) {
-    const ov = $('#potentialResultOverlay');
-    const wrap = $('#potentialOverlay').querySelector('.enhance-wrap');
-    if (wrap) wrap.classList.add('result-mode');
-    const eq = potentialState.eq;
-    const kind = data.upgraded ? 'great' : 'success';
-    potentialState.lastResult = data;
-
-    const thumbParts = [];
-    if (eq.frameUrl) thumbParts.push(el('img', { class: 'auc-frame', src: eq.frameUrl, alt: '' }));
-    if (eq.iconUrl) thumbParts.push(el('img', { class: 'auc-item-img', src: eq.iconUrl, alt: '' }));
-    const weapon = el('div', { class: 'enh-fx-weapon' }, el('div', { class: 'auc-thumb square' }, ...thumbParts));
-    const fxLayers = [el('div', { class: 'enh-fx-aura' })];
-    if (data.upgraded) {
-        fxLayers.push(buildRayLayer(16, '#fde68a'));
-        fxLayers.push(weapon);
-        fxLayers.push(buildSparkleLayer(16, ['#fde68a', '#c4b5fd', '#86efac', '#93c5fd', '#f0abfc', '#fbbf24']));
-    } else {
-        fxLayers.push(buildRayLayer(12, 'rgba(196,181,253,.7)'));
-        fxLayers.push(weapon);
-        fxLayers.push(buildSparkleLayer(11, ['#e9d5ff', '#c4b5fd', '#ffffff']));
-    }
-    const fxStage = el('div', { class: 'enh-fx ' + kind }, ...fxLayers);
-
-    const FX = 0.25;
-    const headline = el('div', { class: 'enh-result-headline ' + kind, style: 'animation-delay:' + FX + 's' },
-        data.upgraded ? ('티어 승급! ' + data.currentTierLabel + ' → ' + data.nextTierLabel + (data.guaranteed ? ' (확정)' : '')) : '잠재능력 재설정');
-
-    const power = data.combatPower;
-    const powerDiff = power ? Number(power.diff || 0) : 0;
-    const powerClass = powerDiff > 0 ? 'up' : powerDiff < 0 ? 'down' : 'same';
-    const powerNode = power ? el('div', { class: 'pot-power-compare pot-result-reveal ' + powerClass, style: 'animation-delay:' + (FX + 0.07).toFixed(2) + 's' },
-        el('div', { class: 'pot-power-value old' }, el('span', null, '이전 전투력'), el('strong', null, comma(power.old))),
-        el('div', { class: 'pot-power-delta' },
-            el('span', null, '전투력 변화'),
-            el('strong', null, powerDiff > 0 ? '+' + comma(powerDiff) : comma(powerDiff))
-        ),
-        el('div', { class: 'pot-power-value new' }, el('span', null, '신규 전투력'), el('strong', null, comma(power.new)))
-    ) : null;
-
-    const cmp = el('div', { class: 'pot-compare pot-result-reveal', style: 'animation-delay:' + (FX + 0.1).toFixed(2) + 's' },
-        potEntriesNode(data.old, '이전', 'old'),
-        potEntriesNode(data.new, '신규', 'new'));
-
-    const warn = data.upgraded ? el('div', { class: 'pot-warn pot-result-reveal', style: 'animation-delay:' + (FX + 0.18).toFixed(2) + 's' },
-        '이전 유지를 선택하면 승급도 사라집니다. 골드/쥬얼은 반환되지 않습니다.') : null;
-
-    const btnRow = el('div', { class: 'pot-result-actions pot-result-reveal', style: 'animation-delay:' + (FX + 0.25).toFixed(2) + 's' },
-        el('button', { class: 'enhance-cancel-btn', onclick: e => data.upgraded ? showRerollKeepWarning() : finishReroll('cancel', e) }, '이전 유지'),
-        el('button', { class: 'pot-confirm-btn', onclick: e => finishReroll('confirm', e) }, '새 잠재능력 적용'));
-
-    const inner = el('div', { class: 'pot-result-inner' }, fxStage, headline, ...(powerNode ? [powerNode] : []), cmp, ...(warn ? [warn] : []), btnRow);
-    ov.replaceChildren(inner);
-    ov.classList.add('active');
-    requestAnimationFrame(refitPotential);
-}
-
-function showRerollKeepWarning() {
-    const ov = $('#potentialResultOverlay');
-    const inner = el('div', { class: 'pot-result-inner' },
-        el('div', { class: 'enh-warn-title' }, '승급을 포기하시겠습니까?'),
-        el('div', { class: 'enh-warn-sub' }, '이전 잠재능력으로 되돌리면 티어 승급도 함께 사라집니다. 소모한 골드/쥬얼은 반환되지 않습니다.'),
-        el('div', { class: 'enh-warn-actions' },
-            el('button', { class: 'enhance-cancel-btn', onclick: () => showRerollResult(potentialState.lastResult) }, '돌아가기'),
-            el('button', { class: 'enh-warn-confirm', onclick: e => finishReroll('cancel', e) }, '승급 포기')
-        )
-    );
-    ov.replaceChildren(inner);
-    ov.classList.add('active');
-    requestAnimationFrame(refitPotential);
-}
-
-async function finishReroll(kind, event) {
-    if (potentialState.busy) return;
-    potentialState.busy = true;
-    const btn = event && event.currentTarget;
-    if (btn) btn.disabled = true;
+async function startPotentialAutoClient() {
+    const state = potentialState;
+    if (!state || state.busy) return;
+    state.busy = true; state.error = null; state.stopRequested = false; renderRerollSetup();
     try {
-        const data = await postApi('/api/potential/reroll/' + (kind === 'confirm' ? 'confirm' : 'cancel'), {});
-        potentialState.busy = false;
-        if (data.profile) renderProfile(data.profile);
-        $('#potentialResultOverlay').classList.remove('active');
-        loadRerollInfo(); // 모달은 유지하고 재설정 화면 갱신
-    } catch (e) {
-        potentialState.busy = false;
-        if (btn) btn.disabled = false;
-        showAlert(e.message);
+        const data = await postApi('/api/potential/auto/start', { number: state.eq.number, jewel: state.jewel,
+            targets: state.targets, goldLimit: state.goldLimit, requestId: crypto.randomUUID() });
+        acceptPotentialAutoResponse(state, data); state.busy = false;
+        await pumpPotentialAuto(state);
+    } catch (error) {
+        state.busy = false;
+        if (state !== potentialState || state.closed) return;
+        await showAlert(error.message);
+        loadRerollInfo();
     }
 }
+async function pumpPotentialAuto(state) {
+    const runId = state.auto.run.id;
+    state.displayFrame = null;
+    while (state.auto && state.auto.run.id === runId && state.auto.run.status === 'running') {
+        if (state.closed || state.stopRequested || state !== potentialState) {
+            const data = await postApi('/api/potential/auto/stop', { id: state.auto.run.id });
+            acceptPotentialAutoResponse(state, data);
+            break;
+        }
+        renderPotentialRunning(state);
+        state.busy = true;
+        let frames;
+        try {
+            const data = await postApi('/api/potential/auto/step', { id: state.auto.run.id, expectedRolls: state.auto.run.rolls, batchSize: 3 });
+            acceptPotentialAutoResponse(state, data);
+            frames = data.frames || [data];
+        } finally { state.busy = false; }
+        // 저장이 끝난 묶음을 한 회차씩 공개한다. 속도를 높여도 DB 요청을 회차별로 보내지 않는다.
+        for (const frame of frames) {
+            if (state.closed || state.stopRequested || state !== potentialState || state.auto?.run.id !== runId) break;
+            state.displayFrame = frame;
+            renderPotentialRunning(state);
+            if (frame.run.status !== 'running') break;
+            await new Promise(resolve => setTimeout(resolve, 650 / state.speed));
+        }
+        state.displayFrame = null;
+    }
+    if (state === potentialState && !state.closed && state.auto && state.auto.run.id === runId) showRerollResult(state.lastResult);
+}
+async function stopPotentialAutoClient() {
+    const state = potentialState;
+    if (!state || !state.auto) return;
+    const runId = state.auto.run.id;
+    state.stopRequested = true;
+    state.displayFrame = null;
+    // 진행 중인 최대 3회 묶음은 저장을 마친 뒤 멈추며, 공개 대기 중에도 마지막 저장 결과로 이동한다.
+    try {
+        const data = await postApi('/api/potential/auto/stop', { id: runId });
+        if (!state.auto || state.auto.run.id !== runId) return;
+        acceptPotentialAutoResponse(state, data);
+        if (state === potentialState && !state.closed && !state.busy) showRerollResult(state.lastResult);
+    } catch (error) { if (!state.closed) { await showAlert(error.message); loadRerollInfo(); } }
+}
+async function finishReroll(kind) {
+    const state = potentialState;
+    if (!state || state.busy) return;
+    if (kind === 'cancel' && state.lastResult && state.lastResult.upgraded
+        && !await showConfirm('이전 잠재능력을 유지하면 이번 승급도 포기합니다. 소모한 골드와 쥬얼은 반환되지 않습니다. 이전 잠재능력을 유지할까요?')) return;
+    state.busy = true; showRerollResult(state.lastResult);
+    try {
+        const data = state.auto
+            ? await postApi('/api/potential/auto/finish', { id: state.auto.run.id, choice: kind === 'confirm' ? 'apply' : 'keep' })
+            : await postApi('/api/potential/reroll/' + (kind === 'confirm' ? 'confirm' : 'cancel'), {});
+        state.busy = false;
+        if (data.profile) renderProfile(data.profile);
+        if (state !== potentialState || state.closed) return;
+        state.auto = null; state.lastResult = null;
+        loadRerollInfo();
+    } catch (error) {
+        state.busy = false;
+        if (state !== potentialState || state.closed) return;
+        await showAlert(error.message);
+        loadRerollInfo();
+    }
+}
+window.addEventListener('pagehide', () => {
+    const state = potentialState;
+    if (!state || !state.auto || state.auto.run.status !== 'running') return;
+    state.stopRequested = true;
+    navigator.sendBeacon('/api/potential/auto/stop', new Blob([JSON.stringify({ id: state.auto.run.id })], { type: 'application/json' }));
+});
 
 async function handleEquipmentAction(eq, action, event) {
     const btn = event && event.currentTarget;
@@ -2342,7 +2210,7 @@ function itemUseControls(item) {
         el('button', { type: 'button', onclick: () => syncAmount(amount + 1), 'aria-label': '수량 늘리기' }, '+'),
         el('button', { class: 'item-use-max', type: 'button', onclick: () => syncAmount(max) }, 'MAX')
     ) : null;
-    const useButton = el('button', { class: 'item-use-button', type: 'button', onclick: () => useInventoryItem(item, amount, useButton) }, item.choiceOptions?.length ? '주머니 열기' : item.name === '봉인된 자물쇠' ? '1회 개봉' : '1개 사용');
+    const useButton = el('button', { class: 'item-use-button', type: 'button', onclick: () => useInventoryItem(item, amount, useButton) }, ['바인드 큐브', '황금 바인드 큐브', '마스터 바인드 큐브'].includes(item.name) ? '합성창 열기' : item.choiceOptions?.length ? '주머니 열기' : item.name === '봉인된 자물쇠' ? '1회 개봉' : '1개 사용');
     return el('section', { class: 'item-use-bar' },
         el('div', { class: 'item-use-bar-copy' }, el('span', null, '아이템 사용'), el('small', null, item.bulkUsable ? '사용할 수량을 선택해주세요.' : '이 아이템은 한 번에 1개씩 사용할 수 있습니다.')),
         quantity,
@@ -2639,6 +2507,7 @@ function renderItemUsePending(item, pending, changes) {
 }
 
 async function useInventoryItem(item, count, button) {
+    if (['바인드 큐브', '황금 바인드 큐브', '마스터 바인드 큐브'].includes(item.name)) { finishCloseModal(); openAvatarSynthesis(item.name); return; }
     if (item.choiceOptions?.length) {
         finishCloseModal();
         openChoicePouch(item.id).catch(error => showAlert(error.message));
@@ -2847,7 +2716,7 @@ function lockboxRewardRow(r, i, bonus) {
     if (r.frameUrl) thumbChildren.push(el('img', { class: 'lb-frame', src: r.frameUrl, alt: '' }));
     if (r.iconUrl) thumbChildren.push(el('img', { class: 'lb-icon', src: r.iconUrl, alt: r.name }));
     return el('div', { class: 'lockbox-reward-row' + (bonus ? ' bonus' : ''), style: 'animation-delay:' + (i * 0.08) + 's' },
-        el('div', { class: 'lockbox-reward-thumb' }, ...thumbChildren),
+        el('div', { class: 'lockbox-reward-thumb' + (r.type === 'card' ? ' card-icon' : '') }, ...thumbChildren),
         el('div', { class: 'lockbox-reward-info' },
             el('div', { class: 'lockbox-reward-name' }, r.name),
             el('div', { class: 'lockbox-reward-count' }, 'x' + comma(r.count))
@@ -2861,7 +2730,7 @@ function lockboxMiniItem(r, bonus) {
     if (r.iconUrl) thumbChildren.push(el('img', { class: 'lb-icon', src: r.iconUrl, alt: r.name }));
     return el('div', { class: 'lockbox-mini' + (bonus ? ' bonus' : '') },
         el('span', { class: 'lockbox-mini-tag' }, bonus ? '보너스' : '메인'),
-        el('div', { class: 'lockbox-mini-thumb' }, ...thumbChildren),
+        el('div', { class: 'lockbox-mini-thumb' + (r.type === 'card' ? ' card-icon' : '') }, ...thumbChildren),
         el('div', { class: 'lockbox-mini-info' },
             el('div', { class: 'lockbox-mini-name' }, r.name),
             el('div', { class: 'lockbox-mini-count' }, 'x' + comma(r.count))
@@ -2928,7 +2797,8 @@ function updateInventoryChrome(kind, data) {
     const meta = INVENTORY_KIND_META[kind] || INVENTORY_KIND_META.items;
     $('#viewerTitle').textContent = meta.title;
     $('#inventoryTotalLabel').textContent = meta.countLabel;
-    $('#inventoryTotal').textContent = comma(inventoryCount(kind, data));
+    $('#inventoryTotal').textContent = kind === 'cards' && data.capacity ? comma(data.capacity.used) + '/' + comma(data.capacity.limit) : comma(inventoryCount(kind, data));
+    if ($('#inventoryCardSortControl')) $('#inventoryCardSortControl').hidden = kind !== 'cards';
     $$('.inv-kind-tab').forEach(button => {
         const active = button.dataset.kind === kind;
         button.classList.toggle('active', active);
@@ -2958,6 +2828,10 @@ function renderInventoryData(kind, data) {
     }
     if (kind === 'cards') {
         const cards = data.cards.filter(card => inventoryMatches(card.formatted || card.name, query));
+        const order = $('#inventoryCardSort')?.value || 'character-asc';
+        const direction = order.endsWith('-desc') ? -1 : 1;
+        cards.sort((a, b) => direction * (order.startsWith('star-') ? a.star - b.star || a.name.localeCompare(b.name, 'ko-KR')
+            : a.name.localeCompare(b.name, 'ko-KR') || a.star - b.star) || a.number - b.number);
         $('#viewer').replaceChildren(cards.length ? el('div', { class: 'card-grid inventory-card-grid' }, cards.map(card => cardNode(card, true, openInventoryCardModal))) : emptySearch);
     }
     if (kind === 'equipment') {
@@ -2995,6 +2869,9 @@ $$('.inv-kind-tab').forEach(btn => btn.onclick = () => loadInventory(btn.dataset
 if ($('#inventorySearch')) $('#inventorySearch').oninput = () => {
     if (currentInventoryData) renderInventoryData(currentInventoryKind, currentInventoryData);
 };
+if ($('#inventoryCardSort')) $('#inventoryCardSort').onchange = () => {
+    if (currentInventoryKind === 'cards' && currentInventoryData) renderInventoryData('cards', currentInventoryData);
+};
 if ($('#inventorySearchClear')) $('#inventorySearchClear').onclick = () => {
     $('#inventorySearch').value = '';
     $('#inventorySearch').focus();
@@ -3019,6 +2896,50 @@ async function loadPointMine() {
         root.replaceChildren(el('div', { class: 'empty err' }, '포인트 광산을 불러오지 못했습니다. ', error.message,
             el('button', { onclick: loadPointMine }, '다시 불러오기')));
     }
+}
+
+async function loadPersonalDraw() {
+    const root = $('#personalDrawRoot');
+    if (!document.querySelector('link[data-personal-draw]')) {
+        const css = el('link', { rel: 'stylesheet', href: '/static/personal-draw.css' });
+        css.dataset.personalDraw = 'true'; document.head.appendChild(css);
+    }
+    try {
+        if (!window.personalDrawGame) {
+            const { mountPersonalDraw } = await import('/static/personal-draw.js');
+            if (!window.personalDrawGame) window.personalDrawGame = mountPersonalDraw(root, setHeaderPoint);
+        }
+        await window.personalDrawGame.refresh();
+    } catch (error) {
+        window.personalDrawGame?.pause(); window.personalDrawGame = null;
+        root.replaceChildren(el('div', { class: 'empty err' }, error.message, el('button', { onclick: loadPersonalDraw }, '다시 불러오기')));
+    }
+}
+
+async function openAutoPotionSettings() {
+    try {
+        const data = await api('/api/pet/auto-potion');
+        openModal('자동 물약 설정', '사냥 중 보유 물약과 레이드에 가져간 물약을 사용합니다. 공용 대기시간 3초.', []);
+        const body = $('#modalBody'), controls = {};
+        for (const key of ['hp', 'mp']) {
+            const option = data.settings[key];
+            const enabled = el('input', { type: 'checkbox', checked: option.enabled, 'aria-label': key.toUpperCase() + ' 자동 물약 사용' });
+            const threshold = el('input', { type: 'number', min: 1, max: 99, value: option.threshold, 'aria-label': key.toUpperCase() + ' 기준 비율', style: { width: '72px' } });
+            const select = el('select', { 'aria-label': key.toUpperCase() + ' 물약' }, el('option', { value: '' }, '물약 선택'));
+            data.potions.filter(p => p.resources.includes(key)).forEach(p => select.appendChild(el('option', { value: p.id }, p.name + ' (' + p.count + '개)')));
+            select.value = option.itemId ?? '';
+            controls[key] = { enabled, threshold, select };
+            body.appendChild(el('div', { class: 'section' }, el('label', null, enabled, ' ' + key.toUpperCase() + ' 자동 물약'), el('div', { class: 'row' }, threshold, '% 이하일 때', select)));
+        }
+        body.appendChild(el('p', { class: 'muted' }, '동시에 조건을 만족하면 HP 물약을 먼저 사용합니다. 펫이 해제되거나 만료되면 자동 사용이 중지됩니다.'));
+        body.appendChild(el('button', { class: 'primary', disabled: !data.available, onclick: async e => {
+            e.currentTarget.disabled = true;
+            try {
+                const value = Object.fromEntries(Object.entries(controls).map(([key, c]) => [key, { enabled: c.enabled.checked, threshold: Number(c.threshold.value), itemId: c.select.value === '' ? null : Number(c.select.value) }]));
+                await postApi('/api/pet/auto-potion', value); closeModal(); showAlert('자동 물약 설정을 저장했습니다.');
+            } catch (error) { showAlert(error.message); e.currentTarget.disabled = false; }
+        } }, '설정 저장'));
+    } catch (error) { showAlert(error.message); }
 }
 
 // ===== 이벤트: 유생의 주사위 =====
@@ -3089,7 +3010,7 @@ async function loadLockbox() {
     const root = $('#lockboxRoot');
     if (!root) return;
     const title = el('img', { class: 'lockbox-title', src: lockboxUi('글씨.png'), alt: '봉인된 자물쇠' });
-    const item = el('img', { class: 'lockbox-item', src: lockboxUi('이달의 아이템.png') + '&v=202610', alt: '10월 이달의 아이템' });
+    const item = el('img', { class: 'lockbox-item', src: lockboxUi('이달의 아이템.png') + '&v=202611', alt: '11월 이달의 아이템' });
     const char = el('img', { class: 'lockbox-char', src: lockboxUi('캐릭터.png'), alt: '' });
     const btns = el('div', { class: 'lockbox-btns' });
     btns.appendChild(el('button', { class: 'lockbox-btn', 'aria-label': '1회 열기', style: "background-image:url('" + lockboxUi('1회 열기 버튼.png') + "')", onclick: () => openLockbox(1) }));
@@ -3423,34 +3344,37 @@ async function applyPresetSlot(slot) {
 
 // 해금 구매 모달 (상점식 가격 계산서)
 function openPresetUnlockModal(slot, cost) {
+    const d = presetState.data;
+    if (!cost || slot !== d.unlocked) return;
+    modalRequestToken++;
+    setModalVariant();
     $('#modalTitle').textContent = '프리셋 슬롯 해금';
     $('#modalSub').style.display = 'none';
-    const d = presetState.data;
-    const bal = cost.currency === 'garnet' ? Number(d.garnet || 0) : Number(d.point || 0);
-    const after = bal - cost.amount;
-    const receiptRow = (label, amount, variant) => el('div', { class: 'shop-receipt-row' + (variant ? ' ' + variant : '') },
-        el('span', { class: 'shop-receipt-label' }, label),
-        el('div', { class: 'shop-receipt-val' },
-            cost.iconUrl ? el('img', { src: cost.iconUrl, alt: '', style: 'width:16px;height:16px;object-fit:contain' }) : null,
-            el('span', null, comma(Math.abs(amount)))));
-    const btn = el('button', { class: 'burning-unlock-btn' }, '해금하기');
-    btn.onclick = async () => {
-        btn.disabled = true;
+    const balance = Number(d.garnet || 0), after = balance - cost.amount;
+    const buy = el('button', { class: 'primary', disabled: after < 0 }, comma(cost.amount) + '가넷으로 해금');
+    buy.onclick = async () => {
+        buy.disabled = true;
         try {
             presetState.data = await postApi('/api/presets/unlock', { slot });
             closeModal();
             renderPresets();
-        } catch (e) { showAlert(e.message); btn.disabled = false; }
+        } catch (e) { showAlert(e.message); buy.disabled = after < 0; }
     };
-    const body = el('div', { class: 'burning-unlock-modal' },
-        el('div', { class: 'burning-unlock-icon' }, '🔓'),
-        el('div', { class: 'burning-unlock-desc' }, (slot + 1) + '번 프리셋 슬롯을 해금하시겠습니까?'),
-        el('div', { class: 'shop-receipt preset-unlock-receipt' },
-            receiptRow('현재 보유', bal),
-            receiptRow('소모', cost.amount, 'deduct'),
+    const body = el('div', { class: 'shop-buy-modal preset-unlock-modal' },
+        el('div', { class: 'shop-buy-item-row' },
+            el('div', { class: 'preset-unlock-sigil', 'aria-hidden': 'true' }, String(slot + 1).padStart(2, '0')),
+            el('div', { class: 'preset-unlock-info' },
+                el('div', { class: 'shop-buy-name' }, (slot + 1) + '번 프리셋'),
+                el('div', { class: 'shop-buy-meta' }, '장비와 카드를 저장하고 한 번에 교체하세요.'))),
+        el('div', { class: 'preset-unlock-progress' },
+            el('span', null, '보유 프리셋'), el('strong', null, d.unlocked + ' → ' + (d.unlocked + 1)), el('span', null, '/ ' + d.slotCount)),
+        el('div', { class: 'shop-receipt' },
+            buildReceiptRow('현재 보유', { goods: 'garnet' }, balance),
+            buildReceiptRow('해금 비용', { goods: 'garnet' }, cost.amount, 'deduct'),
             el('div', { class: 'shop-receipt-divider' }),
-            receiptRow('해금 후 잔액', after, after < 0 ? 'neg' : 'result')),
-        btn);
+            buildReceiptRow('해금 후 잔액', { goods: 'garnet' }, after, after < 0 ? 'neg' : 'result')),
+        after < 0 ? el('p', { class: 'preset-unlock-warning' }, '가넷이 부족합니다.') : null,
+        el('div', { class: 'shop-buy-footer' }, el('button', { onclick: closeModal }, '취소'), buy));
     $('#modalBody').replaceChildren(body);
     $('#modalBg').classList.add('active');
 }
@@ -3539,7 +3463,7 @@ function presetCard(slot) {
         ? el('div', { class: 'preset-portrait', title: mainName },
             el('div', { class: 'preset-portrait-frame' },
                 preset.mainCard.imageUrl ? el('img', { src: preset.mainCard.imageUrl, alt: mainName }) : null),
-            el('span', { class: 'preset-portrait-name' }, mainName))
+            el('span', { class: 'preset-portrait-name' }, cardNameContent(mainName)))
         : el('div', { class: 'preset-portrait none' },
             el('div', { class: 'preset-portrait-frame' }, el('img', { src: PRESET_EMPTY_CARD_URL, alt: '메인 카드 미장착' })),
             el('span', { class: 'preset-portrait-name' }, '미장착'));
@@ -3607,7 +3531,7 @@ function openPresetNestedEquipmentModal(eq) {
 function openPresetNestedCardModal(card, kind) {
     const main = kind === 'main';
     openPresetNestedModal(
-        card.formatted || card.name,
+        cardNameContent(card.formatted || card.name),
         (card.starText || '') + (main ? ' · 스킬' : ' · 카드 슬롯 효과'),
         [el('div', { class: 'mc-body' }, ...(main ? mainCardDetailNodes(card) : cardSlotDetailNodes(card)))],
         'card'
@@ -3686,7 +3610,7 @@ function renderPresets() {
     if (!root || !d) return;
     // 해금된 슬롯 + 다음 해금 대상 1개만 표시
     const visible = Math.min(d.slotCount, d.unlocked + 1);
-    root.replaceChildren(el('div', { class: 'preset-grid' },
+    root.replaceChildren(el('div', { class: 'preset-capacity' }, el('b', null, '보유 프리셋 ' + d.unlocked + ' / ' + d.slotCount), el('span', null, d.unlocked < d.slotCount ? '다음 슬롯 ' + comma(d.costs[d.unlocked].amount) + '가넷' : '모든 슬롯 해금 완료')), el('div', { class: 'preset-grid' },
         Array.from({ length: visible }, (_, i) => presetCard(i))));
 }
 
@@ -3704,7 +3628,8 @@ const HUNT_MENU = [
             else showAlert('레이드는 71레벨부터 이용할 수 있습니다.');
         } catch (e) { showAlert(e.message); }
     } },
-    { key: '훈련장', level: 'Lv.1 ~ 300', imageUrl: '/rpg-ui?file=' + encodeURIComponent('필드/훈련장.png'), action: () => { location.href = '/training'; } }
+    { key: '훈련장', level: 'Lv.1 ~ 300', imageUrl: '/rpg-ui?file=' + encodeURIComponent('필드/훈련장.png'), action: () => { location.href = '/training'; } },
+    { key: '낙원', level: 'Lv.141 ~ Lv.300', imageUrl: '/rpg-ui?file=%EB%82%99%EC%9B%90%2Fparadise.webp', action: () => { location.href = '/paradise'; } }
 ];
 
 function renderHuntMenu() {
@@ -4479,7 +4404,7 @@ function renderCombineInfo() {
     const stats = el('div', { class: 'fusion-stat-row' });
     if (t) {
         const lucky = combineState.luckyRate != null;
-        const shownRate = lucky ? Math.min(1, t.rate * (1 + combineState.luckyRate)) : t.rate;
+        const shownRate = Math.min(1, t.rate * (lucky ? 1 + combineState.luckyRate : 1) + Number(combineState.meta.petBonus || 0));
         stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '조합 등급'), el('b', null, (grade + 1) + '성')));
         stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '성공 확률'), el('b', { class: 'rate' }, (Math.round(shownRate * 1000) / 10) + '%')));
         stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '필요 골드'), el('b', { class: 'gold' }, shopCurrNode('gold', 16), comma(t.gold))));
@@ -5387,6 +5312,7 @@ function renderLevelRewardList(rewards, userLevel) {
                 try {
                     const result = await postApi('/api/levelreward', { level: r.level });
                     if (result.profile) renderProfile(result.profile);
+                    if (result.discardedCards) showAlert('카드 인벤토리 공간 부족으로 캐릭터 카드 ' + comma(result.discardedCards) + '장을 버렸습니다.');
                     await loadLevelRewards();
                 } catch (e) {
                     showAlert(e.message);
@@ -5442,7 +5368,7 @@ function currencyNode(currency, amount, suffix) {
 function auctionThumbEl(entry, options) {
     const d = entry.display || {};
     const style = options && options.style ? options.style : null;
-    if (d.imageUrl) return el('div', { class: 'auc-thumb card', style }, el('img', { src: d.imageUrl, alt: d.name }));
+    if (d.imageUrl) return el('div', { class: 'auc-thumb card' + (entry.kind === 'card' ? ' square' : ''), style }, el('img', { src: d.imageUrl, alt: d.name }));
     const foreground = d.iconUrl
         ? el('img', { class: 'auc-item-img', src: d.iconUrl, alt: d.name })
         : el('span', { class: 'auc-icon' }, AUCTION_KIND_ICON[entry.kind] || '📦');
@@ -5703,7 +5629,6 @@ const SHOP_CURR_IMGS = {
     garnet: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('가넷.png'),
     point:  '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('포인트.png'),
 };
-const SHOP_CURR_LABELS = { gold: '골드', garnet: '가넷', point: '포인트', mileage: '마일리지', item: '아이템' };
 
 let shopData = null;
 let shopTab = null;
@@ -5736,16 +5661,6 @@ function priceItemImg(price, size) {
     return el('img', { src: price.iconUrl, alt: '', style: 'width:' + sz + 'px;height:' + sz + 'px;object-fit:contain;display:block;flex-shrink:0' });
 }
 
-function buildPriceNode(price) {
-    const wrap = el('div', { class: 'shop-card-price' });
-    wrap.appendChild(el('span', { class: 'shop-card-price-label' }, price.goods === 'item' ? price.name : SHOP_CURR_LABELS[price.goods]));
-    wrap.appendChild(el('div', { class: 'shop-card-price-value' },
-        price.goods === 'item' ? priceItemImg(price, 18) : shopCurrNode(price.goods, 18),
-        el('span', {}, comma(price.amount))
-    ));
-    return wrap;
-}
-
 function buildReceiptRow(label, price, amount, variant) {
     const row = el('div', { class: 'shop-receipt-row' + (variant ? ' ' + variant : '') });
     row.appendChild(el('span', { class: 'shop-receipt-label' }, label));
@@ -5775,23 +5690,6 @@ function buildLimitRows(limitInfo) {
     return rows;
 }
 
-function buildLimitBadge(limitInfo) {
-    const rows = buildLimitRows(limitInfo);
-    if (rows.length === 0) return null;
-    const wrap = el('div', { class: 'shop-limit-badge', 'aria-label': '구매 제한' });
-    rows.forEach(r => {
-        const remaining = Math.max(0, r.limit - r.used);
-        const exhausted = remaining <= 0;
-        const row = el('div', { class: 'shop-limit-row' + (exhausted ? ' exhausted' : '') });
-        row.appendChild(el('span', { class: 'shop-limit-label' }, r.label));
-        row.appendChild(el('span', { class: 'shop-limit-val' },
-            comma(remaining) + ' / ' + comma(r.limit) + ' 남음'
-        ));
-        wrap.appendChild(row);
-    });
-    return wrap;
-}
-
 function buildLimitDetail(limitInfo) {
     const rows = buildLimitRows(limitInfo);
     if (rows.length === 0) return null;
@@ -5815,73 +5713,47 @@ function buildLimitDetail(limitInfo) {
 }
 
 function renderShop(data, tab) {
-    stopHotdealCountdown();
+    window.ShopSceneUI?.unmount();
     shopData = data;
     shopTab = data.tabs.includes(tab) ? tab : data.tabs[0];
     const body = $('#shopBody');
-    const restoreFocus = body.contains(document.activeElement) && document.activeElement.classList.contains('shop-tab');
     body.replaceChildren();
-
-    const tabRow = el('nav', { class: 'shop-tabs', 'aria-label': '상점 종류' });
-    data.tabs.forEach(t => {
-        const isHot = t === '핫딜샵';
-        tabRow.appendChild(el('button', {
-            type: 'button',
-            class: 'shop-tab' + (t === shopTab ? ' active' : '') + (isHot ? ' hotdeal' : ''),
-            'aria-pressed': t === shopTab,
-            onclick: () => { if (t !== shopTab) renderShop(data, t); }
-        }, t));
+    window.ShopSceneUI.mount(body.closest('.shop-wrap'), {
+        tab: shopTab, data, currencyIcons: SHOP_CURR_IMGS,
+        onCategory: tab => { shopTab = tab; },
+        onTab: tab => renderShop(shopData, tab),
+        onBuy: buyFromShopScene,
+        onSpecial: showShopSpecialReward,
+        request: (url, payload) => payload === undefined ? api(url) : postApi(url, payload),
+        onMail: () => activatePage('mail')
     });
-    body.appendChild(tabRow);
-    if (restoreFocus) tabRow.querySelector('.active')?.focus({ preventScroll: true });
-
-    if (shopTab === '핫딜샵') { loadHotDeal(body, tabRow); return; }
-
-    const content = el('div', { class: 'shop-content', 'aria-label': shopTab + ' 상점' });
-    const currBar = el('div', { class: 'shop-currency-bar', 'aria-label': '보유 재화' });
-    [{ key: 'gold', label: '골드' }, { key: 'garnet', label: '가넷' }, { key: 'point', label: '포인트' }, { key: 'mileage', label: '마일리지' }].forEach(({ key, label }) => {
-        if (data.currencies[key] == null) return;
-        const chip = el('div', { class: 'shop-currency-chip' });
-        chip.appendChild(shopCurrNode(key, 18));
-        chip.appendChild(el('span', { class: 'shop-currency-name' }, label));
-        chip.appendChild(el('span', { class: 'shop-currency-amount' }, comma(data.currencies[key])));
-        currBar.appendChild(chip);
-    });
-    const grid = el('div', { class: 'shop-grid' });
-    let products = data.shop[shopTab] || [];
-    if (shopTab === '레이드') {
-        const tabs = [...new Set(products.map(item => item.materialTab || item.price.name || '레이드 재료'))];
-        const selected = tabs.includes(renderShop.materialTab) ? renderShop.materialTab : tabs[0];
-        renderShop.materialTab = selected;
-        content.appendChild(el('div', { class: 'shop-tabs', role: 'tablist' }, ...tabs.map(tab => el('button', { class: 'shop-tab' + (tab === selected ? ' active' : ''), role: 'tab', 'aria-selected': tab === selected, onclick: () => { renderShop.materialTab = tab; renderShop(data, '레이드'); } }, tab))));
-        products = products.filter(item => (item.materialTab || item.price.name || '레이드 재료') === selected);
+}
+async function buyFromShopScene(item, count, tab) {
+    const result = await postApi('/api/shop/buy', { shopType: tab, shopId: item.shopId, count });
+    shopData.currencies = result.currencies;
+    setHeaderPoint(result.currencies.point);
+    try {
+        shopData = await api('/api/shop');
+    } catch (_) {
+        // 결제 성공 후 조회 실패를 구매 실패로 알리면 중복 구매를 유도한다.
+        // 새 목록을 불러올 때까지 방금 산 상품만 잠그고 성공 결과는 그대로 표시한다.
+        shopData = { ...shopData, shop: { ...shopData.shop, [tab]: shopData.shop[tab].map(entry =>
+            entry.shopId === item.shopId ? { ...entry, soldOut: true } : entry) } };
     }
-    products.forEach(item => {
-        const unavailable = !!(item.soldOut || item.owned);
-        const status = item.owned ? '보유중' : item.soldOut ? '품절' : '구매';
-        const card = el('article', { class: 'shop-card' + (unavailable ? ' sold-out' : '') });
-        card.appendChild(el('div', { class: 'shop-card-main' },
-            buildShopThumb(item.display),
-            el('div', { class: 'shop-card-info' },
-                el('h3', { class: 'shop-card-name' }, item.display.name),
-                buildLimitBadge(item.limitInfo)
-            )
-        ));
-        card.appendChild(el('div', { class: 'shop-card-footer' },
-            buildPriceNode(item.price),
-            el('button', {
-                type: 'button', class: 'shop-card-btn', disabled: unavailable,
-                'aria-label': item.display.name + ' ' + status,
-                onclick: () => openShopBuyModal(item)
-            }, status)
-        ));
-        grid.appendChild(card);
-    });
-    if ((data.shop[shopTab] || []).length === 0) grid.appendChild(el('div', { class: 'empty' }, '상품이 없습니다.'));
+    return { data: shopData, result };
+}
 
-    content.appendChild(currBar);
-    content.appendChild(grid);
-    body.appendChild(content);
+async function showShopSpecialReward(result) {
+    try {
+        for (const card of (result.grantedCards || []).filter(card => card.type === '각성')) {
+            const effect = window.FusionEffects.begin(buildPackageAwakeningStage(), { awakening: true, title: '각성 카드 획득', loadingText: '각성 카드를 깨우는 중…' });
+            try { await effect.reveal({ success: true, resultCard: card, message: card.formatted + ' 획득! 캐릭터 카드 인벤토리에 지급되었습니다.' }); }
+            finally { effect.close(); }
+        }
+        if (result.choicePouch) await openChoicePouch(result.choicePouch.itemId, result.choicePouch.purchasedCount);
+    } catch (error) {
+        showAlert('구매가 완료되었습니다. 지급된 물품은 인벤토리에서 확인해주세요.\n' + error.message);
+    }
 }
 
 function shopChoicePortrait(option) {
@@ -6007,7 +5879,6 @@ function openShopBuyModal(item) {
         const have = item.priceItemCount || 0;
         if (p.amount > 0) maxQty = Math.min(maxQty, Math.floor(have / p.amount));
     }
-    if (item.type === '아바타') maxQty = Math.min(maxQty, 1);
     maxQty = Math.max(0, maxQty);
 
     let qty = Math.min(1, maxQty || 1);
@@ -6186,173 +6057,6 @@ function openBundleGrantedModal(name, rewards) {
     $('#modalBg').classList.add('active');
 }
 
-let hotdealCountdownTimer = null;
-function stopHotdealCountdown() { if (hotdealCountdownTimer) { clearInterval(hotdealCountdownTimer); hotdealCountdownTimer = null; } }
-
-async function loadHotDeal(body, tabRow) {
-    stopHotdealCountdown();
-    const root = body.querySelector('.hd-root') || el('div', { class: 'hd-root' }, el('div', { class: 'loading', style: 'padding:40px 0;text-align:center' }, '불러오는 중...'));
-    if (!body.contains(root)) body.appendChild(root);
-    try {
-        const data = await api('/api/hotdeal');
-        if (shopTab !== '핫딜샵' || activePage !== 'shop' || !body.contains(root)) return;
-        renderHotDeal(data, body, tabRow);
-    } catch (e) {
-        if (shopTab !== '핫딜샵' || activePage !== 'shop' || !body.contains(root)) return;
-        root.replaceChildren(el('div', { class: 'empty err', style: 'padding:40px 0;text-align:center' }, e.message));
-    }
-}
-
-function renderHotDeal(data, body, tabRow) {
-    stopHotdealCountdown();
-
-    const currencyBar = el('div', { class: 'hd-currency-bar' }, el('span', { class: 'hd-currency-label' }, '보유 재화'));
-    [{ key: 'gold', label: '골드' }, { key: 'garnet', label: '가넷' }].forEach(({ key, label }) => {
-        if (data.currencies[key] == null) return;
-        const chip = el('div', { class: 'shop-currency-chip hd-currency-chip' });
-        chip.appendChild(shopCurrNode(key, 18));
-        chip.appendChild(el('span', { class: 'hd-currency-name' }, label));
-        chip.appendChild(el('span', {}, comma(data.currencies[key])));
-        currencyBar.appendChild(chip);
-    });
-
-    const countdownEl = el('span');
-    function updateCountdown() {
-        const rem = Math.max(0, data.nextRefreshAt - Date.now());
-        const h = String(Math.floor(rem / 3600000)).padStart(2, '0');
-        const m = String(Math.floor((rem % 3600000) / 60000)).padStart(2, '0');
-        const s = String(Math.floor((rem % 60000) / 1000)).padStart(2, '0');
-        countdownEl.replaceChildren('다음 교체까지 ', el('span', null, h + ':' + m + ':' + s));
-        if (rem <= 0) { stopHotdealCountdown(); loadHotDeal(body, tabRow); }
-    }
-    updateCountdown();
-    hotdealCountdownTimer = setInterval(updateCountdown, 1000);
-
-    const slots = el('div', { class: 'hd-slots' });
-    data.items.forEach(item => {
-        const isLightning = item.slot === 1;
-        const slot = el('div', { class: 'hd-slot ' + (isLightning ? 'lightning' : 'fire') });
-        slot.appendChild(el('div', { class: 'hd-corner top-left' }));
-        slot.appendChild(el('div', { class: 'hd-corner top-right' }));
-        slot.appendChild(el('div', { class: 'hd-corner bottom-left' }));
-        slot.appendChild(el('div', { class: 'hd-corner bottom-right' }));
-
-        // 불꽃/번개 파티클 요소
-        if (isLightning) {
-            for (let i = 0; i < 3; i++) slot.appendChild(el('div', { class: 'hd-slot-spark' }));
-        } else {
-            const embers = [['4px','-28px'], ['-3px','-35px'], ['5px','-30px']];
-            embers.forEach(([ex, ey]) => {
-                const e2 = el('div', { class: 'hd-slot-ember' });
-                e2.style.setProperty('--ex', ex);
-                e2.style.setProperty('--ey', ey);
-                slot.appendChild(e2);
-            });
-        }
-
-        const inner = el('div', { class: 'hd-slot-inner' });
-        // 썸네일
-        const thumbStage = el('div', { class: 'hd-thumb-stage' });
-        thumbStage.appendChild(el('div', { class: 'hd-thumb-aura' }));
-        const thumb = el('div', { class: 'hd-item-thumb auc-thumb square' });
-        if (item.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: item.frameUrl, alt: '' }));
-        if (item.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: item.iconUrl, alt: item.name }));
-        if (item.purchased) {
-            const sold = el('div', { class: 'hd-sold' });
-            sold.appendChild(el('div', { class: 'hd-sold-text' }, '구매 완료'));
-            thumb.appendChild(sold);
-        }
-        thumbStage.appendChild(thumb);
-        inner.appendChild(thumbStage);
-        inner.appendChild(el('div', { class: 'hd-product-copy' },
-            el('div', { class: 'hd-item-name' }, item.name),
-            el('div', { class: 'hd-item-sub' }, '이번 교체 전까지 구매 가능')
-        ));
-
-        const priceRow = el('div', { class: 'hd-price-row' });
-        priceRow.appendChild(el('span', { class: 'hd-price-label' }, 'SPECIAL PRICE'));
-        const priceValue = el('div', { class: 'hd-price-value' });
-        if (item.price.imgUrl) priceValue.appendChild(el('img', { class: 'hd-price-img', src: item.price.imgUrl, alt: item.price.goods }));
-        priceValue.appendChild(el('div', { class: 'hd-price-val' }, comma(item.price.amount)));
-        priceRow.appendChild(priceValue);
-        inner.appendChild(priceRow);
-
-        const btn = el('button', {
-            class: 'hd-buy-btn',
-            disabled: item.purchased,
-            onclick: item.purchased ? null : () => openHotDealBuyModal(item, data, body, tabRow)
-        }, item.purchased ? '구매 완료' : '구매');
-        inner.appendChild(btn);
-
-        slot.appendChild(inner);
-        slots.appendChild(slot);
-    });
-
-    const root = el('div', { class: 'hd-root' },
-        el('div', { class: 'hd-backdrop-lines', 'aria-hidden': 'true' }),
-        el('div', { class: 'hd-header' },
-            el('div', { class: 'hd-title' },
-                el('span', { class: 'hd-title-ko' }, '핫딜'),
-                el('span', { class: 'hd-title-shop' }, 'SHOP')
-            ),
-            el('div', { class: 'hd-meta' },
-                el('div', { class: 'hd-countdown' }, countdownEl)
-            )
-        ),
-        currencyBar,
-        slots
-    );
-
-    body.querySelector('.hd-root').replaceWith(root);
-}
-
-function openHotDealBuyModal(item, hdData, body, tabRow) {
-    const p = item.price;
-    const bal = hdData.currencies[p.goods] || 0;
-    const after = bal - p.amount;
-
-    const content = el('div', { class: 'shop-buy-modal' });
-    const itemRow = el('div', { class: 'shop-buy-item-row' });
-    const thumb = el('div', { class: 'shop-buy-thumb' });
-    if (item.frameUrl) thumb.appendChild(el('img', { class: 'shop-card-thumb-frame', src: item.frameUrl, alt: '' }));
-    if (item.iconUrl) thumb.appendChild(el('img', { class: 'shop-card-thumb-icon', src: item.iconUrl, alt: item.name }));
-    itemRow.appendChild(thumb);
-    const info = el('div', { style: 'flex:1;min-width:0' });
-    info.appendChild(el('div', { class: 'shop-buy-name' }, item.name));
-    info.appendChild(el('div', { class: 'shop-buy-meta' }, '핫딜 특가 상품'));
-    itemRow.appendChild(info);
-    content.appendChild(itemRow);
-
-    const receipt = el('div', { class: 'shop-receipt' });
-    const pFull = { goods: p.goods, amount: p.amount, imgUrl: p.imgUrl };
-    receipt.appendChild(buildReceiptRow('현재 보유', pFull, bal));
-    receipt.appendChild(buildReceiptRow('소모', pFull, p.amount, 'deduct'));
-    receipt.appendChild(el('div', { class: 'shop-receipt-divider' }));
-    receipt.appendChild(buildReceiptRow('구매 후 잔액', pFull, after, after < 0 ? 'neg' : 'result'));
-    content.appendChild(receipt);
-
-    const footer = el('div', { class: 'shop-buy-footer' });
-    footer.appendChild(el('button', { onclick: closeModal }, '취소'));
-    const buyBtn = el('button', { class: 'primary', onclick: async () => {
-        buyBtn.disabled = true; buyBtn.textContent = '처리 중...';
-        try {
-            const res = await postApi('/api/hotdeal/buy', { slot: item.slot });
-            closeModal();
-            renderHotDeal(res.hotdeal, body, tabRow);
-        } catch (e) {
-            buyBtn.disabled = false; buyBtn.textContent = '구매';
-            showAlert(e.message);
-        }
-    }}, '구매');
-    footer.appendChild(buyBtn);
-    content.appendChild(footer);
-
-    $('#modalTitle').textContent = item.name + ' 구매';
-    $('#modalSub').style.display = 'none';
-    $('#modalBody').replaceChildren(content);
-    $('#modalBg').classList.add('active');
-}
-
 async function loadShop() {
     const body = $('#shopBody');
     body.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
@@ -6360,6 +6064,7 @@ async function loadShop() {
         const r = await fetch('/api/shop');
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || '오류');
+        if (activePage !== 'shop') return;
         renderShop(data, shopTab);
     } catch (e) {
         body.replaceChildren(el('div', { class: 'empty err' }, e.message));
@@ -6444,7 +6149,7 @@ function renderRegisterModal() {
         ? el('div', { class: 'empty', style: 'padding:16px 0' }, emptyMsg)
         : el('div', { class: 'reg-pick-scroll' }, ...pool.map(item => {
             const isSel = kind === 'item' ? regState.selectedItemId === item.id
-                : kind === 'avatar' ? regState.selectedAvatarName === item.name
+                : kind === 'avatar' ? regState.selectedAvatarId === item.id
                 : regState.selectedIndex === item.index;
             let thumbEl, nameText, metaText;
             thumbEl = buildRegItemThumb(item, kind);
@@ -6452,7 +6157,7 @@ function renderRegisterModal() {
                 nameText = item.formatted; metaText = item.starText || '';
             } else if (kind === 'avatar') {
                 nameText = item.name;
-                metaText = '아바타 · ' + (item.grade || '일반') + (item.grade === '한정' ? ' (판매 후 재거래 불가)' : '');
+                metaText = '아바타 · ' + (item.grade || '일반') + (item.grade === '한정' ? ' (판매 후 재거래 불가)' : item.grade === '유니크' ? ' · 거래 ' + Math.max(0, 3 - Number(item.trades || 0)) + '회 남음' : '');
             } else if (kind === 'equipment') {
                 nameText = item.name + (item.level > 0 ? ' +' + item.level : '');
                 metaText = item.rarity + ' · ' + item.typeLabel;
@@ -6464,7 +6169,7 @@ function renderRegisterModal() {
             } else {
                 nameText = item.name; metaText = item.type + ' · 보유 ' + comma(item.count) + '개';
             }
-            const infoEl = el('div', null, el('div', { class: 'reg-item-name' }, nameText), el('div', { class: 'reg-item-meta' }, metaText));
+            const infoEl = el('div', null, el('div', { class: 'reg-item-name' }, kind === 'card' ? cardNameContent(nameText) : nameText), el('div', { class: 'reg-item-meta' }, metaText));
             if (kind === 'equipment' && item.artifact) infoEl.appendChild(artifactOptionSummary(item.artifact));
             if (kind === 'equipment' && item.potentialDisplay) {
                 const pb = potentialBlockNode(item.potentialDisplay);
@@ -6473,7 +6178,7 @@ function renderRegisterModal() {
             const checkEl = el('div', { class: 'reg-check' + (isSel ? ' sel' : '') }, isSel ? svgIcon(REG_CHK_SVG) : null);
             return el('div', {
                 class: 'reg-pick-row' + (isSel ? ' selected' : ''),
-                onclick: () => { if (kind === 'item') regState.selectedItemId = item.id; else if (kind === 'avatar') regState.selectedAvatarName = item.name; else regState.selectedIndex = item.index; renderRegisterModal(); }
+                onclick: () => { if (kind === 'item') regState.selectedItemId = item.id; else if (kind === 'avatar') { regState.selectedAvatarName = item.name; regState.selectedAvatarId = item.id; } else regState.selectedIndex = item.index; renderRegisterModal(); }
             }, thumbEl, infoEl, checkEl);
         }));
 
@@ -6535,7 +6240,7 @@ async function submitRegister() {
         body.index = regState.selectedIndex;
     } else if (kind === 'avatar') {
         if (!regState.selectedAvatarName) { showRegErr('아바타를 선택해주세요.'); return; }
-        body.name = regState.selectedAvatarName;
+        body.name = regState.selectedAvatarName; body.avatarId = regState.selectedAvatarId;
     } else {
         if (regState.selectedItemId < 0) { showRegErr('아이템을 선택해주세요.'); return; }
         const count = Number($('#regCount') ? $('#regCount').value : 1);
@@ -6731,6 +6436,7 @@ async function openBuyOrderDetail(entry) {
 
 function renderFulfillSection(entry, fulfillable, body, errBox) {
     let selectedIndex = -1;
+    let selectedAvatarId = fulfillable.avatar?.instances?.[0]?.id;
     let qty = 1;
     const showErr = msg => { errBox.textContent = msg; errBox.classList.add('visible'); };
     const receipt = el('div', { class: 'shop-receipt' });
@@ -6764,6 +6470,8 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
             body.appendChild(el('div', { class: 'empty' }, av.tradeBlockReason));
             return null;
         }
+        if ((av.instances || []).length > 1) body.appendChild(el('select', { 'aria-label': '판매할 아바타', onchange: event => { selectedAvatarId = event.target.value; } },
+            ...av.instances.map((instance, index) => el('option', { value: instance.id }, '보유 아바타 ' + (index + 1) + (av.grade === '유니크' ? ' · 거래 ' + Math.max(0, 3 - Number(instance.trades || 0)) + '회 남음' : '')))));
         const avThumb = av.iconUrl
             ? el('img', { src: av.iconUrl, style: { width: '36px', height: '36px', objectFit: 'contain' } })
             : (av.imageUrl ? el('img', { src: av.imageUrl, style: { width: '32px', height: '42px', objectFit: 'cover', borderRadius: '4px' } }) : null);
@@ -6802,7 +6510,7 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
                     Array.from(pick.children).forEach(c => c.classList.remove('on'));
                     row.classList.add('on');
                 }
-            }, el('div', null, el('b', null, title), el('div', { class: 'meta' }, meta)), img);
+            }, el('div', null, el('b', null, entry.kind === 'card' ? cardNameContent(title) : title), el('div', { class: 'meta' }, meta)), img);
             pick.appendChild(row);
         });
         body.appendChild(el('div', { class: 'reg-section-label', style: 'margin:0' }, '판매할 ' + AUCTION_KIND_LABEL[entry.kind] + ' 선택'));
@@ -6814,6 +6522,7 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
     const sellBtn = el('button', { class: 'primary', onclick: async () => {
         errBox.classList.remove('visible');
         const reqBody = { id: entry.id };
+        if (entry.kind === 'avatar') reqBody.avatarId = selectedAvatarId;
         if (entry.kind === 'item') reqBody.count = qty;
         else if (entry.kind !== 'avatar') {
             if (selectedIndex < 0) return showErr('판매할 ' + AUCTION_KIND_LABEL[entry.kind] + '을(를) 선택해주세요.');
@@ -7510,6 +7219,7 @@ $$('.rank-tab').forEach(btn => btn.onclick = () => {
 // ===== 도감 =====
 let dexData = null;
 let potentialDexData = null;
+let augmentDexData = null;
 let dexTab = 'weapon';
 let dexRarity = 'all';
 
@@ -8130,6 +7840,13 @@ function dexCharacterDetail(entry) {
 let titlesData = null;
 const titleDexState = { search: '', filter: 'all' };
 const characterDexState = { search: '', filter: 'all' };
+const augmentDexState = { search: '', filter: 'all', category: 'all', view: 'augment' };
+const relicDexState = { search: '', filter: 'all' };
+const traitDexState = { search: '', filter: 'all' };
+const stoneDexState = { search: '', filter: 'all', branch: 'all' };
+const RELIC_RARITIES = { normal: '일반', advanced: '고급', special: '특수' };
+const AUGMENT_CATEGORIES = { basic: '공격', skill: '스킬', critical: '치명타', dot: '지속 피해', combo: '연격', shield: '보호막', ultimate: '궁극기', active: '스킬 습득', passive: '패시브 습득', defense: '방어와 생존', recovery: '회복', exploration: '탐험', risk: '위험과 거래', reward: '보상', stone: '돌 던지기' };
+const AUGMENT_RARITIES = { silver: '실버', gold: '골드', prismatic: '프리즘', cursed: '저주' };
 let titleSaving = false;
 
 function dexCollection(grid, state, filters, placeholder, renderItems) {
@@ -8168,6 +7885,115 @@ function renderCharacterDex(grid) {
         list.replaceChildren(...(entries.length ? entries.map(dexCharacterCard) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
         return entries.length;
     });
+}
+
+function dexAugmentCard(entry) {
+    return el('article', { class: 'dex-augment-card', 'data-rarity': entry.rarity },
+        el('div', { class: 'dex-augment-head' },
+            el('h3', null, entry.name),
+            el('span', { class: 'dex-augment-floors' + (entry.floors < 0 ? ' descending' : '') }, (entry.floors > 0 ? '+' : '') + entry.floors + '층')),
+        el('div', { class: 'dex-augment-meta' }, ...[AUGMENT_RARITIES[entry.rarity], AUGMENT_CATEGORIES[entry.category], entry.equipment ? '장착 전용' : entry.characterName ? entry.characterName + ' 전용' : null].filter(Boolean).map(text => el('span', null, text))),
+        el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc))
+    );
+}
+
+function dexRelicRow(entry) {
+    return el('article', { class: 'dex-relic-row', 'data-rarity': entry.rarity },
+        el('div', { class: 'dex-relic-icon' },
+            el('span', { 'aria-hidden': 'true' }, String(entry.name || '?').slice(0, 1)),
+            entry.iconUrl ? el('img', { src: entry.iconUrl, alt: '', loading: 'lazy', onerror: event => event.target.remove() }) : null),
+        el('div', { class: 'dex-relic-copy' },
+            el('div', { class: 'dex-relic-head' },
+                el('i', { class: 'dex-relic-gem', 'aria-hidden': 'true' }),
+                el('h3', null, entry.name),
+                el('span', { class: 'dex-relic-grade' }, entry.rarityLabel || RELIC_RARITIES[entry.rarity] || '')),
+            el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc || ''))));
+}
+
+function renderRelicDex(grid) {
+    const toolbar = dexCollection(grid, relicDexState, [['all', '전체'], ...Object.entries(RELIC_RARITIES)], '유물 이름, 효과 검색', list => {
+        list.className = 'dex-relic-list';
+        const query = relicDexState.search.trim().toLocaleLowerCase();
+        const entries = (augmentDexData.relics || []).filter(entry =>
+            [entry.name, entry.desc].join(' ').toLocaleLowerCase().includes(query)
+            && (relicDexState.filter === 'all' || entry.rarity === relicDexState.filter));
+        list.replaceChildren(...(entries.length ? entries.map(dexRelicRow) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return entries.length;
+    });
+    toolbar.classList.add('dex-heaven-toolbar');
+}
+
+function renderHeavenDex(grid) {
+    if (augmentDexState.view === 'relic') renderRelicDex(grid);
+    else if (augmentDexState.view === 'trait') renderTraitDex(grid);
+    else if (augmentDexState.view === 'stone') renderStoneDex(grid);
+    else renderAugmentDex(grid);
+    const views = [['augment', '증강', (augmentDexData.augments || []).length], ['relic', '유물', (augmentDexData.relics || []).length],
+        ['trait', '특수능력', (augmentDexData.traits || []).length], ['stone', '돌 던지기', (augmentDexData.augments || []).filter(a => a.category === 'stone').length]];
+    grid.prepend(el('div', { class: 'dex-heaven-views', role: 'group', 'aria-label': '천상 도감 구분' },
+        ...views.map(([value, label, total]) => el('button', { type: 'button', 'aria-pressed': augmentDexState.view === value,
+            onclick: () => { if (augmentDexState.view !== value) { augmentDexState.view = value; renderDex(); } } },
+            el('span', null, label), el('span', { class: 'dex-heaven-view-count' }, total)))));
+}
+
+function renderTraitDex(grid) {
+    const toolbar = dexCollection(grid, traitDexState, [['all', '전체']], '특수능력 이름, 효과 검색', list => {
+        list.className = 'dex-augment-grid';
+        const query = traitDexState.search.trim().toLocaleLowerCase();
+        const entries = (augmentDexData.traits || []).filter(entry => [entry.name, entry.desc].join(' ').toLocaleLowerCase().includes(query));
+        list.replaceChildren(...(entries.length ? entries.map(entry => el('article', { class: 'dex-augment-card', 'data-rarity': 'silver' },
+            el('div', { class: 'dex-augment-head' }, el('h3', null, entry.name)), el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc)))) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return entries.length;
+    });
+    toolbar.classList.add('dex-heaven-toolbar');
+}
+
+function renderStoneDex(grid) {
+    const all = augmentDexData.augments || [], names = new Map(all.map(a => [a.id, a.name]));
+    const branches = augmentDexData.stoneBranches || {};
+    const toolbar = dexCollection(grid, stoneDexState, [['all', '전체'], ['silver', '실버'], ['gold', '골드'], ['prismatic', '프리즘']], '돌 강화 이름, 효과 검색', list => {
+        list.className = 'dex-augment-grid';
+        const query = stoneDexState.search.trim().toLocaleLowerCase();
+        const entries = all.filter(entry => entry.category === 'stone' && [entry.name, entry.desc].join(' ').toLocaleLowerCase().includes(query)
+            && (stoneDexState.filter === 'all' || entry.rarity === stoneDexState.filter)
+            && (stoneDexState.branch === 'all' || entry.stoneBranch === stoneDexState.branch));
+        list.replaceChildren(...(entries.length ? entries.map(entry => {
+            const card = dexAugmentCard(entry), links = [];
+            if (entry.stoneBranch) card.querySelector('.dex-augment-meta').appendChild(el('span', null, branches[entry.stoneBranch] || entry.stoneBranch));
+            for (const [label, ids] of [['선행 강화', entry.stoneRequires], ['하나를 보유', entry.stoneRequiresAny], ['함께 선택 불가', entry.stoneExcludes]]) {
+                if (!ids?.length) continue;
+                links.push(el('div', { class: 'dex-stone-links' }, el('span', null, label), ...ids.map(id => el('button', { type: 'button', onclick: () => {
+                    stoneDexState.search = names.get(id) || ''; stoneDexState.branch = 'all'; stoneDexState.filter = 'all'; renderDex();
+                } }, names.get(id) || id))));
+            }
+            card.append(...links); return card;
+        }) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return entries.length;
+    });
+    const branch = el('select', { class: 'dex-rarity-select', 'aria-label': '돌 던지기 계열', onchange: event => { stoneDexState.branch = event.target.value; renderDex(); } },
+        el('option', { value: 'all' }, '모든 계열'), ...Object.entries(branches).map(([value, name]) => el('option', { value }, name)));
+    branch.value = stoneDexState.branch;
+    toolbar.insertBefore(branch, toolbar.lastElementChild); toolbar.classList.add('dex-heaven-toolbar');
+}
+
+function renderAugmentDex(grid) {
+    const toolbar = dexCollection(grid, augmentDexState, [['all', '전체'], ['common', '공통'], ['equipment', '장착 전용'], ['character', '카드 전용']], '증강 이름, 효과, 장비, 캐릭터 검색', list => {
+        list.className = 'dex-augment-grid';
+        const query = augmentDexState.search.trim().toLocaleLowerCase();
+        const entries = (augmentDexData.augments || []).filter(entry =>
+            [entry.name, entry.desc, entry.equipment || '', entry.characterName || '', AUGMENT_CATEGORIES[entry.category] || ''].join(' ').toLocaleLowerCase().includes(query)
+            && (augmentDexState.filter === 'all' || (augmentDexState.filter === 'equipment' ? entry.equipment : augmentDexState.filter === 'character' ? entry.character != null : !entry.equipment && entry.character == null))
+            && (augmentDexState.category === 'all' || entry.category === augmentDexState.category));
+        list.replaceChildren(...(entries.length ? entries.map(dexAugmentCard) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return entries.length;
+    });
+    const category = el('select', { class: 'dex-rarity-select', 'aria-label': '증강 유형', onchange: event => { augmentDexState.category = event.target.value; renderDex(); } },
+        el('option', { value: 'all' }, '모든 유형'),
+        ...Object.entries(AUGMENT_CATEGORIES).map(([value, label]) => el('option', { value }, label)));
+    category.value = augmentDexState.category;
+    toolbar.insertBefore(category, toolbar.lastElementChild);
+    toolbar.classList.add('dex-heaven-toolbar');
+    grid.insertBefore(el('p', { class: 'dex-augment-note' }, '한 탐험에서 같은 증강은 다시 등장하지 않습니다.'), toolbar.nextSibling);
 }
 
 async function changeDexTitle(id, statsOnly) {
@@ -8298,6 +8124,11 @@ function applyDexRarityFilter(entries) {
 
 function renderDex() {
     const grid = $('#dexList');
+    if (dexTab === 'augment') {
+        hideDexRarityFilter();
+        if (augmentDexData) renderHeavenDex(grid);
+        return;
+    }
     if (dexTab === 'potential') {
         hideDexRarityFilter();
         grid.className = 'dex-grid dex-pot-grid';
@@ -8342,6 +8173,16 @@ function renderDex() {
 }
 
 async function loadDex() {
+    if (dexTab === 'augment') {
+        hideDexRarityFilter();
+        if (!augmentDexData) {
+            $('#dexList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+            try { augmentDexData = await api('/api/dex/augments'); }
+            catch (e) { $('#dexList').replaceChildren(el('div', { class: 'empty err' }, e.message)); return; }
+        }
+        renderDex();
+        return;
+    }
     if (dexTab === 'potential') {
         hideDexRarityFilter();
         if (!potentialDexData) {
@@ -8374,6 +8215,7 @@ $$('.dex-tab').forEach(btn => btn.onclick = () => {
     dexTab = btn.dataset.tab;
     $$('.dex-tab').forEach(b => b.classList.toggle('active', b === btn));
     loadDex();
+    if (dexTab === 'augment') setDexSidebarVisible(false);
 });
 
 const dexSidebarMobileQuery = window.matchMedia('(max-width: 860px)');
@@ -8971,11 +8813,11 @@ async function openMailCompose() {
     function viewPicker(kind) {
         const usedNums = new Set(gifts.filter(g => g.type === 'equipment').map(g => g.number));
         const usedIdx = new Set(gifts.filter(g => g.type === 'pet').map(g => g.index));
-        const usedAvatars = new Set(gifts.filter(g => g.type === 'avatar').map(g => g.name));
+        const usedAvatars = new Set(gifts.filter(g => g.type === 'avatar').map(g => g.avatarId));
         let opts = kind === 'equipment' ? giftable.equipment : kind === 'pet' ? giftable.pets : kind === 'avatar' ? (giftable.avatars || []) : giftable.items;
         if (kind === 'equipment') opts = opts.filter(o => !usedNums.has(o.number));
         else if (kind === 'pet') opts = opts.filter(o => !usedIdx.has(o.index));
-        else if (kind === 'avatar') opts = opts.filter(o => !usedAvatars.has(o.name));
+        else if (kind === 'avatar') opts = opts.filter(o => !usedAvatars.has(o.id));
         const title = kind === 'equipment' ? '장비 선택' : kind === 'pet' ? '펫 선택' : kind === 'avatar' ? '아바타 선택' : '아이템 선택';
         const list = el('div', { class: 'mc-pick-list' });
         if (!opts.length) list.appendChild(el('div', { class: 'mc-gift-empty' }, kind === 'avatar' ? '보낼 수 있는 아바타가 없습니다.\n(프레스티지 · 거래 횟수를 소진한 한정판 제외)' : '보낼 수 있는 항목이 없습니다.'));
@@ -8994,7 +8836,7 @@ async function openMailCompose() {
     function pickGift(kind, o) {
         if (kind === 'equipment') { gifts.push({ type: 'equipment', number: o.number, _label: o.name + (o.level > 0 ? ' +' + o.level : ''), _icon: o.iconUrl, _frame: o.frameUrl }); viewCompose(); }
         else if (kind === 'pet') { gifts.push({ type: 'pet', index: o.index, _label: o.name + (o.level > 0 ? ' +' + o.level : ''), _icon: o.iconUrl, _frame: o.frameUrl }); viewCompose(); }
-        else if (kind === 'avatar') { gifts.push({ type: 'avatar', name: o.name, _label: o.name + ' 아바타' + (o.grade === '한정' ? ' [한정]' : ''), _icon: o.iconUrl || o.imageUrl, _frame: o.iconUrl ? o.frameUrl : null }); viewCompose(); }
+        else if (kind === 'avatar') { gifts.push({ type: 'avatar', name: o.name, avatarId: o.id, _label: o.name + ' 아바타' + (o.grade === '한정' ? ' [한정]' : ''), _icon: o.iconUrl || o.imageUrl, _frame: o.iconUrl ? o.frameUrl : null }); viewCompose(); }
         else viewItemCount(o);
     }
 

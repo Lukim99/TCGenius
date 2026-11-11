@@ -171,8 +171,8 @@ function registerPointMineRoutes(server, { rpgenius: rpg, requireUser, getItemDi
                             if (id < 0) fail(503, '보상 아이템을 확인 중입니다. 포인트는 소모되지 않았습니다.');
                             state.points -= cost;
                             state.exchanges[reward.id] = redeemed + count;
-                            rpg.addInventoryItem(user, id, itemCount);
-                            result = { name: reward.name, count: itemCount, exchangeCount: count, spentPoints: cost, ...getItemDisplayAssets(rpg.getDataCache('Item', [])[id]) };
+                            const granted = rpg.grantItemReward(user, id, itemCount);
+                            result = { ...granted, exchangeCount: count, spentPoints: cost, ...getItemDisplayAssets(rpg.getDataCache('Item', [])[id]) };
                         }
                         state.revision++;
                         state.lastAction = { requestId: request.requestId, action, result, at: now() };

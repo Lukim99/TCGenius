@@ -19,6 +19,12 @@
     };
 
     const SKILL_RESULTS = Object.freeze({
+        '도화선 점화': [id('combat', '화상')],
+        '응혈 폭발': [id('combat', '중첩 소모')],
+        '유리 방벽': [id('combat', '보호막 부여')],
+        '그림자 연무': [id('combat', '행동 가속')],
+        '시간 접기': [id('combat', '버프')],
+        '판돈 뒤집기': [id('combat', '버프')],
         '헤즈업': [id('combat', '버프')],
         '자인': [id('combat', '버프'), id('combat', '공격력 강화')],
         '시벌론': [id('combat', '행동 가속')],
@@ -56,6 +62,8 @@
 
     // 스킬 원본 설명 기준: 공격 연출은 대상, 자기 강화/회복 연출은 시전자에게 배치한다.
     const SKILL_TARGETS = Object.freeze({
+        '도화선 점화': 'target', '응혈 폭발': 'target', '유리 방벽': 'both',
+        '그림자 연무': 'both', '시간 접기': 'actor', '판돈 뒤집기': 'both',
         '헤즈업': 'both', '느억맘': 'target',
         '모드 전환': 'actor', '원영적사고 모드 전환': 'actor', '아이돌 할래?': 'target', '카스 살포': 'target',
         '자인': 'both', '시벌론': 'actor', '글버지': 'both', '불사조': 'both', '피아스트': 'both',
@@ -288,10 +296,34 @@
         });
     }
 
+    function drawAttackOrder(hud, order, x, y, width) {
+        if (!order) return;
+        hud.text('다음 공격', x, y + 10, 10, 800, 'left', '#e8c784');
+        const gap = 5, start = x + 58, size = (width - 58 - gap * 2) / 3;
+        for (let i = 1; i <= 3; i++) {
+            const active = i === order, left = start + (i - 1) * (size + gap);
+            hud.panel(left, y, size, 21, active ? '#f4c265' : '#4a4c55');
+            hud.text(i + '타' + (active ? ' ◀' : ''), left + size / 2, y + 10, 10, active ? 900 : 600, 'center', active ? '#ffe4a0' : '#838996');
+        }
+    }
+
+    function shieldAmount(player, now) {
+        if (!Array.isArray(player.shieldLayers)) return Math.max(0, Number(player.shield || 0));
+        return player.shieldLayers.reduce((sum, layer) => sum + (!layer.expiresAt || layer.expiresAt > now ? Math.max(0, Number(layer.amount || 0)) : 0), 0);
+    }
+
+    // 피해 숫자의 의미는 필드와 PVP에서 동일하게 표시한다. 레이드 HUD는 별도로 유지한다.
+    function damageStyle(event, hit) {
+        const shield = hit.type === 'absorbed';
+        const fixed = !!hit.fixed || hit.type === 'fixed' || labelEffects(hit.label).includes(id('combat', '고정 피해'));
+        const dot = event.dot === true || event.action === 'dot';
+        return { shield, fixed, dot };
+    }
+
     return {
-        DIRS, SKILL_TARGETS, id, unique, sourceEffects, labelEffects, skillEffects, skillTarget,
+        DIRS, SKILL_TARGETS, id, unique, sourceEffects, labelEffects, skillEffects, skillTarget, shieldAmount, damageStyle,
         effectIdsFor, presentationEffectIds,
         eventEffectIds, hitEffectIds, annotateEvent, parseEffectId,
-        fileName, assetPath, assetUrl, motionProfile, drawCardDeck
+        fileName, assetPath, assetUrl, motionProfile, drawCardDeck, drawAttackOrder
     };
 });

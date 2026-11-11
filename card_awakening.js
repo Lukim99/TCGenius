@@ -1,5 +1,6 @@
 const definitions = require('./DB/RPGenius/Awakening.json');
 const characters = require('./DB/RPGenius/CharacterCards.json');
+const attackStats = require('./attack_stats');
 
 function valueAtStar(values, star) {
     if (!Array.isArray(values) || Number(star) < 4) return 0;
@@ -33,24 +34,26 @@ function formatPassiveProgression(card) {
     return passive.desc.replace('${1}', format(passive.values)).replace('${2}', format(passive.attackValues));
 }
 
-function getAttackMultiplier(passive, reduction, stacks) {
-    if (!passive) return 1;
-    if (passive.effect === 'riskAttack') return 1 + passive.attackValue;
-    if (passive.effect === 'reductionAttack') return 1 + Math.max(0, reduction) * passive.value;
-    if (passive.effect === 'stackAttack') return 1 + Math.min(9, Math.max(0, stacks)) * passive.value;
-    return 1;
+function getAttackBonus(passive, reduction, stacks) {
+    if (!passive) return 0;
+    if (passive.effect === 'riskAttack') return passive.attackValue;
+    if (passive.effect === 'reductionAttack') return Math.max(0, reduction) * passive.value;
+    if (passive.effect === 'stackAttack') return Math.min(9, Math.max(0, stacks)) * passive.value;
+    return 0;
 }
 
-function runtimeAttackRatio(stats, slotEffects, hp, mp, reduction, stacks) {
+function runtimeAttackChange(stats, hp, mp, reduction, stacks) {
     const passive = stats && stats.awakening;
-    if (!passive) return 1;
-    const applied = Number(stats.awakeningAttackMultiplier || 1);
+    if (!passive) return { percent: 0, flat: 0 };
     let derived = 0;
     if (passive.effect === 'hpAttack') derived = (hp - Number(stats.hp || 0)) / 10000 * passive.value;
     if (passive.effect === 'mpAttack') derived = (mp - Number(stats.mp || 0)) / 1000 * passive.value;
-    const updatedAttack = Number(stats.atk || 0) + derived * applied * (1 + Number(slotEffects.finalAttackBonus || 0));
-    const resourceRatio = Number(stats.atk || 0) > 0 ? updatedAttack / stats.atk : 1;
-    return resourceRatio * getAttackMultiplier(passive, reduction, stacks) / applied;
+    return { percent: getAttackBonus(passive, reduction, stacks) - Number(stats.awakeningAttackBonus || 0), flat: derived };
+}
+
+function runtimeAttackRatio(stats, slotEffects, hp, mp, reduction, stacks) {
+    const change = runtimeAttackChange(stats, hp, mp, reduction, stacks);
+    return attackStats.ratio(stats, change.percent, change.flat);
 }
 
 function prepareAttack(stats, runtime, target, extra, kind, now) {
@@ -113,4 +116,4 @@ function resolveSurvival(passive, state, hpBefore, nextHp, now, wipe) {
     return nextHp;
 }
 
-module.exports = { definitions, valueAtStar, getDefinition, getPassive, formatPassive, formatPassiveProgression, getAttackMultiplier, runtimeAttackRatio, prepareAttack, basicHitMultiplier, conditionalFinalDamage, skillCritMultiplier, formatSkillDescription, summonMultiplier, resolveSurvival };
+module.exports = { definitions, valueAtStar, getDefinition, getPassive, formatPassive, formatPassiveProgression, getAttackBonus, runtimeAttackChange, runtimeAttackRatio, prepareAttack, basicHitMultiplier, conditionalFinalDamage, skillCritMultiplier, formatSkillDescription, summonMultiplier, resolveSurvival };

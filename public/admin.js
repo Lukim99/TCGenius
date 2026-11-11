@@ -1741,7 +1741,7 @@ const FLAT_STAT_DEFS = [
 ];
 
 const PLUS_STAT_DEFS = [
-    { key: 'atk', label: '최종 공격력', kind: 'percent' },
+    { key: 'atk', label: '공격력 %', kind: 'percent' },
     { key: 'def', label: '최종 방어력', kind: 'percent' },
     { key: 'hp', label: '최종 체력', kind: 'percent' },
     { key: 'mp', label: '최종 MP', kind: 'percent' },
@@ -1766,7 +1766,7 @@ const PLUS_STAT_DEFS = [
     { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' },
     { key: 'takenDamage', label: '받는 피해 증가', kind: 'percent' },
     { key: 'damageBonus', label: '일반 몬스터에게 주는 피해 증가', kind: 'percent' },
-    { key: 'finalAtk', label: '최종 공격력', kind: 'percent' },
+    { key: 'finalAtk', label: '공격력 % (기존 저장값)', kind: 'percent', legacy: true },
     { key: 'finalDamage', label: '최종 피해', kind: 'percent' },
     { key: 'extraDamage', label: '추가 피해', kind: 'percent' },
     { key: 'nonElementDamage', label: '[무]속성 공격 피해', kind: 'percent' },
@@ -1824,7 +1824,7 @@ function statEditor(title, _ignoredIcon, obj, defs) {
             extraKeys.forEach(key => list.appendChild(buildRow({ key, label: key, kind: 'int' }, true)));
         }
 
-        const remaining = defs.filter(d => !Object.prototype.hasOwnProperty.call(obj, d.key));
+        const remaining = defs.filter(d => !d.legacy && !Object.prototype.hasOwnProperty.call(obj, d.key));
         const addRow = el('div', { class: 'stat-add' });
         const sel = el('select');
         sel.appendChild(el('option', { value: '' }, '+ 능력치 추가...'));
@@ -2368,7 +2368,8 @@ const PET_SPECIAL_NUM_DEFS = [
     { key: 'autoFragment', label: '편린 자동 사용 확률', frac: true, hint: '0.1 = 10%' },
     { key: 'hpRegen', label: 'HP 자동 회복 주기', frac: false, hint: 'N초마다 최대 체력 1%' },
     { key: 'mpRegen', label: 'MP 자동 회복 주기', frac: false, hint: 'N초마다 최대 MP 1%' },
-    { key: 'canShortcut', label: '단축키 저장 슬롯', frac: false, hint: '개수' }
+    { key: 'canShortcut', label: '단축키 저장 슬롯', frac: false, hint: '개수' },
+    { key: 'cardCombineBonus', label: '카드 조합 확률 가산', frac: true, hint: '0.02 = +2%p (럭키 카드 적용 후)' }
 ];
 
 function petSpecialEditor(getter, setter) {
@@ -2398,6 +2399,7 @@ function petSpecialEditor(getter, setter) {
                 onChange: v => { if (v) special.autoAttend = true; else delete special.autoAttend; } })
         )
     ));
+    list.appendChild(el('div', { class: 'nf' }, el('label', null, '자동 물약 기능'), switchToggle({ id: 'pet_autopotion_' + Math.random().toString(36).slice(2), checked: !!special.autoPotion, label: 'HP/MP 기준 설정 가능', onChange: v => { if (v) special.autoPotion = true; else delete special.autoPotion; } })));
     return wrap;
 }
 
@@ -2519,7 +2521,7 @@ TAB_LOADERS.pet = () => $('#petReload').click();
 let fashionData = [];
 let fashionFilterText = '';
 const fashionOpen = new WeakSet();
-const AVATAR_GRADES = ['일반', '프레스티지', '한정'];
+const AVATAR_GRADES = ['일반', '프레스티지', '한정', '유니크'];
 AVATAR_GRADES.forEach(grade => $('#fashionGradeFilter').appendChild(el('option', { value: grade }, grade)));
 function avatarGroups() {
     const groups = new Map();
@@ -2532,7 +2534,7 @@ function avatarGroups() {
     return [...groups.values()];
 }
 function avatarGrade(entries) {
-    return entries.some(e => e.exclusive === true) ? '한정' : entries.some(e => e.isHigh === true) ? '프레스티지' : '일반';
+    return entries.some(e => e.uniqueSeries === 1) ? '유니크' : entries.some(e => e.exclusive === true) ? '한정' : entries.some(e => e.isHigh === true) ? '프레스티지' : '일반';
 }
 function fashionCard(group) {
     const { entries, index } = group;
@@ -2592,9 +2594,9 @@ function fashionCard(group) {
     AVATAR_GRADES.forEach(grade => gradeSelect.appendChild(el('option', { value: grade }, grade)));
     gradeSelect.value = avatarGrade(entries);
     const tradeText = el('div', { class: 'muted', style: { marginTop: '8px' } });
-    function refreshGrade() { gradeTag.textContent = gradeSelect.value; tradeText.textContent = ({ 일반: '거래 가능', 프레스티지: '거래 불가', 한정: '최초 1회 거래 가능' })[gradeSelect.value] || ''; }
+    function refreshGrade() { gradeTag.textContent = gradeSelect.value; tradeText.textContent = ({ 일반: '거래 가능', 프레스티지: '거래 불가', 한정: '최초 1회 거래 가능', 유니크: '최대 3회 거래 가능 · 비전투 중 추가 옵션 1개 선택' })[gradeSelect.value] || ''; }
     gradeSelect.onchange = () => {
-        entries.forEach(entry => { delete entry.isHigh; delete entry.exclusive; if (gradeSelect.value === '프레스티지') entry.isHigh = true; if (gradeSelect.value === '한정') entry.exclusive = true; });
+        entries.forEach(entry => { delete entry.isHigh; delete entry.exclusive; delete entry.uniqueSeries; if (gradeSelect.value === '프레스티지') entry.isHigh = true; if (gradeSelect.value === '한정') entry.exclusive = true; if (gradeSelect.value === '유니크') entry.uniqueSeries = 1; });
         refreshGrade();
     };
     refreshGrade();
@@ -2908,6 +2910,250 @@ if ($('#pointLogReload')) $('#pointLogReload').onclick = loadPointLog;
 if ($('#pointLogFilter')) $('#pointLogFilter').addEventListener('input', e => { pointLogFilter = e.target.value; PAGE_STATE.pointlog = 0; renderPointLog(); });
 TAB_LOADERS.pointlog = loadPointLog;
 
+// 포인트 사용 통계: 집계는 조회 조건 전체 기준이고, 상세 내역만 50건씩 가져온다.
+const PU_CATEGORIES = { shop: '상점', personal_draw: '퍼스널뽑기', blessing: '축복', preset: '프리셋', admin: '관리자 회수', charge_cancel: '충전 취소', unclassified: '미분류 차감' };
+const PU_KINDS = { consumption: '소비', adjustment: '회수', reversal: '취소 복구' };
+const PU_TOTAL_LABELS = { consumption: '총 소비', adjustment: '총 회수', reversal: '총 취소 복구', all: '전체 기록 합계' };
+const PU_PAGE_SIZE = 50, PU_TOP = 10;
+const PU_PRESETS = {
+    today: t => [t, t],
+    week: t => [puShift(t, -6), t],
+    days30: t => [puShift(t, -29), t],
+    month: t => [t.slice(0, 8) + '01', t],
+    lastMonth: t => { const end = puShift(t.slice(0, 8) + '01', -1); return [end.slice(0, 8) + '01', end]; },
+};
+// details에서 사람이 읽을 항목만 고른다. 그 밖의 키와 기록 출처는 화면에 내보내지 않는다.
+const PU_DETAIL_FIELDS = [
+    ['unitPrice', '개당 가격', v => puP(v)],
+    ['rewardQuantity', '지급 수량', v => comma(v) + '개'],
+    ['openedCount', '열린 칸', v => comma(v) + '칸'],
+    ['bonusCount', '보너스 칸', v => comma(v) + '칸'],
+    ['durationDays', '사용 기간', v => comma(v) + '일'],
+    ['expiresAt', '축복 만료', v => puTime(v, true)],
+];
+const PU_TIME = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+const pu = { req: 0, key: '', products: [], allProducts: false };
+
+const puP = n => comma(n ?? 0) + ' P';
+const puText = s => String(s ?? '').replace(/ *[\u00b7\u318d\u30fb\u2022] *| +[\u2013\u2014\u3161] +/g, ' ').trim();
+const puCat = c => PU_CATEGORIES[c] || puText(c) || '미분류';
+const puName = r => puText(r.product_name) || puText(r.product_id) || puCat(r.category);
+const puToday = () => new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+const puShift = (day, n) => { const d = new Date(day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const puDay = (day, year) => (year ? day.slice(0, 4) + '년 ' : '') + Number(day.slice(5, 7)) + '월 ' + Number(day.slice(8, 10)) + '일';
+const puByAmount = rows => [...(rows || [])].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || b.count - a.count);
+
+function puTime(value, long) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return puText(value);
+    const p = Object.fromEntries(PU_TIME.formatToParts(date).map(part => [part.type, part.value]));
+    const clock = `${p.hour}:${p.minute}:${p.second}`;
+    return long ? `${p.year}년 ${Number(p.month)}월 ${Number(p.day)}일 ${clock}` : `${p.month}.${p.day} ${clock}`;
+}
+
+function puStatus(text, isError, retry) {
+    const box = $('#puStatus');
+    box.classList.toggle('is-error', !!isError);
+    box.replaceChildren(...(text ? [el('span', {}, text)] : []), ...(retry ? [el('button', { type: 'button', class: 'btn sm', onclick: retry }, '다시 시도')] : []));
+}
+
+function puMarkPreset() {
+    const today = puToday(), range = $('#puFrom').value + '/' + $('#puTo').value;
+    $$('.pu [data-preset]').forEach(b => b.setAttribute('aria-pressed', String(PU_PRESETS[b.dataset.preset](today).join('/') === range)));
+}
+
+async function loadPointUsage(page = 0, force = false) {
+    const from = $('#puFrom'), to = $('#puTo'), today = puToday(), request = ++pu.req;
+    from.max = to.max = today;
+    if (!from.value) from.value = today.slice(0, 8) + '01';
+    if (!to.value) to.value = today;
+    puMarkPreset();
+    if (from.value > to.value) {
+        $('#puReport').hidden = true;
+        $('#puReport').removeAttribute('aria-busy');
+        return puStatus('시작일이 종료일보다 늦습니다. 기간을 다시 선택하세요.', true);
+    }
+    const query = new URLSearchParams({ from: from.value, to: to.value, kind: $('.pu input[name=puKind]:checked').value,
+        category: $('#puCategory').value, search: $('#puSearch').value.trim() });
+    const filterCount = Number(query.get('kind') !== 'consumption') + Number(!!query.get('category')) + Number(!!query.get('search'));
+    $('#puFilterCount').textContent = filterCount ? filterCount + '개 적용' : '';
+    const key = query.toString(), fresh = force || key !== pu.key;
+    if (fresh) page = 0;
+    if (fresh) $('#puReport').hidden = true;
+    query.set('page', String(page));
+    $('#puReport').setAttribute('aria-busy', 'true');
+    puStatus(fresh ? '통계를 불러오는 중입니다.' : '상세 내역을 불러오는 중입니다.');
+    try {
+        const data = await api('/api/admin/point-usage?' + query);
+        if (request !== pu.req) return;
+        pu.key = key;
+        puStatus('');
+        puRender(data, query);
+        puEntries(data.entries);
+        puPager(Number(data.summary?.count) || 0, page);
+    } catch (error) {
+        if (request !== pu.req) return;
+        pu.key = '';
+        $('#puReport').hidden = true;
+        puStatus(error.message || '통계를 불러오지 못했습니다.', true, () => loadPointUsage(0, true));
+    } finally {
+        if (request === pu.req) $('#puReport').removeAttribute('aria-busy');
+    }
+}
+
+function puRender(data, query) {
+    const kind = query.get('kind'), from = query.get('from'), to = query.get('to'), s = data.summary || {};
+    const count = Number(s.count) || 0, users = Number(s.users) || 0, pending = Number(data.delivery?.pending) || 0;
+    const withYear = from.slice(0, 4) !== to.slice(0, 4) || from.slice(0, 4) !== puToday().slice(0, 4);
+    const span = Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1;
+    $('#puReport').hidden = false;
+    $('#puPending').hidden = !pending;
+    $('#puPending').textContent = `전송 대기 중인 기록 ${comma(pending)}건은 아직 통계에 포함되지 않았습니다.`;
+    $('#puPeriod').textContent = from === to ? puDay(from, withYear) : `${puDay(from, withYear)} ~ ${puDay(to, withYear)}, ${comma(span)}일간`;
+    $('#puTotalLabel').textContent = PU_TOTAL_LABELS[kind] || '합계';
+    $('#puTotal').replaceChildren(comma(s.amount ?? 0), el('span', {}, 'P'));
+    $('#puTotalNote').hidden = kind !== 'all';
+    const consumption = kind === 'consumption';
+    $('#puMetrics').replaceChildren(...[
+        ['건수', comma(count) + '건'],
+        consumption && ['유료 결제', comma(s.paidCount ?? 0) + '건'],
+        ['이용자', comma(users) + '명'],
+        consumption && users > 0 && ['1인 평균', puP(Math.round(Number(s.amount) / users))],
+    ].filter(Boolean).map(([label, value]) => el('div', {}, el('dt', {}, label), el('dd', {}, value))));
+    $('#puEmpty').hidden = count > 0;
+    $('#puBreakdown').hidden = $('#puEntriesCard').hidden = count === 0;
+    puEnsureCategories(data.categories);
+    puTrend(data.daily, from, to, count > 0);
+    puCategories(data.categories, query.get('category'));
+    pu.products = puByAmount(data.products);
+    pu.allProducts = false;
+    puProducts();
+}
+
+function puEnsureCategories(rows) {
+    const select = $('#puCategory'), known = new Set([...select.options].map(option => option.value));
+    for (const r of rows || []) if (r.category && !known.has(r.category)) { known.add(r.category); select.appendChild(el('option', { value: r.category }, puCat(r.category))); }
+}
+
+function puTrend(daily, from, to, visible) {
+    const map = new Map((daily || []).map(d => [d.date, d])), days = [];
+    for (let d = from; d <= to; d = puShift(d, 1)) days.push(map.get(d) || { date: d, amount: 0, count: 0, users: 0 });
+    // 기간이 길면 월 단위로 묶는다. 이용자 수는 날짜별로 더할 수 없으므로 표시하지 않는다.
+    const monthly = days.length > 92, bins = monthly ? [] : days;
+    if (monthly) for (const d of days) {
+        const month = d.date.slice(0, 7), last = bins[bins.length - 1];
+        if (last && last.date === month) { last.amount += Number(d.amount) || 0; last.count += Number(d.count) || 0; }
+        else bins.push({ date: month, amount: Number(d.amount) || 0, count: Number(d.count) || 0 });
+    }
+    $('#puTrend').hidden = !visible || bins.length < 2;
+    if ($('#puTrend').hidden) return;
+    $('#puTrendTitle').textContent = monthly ? '월별 추이' : '일별 추이';
+    const label = b => monthly ? `${b.date.slice(0, 4)}년 ${Number(b.date.slice(5, 7))}월` : puDay(b.date);
+    const max = Math.max(...bins.map(b => Math.abs(b.amount))), signed = bins.some(b => b.amount < 0);
+    $('#puChart').classList.toggle('has-negative', signed);
+    const peak = bins.reduce((top, b) => Math.abs(b.amount) > Math.abs(top.amount) ? b : top);
+    const show = (b, prefix) => $('#puReadout').replaceChildren(...[el('span', { class: 'pu-mut' }, prefix + label(b)), el('strong', {}, puP(b.amount)),
+        el('span', {}, comma(b.count) + '건'), b.users != null ? el('span', {}, comma(b.users) + '명') : null].filter(Boolean));
+    const rest = () => max ? show(peak, signed ? '최대 변동 ' : '최고 ') : $('#puReadout').replaceChildren(el('span', { class: 'pu-mut' }, '기간 내 금액이 모두 0 P입니다.'));
+    $('#puChart').replaceChildren(...bins.map(b => el('button', {
+        type: 'button',
+        class: 'pu-bar' + (b === peak && max ? ' peak' : '') + (Number(b.amount) < 0 ? ' neg' : '') + (Number(b.amount) ? '' : ' zero'),
+        'aria-label': `${label(b)} ${puP(b.amount)}, ${comma(b.count)}건. 이 기간만 조회`,
+        onmouseenter: () => show(b, ''), onfocus: () => show(b, ''), onmouseleave: rest, onblur: rest,
+        onclick: () => {
+            const start = monthly ? b.date + '-01' : b.date, end = monthly ? puShift(puShift(b.date + '-28', 4).slice(0, 8) + '01', -1) : b.date;
+            $('#puFrom').value = start < from ? from : start;
+            $('#puTo').value = end > to ? to : end;
+            loadPointUsage(0);
+        },
+    }, el('i', { style: { height: (max ? Math.abs(b.amount) / max * (signed ? 50 : 100) : 0) + '%' } }))));
+    $('#puAxis').replaceChildren(el('span', {}, label(bins[0])), el('span', {}, label(bins[bins.length - 1])));
+    rest();
+}
+
+function puCategories(rows, selected) {
+    rows = puByAmount(rows);
+    const max = Math.max(0, ...rows.map(r => Math.abs(r.amount))), total = rows.reduce((sum, r) => sum + Math.abs(r.amount), 0);
+    const showShare = rows.every(r => r.amount >= 0);
+    $('#puCats').replaceChildren(...rows.map(r => el('li', {}, el('button', {
+        type: 'button', class: 'pu-cat', 'aria-pressed': String(r.category === selected),
+        onclick: () => { $('#puCategory').value = r.category === selected ? '' : r.category; loadPointUsage(0); },
+    },
+        el('span', { class: 'pu-cat-name' }, puCat(r.category)),
+        el('span', { class: 'pu-num pu-strong' }, puP(r.amount)),
+        el('span', { class: 'pu-track', 'aria-hidden': 'true' }, el('i', { style: { width: (max ? Math.abs(r.amount) / max * 100 : 0) + '%' } })),
+        el('span', { class: 'pu-sub' }, el('span', {}, comma(r.count) + '건'), el('span', {}, comma(r.users) + '명'),
+            showShare && total ? el('span', {}, (Math.abs(r.amount) / total * 100).toFixed(1) + '%') : null)))));
+}
+
+function puProducts() {
+    const rows = pu.products, shown = pu.allProducts ? rows : rows.slice(0, PU_TOP), more = $('#puProdMore');
+    $('#puProdMeta').textContent = rows.length ? `전체 ${comma(rows.length)}개` : '';
+    $('#puProducts').replaceChildren(...shown.map((r, i) => el('tr', {},
+        el('td', { class: 'pu-rank' }, String(i + 1)),
+        el('td', {}, el('span', { class: 'pu-name' }, puName(r)), el('span', { class: 'pu-sub' }, el('span', {}, puCat(r.category)),
+            el('span', { class: 'pu-m' }, comma(r.count) + '건'), el('span', { class: 'pu-m' }, comma(r.users) + '명'))),
+        el('td', { class: 'pu-num' }, r.quantity == null ? '' : comma(r.quantity)),
+        el('td', { class: 'pu-num pu-strong' }, puP(r.amount)),
+        el('td', { class: 'pu-num pu-c' }, comma(r.count)),
+        el('td', { class: 'pu-num pu-c' }, comma(r.users)))));
+    more.hidden = rows.length <= PU_TOP;
+    more.textContent = pu.allProducts ? `상위 ${PU_TOP}개만 보기` : `전체 ${comma(rows.length)}개 보기`;
+    more.setAttribute('aria-expanded', String(pu.allProducts));
+}
+
+function puEntries(rows) {
+    $('#puEntries').replaceChildren(...(rows?.length ? rows.map(r => el('details', { class: 'pu-entry' },
+        el('summary', { class: 'pu-row' },
+            el('span', { class: 'pu-time' }, puTime(r.occurred_at)),
+            el('span', { class: 'pu-nick' }, String(r.nickname ?? r.user_id ?? '')),
+            el('span', { class: 'pu-prod' }, r.kind !== 'consumption' ? el('span', { class: 'pu-kind-tag' }, PU_KINDS[r.kind] || puText(r.kind)) : null,
+                el('span', { class: 'pu-name' }, puName(r)), el('span', { class: 'pu-sub' }, puCat(r.category))),
+            el('span', { class: 'pu-num pu-q' }, r.quantity == null ? '' : comma(r.quantity)),
+            el('span', { class: 'pu-num pu-strong pu-amt' }, puP(r.amount))),
+        puDetail(r))) : [el('p', { class: 'pu-empty' }, '이 페이지에 표시할 내역이 없습니다.')]));
+}
+
+function puDetail(r) {
+    const d = r.details && typeof r.details === 'object' ? r.details : {};
+    const items = [['일시', puTime(r.occurred_at, true)], ['계정 ID', String(r.user_id ?? '')], ['구분', PU_KINDS[r.kind] || puText(r.kind)],
+        ['사용처', puCat(r.category)], ['상품', puName(r)], r.quantity != null && ['수량', comma(r.quantity)], ['금액', puP(r.amount)],
+        r.balance_before != null && r.balance_after != null && ['잔액', `${puP(r.balance_before)} → ${puP(r.balance_after)}`]];
+    for (const [key, label, format] of PU_DETAIL_FIELDS) {
+        if (d[key] != null) items.push([label, format(d[key])]);
+    }
+    const rewards = Array.isArray(d.rewards) ? d.rewards.filter(x => x.name) : [];
+    return el('div', { class: 'pu-detail' },
+        el('dl', {}, items.filter(Boolean).map(([label, value]) => el('div', {}, el('dt', {}, label), el('dd', {}, value)))),
+        rewards.length ? el('div', { class: 'pu-rewards' }, el('h3', {}, '획득 보상'),
+            el('ul', {}, rewards.map(x => el('li', {}, el('span', {}, x.bonus ? el('span', { class: 'pu-kind-tag' }, '보너스') : null, puText(x.name)),
+                x.count != null ? el('span', { class: 'pu-num' }, comma(x.count) + '개') : null)))) : null);
+}
+
+function puPager(count, page) {
+    const pages = Math.max(1, Math.ceil(count / PU_PAGE_SIZE));
+    const go = next => loadPointUsage(next).then(() => $('#puEntriesTitle').focus());
+    $('#puEntriesMeta').textContent = count ? `${comma(count)}건` : '';
+    $('#puPager').hidden = pages < 2;
+    $('#puPager').replaceChildren(
+        el('button', { type: 'button', class: 'btn sm', disabled: page === 0, onclick: () => go(page - 1) }, '이전'),
+        el('span', {}, `${comma(page + 1)} / ${comma(pages)} 페이지`),
+        el('button', { type: 'button', class: 'btn sm', disabled: page + 1 >= pages, onclick: () => go(page + 1) }, '다음'));
+}
+
+if ($('#pointUsageForm')) {
+    $('#pointUsageForm').onsubmit = event => { event.preventDefault(); loadPointUsage(0, true); };
+    $$('.pu [data-preset]').forEach(button => button.onclick = () => {
+        [$('#puFrom').value, $('#puTo').value] = PU_PRESETS[button.dataset.preset](puToday());
+        loadPointUsage(0);
+    });
+    $$('.pu input[name=puKind]').forEach(radio => radio.onchange = () => loadPointUsage(0));
+    $('#puCategory').onchange = () => loadPointUsage(0);
+    $('#puFrom').oninput = $('#puTo').oninput = puMarkPreset;
+    $('#puProdMore').onclick = () => { pu.allProducts = !pu.allProducts; puProducts(); };
+}
+TAB_LOADERS.pointusage = () => loadPointUsage(0);
+
 // ============================================================================
 // PITR 복원 / 마이그레이션
 // ============================================================================
@@ -3048,125 +3294,80 @@ $('#rawSave').onclick = async () => {
 TAB_LOADERS.raw = () => rawLoad();
 
 // ============================================================================
-// 핫딜 미리보기
+// 암시장 매물 설정
 // ============================================================================
-const GOODS_LABEL = { gold: '골드', garnet: '가넷' };
-const SEG_LABEL = ['00:00–06:00', '06:00–12:00', '12:00–18:00', '18:00–24:00'];
-
-function renderHdSlot(slot, slotIdx) {
-    const wrap = el('div', { class: 'hd-prev-slot ' + (slotIdx === 0 ? 'fire' : 'lightning') });
-    if (slot.iconUrl) wrap.appendChild(el('img', { class: 'hd-prev-icon', src: slot.iconUrl, alt: '' }));
-    const nameRow = el('div', { class: 'hd-prev-name' }, slot.name + (slot.count > 1 ? ` ×${slot.count}` : ''));
-    const priceRow = el('div', { class: 'hd-prev-price' },
-        GOODS_LABEL[slot.goods] || slot.goods,
-        ' ',
-        Number(slot.amount).toLocaleString()
-    );
-    wrap.appendChild(nameRow);
-    wrap.appendChild(priceRow);
-    return wrap;
-}
-
-function renderHdPeriod(item) {
-    const seg = Number(item.periodKey.split('-')[3]);
-    const card = el('div', { class: 'hd-prev-card' });
-    card.appendChild(el('div', { class: 'hd-prev-header' },
-        el('span', { class: 'hd-prev-time' }, SEG_LABEL[seg] || item.periodKey),
-        el('span', { class: 'hd-prev-sector' }, item.sectorName),
-        item.edited ? el('span', { class: 'hd-prev-edited' }, '편집됨') : null
-    ));
-    const slots = el('div', { class: 'hd-prev-slots' });
-    item.slots.forEach((s, i) => slots.appendChild(renderHdSlot(s, i)));
-    card.appendChild(slots);
-    if (Array.isArray(item.options) && item.options.length) {
-        card.appendChild(el('button', { class: 'btn', style: 'width:100%;margin-top:8px', onclick: () => openHdEditModal(item) }, '편집'));
-    }
-    return card;
-}
-
-function hdOptionMatchesSlot(opt, slot) {
-    return opt.id === slot.itemId && opt.count === slot.count && opt.goods === slot.goods && opt.amount === slot.amount;
-}
-
-function openHdEditModal(item) {
-    const seg = Number(item.periodKey.split('-')[3]);
-    const bg = el('div', { class: 'modal-bg show' });
-    bg.onclick = e => { if (e.target === bg) bg.remove(); };
-    const modal = el('div', { class: 'modal' });
-    modal.appendChild(el('h3', null, '핫딜 편집 — ' + item.periodKey.slice(0, 10) + ' ' + (SEG_LABEL[seg] || '')));
-    const body = el('div', { class: 'body', style: 'padding:16px;display:flex;flex-direction:column;gap:14px' });
-    body.appendChild(el('div', { class: 'muted' }, '섹터: ' + item.sectorName + ' (변경 불가)'));
-    const selects = [];
-    [0, 1].forEach(slotIdx => {
-        const cur = item.slots[slotIdx];
-        const sel = el('select', { style: 'width:100%' });
-        item.options.forEach((opt, oi) => {
-            const o = el('option', { value: String(oi) }, opt.label);
-            if (cur && hdOptionMatchesSlot(opt, cur)) o.selected = true;
-            sel.appendChild(o);
+const BM_CURRENCY_LABEL = { gold: '골드', garnet: '가넷' };
+async function loadBlackMarketAdmin() {
+    const result = $('#bmAdminResult');
+    result.replaceChildren(el('div', { class: 'muted' }, '불러오는 중...'));
+    try {
+        const date = $('#bmAdminDate').value;
+        const data = await api('/api/admin/black-market' + (date ? '?date=' + encodeURIComponent(date) + '&round=' + $('#bmAdminRound').value : ''));
+        $('#bmAdminDate').value = data.date;
+        $('#bmAdminDate').min = data.today;
+        $('#bmAdminRound').value = data.round;
+        result.replaceChildren();
+        if (data.missingItems.length) result.appendChild(el('p', { class: 'err' }, '운영 아이템에 없는 품목: ' + data.missingItems.join(', ')));
+        const grid = el('div', { class: 'hd-prev-grid' });
+        data.lots.forEach(lot => {
+            const section = el('div', { class: 'hd-prev-card' });
+            section.appendChild(el('h3', null, (lot.kind === 'card' ? '카드' : '아이템') + ' / ' + BM_CURRENCY_LABEL[lot.currency]));
+            const image = lot.display.imageUrl || lot.display.iconUrl;
+            if (image) section.appendChild(el('img', { src: image, alt: lot.display.name, style: 'height:130px;max-width:100%;object-fit:contain;display:block;margin:12px auto' }));
+            section.appendChild(el('p', null, lot.display.name + (lot.edited ? ' (관리자 지정)' : ' (랜덤)')));
+            const bids = el('div', { class: 'bm-admin-bids' }, el('h3', null, data.status === 'open' ? '현재 입찰 ' + lot.bids.length + '명' : '입찰 현황'));
+            if (lot.bids.length) {
+                bids.appendChild(el('table', { 'aria-label': lot.display.name + ' 입찰 현황' },
+                    el('thead', null, el('tr', null, ...['순위', '입찰자', '입찰금 (' + BM_CURRENCY_LABEL[lot.currency] + ')'].map(label => el('th', { scope: 'col' }, label)))),
+                    el('tbody', null, ...lot.bids.map((bid, index) => el('tr', null,
+                        el('td', null, index + 1), el('td', null, bid.name), el('td', null, bid.amount.toLocaleString('ko-KR')))))));
+            } else {
+                bids.appendChild(el('p', { class: 'muted' }, data.status === 'scheduled' ? '개장 전입니다.' : data.status === 'settled' ? '정산이 완료되었습니다.' : '현재 입찰이 없습니다.'));
+            }
+            section.appendChild(bids);
+            const search = el('input', { placeholder: '캐릭터 또는 아이템 검색', 'aria-label': '매물 검색', disabled: lot.locked });
+            const select = el('select', { style: 'width:100%;margin:8px 0', 'aria-label': '지정할 매물', disabled: lot.locked });
+            const quantity = lot.kind === 'item' ? el('input', { id: 'bm-admin-count-' + lot.sector, type: 'number', min: 1, step: 1, max: Number.MAX_SAFE_INTEGER, value: lot.count, disabled: lot.locked, 'aria-label': '아이템 수량' }) : null;
+            const matches = option => option.payload.id === lot.payload.id && (lot.kind !== 'card' || option.payload.star === lot.payload.star && option.payload.type === lot.payload.type);
+            const fill = () => {
+                select.replaceChildren();
+                lot.options.forEach((option, index) => {
+                    const label = option.display.name;
+                    if (search.value && !label.includes(search.value)) return;
+                    const entry = el('option', { value: String(index) }, label);
+                    entry.selected = matches(option); select.appendChild(entry);
+                });
+            };
+            search.oninput = fill; fill();
+            section.appendChild(search); section.appendChild(select);
+            if (quantity) {
+                section.appendChild(el('label', { for: quantity.id }, '수량'));
+                section.appendChild(quantity);
+                select.onchange = () => { quantity.value = '1'; };
+            }
+            const save = async reset => {
+                const option = lot.options[Number(select.value)];
+                if (!reset && (!option || select.value === '')) return showAlert('매물을 선택해주세요.');
+                const count = quantity ? Number(quantity.value) : 1;
+                if (!reset && (!Number.isSafeInteger(count) || count < 1)) return showAlert('수량은 1 이상의 정수로 입력해주세요.');
+                const title = option && option.display.name + (count > 1 ? ' x' + count : '');
+                if (!(await showConfirm(data.date + ' ' + data.round + ':00 회차 매물을 ' + (reset ? '랜덤 로테이션으로 되돌릴까요?' : title + '(으)로 지정할까요?')))) return;
+                try {
+                    await api('/api/admin/black-market', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: data.date, round: data.round, sector: lot.sector, reset, ...(reset ? {} : { payload: option.payload, count }) }) });
+                    await loadBlackMarketAdmin();
+                } catch (error) { showAlert(error.message); }
+            };
+            section.appendChild(el('div', { class: 'bar' },
+                el('button', { class: 'btn primary', disabled: lot.locked, onclick: () => save(false) }, '매물 지정'),
+                el('button', { class: 'btn', disabled: lot.locked || !lot.edited, onclick: () => save(true) }, '랜덤으로 복원')));
+            if (lot.locked) section.appendChild(el('p', { class: 'muted' }, '입찰이 시작되었거나 마감된 매물입니다. 다음 회차를 선택해주세요.'));
+            grid.appendChild(section);
         });
-        selects.push(sel);
-        body.appendChild(el('div', null, el('label', null, '슬롯 ' + (slotIdx + 1)), sel));
-    });
-    modal.appendChild(body);
-    const foot = el('div', { class: 'foot', style: 'display:flex;gap:8px;justify-content:flex-end' });
-    foot.appendChild(el('button', { class: 'btn', onclick: () => bg.remove() }, '취소'));
-    if (item.edited) foot.appendChild(el('button', { class: 'btn danger', onclick: () => hdResetOverride(item.periodKey, bg) }, '기본값으로 되돌리기'));
-    foot.appendChild(el('button', { class: 'btn primary', onclick: () => hdSaveOverride(item, selects, bg) }, '저장'));
-    modal.appendChild(foot);
-    bg.appendChild(modal);
-    document.body.appendChild(bg);
+        result.appendChild(grid);
+    } catch (error) { result.replaceChildren(el('div', { class: 'err' }, error.message)); }
 }
-
-async function hdSaveOverride(item, selects, bg) {
-    const picks = selects.map(sel => {
-        const opt = item.options[Number(sel.value)];
-        return { id: opt.id, count: opt.count, goods: opt.goods, amount: opt.amount };
-    });
-    try {
-        await api('/api/admin/hotdeal/override', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periodKey: item.periodKey, picks }) });
-        bg.remove();
-        loadHdPreview();
-    } catch (e) { showAlert(e.message); }
-}
-
-async function hdResetOverride(periodKey, bg) {
-    if (!(await showConfirm('이 핫딜을 기본값(시드 생성)으로 되돌릴까요?'))) return;
-    try {
-        await api('/api/admin/hotdeal/override/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periodKey }) });
-        bg.remove();
-        loadHdPreview();
-    } catch (e) { showAlert(e.message); }
-}
-
-async function loadHdPreview() {
-    const date = $('#hdDate').value;
-    const seg = $('#hdSeg').value;
-    const result = $('#hdResult');
-    result.innerHTML = '<div class="muted">불러오는 중...</div>';
-    try {
-        let url = '/api/admin/hotdeal/preview';
-        if (date) { url += '?date=' + encodeURIComponent(date); if (seg !== '') url += '&seg=' + seg; }
-        const data = await api(url);
-        result.innerHTML = '';
-        if (Array.isArray(data)) {
-            const grid = el('div', { class: 'hd-prev-grid' });
-            data.forEach(item => grid.appendChild(renderHdPeriod(item)));
-            result.appendChild(grid);
-        } else {
-            result.appendChild(renderHdPeriod(data));
-        }
-    } catch (e) {
-        result.innerHTML = '<div class="muted err">' + e.message + '</div>';
-    }
-}
-
-// set default date to today (local)
-const _hdTodayLocal = new Date();
-$('#hdDate').value = _hdTodayLocal.getFullYear() + '-' + String(_hdTodayLocal.getMonth() + 1).padStart(2, '0') + '-' + String(_hdTodayLocal.getDate()).padStart(2, '0');
-
-$('#hdPreviewBtn').onclick = loadHdPreview;
-TAB_LOADERS.hotdealpreview = () => loadHdPreview();
+$('#bmAdminReload').onclick = loadBlackMarketAdmin;
+TAB_LOADERS.blackmarket = loadBlackMarketAdmin;
 TAB_LOADERS.raw = () => rawLoad();
 
 // ============================================================================

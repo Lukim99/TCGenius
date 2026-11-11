@@ -1,0 +1,22 @@
+{
+    email {$ACME_EMAIL}
+}
+
+rpgenius.kro.kr {
+    # kro.kr shares Let's Encrypt's registered-domain issuance limit.
+    tls {
+        issuer zerossl
+    }
+    @maintenance file {
+        root /var/lib/rpgenius
+        try_files maintenance
+    }
+    handle @maintenance {
+        header Retry-After 30
+        header Cache-Control no-store
+        respond "Server update in progress. Please retry shortly." 503
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3000
+    }
+}

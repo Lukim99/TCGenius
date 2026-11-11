@@ -298,6 +298,38 @@ test('글버지는 시전자별로 갱신·만료·회복하며 다른 보호막
     } finally { a.sseRes = null; clock.mock.restore(); }
 });
 
+test('궁극기 컷씬은 공격·소환·강화 시전에 한 번 전달되고 실패한 사용과 재접속에서는 나오지 않는다', async () => {
+    const room = await battle(), member = room.members[0];
+    let sent = '', watched = '';
+    member.sseRes = { write: text => { sent += text; } };
+    room.spectators = new Map();
+    room.spectators.set('cutscene-observer', { res: { write: text => { watched += text; } } });
+    const events = text => [...text.matchAll(/event: skill-cast\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+    try {
+        room.awaitingChoices = false;
+        for (const [name, character] of [['유드 알레프', '빵귤'], ['수나타 소환', '이익태'], ['범인은 이 안에', '흠시원']]) {
+            const raw = require('../DB/RPGenius/Skills.json').find(skill => skill.name === name);
+            member.card = { name: character, type: '각성', star: 6 };
+            member.skills = [name];
+            member.skillDefs[name] = { source: 'mainCard', raw, star: 6, mp: 1, cd: 120 };
+            member.runtime.actionUntil = 0;
+            assert.equal(party.useSkill(member.name, name).ok, true);
+            assert.ok(party.useSkill(member.name, name).error, '쿨타임 실패는 연출을 만들지 않는다');
+        }
+        const casts = events(sent);
+        assert.deepEqual(casts.map(event => event.cardName), ['빵귤', '이익태', '흠시원']);
+        assert.equal(new Set(casts.map(event => event.id)).size, 3);
+        assert.deepEqual(events(watched), casts, '관전자에게도 같은 시전 사건을 전달한다');
+        assert.ok(casts.every(event => event.action === 'skill' && event.at > 0 && event.roomId === room.id && event.phaseIndex === room.phaseIndex));
+        assert.ok(!JSON.stringify(party.getMyRoomSnapshot(member.name)).includes('skill-cast'));
+        member.runtime.actionUntil = 0; member.runtime.cooldownsUntil['범인은 이 안에'] = 0; member.runtime.mp = 0;
+        assert.ok(party.useSkill(member.name, '범인은 이 안에').error);
+        assert.equal(events(sent).length, 3, 'MP 부족 시 연출을 만들지 않는다');
+    } finally {
+        room.awaitingChoices = true; member.sseRes = null; room.spectators.delete('cutscene-observer');
+    }
+});
+
 test('파티 워뇨띠 각성·심해의 갑옷·오로라는 각자 갱신되고 만료된다', async () => {
     const room = await battle('normal', 2), [w, ally] = room.members;
     Object.assign(w.baseSnapshot.stats, { wonyoddi: true, randoStar: 4, randoEquipment: {}, awakening: { effect: 'modeSwitch', value: 777 } });
@@ -1109,7 +1141,7 @@ test('아티팩트 등급별 조건 종류는 중복 없고, 발현도와 네 �
     ] } };
     const user = { main_card: { id: 0, star: 6, type: '일반' } };
     const all = artifacts.evaluate(equip, '레전더리', user, {}, () => null);
-    assert.equal(all.manifestation, 30); assert.equal(all.values.finalDamage, .08); assert.equal(all.values.finalAtk, .12);
+    assert.equal(all.manifestation, 30); assert.equal(all.values.finalDamage, .08); assert.equal(all.values.atk, .12);
     assert.equal(all.values.extraDamage, .1); assert.equal(all.values.cooldown, .1);
     user.main_card.type = '전직';
     const partial = artifacts.evaluate(equip, '레전더리', user, {}, () => null);
@@ -1170,7 +1202,7 @@ test('실제 스탯·장착·프리셋 경로에서 아티팩트는 전용 슬�
     const current = rpg.calculateUserStats(user);
     assert.equal(current.hp, Math.round(baseline.hp * 1.1)); assert.equal(current.pnt, Math.round(baseline.pnt * 1.1));
     assert.ok(Math.abs(current.crit - baseline.crit - .1) < 1e-10);
-    assert.equal(current.atk, Math.round(baseline.atk * 1.12));
+    assert.equal(current.atk, Math.round(baseline.baseAtk * (1 + baseline.plusStats.atk + .12)));
     user.blessings = { rukim: Date.now() - 1000 }; user.hp = current.hp;
     rpg.calculateUserStats(user);
     assert.equal(user.hp, current.hp, '다른 축복이 만료돼도 아티팩트로 늘어난 HP를 잃지 않는다');
@@ -1695,10 +1727,10 @@ test('카드 추가 보상은 문서 성급과 유효한 일반·전직·각성 
     for (const id of ['mansionNormal', 'mansionHard']) for (const entry of quests.find(quest => quest.id === id).rewards.bonus.filter(entry => entry.type === '캐릭터카드')) {
         const result = party.__test.grantPartyQuestPackReward(user, entry, summary); assert.equal(result.card.star + 1, entry.display_star);
     }
-    const atk = rpg.calculateUserStats(user).atk;
+    const stats = rpg.calculateUserStats(user);
     rpg.addInventoryItem(user, registration.potionId, 1);
     assert.match(await rpg.useItem(user, '투신의 함성 포션', '1'), /사용/);
-    assert.equal(rpg.calculateUserStats(user).atk, Math.round(atk * 1.25));
+    assert.equal(rpg.calculateUserStats(user).atk, Math.round(stats.baseAtk * (1 + stats.plusStats.atk + .25)));
 });
 
 test('시련 보호막의 상한·하한과 실패 판정은 노말·하드·나이트메어에 각각 적용된다', async () => {
@@ -1958,14 +1990,69 @@ test('두 펫과 최종 공격력 정보 표시는 지정 효과를 반영하고
     assert.ok(Math.abs(rpg.calculateUserStats(user).gold - baseline.gold - .1) < 1e-10);
     user.equipments.pet = [{ id: registration.pets.조각, level: 0 }]; await user.save();
     const profile = (await request('/api/profile')).data;
-    assert.ok(profile.statGroups.flatMap(group => group.items).some(item => item.label === '최종 공격력 증가' && item.value === '1%'));
-    const room = await battle(); const member = room.members[0]; member.baseSnapshot.stats.atk = 1000;
+    const expectedPercent = Math.round(rpg.calculateUserStats(user).plusStats.atk * 1000) / 10;
+    assert.ok(profile.statGroups.flatMap(group => group.items).some(item => item.label === '공격력' && item.sub.endsWith('· +' + expectedPercent + '%')));
+    assert.ok(!profile.statGroups.flatMap(group => group.items).some(item => item.label === '최종 공격력 증가'));
+    const room = await battle(); const member = room.members[0];
+    Object.assign(member.baseSnapshot.stats, { atk: 1200, baseAtk: 1000, plusStats: { atk: .20 } });
     member.potions = [{ name: '투신의 함성 포션', count: 2 }];
-    assert.equal((await party.usePotion(member.name, '투신의 함성 포션')).ok, true); assert.equal(member.baseSnapshot.stats.atk, 1250);
+    assert.equal((await party.usePotion(member.name, '투신의 함성 포션')).ok, true); assert.equal(member.baseSnapshot.stats.atk, 1450);
     member.runtime.potionUntil = 0;
     assert.equal((await party.usePotion(member.name, '투신의 함성 포션')).ok, true);
-    const buff = member.runtime.buffs.find(buff => buff.id === 'battleCry'); assert.equal(buff.remain, 120); assert.equal(member.baseSnapshot.stats.atk, 1250);
-    buff.remain = .2; tick(room); assert.equal(member.baseSnapshot.stats.atk, 1000);
+    const buff = member.runtime.buffs.find(buff => buff.id === 'battleCry'); assert.equal(buff.remain, 120); assert.equal(member.baseSnapshot.stats.atk, 1450);
+    buff.remain = .2; tick(room); assert.equal(member.baseSnapshot.stats.atk, 1200);
+});
+
+test('기존 펫·아티팩트 finalAtk 저장값은 원본 변경 없이 공격력%로 합산한다', async () => {
+    const user = await reset();
+    user.statPointStats.atk = 20;
+    const baseline = rpg.calculateUserStats(user);
+    const pet = rpg.getDataCache('Pet')[registration.pets.조각];
+    const previous = pet.plusStat;
+    pet.plusStat = { atk: .04, finalAtk: .03 };
+    try {
+        user.equipments.pet = [{ id: registration.pets.조각, level: 0 }];
+        const equip = rpg.grantArtifact(user, '레전더리');
+        equip.artifact.options = [
+            { type: 'mainStar', condition: 7, ability: 'finalAtk', n: 10 },
+            { type: 'character', condition: 0, ability: 'atk', n: 10 },
+            { type: 'cardType', condition: '일반', ability: 'crit', n: 10 }
+        ];
+        assert.match(rpg.equipItemByNumber(user, 1), /장착/);
+        const saved = structuredClone(equip.artifact);
+        const meta = {}, stats = rpg.calculateUserStats(user, meta);
+        const expected = baseline.plusStats.atk + .04 + .03 + .10 + .10 + .12;
+        assert.ok(Math.abs(meta.plusStats.atk - expected) < 1e-10);
+        assert.equal(stats.atk, Math.round(baseline.baseAtk * (1 + expected)));
+        assert.equal(meta.plusStats.finalAtk, undefined);
+        assert.equal(stats.finalAtk, undefined);
+        assert.deepEqual(pet.plusStat, { atk: .04, finalAtk: .03 });
+        assert.deepEqual(equip.artifact, saved);
+        const view = artifacts.view(equip, '레전더리', user, stats, () => null, []);
+        assert.equal(view.options[0].ability, 'atk');
+        assert.equal(view.options[0].abilityLabel, '공격력');
+    } finally { pet.plusStat = previous; }
+});
+
+test('공격력 정보는 감소율·0 공격력에서도 원래 수치와 합산%를 표시하고 전투력은 유한하다', async () => {
+    const user = await reset();
+    user.card_slot = []; user.equippedTitle = null; user.statTitle = null; user.statPointStats = {};
+    const baseline = rpg.calculateUserStats(user);
+    const pet = rpg.getDataCache('Pet')[registration.pets.조각], previous = pet.plusStat;
+    user.equipments.pet = [{ id: registration.pets.조각, level: 0 }];
+    try {
+        for (const percent of [-.50, -1, .75]) {
+            pet.plusStat = { atk: percent - baseline.plusStats.atk };
+            await user.save();
+            const profile = (await request('/api/profile')).data;
+            const attack = profile.statGroups.flatMap(group => group.items).find(item => item.label === '공격력');
+            assert.equal(attack.value, Math.round(baseline.baseAtk * (1 + percent)).toLocaleString('en-US'));
+            assert.equal(attack.sub, '수치 ' + Math.round(baseline.baseAtk).toLocaleString('en-US') + ' · ' + (percent >= 0 ? '+' : '') + percent * 100 + '%');
+            const power = rpg.calculateCombatPower(user);
+            assert.ok(Number.isFinite(power.total));
+            assert.ok(Number.isFinite(power.offense));
+        }
+    } finally { pet.plusStat = previous; }
 });
 
 function birthdayClock(t) {
@@ -2218,7 +2305,10 @@ test('생일 선물은 중복 요청에서 한 병만 소모하며 생존자 전
     assert.ok(rewards[0].items.some(it => it.iconUrl?.includes(encodeURIComponent('케이크.png'))));
     assert.deepEqual(rewards[0].items.map(item => item.count), [1, 1, 1006, 1, 10, 3, 1]);
     const user = await rpg.getRPGUserByName(seeds[0].name); assert.equal(user.titleProgress[birthday.CLAIM], true);
-    for (const [name, count] of [['9성 카드팩', 1], ['케이크', 10], ['고급 장비 보호권', 3], ['럭키카드30%', 1]]) {
+    assert.equal(rpg.getInventoryItemCount(user, data.Item.findIndex(item => item?.name === '9성 카드팩')), 0);
+    assert.equal(user.inventory.card.length, 1); assert.equal(user.inventory.card[0].star, 8);
+    assert.deepEqual(records.get(user.id).inventory.card, user.inventory.card);
+    for (const [name, count] of [['케이크', 10], ['고급 장비 보호권', 3], ['럭키카드30%', 1]]) {
         const id = data.Item.findIndex(item => item?.name === name);
         assert.equal(rpg.getInventoryItemCount(user, id), count, name);
         assert.equal(records.get(user.id).inventory.item.find(item => item.id === id).count, count, name);
@@ -2300,4 +2390,35 @@ test('엔진을 다시 불러오면 보관한 거래 품목을 복구하고 확�
     assert.equal((await recovered.getRPGUserByName(user.name)).gold, 1000000000);
     assert.deepEqual((await recovered.getRPGUserByName(user.name)).inventory.equipment[0], original);
     await rpg.reloadAllUsersFromDb(true);
+});
+
+
+test('카드팩 거래는 취소 시 원품을 반환하고 성사 시 수령자에게 카드 지급·초과 폐기한다', async () => {
+    for (const cancel of [true, false]) {
+        let state = await prepareDirectTrade();
+        const sender = await rpg.getRPGUserByName(seeds[0].name), receiver = await rpg.getRPGUserByName(seeds[1].name);
+        const id = data.Item.findIndex(item => item?.name === '9성 카드팩');
+        rpg.addInventoryItem(sender, id, 2); receiver.maxCardLimit = 1;
+        await sender.save(); await receiver.save();
+        const candidate = (await request('/api/trade/inventory')).data.items.find(item => item.id === id);
+        const registered = await request('/api/trade/register', { ...tradeVersion(state), kind: 'item', itemId: id, count: 2, version: candidate.version });
+        assert.equal(registered.status, 200); state = registered.data.state;
+        if (cancel) {
+            assert.equal((await request('/api/trade/cancel', tradeVersion(state))).status, 200);
+            const restored = await rpg.getRPGUserByName(sender.name);
+            assert.equal(rpg.getInventoryItemCount(restored, id), 2); assert.equal(restored.inventory.card.length, 0);
+        } else {
+            assert.equal((await request('/api/trade/confirm', tradeVersion(state))).status, 200);
+            const completed = await request('/api/trade/confirm', tradeVersion(state), receiver.name);
+            assert.equal(completed.status, 200); assert.equal(completed.data.state.result.status, 'completed');
+            const received = await rpg.getRPGUserByName(receiver.name);
+            assert.equal(rpg.getInventoryItemCount(received, id), 0);
+            assert.equal(received.inventory.card.length, 1); assert.equal(received.inventory.card[0].star, 8);
+            assert.deepEqual(records.get(received.id).inventory.card, received.inventory.card);
+            assert.equal(rpg.getInventoryItemCount(await rpg.getRPGUserByName(sender.name), id), 0);
+            const snapshot = structuredClone(received.inventory);
+            assert.equal((await request('/api/trade/confirm', tradeVersion(state), receiver.name)).status, 409);
+            assert.deepEqual((await rpg.getRPGUserByName(receiver.name)).inventory, snapshot);
+        }
+    }
 });
