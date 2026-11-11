@@ -967,7 +967,7 @@ function attachMailGiftIcons(g) {
     else if (g.type === 'item') {
         const items = rpgenius.getDataCache('Item', []);
         const a = getItemDisplayAssets(items[g.id]);
-        g.iconUrl = a.iconUrl; g.frameUrl = a.frameUrl;
+        g.iconUrl = a.iconUrl; g.frameUrl = a.frameUrl; g.itemType = items[g.id] ? items[g.id].type : null;
     } else if (g.type === 'equipment') {
         const eq = rpgenius.getDataCache('Equipment', {});
         const data = eq[g.equipType] && eq[g.equipType][g.equipId];
@@ -1001,13 +1001,13 @@ server.get('/api/mail/giftable', requireUser, async (req, res) => {
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const equipment = buildInventoryEquipment(user)
             .filter(e => !e.equipped && !e.noTrade)
-            .map(e => ({ number: e.number, name: e.name, rarity: e.rarity, level: e.level, iconUrl: e.iconUrl, frameUrl: e.frameUrl }));
+            .map(e => ({ number: e.number, name: e.name, rarity: e.rarity, level: e.level, typeLabel: e.typeLabel, iconUrl: e.iconUrl, frameUrl: e.frameUrl }));
         const pets = buildInventoryPets(user)
             .filter(p => p.source === 'inventory' && p.tradeCount > 0 && !p.expired)
             .map(p => ({ index: p.index, name: p.name, rarity: p.rarity, level: p.level, iconUrl: p.iconUrl, frameUrl: p.frameUrl }));
         const items = buildInventoryItems(user)
             .filter(i => !i.noTrade)
-            .map(i => ({ id: i.id, name: i.name, count: i.count, iconUrl: i.iconUrl, frameUrl: i.frameUrl }));
+            .map(i => ({ id: i.id, name: i.name, count: i.count, type: i.type, desc: i.desc, iconUrl: i.iconUrl, frameUrl: i.frameUrl }));
         const avatars = rpgenius.getUserAvatars(user)
             .filter(entry => entry && !rpgenius.getAvatarTradeBlockReason(user, entry.name, entry.id))
             .map(entry => Object.assign({ ...entry, grade: rpgenius.getAvatarGradeByName(entry.name) }, getAvatarDisplayAssets(entry.name)));
@@ -4651,7 +4651,7 @@ function directTradeOfferView(offer, viewer) {
         ticketCost: (offer.cards || []).reduce((sum, card) => sum + rpgenius.getCardTicketCost(card), 0),
         cards: (offer.cards || []).map(card => serializeCard(card, viewer)).filter(Boolean),
         equipment: (offer.equipments || []).map(payload => serializeAuctionEntry({ kind: 'equipment', payload }, viewer.name, context).display.equipmentDetail).filter(Boolean),
-        items: Object.entries(offer.items || {}).filter(([, count]) => count > 0).map(([id, count]) => ({ id: Number(id), count, name: items[id]?.name || '아이템', ...getItemDisplayAssets(items[id]) }))
+        items: Object.entries(offer.items || {}).filter(([, count]) => count > 0).map(([id, count]) => ({ id: Number(id), count, name: items[id]?.name || '아이템', type: items[id]?.type || null, ...getItemDisplayAssets(items[id]) }))
     };
 }
 
@@ -7246,23 +7246,24 @@ function buildBundleContents(data) {
             const cardId = entry.card_id != null ? Number(entry.card_id) : (entry.character_card_id != null ? Number(entry.character_card_id) : (entry.id != null ? Number(entry.id) : -1));
             const cardData = Number.isInteger(cardId) && cardId >= 0 ? characterCards[cardId] : null;
             // 성급 표기/이미지: 랜덤 범위는 최소 성급 기준 (지급 시 실제 롤은 grantPackReward에서)
-            let starText, starForImg;
+            let starText, starForImg, exactStar = true;
             if (entry.display_star != null || entry.star_display != null) {
                 const s = Number(entry.display_star != null ? entry.display_star : entry.star_display);
                 starText = s + '성'; starForImg = Math.max(0, s - 1);
             } else if (entry.star && typeof entry.star === 'object') {
                 const min = Number(entry.star.min || 1), max = Number(entry.star.max || entry.star.min || 1);
-                starText = (min === max ? min : min + '~' + max) + '성'; starForImg = Math.max(0, min - 1);
+                starText = (min === max ? min : min + '~' + max) + '성'; starForImg = Math.max(0, min - 1); exactStar = min === max;
             } else if (entry.range && typeof entry.range === 'object') {
                 const min = Number(entry.range.min || 1), max = Number(entry.range.max || entry.range.min || 1);
-                starText = (min === max ? min : min + '~' + max) + '성'; starForImg = Math.max(0, min - 1);
+                starText = (min === max ? min : min + '~' + max) + '성'; starForImg = Math.max(0, min - 1); exactStar = min === max;
             } else {
                 starForImg = Math.max(0, Number(entry.star || 0)); starText = (starForImg + 1) + '성';
             }
             const cardType = entry.card_type || entry.cardType || '일반';
             if (!cardData) return { type: '캐릭터카드', cardType, name: starText + ' ' + (cardType === '일반' ? '' : cardType + ' ') + '랜덤 캐릭터 카드', count: countStr, label: '🃏' };
             const iconUrl = getCardIconUrl({ id: cardId, star: starForImg, type: cardType, skin: entry.skin ? String(entry.skin) : '' }, { prestige: false });
-            return { type: '캐릭터카드', name: (['전직', '각성'].includes(cardType) ? '[' + cardType + '] ' : '') + cardData.name + ' ' + starText, count: countStr, iconUrl, frameUrl: null, label: iconUrl ? null : '🃏' };
+            const name = exactStar ? rpgenius.formatUserCard({ id: cardId, star: starForImg, type: cardType, skin: entry.skin ? String(entry.skin) : '' }) : '[' + starText + '] ' + (cardType === '일반' ? '' : cardType + ' ') + cardData.name;
+            return { type: '캐릭터카드', cardType, star: starForImg, name, count: countStr, iconUrl, frameUrl: null, label: iconUrl ? null : '🃏' };
         }
         return null;
     }).filter(Boolean);
@@ -7830,7 +7831,7 @@ function buildShopItemDisplay(shopItem) {
         const assets = getItemDisplayAssets(data);
         const bundleContents = data.type === '번들' ? buildBundleContents(data) : null;
         const choiceOptions = buildItemChoiceOptions(data);
-        return { name: data.name + (shopItem.count > 1 ? ' x' + shopItem.count : ''), iconUrl: assets.iconUrl, frameUrl: assets.frameUrl, bundleContents, choiceOptions };
+        return { name: data.name + (shopItem.count > 1 ? ' x' + shopItem.count : ''), itemType: data.type || null, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl, bundleContents, choiceOptions };
     }
     if (shopItem.type === '아바타') {
         const avatarName = String(shopItem.fashion || '').trim();
@@ -9461,7 +9462,7 @@ function renderUserDashboard(sess, opts) {
 <html lang="ko"><head><meta charset="utf-8"><title>RPGenius</title>
 <script>window.__INITIAL_PAGE=${JSON.stringify(initialPage)};</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/potential-forge.css"><link rel="stylesheet" href="/static/black-market.css"><link rel="stylesheet" href="/static/shop-scene.css"><link rel="stylesheet" href="/static/orb-fusion.css"></head><body>
+<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/potential-forge.css"><link rel="stylesheet" href="/static/black-market.css"><link rel="stylesheet" href="/static/shop-scene.css"><link rel="stylesheet" href="/static/market-stage.css"><link rel="stylesheet" href="/static/orb-fusion.css"></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="otpBtn" style="padding:8px 12px;font-size:13px" title="2단계 인증 설정">OTP</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
@@ -9642,24 +9643,7 @@ function renderUserDashboard(sess, opts) {
     </section>
   </div>
   <div class="page" data-page="낚시"><section id="fishingPanel"></section></div>
-  <div class="page" data-page="mail">
-    <div class="mailbox" id="mailbox">
-      <div class="mailbox-list-pane">
-        <div class="mailbox-head">
-          <h2><svg class="mail-head-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>메일함</h2>
-          <button class="primary mail-compose-btn" id="mailComposeBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>메일 쓰기</button>
-        </div>
-        <div class="mailbox-list" id="mailList"></div>
-        <div class="mail-pager" id="mailPager" style="display:none"></div>
-      </div>
-      <div class="mailbox-detail-pane" id="mailDetailPane">
-        <button class="mail-back-btn" id="mailBackBtn">‹ 목록</button>
-        <div class="mail-detail-empty" id="mailDetailEmpty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><p>왼쪽에서 메일을 선택하세요.</p></div>
-        <div class="mail-detail" id="mailDetail" style="display:none"></div>
-      </div>
-    </div>
-  </div>
-  <div class="mail-modal-bg" id="mailModalBg"><div class="mail-modal" id="mailModal"></div></div>
+  <div class="page" data-page="mail"><section class="market-stage-host" id="mailStageRoot"></section></div>
   <div class="page" data-page="preset">
     <section class="panel"><h2 style="margin:0 0 14px">프리셋</h2><div id="presetRoot"></div></section>
   </div>
@@ -9757,7 +9741,7 @@ function renderUserDashboard(sess, opts) {
     </aside>
     <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>
   </section></div>
-  <div class="page dt-page" data-page="directtrade"><section id="directTradeRoot"></section></div>
+  <div class="page" data-page="directtrade"><section class="market-stage-host" id="directTradeRoot"></section></div>
   <div class="page" data-page="shop"><section class="panel shop-wrap"><div id="shopBody"></div></section></div>
   <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="boSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="avatar">아바타</button><button data-filter="mine">내 구매</button></div><div class="seg" id="boCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div><div id="boPager" class="auc-pager" style="display:none"></div></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
@@ -9791,7 +9775,9 @@ function renderUserDashboard(sess, opts) {
 <link rel="stylesheet" href="/static/unique-avatar.css">
 <script src="/static/unique-avatar-ui.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/market-stage.js"></script>
 <script src="/static/direct-trade.js"></script>
+<script src="/static/mail-stage.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }

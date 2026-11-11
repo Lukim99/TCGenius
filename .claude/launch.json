@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["scripts/combat-fx-lab/server.js"],
       "port": 4173
+    },
+    {
+      "name": "market-stage-lab",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/market-stage-lab/server.js"],
+      "port": 4174
     }
   ]
 }
