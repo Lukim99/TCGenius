@@ -55,16 +55,20 @@ for (const [effectId, spec] of combatFx.partSpecs()) {
     }
 }
 
-// 세 전투 화면이 엔진을 싣고, 엔진이 없으면 기존 표시로 남아야 한다.
+// 전투 화면들이 엔진을 싣고, 엔진이 없으면 기존 표시로 남아야 한다.
 const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
 assert.strictEqual(server.split('<script src="/static/combat-fx.js"></script>').length - 1, 4, '필드, 일반 필드, 월드보스, PVP 페이지가 연출 엔진을 싣는다.');
 assert.strictEqual(server.split('<script src="/static/combat-fx-scenes.js"></script>').length - 1, 4, '네 페이지가 장면집을 싣는다.');
 assert.strictEqual(server.split('summons: getFieldSummonViews(user),').length - 1, 3, '필드와 월드보스 상태가 곁에 둘 소환수를 내려보낸다.');
+// 천상과 지옥(낙원)은 같은 hfield.js를 내장해 쓰므로, 그 페이지도 hfield.js보다 먼저 엔진과 장면집을 싣는다.
+const paradisePage = fs.readFileSync(path.join(ROOT, 'paradise_web.js'), 'utf8');
+assert.ok(/combat-effects\.js" defer><\/script><script src="\/static\/combat-fx\.js" defer><\/script><script src="\/static\/combat-fx-scenes\.js" defer><\/script>[^`]*\/static\/hfield\.js"/.test(paradisePage), '천상과 지옥 페이지도 hfield.js보다 먼저 연출 엔진과 장면집을 싣는다.');
+assert.ok(/const audio = embedded \? \{[\s\S]{0,160}get muted\(\) \{ return !!window\.ParadiseAudio\?\.muted; \}/.test(fs.readFileSync(path.join(ROOT, 'public', 'hfield.js'), 'utf8')), '낙원에서는 연출 효과음이 낙원의 소리 끄기를 따른다.');
 for (const file of ['hfield.js', 'pvp.js', 'worldboss.js']) {
     const client = fs.readFileSync(path.join(ROOT, 'public', file), 'utf8');
     assert.ok(/combatFx\s*&&\s*effectCatalog\s*\?\s*combatFx\.create\(/.test(client), file + '는 연출 엔진을 만들 수 없을 때를 대비해야 한다.');
     assert.ok(client.includes('combatFx.companions(this.fx,'), file + '는 소환수를 곁에 띄운다.');
     assert.ok(client.includes('effectSprites'), file + '는 엔진이 없을 때 쓰는 기존 그림 표시를 지우지 않는다.');
-    assert.ok(/ultimateCutscene\?\.play\([^\n]*\|\|\s*0;[\s\S]{0,160}?\.hold\(cut\)/.test(client), file + '는 궁극기 컷씬이 나오면 그 사건의 연출을 컷씬 뒤로 미룬다.');
+    assert.ok(/ultimateCutscene\?\.play\(/.test(client) && !/\.hold\(/.test(client), file + '는 궁극기 컷씬과 그 사건의 연출을 함께 시작한다(사용자 지정 2026-11-12).');
 }
 console.log('combat fx scenes test passed (' + effectIds.length + ' effects, ' + files.size + ' sounds)');

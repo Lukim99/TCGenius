@@ -652,9 +652,8 @@
             else if (event.action === 'skill' && audience !== 'actor') this.castEffect(target.x, target.y, event, 'target');
         }
         animate(event, previous) {
-            // 궁극기 컷씬이 화면을 가리는 동안에는 이 사건의 연출을 미뤘다가, 컷씬이 끝나면 이어서 재생한다.
+            // 궁극기 컷씬과 이 사건의 연출은 함께 시작한다.
             const cut = ultimateCutscene?.play(event, previous?.player?.cardName || this.state?.player?.cardName) || 0;
-            if (cut && this.fx) this.fx.hold(cut);
             const now = performance.now();
             const flight = embedded && event.skillName === '돌 던지기' && !reducedMotion ? 280 : 0;
             const skillAudience = event.action === 'skill' && effectCatalog && effectCatalog.skillTarget ? effectCatalog.skillTarget(event) : event.action === 'skill' ? 'target' : null;
@@ -1047,6 +1046,8 @@
     }
 
     const audio = embedded ? {
+        // 연출 엔진의 효과음도 낙원의 소리 끄기 설정을 따른다.
+        get muted() { return !!window.ParadiseAudio?.muted; },
         play(name, volume) { if (SOUNDS[name]) window.ParadiseAudio.playUrl(SOUNDS[name], volume); },
         hit() { this.play('hit' + Math.floor(Math.random() * 3), .48); }
     } : new FieldAudio();

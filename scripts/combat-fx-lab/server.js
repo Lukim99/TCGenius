@@ -57,6 +57,8 @@ function mockAction(pathname, body) {
     if (target !== 'actor' || skillName === '자폭') {
         const count = !isSkill && Math.random() < .35 ? 2 : skillName === '포커 못 하시네' ? 5 : 1, critical = Math.random() < .3;
         event.hits = Array.from({ length: count }, (_, index) => ({ damage: 20000 + Math.floor(Math.random() * 60000), critical: critical && index === 0, destiny: false, isComboHit: index > 0 && !isSkill }));
+        // 실제 서버는 장비 추가 피해 같은 줄마다 타격을 따로 보낸다. 스킬에도 그런 타격 하나를 붙여 둔다.
+        if (isSkill) event.hits.push({ damage: 8000 + Math.floor(Math.random() * 8000), critical: false, destiny: false, label: '고정 피해' });
         event.damage = event.hits.reduce((sum, hit) => sum + hit.damage, 0);
         event.criticalCount = critical ? 1 : 0;
         event.effectElement = isSkill ? null : ['화', '수', '명', '암', null][Math.floor(Math.random() * 5)];
@@ -129,7 +131,8 @@ function wbAction(pathname, body) {
     if (!isSkill || combatEffects.SKILL_TARGETS[skillName] !== 'actor') {
         const critical = Math.random() < .35;
         event.hits = [{ damage: 400000 + Math.floor(Math.random() * 600000), critical }];
-        event.damage = event.hits[0].damage; event.criticalCount = critical ? 1 : 0;
+        if (isSkill) event.hits.push({ damage: 80000 + Math.floor(Math.random() * 80000), critical: false, label: '고정 피해' });
+        event.damage = event.hits.reduce((sum, hit) => sum + hit.damage, 0); event.criticalCount = critical ? 1 : 0;
         event.effectElement = isSkill ? null : ['화', '명', null][Math.floor(Math.random() * 3)];
         wb.bossHp = Math.max(1, wb.bossHp - event.damage);
     }

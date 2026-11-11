@@ -650,7 +650,6 @@ void main(){
         // 주 장면이 대상에 닿을 시각. 같은 사건(같은 스킬이나 출처)의 이어지는 타격만 그 순간에 맞춰 터뜨린다.
         const staged = { until: 0, x: -1, key: '' };
         const eventKey = event => event ? String(event.skillName || event.source || event.action || '') : '';
-        let heldUntil = 0, holdQueued = false;
         function play(effectIds, options) {
             const o = options || {}, real = performance.now();
             if (recent.size > 160) recent.forEach((until, token) => { if (real > until + 3000) recent.delete(token); });
@@ -668,9 +667,7 @@ void main(){
             const lead = ranked.length ? resolve(ranked[0]).impact || 0 : 0, target = Number((o.dst || o.src).x);
             // 앞선 주 장면이 아직 대상에 닿지 않았으면, 뒤따르는 치명타나 속성 같은 곁장면은 그 순간에 맞춰 터뜨린다.
             const key = eventKey(o.event), waits = role === 'target' && real < staged.until && Math.abs(target - staged.x) < .08 && key === staged.key ? (staged.until - real) / 1000 : 0;
-            // 궁극기 컷씬처럼 화면을 가리는 연출이 있으면 그것이 끝난 뒤에 시작한다.
-            const held = Math.max(0, heldUntil - real) / 1000;
-            const base = Math.max(held, waits - lead);
+            const base = Math.max(0, waits - lead);
             let sounded = false, count = 0;
             ranked.forEach((effectId, index) => {
                 const minor = index > 0 || !!o.minor || waits > 0;
@@ -710,13 +707,6 @@ void main(){
             const later = () => root.requestIdleCallback ? root.requestIdleCallback(build, { timeout: 1500 }) : setTimeout(build, 200);
             if (entry.ready) later(); else if (!entry.failed) entry.waiting.push(ok => { if (ok) later(); });
         }
-        // 지금 처리 중인 사건이 요청하는 장면만 ms 뒤에 시작하게 한다(궁극기 컷씬이 끝난 뒤에 이어지도록).
-        // 같은 실행 흐름이 끝나면 풀리므로, 컷씬 동안 들어오는 다른 사건의 연출은 미뤄지지 않는다.
-        // 이 사건의 이어지는 타격은 돌려받은 delay를 따라 호스트가 늦춰 부른다.
-        function hold(ms) {
-            heldUntil = Math.max(heldUntil, performance.now() + Math.max(0, Number(ms) || 0));
-            if (!holdQueued) { holdQueued = true; Promise.resolve().then(() => { heldUntil = 0; holdQueued = false; }); }
-        }
         function preload(effectIds, sounds) {
             (effectIds || []).forEach(effectId => {
                 const definition = definitions.get(effectId) || (fallback && fallback(effectId));
@@ -739,7 +729,7 @@ void main(){
         }
         resize();
         const instance = {
-            canvas, play, persist, preload, hold, clear, destroy, sound, unlock, shake, hitstop, loadSound, kick,
+            canvas, play, persist, preload, clear, destroy, sound, unlock, shake, hitstop, loadSound, kick,
             get time() { return now; }, get unit() { return U; }, get size() { return { W, H }; },
             get busy() { return busy(); }, get count() { return nodes.length; },
             // 검증용: 지금부터 seconds 뒤의 화면에서 시간을 멈춘다. null이면 다시 흐른다.

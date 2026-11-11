@@ -53,13 +53,15 @@ def(skill('정권'), { impact: .18, sounds: ['air_puff', 'punch_a'] }, S => {
 `public/hfield.js`, `public/pvp.js`, `public/worldboss.js`가 `CombatFX.create({ scene, muted })`로 엔진을 만든다. 엔진을 만들 수 없으면(WebGL 불가) 기존의 정적 그림 표시가 그대로 동작한다.
 `fx.play(ids, { role, src, dst, event, hit })`는 `{ delay, sound, count }`를 돌려준다. `delay`(ms) 뒤에 수치와 피격 반응을 낸다.
 
-천상·지옥(`paradise_web.js`, `FIELD_MODE=paradise`)은 `hfield.js`를 내장해 쓰지만 이 엔진을 싣지 않으므로 기존 표시와 돌 던지기 비행 시간(`flight`)이 그대로다.
+천상과 지옥(`paradise_web.js`, `FIELD_MODE=paradise`)은 `hfield.js`를 내장해 쓰므로 그 페이지도 `hfield.js`보다 먼저 엔진과 장면집을 싣는다. 연출 캔버스는 `#paBattle` 안의 `hfCanvas` 바로 뒤에 붙어 전투 화면과 함께 숨고 나타난다. 효과음은 낙원의 소리 끄기(`ParadiseAudio.muted`)를 따른다. 천상의 돌 던지기는 엔진을 쓰지 않고 기존의 자체 비행 연출(`flight`)을 그대로 쓴다.
 
 ### 궁극기 컷씬과의 순서
 
-`public/ultimate-cutscene.js`의 컷씬(1.8~2.4초, 화면 가운데를 가로지르는 띠)이 나오는 사건은 컷씬이 먼저다. 호스트는 `ultimateCutscene.play`가 돌려준 길이로 `fx.hold(ms)`를 부르고, 엔진은 **그 사건이 요청하는 장면만** 컷씬이 끝난 뒤에 시작한다. 같은 실행 흐름이 끝나면 hold가 풀리므로 컷씬 동안 들어오는 다른 사건의 연출은 미뤄지지 않는다. 수치와 피격 반응은 돌려받은 `delay`(컷씬 길이 + 장면의 타격 시각)에 맞춰 나오고, 공용 스킬음은 컷씬 시작에 낸다.
+`public/ultimate-cutscene.js`의 컷씬(1.8~2.4초, 화면 가운데를 가로지르는 띠, z-index 4)과 그 사건의 장면은 **함께 시작한다**(사용자 지정 2026-11-12). 컷씬 띠가 연출 캔버스 위에 있으므로, 장면은 띠 아래로 겹쳐 재생되고 띠가 빠지면 마무리가 드러난다. 수치와 피격 반응은 장면의 타격 시각(`delay`)에 맞춰 나오고, 공용 스킬음은 컷씬 시작에 낸다. 처음에는 컷씬이 끝난 뒤 장면을 시작하게(`fx.hold`) 했으나 사용자가 함께 재생하도록 바꿔 hold는 지웠다.
 
 주 장면이 닿기 전에 오는 같은 사건(같은 스킬이나 출처)의 이어지는 타격과 곁장면은 그 타격 순간에 맞춰 함께 터진다. 다른 사건은 묶지 않는다.
+
+스킬 장면은 타수마다 다시 요청되지만 장면이 끝날 때까지(타격 시각 + 0.7초) 다시 시작하지 않는다. 장면 시작을 이보다 늦추는 장치를 다시 넣는다면 이 시간도 같이 늦춰야 한다. 컷씬 뒤로 미루던 때에는 2타째(장비 추가 피해, 고정 피해 같은 줄)가 이 시간이 지난 뒤에 와서 처형박수가 두 번 나왔다(`tests/combat_fx_replay.test.js`).
 
 ## 실험실
 

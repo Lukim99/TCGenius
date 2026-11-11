@@ -745,9 +745,8 @@
             if (skill && skill.element) event.effectElement = skill.element;
         }
         if (effectCatalog) effectCatalog.annotateEvent(event);
-        // 궁극기 컷씬이 화면을 가리는 동안에는 이 사건의 연출을 미뤘다가, 컷씬이 끝나면 이어서 재생한다.
+        // 궁극기 컷씬과 이 사건의 연출은 함께 시작한다.
         const cut = ultimateCutscene?.play(event, view?.[actor]?.cardName) || 0;
-        if (cut && renderer && renderer.fx) renderer.fx.hold(cut);
         const skillAudience = action === 'skill' && effectCatalog && effectCatalog.skillTarget ? effectCatalog.skillTarget(event) : action === 'skill' ? 'target' : null;
         const hasTargetImpact = Number(event.damage || 0) > 0 || (Array.isArray(event.hits) && event.hits.some(hit => Number(hit && hit.damage || 0) > 0));
         addLog(event.text, actor === 'opp' && Number(event.damage || 0) > 0 ? 'bad' : action === 'start' ? 'good' : '');
