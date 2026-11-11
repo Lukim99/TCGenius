@@ -48,13 +48,30 @@ function serializeCard(card) {
     };
 }
 const EQUIP_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
+// 능력치 줄: 실제 서버(formatEquipmentStatLines)와 같은 한글 라벨을 rpgenius.js의 표에서 읽어 쓴다(코드를 실행하지 않고 'key: 라벨' 쌍만 읽음).
+const STAT_LABELS = (() => {
+    const source = fs.readFileSync(path.join(ROOT, 'rpgenius.js'), 'utf8'), read = name => {
+        const start = source.indexOf('const ' + name + ' = {'); if (start < 0) return {};
+        const body = source.slice(start, source.indexOf('};', start)), out = {};
+        for (const m of body.matchAll(/(\w+)\s*:\s*'([^']+)'/g)) out[m[1]] = m[2];
+        return out;
+    };
+    return { stat: read('EQUIP_STAT_LABELS'), plus: read('EQUIP_PLUSSTAT_LABELS') };
+})();
+const statLines = data => [
+    ...Object.entries(data.stat || {}).map(([key, value]) => (STAT_LABELS.stat[key] || key) + ' +' + comma(value)),
+    ...Object.entries(data.plusStat || {}).map(([key, value]) => (STAT_LABELS.plus[key] || STAT_LABELS.stat[key] || key) + (Number(value) < 0 ? ' ' : ' +') + Math.round(Number(value) * 1000) / 10 + '%')
+];
 function serializeEquipment(equip, number) {
     const data = EQUIP[equip.type][equip.id];
     return {
         type: equip.type, typeLabel: EQUIP_LABELS[equip.type], id: equip.id, number, source: 'inventory', index: number - 1, name: data.name, baseName: data.name,
         locked: false, rarity: data.rarity, baseRarity: data.rarity, artifact: null, transcendStage: data.rarity === '초월' ? 1 : null, setName: data.set || null,
-        level: equip.level || 0, equipped: false, statLines: Object.entries(data.stat || {}).map(([key, value]) => key.toUpperCase() + ' +' + comma(value)), description: data.desc || '',
-        passive: null, potentialLines: [], potentialDisplay: equip.potential ? { tierKey: 'unique', tierLabel: equip.potential, entries: [] } : null, potential: null, canPotential: true,
+        level: equip.level || 0, equipped: false, statLines: statLines(data), description: data.desc || '',
+        passive: data.passive_id != null || number % 3 === 1 ? { name: '업화의 의지', desc: '공격 시 10% 확률로 10초간 공격력 +12%.\n쿨타임 30초.', cooltime: 30 } : null, potentialLines: [],
+        potentialDisplay: equip.potential ? { tierKey: 'unique', tierLabel: equip.potential, entries: [{ gradeLabel: '유니크', text: '공격력 +9%' }, { gradeLabel: '에픽', text: '치명타 확률 +6%' }, { gradeLabel: '에픽', text: '최대 HP +4%' }] } : null, potential: null, canPotential: true,
+        soul: number % 4 === 2 ? { name: '불꽃 영혼', expiredAt: Date.now() + 86400000 } : null,
+        artifact: equip.type === 'artifact' ? { rarity: data.rarity, options: [{ conditionPrefix: '메인 카드가 ', conditionValue: '오버라이드', conditionSuffix: '일 때', abilityLabel: '공격력', n: 12, active: true }, { conditionPrefix: 'HP가 ', conditionValue: '50%', conditionSuffix: ' 이하일 때', abilityLabel: '받는 피해 감소', n: 8, active: false }, { conditionPrefix: '', conditionValue: '보스', conditionSuffix: '와 전투 중', abilityLabel: '치명타 피해', n: 15, active: true }], rerollsUsed: 1, maxRerolls: 3 } : null,
         noTrade: data.no_trade === true, bound: false, uid: 'lab-' + number, iconUrl: itemImageUrl('장비', data.rarity + ' ' + data.name + '.png'), frameUrl: frameUrl('equipment', data.rarity)
     };
 }
@@ -108,7 +125,7 @@ const partner = { name: '달빛상인', level: 203, main: { id: 3, star: 8, type
 (() => {
     const pick = (type, count, levels) => EQUIP[type].map((data, id) => ({ data, id })).filter(entry => entry.data && itemImageUrl('장비', entry.data.rarity + ' ' + entry.data.name + '.png'))
         .filter((entry, index, list) => index % Math.max(1, Math.floor(list.length / count)) === 0).slice(0, count).forEach((entry, index) => me.equipment.push({ type, id: entry.id, level: levels[index % levels.length], potential: index % 3 === 0 ? '유니크' : null }));
-    pick('weapon', 5, [0, 7, 12, 3, 9]); pick('armor', 3, [5, 0, 10]); pick('accessory', 4, [0, 4, 8, 2]); pick('support', 2, [6, 0]); pick('hat', 2, [3, 0]);
+    pick('weapon', 5, [0, 7, 12, 3, 9]); pick('armor', 3, [5, 0, 10]); pick('accessory', 4, [0, 4, 8, 2]); pick('support', 2, [6, 0]); pick('hat', 2, [3, 0]); pick('artifact', 1, [0]);
     let seen = 0;
     ITEMS.forEach((data, id) => { if (data && itemAssets(data).iconUrl && id % 9 === 2 && seen++ < 34) me.items.set(id, [1, 3, 12, 250, 4096, 77][seen % 6]); });
     const ticket = ITEMS.findIndex(item => item && item.name === '거래권'); if (ticket >= 0) me.items.set(ticket, me.tickets);
@@ -118,6 +135,9 @@ const partner = { name: '달빛상인', level: 203, main: { id: 3, star: 8, type
 const inventoryCards = () => me.cards.map((card, index) => ({ ...serializeCard(card), number: index + 1, version: 'c1', salePrice: 1000 }));
 const inventoryEquipment = () => me.equipment.map((equip, index) => ({ ...serializeEquipment(equip, index + 1), version: 'e1' }));
 const inventoryItems = () => [...me.items].filter(([, count]) => count > 0).map(([id, count]) => ({ id, name: ITEMS[id].name, type: ITEMS[id].type, desc: ITEMS[id].desc || '', count, version: 'i1', noTrade: ITEMS[id].no_trade === true, ...itemAssets(ITEMS[id]) }));
+
+// ---- 팝니다, 삽니다 ----
+const market = require('./market-mock')({ me, CARDS, ITEMS, EQUIP, PETS, serializeCard, serializeEquipment, itemAssets, itemImageUrl, frameUrl, formatUserCard, cardImageUrl });
 
 // ---- 상점 ----
 const shopBought = new Map();
@@ -227,6 +247,7 @@ function presetTrade(kind) {
 
 // ---- 메일 ----
 const mailGift = gift => {
+    if (gift.type === 'equipment') { const view = serializeEquipment(gift.equip, 1); return { type: 'equipment', equipType: gift.equip.type, equipId: gift.equip.id, rarity: view.rarity, level: view.level, name: view.name, label: view.name + (view.level > 0 ? ' +' + view.level : ''), iconUrl: view.iconUrl, frameUrl: view.frameUrl, detail: view }; }
     if (gift.type === 'gold' || gift.type === 'garnet') return { type: gift.type, amount: gift.amount, name: gift.type === 'gold' ? '골드' : '가넷', label: comma(gift.amount) + (gift.type === 'gold' ? ' 골드' : ' 가넷'), iconUrl: CURR[gift.type] };
     if (gift.type === 'point') return { type: 'point', amount: gift.amount, name: '포인트', label: comma(gift.amount) + 'P', iconUrl: CURR.point };
     if (gift.type === 'item') { const data = ITEMS[gift.id]; return { type: 'item', id: gift.id, count: gift.count, name: data.name, label: data.name + ' x' + comma(gift.count), ...itemAssets(data) }; }
@@ -256,8 +277,8 @@ function mailbox(page) {
 function giftable() {
     return {
         gold: me.gold, garnet: me.garnet, point: me.point, goldIconUrl: CURR.gold, garnetIconUrl: CURR.garnet, pointIconUrl: CURR.point, feeRate: 0.05, feeMin: 1, maxGifts: 5,
-        equipment: inventoryEquipment().map(entry => ({ number: entry.number, name: entry.name, rarity: entry.rarity, level: entry.level, iconUrl: entry.iconUrl, frameUrl: entry.frameUrl })),
-        pets: me.pets.map((pet, index) => ({ index, name: PETS[pet.id].name, rarity: PETS[pet.id].rarity, level: pet.level, iconUrl: itemImageUrl('펫', PETS[pet.id].rarity + ' ' + PETS[pet.id].name + '.png'), frameUrl: frameUrl('equipment', PETS[pet.id].rarity) })),
+        equipment: inventoryEquipment().map(entry => ({ detail: entry, number: entry.number, name: entry.name, rarity: entry.rarity, level: entry.level, iconUrl: entry.iconUrl, frameUrl: entry.frameUrl })),
+        pets: me.pets.map((pet, index) => ({ index, name: PETS[pet.id].name, rarity: PETS[pet.id].rarity, level: pet.level, statLines: ['HP +' + (100 + pet.level * 20), '공격력 +' + (10 + pet.level * 3), '낚시 속도 +5%'], iconUrl: itemImageUrl('펫', PETS[pet.id].rarity + ' ' + PETS[pet.id].name + '.png'), frameUrl: frameUrl('equipment', PETS[pet.id].rarity) })),
         items: inventoryItems().filter(item => !item.noTrade).map(item => ({ id: item.id, name: item.name, count: item.count, iconUrl: item.iconUrl, frameUrl: item.frameUrl })),
         avatars: me.avatars.map(entry => ({ ...entry, iconUrl: itemImageUrl('아바타', entry.name + ' 아바타.png'), frameUrl: frameUrl('equipment', entry.grade === '한정' ? '초월' : entry.grade === '프레스티지' ? '레전더리' : '일반'), imageUrl: null }))
     };
@@ -333,6 +354,7 @@ http.createServer((req, res) => {
                 gifts: (body.gifts || []).map(gift => gift.type === 'equipment' ? { type: 'equipment', equip: me.equipment[gift.number - 1] } : gift.type === 'pet' ? { type: 'pet', pet: me.pets[gift.index] } : gift) });
             return reply(200, { ok: true, fee: (body.gifts || []).filter(gift => gift.type === 'gold' || gift.type === 'garnet').reduce((sum, gift) => sum + Math.max(1, Math.floor(gift.amount * 0.05)), 0) });
         }
+        const marketReply = market(route, q, body); if (marketReply) return reply(...marketReply);
         if (route === '/api/inventory') return reply(200, { name: me.name, items: inventoryItems(), cards: inventoryCards(), equipment: inventoryEquipment(), pets: [] });
         reply(404, { error: '실험실에 없는 API: ' + route });
     });

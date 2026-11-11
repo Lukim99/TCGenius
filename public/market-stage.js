@@ -20,6 +20,26 @@
         return map[rarity] || RARITY_FALLBACK[String(rarity || '').split(' ')[0]] || '#8a97a8';
     }
     const hueOf = hex => { const n = parseInt(String(hex).slice(1), 16), r = (n >> 16) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255, max = Math.max(r, g, b), min = Math.min(r, g, b); if (max === min) return 0; const d = max - min; const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4; return h / 6; };
+    function equipmentLines(d) {
+        const out = [];
+        const head = (text, color) => out.push({ text, color, head: true });
+        const art = d.artifact;
+        if (art && (art.options || []).length) {
+            head('아티팩트 옵션', '#ffb0d0');
+            art.options.forEach(o => out.push({ text: (o.conditionPrefix || '') + (o.conditionValue || '') + (o.conditionSuffix || '') + '  ' + o.abilityLabel + ' +' + o.n + '%', color: o.active === false ? MUTE : '#ffe1ee' }));
+            out.push({ text: '재설정 ' + Math.max(0, Number(art.maxRerolls || 3) - Number(art.rerollsUsed || 0)) + '회 남음', color: DIM });
+        }
+        if ((d.statLines || []).length) { head('능력치', '#c8d6e8'); d.statLines.forEach(text => out.push({ text })); }
+        if (d.soul && d.soul.name) out.push({ text: '영혼 ' + d.soul.name, color: '#c9a7ff' });
+        const pot = d.potentialDisplay;
+        if (pot && (pot.entries || []).length) { head('잠재 ' + (pot.tierLabel || ''), '#9fe0ff'); pot.entries.forEach(e => out.push({ text: (e.gradeLabel ? e.gradeLabel + '  ' : '') + e.text, color: '#d8f3ff' })); }
+        else if ((d.potentialLines || []).length) { head('잠재', '#9fe0ff'); d.potentialLines.forEach(text => out.push({ text: String(text).replace(/^-\s*/, ''), color: '#d8f3ff' })); }
+        if (d.passive && d.passive.name) { head('패시브 ' + d.passive.name, '#ffcf7a'); String(d.passive.desc || '').split('\n').filter(Boolean).forEach(text => out.push({ text, color: '#f3e3c2' })); }
+        const set = d.setInfo || null, setName = d.setName || (set && set.name);
+        if (setName) out.push({ text: setName + ' 세트', color: '#c8d6e8', head: true });
+        if (d.description) out.push({ text: d.description, color: MUTE });
+        return out;
+    }
     function identify(entry, kind) {
         entry = entry || {};
         if (kind === 'card') {
@@ -38,6 +58,8 @@
                 chips, lines, fx: { code: meta.fx, strength: .45 + star / 22, hue: hueOf(meta.color) }, detail: true };
         }
         if (kind === 'equipment') {
+            // 서버가 장비 상세(경매와 같은 equipmentDetail)를 detail로 함께 주면 그쪽 값을 쓴다.
+            if (entry.detail) entry = { ...entry, ...entry.detail, number: entry.number, index: entry.index, version: entry.version };
             const color = rarityColor(entry.rarity), level = Number(entry.level || 0);
             const chips = [{ text: entry.typeLabel || '장비', color: DIM }, { text: entry.rarity || '장비', color }];
             if (level > 0) chips.push({ text: '+' + level, color: GOLD });
@@ -48,18 +70,18 @@
             const rank = ['일반', '고급', '레어', '유니크', '레전더리', '신화', '초월'].indexOf(String(entry.baseRarity || entry.rarity || '').split(' ')[0]);
             return { kind, kindLabel: entry.typeLabel || '장비', title: entry.name || '장비', art: { iconUrl: entry.iconUrl, frameUrl: entry.frameUrl }, accent: color,
                 ribbon: null, corner: level > 0 ? { text: '+' + level, color: GOLD } : null, tag: entry.typeLabel || '장비',
-                chips, lines: (entry.statLines || []).slice(0, 5), fx: { code: FX.gear, strength: .25 + Math.max(0, rank) * .12, hue: hueOf(color) }, detail: !!entry.statLines };
+                chips, lines: equipmentLines(entry), fx: { code: FX.gear, strength: .25 + Math.max(0, rank) * .12, hue: hueOf(color) }, detail: !!entry.statLines };
         }
         if (kind === 'pet') {
             const color = rarityColor(entry.rarity), level = Number(entry.level || 0);
             return { kind, kindLabel: '펫', title: entry.name || '펫', art: { iconUrl: entry.iconUrl, frameUrl: entry.frameUrl }, accent: color, tag: '펫',
                 corner: level > 0 ? { text: '+' + level, color: GOLD } : null, chips: [{ text: '펫', color: DIM }, { text: entry.rarity || '펫', color }].concat(level > 0 ? [{ text: '+' + level, color: GOLD }] : []),
-                lines: [], fx: { code: FX.gear, strength: .35, hue: hueOf(color) } };
+                lines: [...(entry.statLines || []), ...(entry.specialLines || [])].map(text => ({ text })), fx: { code: FX.gear, strength: .35, hue: hueOf(color) } };
         }
         if (kind === 'avatar') {
             const grade = entry.grade || '일반', color = grade === '한정' ? '#ff6b6b' : grade === '유니크' ? '#b77cff' : grade === '프레스티지' ? '#facc15' : '#ff9ccf';
             return { kind, kindLabel: '아바타', title: (entry.name || '') + ' 아바타', art: { iconUrl: entry.iconUrl || entry.imageUrl, frameUrl: entry.iconUrl ? entry.frameUrl : null }, accent: color, tag: '아바타',
-                chips: [{ text: '아바타', color: DIM }, { text: grade, color }].concat(grade === '한정' ? [{ text: '전송 후 재거래 불가', color: WARN }] : []), lines: [], fx: { code: FX.glass, strength: .5, hue: hueOf(color) } };
+                chips: [{ text: '아바타', color: DIM }, { text: grade, color }].concat(grade === '한정' ? [{ text: '재거래 불가', color: WARN }] : []), lines: [], fx: { code: FX.glass, strength: .5, hue: hueOf(color) } };
         }
         if (CURRENCY[kind]) {
             const c = CURRENCY[kind];
@@ -201,7 +223,7 @@
             for (const c of list) {
                 const cw = Math.min(w, tw(c.text, o.size || 12, 800) + 16);
                 if (cx > x && cx + cw > x + w) { if (o.single) break; cx = x; cy += h + gap; }
-                chip(c.text, cx, cy, c.color || INK, { h, size: o.size, max: w }); cx += cw + gap;
+                if (!o.dry) chip(c.text, cx, cy, c.color || INK, { h, size: o.size, max: w }); cx += cw + gap;
             }
             return cy - y + h;
         }
@@ -218,6 +240,7 @@
             plate(x, y, w, h, k, { a: .86, edge: on || hov ? 1.35 : .8, tint: col, tintA: on ? .2 : .08 });
             C.fillStyle = rgba(col, .85); C.fillRect(x + 2, y + k, 2.5, h - k * 2);
             if (h < 150 && w > h * 1.2) { slotRow(info, x, y, w, h, o, key, on, col, k); return; }
+            const footH = o.footer ? o.footerH || 40 : 0; h -= footH;
             const pad = 6, nameH = o.small ? 30 : 34, chipH = o.noChips ? 0 : 20, ah = h - pad * 2 - nameH - chipH - (chipH ? 4 : 0), aw = w - pad * 2;
             well(x + pad, y + pad, aw, ah, 6, rgba(col, .07));
             if (ah > 18) {
@@ -235,9 +258,10 @@
                 let cx = x + Math.max(6, (w - total) / 2);
                 for (const c of list) { const cw = chip(c.text, cx, y + h - pad - chipH, c.color, { h: chipH - 2, size: 10, max: w - 12 }); cx += cw + 4; if (cx > x + w - 10) break; }
             }
+            if (footH) { o.footer(x, y + h, w, footH); h += footH; }
             if (on) { brackets(x - 3, y - 3, w + 6, h + 6, 12, col); cut(x, y, w, h, k); C.lineWidth = 2; C.strokeStyle = rgba(col, .95); C.stroke(); }
             ring(key, x, y, w, h, k);
-            if (o.action) A.hit(o.action, o.id, x, y, w, h, [info.title, ...info.chips.map(c => c.text), on ? '선택됨' : ''].filter(Boolean).join(', '), !!o.disabled, on);
+            if (o.action) A.hit(o.action, o.id, x, y, w, h, o.aria || [info.title, ...info.chips.map(c => c.text), on ? '선택됨' : ''].filter(Boolean).join(', '), !!o.disabled, on);
         }
         // 키가 낮은 칸: 그림을 왼쪽에 크게, 이름과 꼬리표를 오른쪽에 둔다.
         function slotRow(info, x, y, w, h, o, key, on, col, k) {
@@ -246,7 +270,8 @@
             const box = info.card ? fitBox(aw - 6, ah - 6, 399 / 515) : { w: Math.min(aw, ah) - 8, h: Math.min(aw, ah) - 8 };
             A.art(info.art, x + pad + (aw - box.w) / 2, y + pad + (ah - box.h) / 2, box.w, box.h, { fx: info.fx, dim: o.dim });
             if (info.corner) { const cw = Math.max(24, tw(info.corner.text, 11, 800) + 10); plate(x + pad + 2, y + pad + 2, cw, 19, 5, { a: .92, edge: .55 }); line(info.corner.text, x + pad + 2 + cw / 2, y + pad + 12, cw - 6, 11, info.corner.color || INK, 'center', 800, 8); }
-            const tx = x + pad + aw + 8, tw2 = x + w - 8 - tx;
+            const sideW = o.side ? o.sideW || 110 : 0, tx = x + pad + aw + 8, tw2 = x + w - 8 - tx - sideW;
+            if (sideW) o.side(x + w - sideW - 6, y + pad, sideW, h - pad * 2);
             let ty = y + pad + 2;
             const head = info.ribbon || (info.tag ? { text: info.tag, color: DIM } : null);
             if (head && h >= 76) { line(head.text, tx, ty + 7, tw2, 11, head.color, 'left', 800, 8); ty += 16; }
@@ -255,17 +280,39 @@
             chipRow((o.chips || info.chips).filter(c => !info.corner || c.text !== info.corner.text).slice(0, 3), tx, y + h - pad - chipH, tw2, { h: chipH, size: 10, single: true });
             if (on) { brackets(x - 3, y - 3, w + 6, h + 6, 12, col); cut(x, y, w, h, k); C.lineWidth = 2; C.strokeStyle = rgba(col, .95); C.stroke(); }
             ring(key, x, y, w, h, k);
-            if (o.action) A.hit(o.action, o.id, x, y, w, h, [info.title, ...info.chips.map(c => c.text), on ? '선택됨' : ''].filter(Boolean).join(', '), !!o.disabled, on);
+            if (o.action) A.hit(o.action, o.id, x, y, w, h, o.aria || [info.title, ...info.chips.map(c => c.text), on ? '선택됨' : ''].filter(Boolean).join(', '), !!o.disabled, on);
         }
         function fitBox(w, h, ratio) { return w / h > ratio ? { w: h * ratio, h } : { w, h: w / ratio }; }
         // 감정대: 선택한 품목을 크게 보여 주고 정체를 모두 적는다.
         function inspect(info, x, y, w, h, o = {}) {
             plate(x, y, w, h, 16, { a: o.a ?? .6, tint: info ? info.accent : acc });
-            if (!info) { well(x + 10, y + 10, w - 20, h - 20, 12); text(o.empty || '품목을 선택하세요', x + w / 2, y + h / 2, 15, DIM, 'center', 600); return; }
+            if (!info) { well(x + 10, y + 10, w - 20, h - 20, 12); gem(x + w / 2, y + h / 2, 7, 'rgba(255,255,255,.08)'); if (o.empty) text(o.empty, x + w / 2, y + h / 2 + 26, 14, MUTE, 'center', 600); return; }
             const p = 16, bottom = o.bottom || 0, side = w > 520 && w > h * .95;
+            // 옵션을 한 쪽에 다 보이는 것이 먼저다. 이름, 꼬리표, 옵션이 차지할 높이를 먼저 재고 남는 만큼만 그림에 준다.
+            const fullW = w - p * 2, titleFit = fit(info.title, fullW, 86, 22, 13, 800);
+            const headH = 22 + titleFit.lines.length * titleFit.lh + 8 + chipRow(info.chips, 0, 0, fullW, { h: 24, size: 12, dry: true }) + 10;
+            const artRoom = h - p * 2 - bottom - 12 - headH - measureLines(info, fullW);
+            // 그림이 너무 작아질 만큼 옵션이 많거나 자리가 좁으면, 그림을 작은 머리로 줄이고 옵션에 높이를 몰아준다.
+            if (!side && ((info.lines.length && artRoom < 150) || h - bottom < 300)) {
+                const aw = info.card ? 84 : 92, ah = info.card ? Math.round(84 * 515 / 399) : 92, ax = x + p, ay = y + p;
+                well(ax, ay, aw, ah, 9, rgba(info.accent, .08));
+                const box = info.card ? fitBox(aw - 8, ah - 8, 399 / 515) : { w: aw * .8, h: ah * .8 };
+                A.art(info.art, ax + (aw - box.w) / 2, ay + (ah - box.h) / 2, box.w, box.h, { fx: info.fx, big: true });
+                // 상세 버튼은 이름 옆에 둔다. 닫기 버튼과 함께 놓이는 휴대폰 판에서는 눈 아이콘만 보인다.
+                const hasDetail = !!(o.detail && info.detail), iconOnly = !!o.headRight, detailW = iconOnly ? 40 : 72, detailX = x + w - p - (o.headRight || 0) - detailW;
+                const tx = ax + aw + 12, tw2 = x + w - p - tx - (o.headRight || 0) - (hasDetail ? detailW + 8 : 0); let ty = ay;
+                if (hasDetail) btn(o.detail, o.detailId, detailX, ay, detailW, iconOnly ? 40 : 30, iconOnly ? '' : '상세', { glyph: 'eye', size: 12, aria: info.title + ' 상세 정보' });
+                line(info.ribbon ? info.kindLabel + '  ' + info.ribbon.text : info.kindLabel, tx, ty + 8, tw2, 12, info.ribbon ? info.ribbon.color : info.accent, 'left', 800);
+                ty += 20;
+                const f = fit(info.title, tw2, 48, 19, 12, 800); ty += para(f, tx, ty, INK, 'left') + 6;
+                ty += chipRow(info.chips, tx, ty, tw2, { h: 22, size: 11 });
+                const oy = Math.max(ty, ay + ah) + 10;
+                optionLines(info, x + p, oy, w - p * 2, y + h - p - bottom - oy);
+                return;
+            }
             let tx, ty, tw2, artRect;
             if (side) { const aw = Math.min(w * .42, h - p * 2 - bottom); artRect = [x + p, y + p, aw, h - p * 2 - bottom]; tx = x + p * 2 + aw; ty = y + p; tw2 = w - aw - p * 3; }
-            else { const ah = clamp(Math.round(h * .46), 90, 330); artRect = [x + p, y + p, w - p * 2, ah]; tx = x + p; ty = y + p + ah + 12; tw2 = w - p * 2; }
+            else { const ah = clamp(Math.min(Math.round(h * .46), artRoom), 150, 330); artRect = [x + p, y + p, w - p * 2, ah]; tx = x + p; ty = y + p + ah + 12; tw2 = w - p * 2; }
             const [ax, ay, aw, ah] = artRect; well(ax, ay, aw, ah, 12, rgba(info.accent, .06));
             const g = C.createRadialGradient(ax + aw / 2, ay + ah * .55, 4, ax + aw / 2, ay + ah * .55, Math.max(aw, ah) * .6); g.addColorStop(0, rgba(info.accent, .26)); g.addColorStop(1, rgba(info.accent, 0));
             C.fillStyle = g; cut(ax, ay, aw, ah, 12); C.fill();
@@ -277,12 +324,50 @@
             ty += 22;
             const f = fit(info.title, tw2, Math.min(86, (maxY - ty) * .4), 22, 13, 800); ty += para(f, tx, ty, INK, 'left') + 8;
             ty += chipRow(info.chips, tx, ty, tw2, { h: 24, size: 12 }) + 10;
-            for (const l of info.lines) {
-                if (ty > maxY - 16) break;
-                const lf = fit(l, tw2, Math.min(80, maxY - ty), 13, 10, 600), lines = lf.lines.slice(0, Math.max(1, Math.floor((maxY - ty) / lf.lh)));
-                lines.forEach((ln, i) => text(ln, tx, ty + lf.lh * (i + .5), lf.sz, DIM, 'left', lf.wt)); ty += lines.length * lf.lh + 4;
-            }
+            optionLines(info, tx, ty, tw2, maxY - ty);
             if (o.detail && info.detail) btn(o.detail, o.detailId, ax + aw - 92 - 8, ay + ah - 40 - 8, 92, 40, '상세', { glyph: 'eye', aria: info.title + ' 상세 정보' });
+        }
+        // 옵션 줄 전체가 차지할 높이(쪽 나눔 없이).
+        function measureLines(info, w) {
+            let total = 0, rows = 0;
+            for (const l of info.lines) {
+                const item = typeof l === 'string' ? { text: l } : l, n = wrap(item.text, w - (item.head ? 0 : 10), item.head ? 12 : 13, item.head ? 800 : 600).length;
+                if (item.head && rows) total += 6;
+                total += n * 19; rows += n;
+            }
+            return total;
+        }
+        // 옵션 줄: 제목 줄은 색과 굵기로 나누고, 넘치면 쪽으로 넘긴다.
+        function optionLines(info, x, y, w, h) {
+            if (!info.lines.length || h < 20) return;
+            const lh = 19, rows = [];
+            info.lines.forEach(l => {
+                const item = typeof l === 'string' ? { text: l } : l;
+                wrap(item.text, w - (item.head ? 0 : 10), item.head ? 12 : 13, item.head ? 800 : 600).forEach((t, i) => rows.push({ ...item, text: t, gap: item.head && i === 0 && rows.length > 0 }));
+            });
+            const fitRows = n => { let used = 0, k = 0; for (; k < rows.length; k++) { const need = lh + (rows[k].gap ? 6 : 0); if (used + need > n) break; used += need; } return k; };
+            let per = fitRows(h), pages = 1, starts = [0];
+            if (per < rows.length) {
+                const usable = h - 30; starts = [0];
+                for (let i = 0; i < rows.length;) { let used = 0, k = i; for (; k < rows.length; k++) { const need = lh + (rows[k].gap && k > i ? 6 : 0); if (used + need > usable) break; used += need; } k = Math.max(k, i + 1); i = k; if (i < rows.length) starts.push(i); }
+                pages = starts.length;
+            }
+            if (S.lineKey !== info.title) { S.lineKey = info.title; S.linePage = 0; }
+            S.linePage = clamp(S.linePage || 0, 0, pages - 1);
+            const from = starts[S.linePage], to = S.linePage + 1 < pages ? starts[S.linePage + 1] : rows.length;
+            let yy = y;
+            rows.slice(from, to).forEach((r, i) => {
+                if (r.gap && i > 0) yy += 6;
+                if (r.head) { gem(x + 3, yy + lh / 2, 3, r.color || acc); text(r.text, x + 11, yy + lh / 2, 12, r.color || INK, 'left', 800); }
+                else text(r.text, x + 10, yy + lh / 2, 13, r.color || DIM, 'left', 600);
+                yy += lh;
+            });
+            if (pages > 1) {
+                const py = y + h - 26;
+                btn('lines-previous', '', x + w - 104, py, 36, 26, '', { glyph: 'prev', disabled: S.linePage <= 0, aria: '이전 옵션' });
+                text((S.linePage + 1) + ' / ' + pages, x + w - 52, py + 13, 11, DIM, 'center', 700);
+                btn('lines-next', '', x + w - 36, py, 36, 26, '', { glyph: 'next', disabled: S.linePage >= pages - 1, aria: '다음 옵션' });
+            }
         }
         // 재화 판: 아이콘, 이름, 전체 금액.
         function coin(goods, amount, x, y, w, h, o = {}) {
@@ -354,6 +439,7 @@
         return { kind, list, filters };
     }
     function pickerAct(P, action, id) {
+        P.done = '';
         switch (action) {
             case 'picker-kind': P.kind = id; P.page = 0; P.filter = '전체'; P.selected = null; P.amount = ''; P.error = ''; P.mobileDetail = false; return true;
             case 'picker-filter': P.filter = id; P.page = 0; return true;
@@ -378,25 +464,32 @@
         const p = mobile ? 12 : 18, { kind, list, filters } = pickerList(P), kinds = P.config.kinds;
         let y = M.y + 66;
         // 종류 탭
-        const tabW = (M.w - p * 2 - 6 * (kinds.length - 1)) / kinds.length, tabH = mobile ? 42 : 46;
-        kinds.forEach((k, i) => K.btn('picker-kind', k.key, M.x + p + i * (tabW + 6), y, tabW, tabH, k.label, {
-            on: k.key === P.kind, pressed: k.key === P.kind, icon: k.currency && tabW >= 96 ? k.key : null, size: mobile ? 13 : 15, color: k.color,
+        // 탭 이름이 한 줄에 안 들어가면 탭을 두 줄로 나눈다(글자가 세로로 끊기지 않게).
+        const tabSize = mobile ? 13 : 15, tabFits = n => { const tw0 = (M.w - p * 2 - 6 * (n - 1)) / n; return kinds.every(k => K.tw(k.label, tabSize, 700) + 22 <= tw0); };
+        const tabRows = tabFits(kinds.length) ? 1 : 2, perRow = Math.ceil(kinds.length / tabRows);
+        const tabW = (M.w - p * 2 - 6 * (perRow - 1)) / perRow, tabH = mobile ? (tabRows > 1 ? 38 : 42) : 46;
+        kinds.forEach((k, i) => K.btn('picker-kind', k.key, M.x + p + (i % perRow) * (tabW + 6), y + Math.floor(i / perRow) * (tabH + 6), tabW, tabH, k.label, {
+            on: k.key === P.kind, pressed: k.key === P.kind, icon: k.currency && tabW >= 96 ? k.key : null, size: tabSize, color: k.color,
             badge: !k.currency && !mobile ? String((k.entries || []).length) : null, aria: k.label + (k.currency ? '' : ' ' + (k.entries || []).length + '개') }));
-        y += tabH + 10;
+        y += tabRows * (tabH + 6) + 4;
         const foot = M.y + M.h - p;
         if (kind && kind.currency) { drawAmountPanel(K, A, P, kind, M.x + p, y, M.w - p * 2, foot - y, o); return; }
         // 분류와 검색
         const searchW = mobile ? M.w - p * 2 : Math.min(260, (M.w - p * 2) * .3);
         K.well(M.x + p, y, searchW, 40, 6); K.glyph('search', M.x + p + 18, y + 20, 14, K.DIM);
         A.field('picker-search', M.x + p + 32, y + 2, searchW - 36, 36, { value: P.query, placeholder: '이름, 등급, 성급 검색', label: '보관함 검색', maxLength: 30 });
-        let fy = y, fx0 = M.x + p + searchW + 10, fw = M.w - p * 2 - searchW - 10;
+        const inspW0 = mobile ? 0 : Math.min(400, Math.round((M.w - p * 2) * .38)), rowY = y;
+        let fy = y, fx0 = M.x + p + searchW + 10, fw = M.w - p * 2 - searchW - 10 - (inspW0 ? inspW0 + 14 : 0);
         if (mobile) { fy = y + 48; fx0 = M.x + p; fw = M.w - p * 2; }
-        let fx = fx0;
+        // 분류 버튼이 한 줄에 다 안 들어가면 다음 줄로 넘긴다(두 줄째는 격자 폭 전체를 쓴다).
+        let fx = fx0, rowStart = fx0, rowEnd = fx0 + fw, lines = 1;
+        const gridRight = M.x + M.w - p - (inspW0 ? inspW0 + 14 : 0);
         for (const f of filters) {
-            const bw = K.tw(f, 13, 700) + 26; if (fx + bw > fx0 + fw) break;
+            const bw = K.tw(f, 13, 700) + 26;
+            if (fx + bw > rowEnd) { if (lines >= 2) break; lines++; fy += 46; rowStart = M.x + p; rowEnd = gridRight; fx = rowStart; }
             K.btn('picker-filter', f, fx, fy, bw, 40, f, { on: P.filter === f, pressed: P.filter === f, size: 13 }); fx += bw + 6;
         }
-        y = (mobile ? fy : y) + 50;
+        y = fy + 50;
         const sel = pickerSelected(P), inspW = mobile ? 0 : Math.min(400, Math.round((M.w - p * 2) * .38));
         const gx = M.x + p, gw = M.w - p * 2 - (inspW ? inspW + 14 : 0), gh = foot - y - 54 - (mobile && sel ? 0 : 0);
         // 격자
@@ -410,21 +503,22 @@
         });
         K.pager(gx, foot - 44, gw, P.page, pages, 'picker-previous', 'picker-next');
         if (!mobile) {
-            const ix = M.x + M.w - p - inspW, actH = sel && kind.quantity ? 168 : 112;
-            K.inspect(sel && sel.info, ix, y - 50, inspW, foot - y + 50, { bottom: actH, detail: sel && o.detailAction, detailId: sel && sel.key, empty: '왼쪽에서 품목을 고르세요' });
+            const ix = M.x + M.w - p - inspW, actH = sel ? (kind.quantity ? 168 : 112) + (P.config.extraHeight ? P.config.extraHeight(kind, sel) : 0) : 112;
+            K.inspect(sel && sel.info, ix, rowY, inspW, foot - rowY, { bottom: actH, detail: sel && o.detailAction, detailId: sel && sel.key });
             if (sel) drawPickAction(K, A, P, kind, sel, ix + 16, foot - actH + 6, inspW - 32, o);
         } else if (sel && P.mobileDetail) {
             // 휴대폰: 고른 품목을 아래에서 올라오는 판으로 보여 준다.
-            const sh = Math.min(H - 24, kind.quantity ? 520 : 450), sx = M.x + 4, sy = M.y + M.h - sh - 4;
+            const sh = Math.min(H - 24, (kind.quantity ? 520 : 450) + (P.config.extraHeight ? P.config.extraHeight(kind, sel) : 0)), sx = M.x + 4, sy = M.y + M.h - sh - 4;
             C.fillStyle = 'rgba(3,5,9,.55)'; C.fillRect(M.x, M.y, M.w, M.h); A.shade();
-            const actH = kind.quantity ? 160 : 104;
-            K.inspect(sel.info, sx, sy, M.w - 8, sh, { bottom: actH, detail: o.detailAction, detailId: sel.key, a: .985 });
+            const actH = (kind.quantity ? 160 : 104) + (P.config.extraHeight ? P.config.extraHeight(kind, sel) : 0);
+            K.inspect(sel.info, sx, sy, M.w - 8, sh, { bottom: actH, detail: o.detailAction, detailId: sel.key, a: .985, headRight: 56 });
             K.btn('picker-back', '', sx + M.w - 8 - 52, sy + 8, 44, 40, '', { glyph: 'close', aria: '고르기 취소' });
             drawPickAction(K, A, P, kind, sel, sx + 16, sy + sh - actH + 4, M.w - 40, o);
         }
     }
     function drawPickAction(K, A, P, kind, sel, x, y, w, o) {
         let yy = y;
+        if (P.config.extra) yy = P.config.extra(K, A, P, kind, sel, x, yy, w);
         if (kind.quantity) {
             const max = kind.quantity(sel);
             K.text('수량', x, yy + 10, 12, K.DIM, 'left', 700); K.text('최대 ' + K.fmt(max), x + w, yy + 10, 12, K.DIM, 'right', 700); yy += 22;
@@ -432,6 +526,7 @@
             K.btn('picker-max', '', x + w - 66, yy, 66, 44, '최대', { disabled: max <= 0 }); yy += 52;
         }
         if (P.error) { K.line(P.error, x, yy + 8, w, 13, K.WARN, 'left', 700, 10); yy += 20; }
+        else if (P.done) { K.line('올림  ' + P.done, x, yy + 8, w, 13, K.GOOD, 'left', 700, 10); yy += 20; }
         K.btn('picker-submit', '', x, Math.max(yy, y + (kind.quantity ? 0 : 20)), w, 50, P.config.submitLabel || '올리기', { primary: true, size: 18, aria: sel.info.title + ' ' + (P.config.submitLabel || '올리기') });
     }
     function drawAmountPanel(K, A, P, kind, x, y, w, h, o) {
@@ -475,7 +570,7 @@
                     vec2 d=vec2(px.x/size.x-x,dy*2.5);float r=length(d*vec2(size.x/size.y,1.));flow+=smoothstep(.006,0.,r)*(.6+.4*sin(t*3.+f));}
                 vec3 gold=vec3(1.,.82,.45);
                 c+=mix(vec3(.55,.62,.75),gold,glow)*(band*(.05+.10*glow+.04*pulse)+flow*(.18+.4*glow));
-            } else {
+            } else if(theme<1.5){
                 // 메일: 어두운 우편소 위로 항로가 지나가고, 점선 위로 우편물이 천천히 움직인다.
                 for(int i=0;i<5;i++){float f=float(i);
                     vec2 cen=vec2(hash(vec2(f,4.))*1.6-.3,1.3+hash(vec2(f,5.))*.9)*vec2(size.x/size.y,1.);
@@ -486,6 +581,17 @@
                     c+=vec3(1.,.9,.7)*smoothstep(.012,0.,length(q-hp))*.5;}
                 float fiber=pow(noise(vec2(q.x*40.,q.y*4.)+t*.02),6.)*.05;c+=vec3(.9,.85,.75)*fiber;
                 c+=accent*exp(-pow((px.y)/(size.y*.7),2.))*.05;
+            } else {
+                // 시장: 위에 늘어진 줄을 따라 등불이 흔들리고, 바닥에는 따뜻한 빛이 고인다.
+                float aspect=size.x/max(size.y,1.);float n=9.;
+                float seg=fract(q.x/aspect*n);float ry=.035+.045*sin(seg*3.14159);
+                c+=vec3(.55,.48,.40)*smoothstep(.0018,0.,abs(q.y-ry))*.35;
+                for(int i=0;i<9;i++){float f=float(i);
+                    vec2 lp=vec2((f+.5)/n*aspect+sin(t*.55+f*1.7)*.006,.08+.012*sin(t*.8+f));
+                    float d=length(q-lp);vec3 lc=mix(accent,accent2,mod(f,2.));
+                    float flick=.85+.15*sin(t*2.3+f*3.1);
+                    c+=lc*(smoothstep(.016,.0,d)*.9+exp(-d*d*60.)*.07)*flick;}
+                c+=mix(accent,accent2,.5)*exp(-pow((size.y-px.y)/(size.y*.45),2.))*.06;
             }
             return c;
         }
@@ -529,7 +635,7 @@
             vec4 m=texture2D(fx,uv);if(m.a>.5)col=material(col,m,px);
             gl_FragColor=vec4(col,1.);
         }`;
-    const THEMES = { trade: 0, mail: 1 };
+    const THEMES = { trade: 0, mail: 1, market: 2 };
     const hexRgb = hex => String(hex).slice(1).match(/../g).map(v => parseInt(v, 16) / 255);
 
     // ── 무대 호스트
@@ -752,5 +858,10 @@
         };
     }
 
-    window.MarketStage = { mount, identify, kit, createPicker, pickerList, pickerAct, pickerSelected, pickerMax, drawPicker, FX, CURRENCY, STAR_COLORS, CARD_TYPES, rarityColor };
+    function linesAct(S, action) {
+        if (action === 'lines-next') { S.linePage = (S.linePage || 0) + 1; return true; }
+        if (action === 'lines-previous') { S.linePage = Math.max(0, (S.linePage || 0) - 1); return true; }
+        return false;
+    }
+    window.MarketStage = { mount, linesAct, identify, kit, createPicker, pickerList, pickerAct, pickerSelected, pickerMax, drawPicker, FX, CURRENCY, STAR_COLORS, CARD_TYPES, rarityColor };
 })();

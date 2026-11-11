@@ -959,8 +959,9 @@ server.post('/api/stat-points/reset', requireUser, async (req, res) => {
 
 // ===== 메일함 =====
 // 선물 표시객체에 아이콘 URL을 채운다(rpgenius 모듈엔 이미지 헬퍼가 없어 서버에서 후처리)
-function attachMailGiftIcons(g) {
+function attachMailGiftIcons(g, context) {
     if (!g || !g.type) return g;
+    const payload = g.payload; delete g.payload;
     if (g.type === 'gold') g.iconUrl = getItemImageUrl('화폐', '골드.png');
     else if (g.type === 'garnet') g.iconUrl = getItemImageUrl('화폐', '가넷.png');
     else if (g.type === 'point') g.iconUrl = getItemImageUrl('화폐', '포인트.png');
@@ -973,10 +974,11 @@ function attachMailGiftIcons(g) {
         const data = eq[g.equipType] && eq[g.equipType][g.equipId];
         if (data) { g.iconUrl = getEquipmentIconUrl(data); g.frameUrl = getAuctionFrameUrl('equipment', data.rarity); }
         else g.frameUrl = getAuctionFrameUrl('equipment', g.rarity);
+        if (data && payload) g.detail = serializeAuctionEntry({ kind: 'equipment', payload }, null, context).display.equipmentDetail;
     } else if (g.type === 'pet') {
         const pets = rpgenius.getDataCache('Pet', []);
         const data = pets[g.petId];
-        if (data) { g.iconUrl = getPetIconUrl(data); g.frameUrl = getAuctionFrameUrl('equipment', data.rarity); }
+        if (data) { g.iconUrl = getPetIconUrl(data); g.frameUrl = getAuctionFrameUrl('equipment', data.rarity); g.rarity = data.rarity; if (payload) g.statLines = buildPetTradeDisplay(data, payload); }
     } else if (g.type === 'card') {
         g.iconUrl = getCardIconUrl({ id: g.cardId, star: g.star, type: g.cardType }, { prestige: false, jobPrestige: false });
     } else if (g.type === 'title') {
@@ -990,7 +992,9 @@ server.get('/api/mail', requireUser, async (req, res) => {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const box = await rpgenius.getMailbox(user, req.query.page);
-        (box.mails || []).forEach(m => { (m.gifts || []).forEach(attachMailGiftIcons); });
+        let context = null;
+        const equipmentContext = () => context ||= { user, entries: buildInventoryEquipment(user), setCache: {} };
+        (box.mails || []).forEach(m => { (m.gifts || []).forEach(g => attachMailGiftIcons(g, g.type === 'equipment' ? equipmentContext() : null)); });
         res.json(box);
     } catch (e) { console.error('mail list error:', e); res.status(500).json({ error: '서버 오류' }); }
 });
@@ -1000,11 +1004,12 @@ server.get('/api/mail/giftable', requireUser, async (req, res) => {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const equipment = buildInventoryEquipment(user)
-            .filter(e => !e.equipped && !e.noTrade)
-            .map(e => ({ number: e.number, name: e.name, rarity: e.rarity, level: e.level, typeLabel: e.typeLabel, iconUrl: e.iconUrl, frameUrl: e.frameUrl }));
+            .filter(e => !e.equipped && !e.noTrade);
+        const equipmentContext = { user, entries: equipment, setCache: {} };
+        equipment.forEach(e => { e.detail = serializeAuctionEntry({ kind: 'equipment', payload: user.inventory.equipment[e.index] }, user.name, equipmentContext).display.equipmentDetail; });
         const pets = buildInventoryPets(user)
             .filter(p => p.source === 'inventory' && p.tradeCount > 0 && !p.expired)
-            .map(p => ({ index: p.index, name: p.name, rarity: p.rarity, level: p.level, iconUrl: p.iconUrl, frameUrl: p.frameUrl }));
+            .map(p => ({ index: p.index, name: p.name, rarity: p.rarity, level: p.level, iconUrl: p.iconUrl, frameUrl: p.frameUrl, statLines: buildPetTradeDisplay(rpgenius.getPetData(user.inventory.pet[p.index].id), user.inventory.pet[p.index]) }));
         const items = buildInventoryItems(user)
             .filter(i => !i.noTrade)
             .map(i => ({ id: i.id, name: i.name, count: i.count, type: i.type, desc: i.desc, iconUrl: i.iconUrl, frameUrl: i.frameUrl }));
@@ -8330,7 +8335,8 @@ function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
             potentialDisplay,
             soul,
             equipmentDetail,
-            orbDetail
+            orbDetail,
+            ...marketEntryIdentity(entry)
         }
     };
 }
@@ -8376,6 +8382,8 @@ function buildSellableAssets(user) {
             };
         })
         .filter(Boolean);
+    const equipmentContext = { user, entries: buildInventoryEquipment(user), setCache: {} };
+    equipment.forEach(entry => { entry.detail = serializeAuctionEntry({ kind: 'equipment', payload: user.inventory.equipment[entry.index] }, user.name, equipmentContext).display.equipmentDetail; });
     const items = buildInventoryItems(user).filter(item => !item.noTrade);
     const pets = (user.inventory && Array.isArray(user.inventory.pet) ? user.inventory.pet : [])
         .map((pet, index) => {
@@ -8791,9 +8799,20 @@ function serializeBuyOrderEntry(entry, currentUserName) {
             imageUrl,
             frameUrl,
             iconUrl,
-            statLines
+            statLines,
+            ...marketEntryIdentity(entry)
         }
     };
+}
+
+// 팝니다, 삽니다 화면이 같은 품목을 묶고 카드를 다른 화면과 같은 표기로 보여 주는 데 쓰는 값.
+function marketEntryIdentity(entry) {
+    const payload = entry.payload || {};
+    if (entry.kind == 'card') return { cardId: Number(payload.id), cardType: payload.type ? String(payload.type) : null, skin: payload.skin ? String(payload.skin) : null, formatted: rpgenius.formatUserCard({ ...payload, type: payload.type || '일반' }) };
+    if (entry.kind == 'equipment') return { equipId: Number(payload.id) };
+    if (entry.kind == 'item') { const data = rpgenius.getDataCache('Item', [])[payload.id]; return { itemId: Number(payload.id), itemType: data ? data.type : null }; }
+    if (entry.kind == 'pet') return { petId: Number(payload.id) };
+    return {};
 }
 
 async function registerBuyOrder(buyerName, body) {
@@ -9136,7 +9155,10 @@ function buildFulfillableAssets(user, entry) {
                 level,
                 boundOwner: rpgenius.isEquipmentBindingEnabled() ? (eq.boundOwner || null) : null,
                 tradeCount: Number(eq.tradeCount || 0),
-                statLines
+                statLines,
+                iconUrl: getEquipmentIconUrl(data),
+                frameUrl: getAuctionFrameUrl('equipment', data.rarity),
+                detail: serializeAuctionEntry({ kind: 'equipment', payload: eq }, user.name, { user, entries: [], setCache: {} }).display.equipmentDetail
             });
         });
     } else if (entry.kind == 'item') {
@@ -9163,7 +9185,9 @@ function buildFulfillableAssets(user, entry) {
                 rarity: data.rarity,
                 level: Number(pet.level || 0),
                 tradeCount: Number(pet.tradeCount || 0),
-                statLines: buildPetTradeDisplay(data, pet)
+                statLines: buildPetTradeDisplay(data, pet),
+                iconUrl: getPetIconUrl(data),
+                frameUrl: getAuctionFrameUrl('equipment', data.rarity)
             });
         });
     }
@@ -9730,7 +9754,7 @@ function renderUserDashboard(sess, opts) {
   <div class="page" data-page="사냥">
     <div id="huntMenu" class="hunt-menu"></div>
   </div>
-  <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="aucSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="avatar">아바타</button><button data-filter="mine">내 판매</button></div><div class="seg" id="aucCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div><div id="aucPager" class="auc-pager" style="display:none"></div></section></div>
+  <div class="page" data-page="auction"><section class="market-stage-host" id="auctionStageRoot"></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
   <div class="page" data-page="dex"><section class="panel dex-shell">
     <aside class="dex-sidebar" aria-label="도감 종류">
@@ -9743,7 +9767,7 @@ function renderUserDashboard(sess, opts) {
   </section></div>
   <div class="page" data-page="directtrade"><section class="market-stage-host" id="directTradeRoot"></section></div>
   <div class="page" data-page="shop"><section class="panel shop-wrap"><div id="shopBody"></div></section></div>
-  <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="boSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="avatar">아바타</button><button data-filter="mine">내 구매</button></div><div class="seg" id="boCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div><div id="boPager" class="auc-pager" style="display:none"></div></section></div>
+  <div class="page" data-page="buyorder"><section class="market-stage-host" id="buyOrderStageRoot"></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>
@@ -9751,10 +9775,6 @@ function renderUserDashboard(sess, opts) {
 <div id="potentialOverlay" class="enhance-overlay"><div class="enhance-wrap pot-wrap"><div id="potentialContent"></div><div id="potentialResultOverlay" class="enhance-result-overlay"></div></div></div>
 <div id="lockboxOverlay" class="lockbox-overlay"><video id="lockboxVideo" src="/static/assets/%EC%9E%90%EB%AC%BC%EC%87%A0.mp4" playsinline muted></video><button id="lockboxSkip" class="lockbox-skip-btn">건너뛰기</button></div>
 <div id="lockboxResultOverlay" class="lockbox-result-overlay"></div>
-<div id="aucDetailBg" class="modal-bg"><div class="modal" id="aucDetail"></div></div>
-<div id="aucRegBg" class="modal-bg"><div class="modal wide" id="aucReg"></div></div>
-<div id="boDetailBg" class="modal-bg"><div class="modal" id="boDetail"></div></div>
-<div id="boRegBg" class="modal-bg"><div class="modal wide" id="boReg"></div></div>
 <div id="loadingOverlay" class="loading-overlay"><div class="loading-spinner"></div></div>
 <nav class="bottom-tabs" id="bottomTabs"></nav>
 <script>window.HAS_PARTY=${sess.canPartyQuest ? 'true' : 'false'};window.IS_ADMIN=${sess.admin ? 'true' : 'false'};</script>
@@ -9778,6 +9798,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/market-stage.js"></script>
 <script src="/static/direct-trade.js"></script>
 <script src="/static/mail-stage.js"></script>
+<script src="/static/market-board.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }
