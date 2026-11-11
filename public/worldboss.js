@@ -466,7 +466,7 @@
         if(!event)return;
         if(event.message)addLog(event.message,event.defeated?'bad':'');
         if(event.skipped)return;
-        // 궁극기 컷씬이 화면을 가리는 동안에는 연출을 미뤘다가, 컷씬이 끝나면 이어서 재생한다.
+        // 궁극기 컷씬이 화면을 가리는 동안에는 이 사건의 연출을 미뤘다가, 컷씬이 끝나면 이어서 재생한다.
         const cut=ultimateCutscene?.play(event,state?.player?.cardName)||0;
         if(cut&&renderer.fx)renderer.fx.hold(cut);
         renderer.animate(event);

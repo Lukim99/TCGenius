@@ -65,5 +65,6 @@ for (const file of ['hfield.js', 'pvp.js', 'worldboss.js']) {
     assert.ok(/combatFx\s*&&\s*effectCatalog\s*\?\s*combatFx\.create\(/.test(client), file + '는 연출 엔진을 만들 수 없을 때를 대비해야 한다.');
     assert.ok(client.includes('combatFx.companions(this.fx,'), file + '는 소환수를 곁에 띄운다.');
     assert.ok(client.includes('effectSprites'), file + '는 엔진이 없을 때 쓰는 기존 그림 표시를 지우지 않는다.');
+    assert.ok(/ultimateCutscene\?\.play\([^\n]*\|\|\s*0;[\s\S]{0,160}?\.hold\(cut\)/.test(client), file + '는 궁극기 컷씬이 나오면 그 사건의 연출을 컷씬 뒤로 미룬다.');
 }
 console.log('combat fx scenes test passed (' + effectIds.length + ' effects, ' + files.size + ' sounds)');

@@ -652,7 +652,7 @@
             else if (event.action === 'skill' && audience !== 'actor') this.castEffect(target.x, target.y, event, 'target');
         }
         animate(event, previous) {
-            // 궁극기 컷씬이 화면을 가리는 동안에는 연출을 미뤘다가, 컷씬이 끝나면 이어서 재생한다.
+            // 궁극기 컷씬이 화면을 가리는 동안에는 이 사건의 연출을 미뤘다가, 컷씬이 끝나면 이어서 재생한다.
             const cut = ultimateCutscene?.play(event, previous?.player?.cardName || this.state?.player?.cardName) || 0;
             if (cut && this.fx) this.fx.hold(cut);
             const now = performance.now();
