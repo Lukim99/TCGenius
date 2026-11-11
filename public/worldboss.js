@@ -4,7 +4,7 @@
     if(!canvas||!hudCanvas)return;
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),ratio=(v,m)=>m>0?clamp(Number(v||0)/Number(m),0,1):0;
     const number=v=>Math.round(Number(v||0)).toLocaleString('ko-KR');
-    const uiAsset=file=>'/rpg-ui?file='+encodeURIComponent(file),effectCatalog=window.CombatEffects;
+    const uiAsset=file=>'/rpg-ui?file='+encodeURIComponent(file),effectCatalog=window.CombatEffects,combatFx=window.CombatFX||null;
     const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
     const sideX=(side,narrow)=>side==='target'?(narrow?.70:.67):(narrow?.23:.27);
     const combatPopY=()=>innerWidth<700?.6:.44,recoveryPopY=()=>innerWidth<700?.66:.5;
@@ -91,6 +91,8 @@
     class Renderer{
         constructor(canvas){
             this.canvas=canvas;this.gl=canvas.getContext('webgl',{alpha:false,antialias:true});
+            // 이펙트 그림을 장면 단위로 움직이는 연출 엔진. 만들 수 없으면 기존의 정적 그림 표시로 남는다.
+            this.fx=combatFx&&effectCatalog?combatFx.create({scene:canvas,muted:()=>audio.muted}):null;
             this.textures=new Map();this.active='idle';this.animationAt=performance.now();
             this.effect=null;this.lastState=null;this.lastPose=null;this.previousPose=null;this.effectSprites=[];this.recentEffects=new Map();this.playerAttackAt=-1000;this.hitUntil=0;
             this.frame=requestAnimationFrame(t=>this.render(t));
@@ -131,7 +133,9 @@
             if(next.inField&&!(this.lastState&&this.lastState.inField)){
                 this.active='idle';this.animationAt=performance.now();this.lastPose=null;this.previousPose=null;this.effect=null;this.effectSprites=[];this.recentEffects.clear();
             }
-            this.lastState=next;const boss=this.boss();if(!boss)return;
+            this.lastState=next;
+            if(this.fx){const p=this.fxPoints();combatFx.companions(this.fx,'me',next.inField&&next.player&&next.player.summons||[],{src:p.player,dst:p.boss});}
+            const boss=this.boss();if(!boss)return;
             const assets=boss.assets||{};
             this.texture(assets.backgroundUrl);
             Object.values(assets.animations||{}).forEach(a=>this.texture(a.url));
@@ -140,7 +144,7 @@
             if(effectCatalog){
                 const ids=['combat:기본 공격','combat:치명타','combat:HP 회복','combat:MP 회복'];
                 (next.skills||[]).forEach(skill=>ids.push(...effectCatalog.skillEffects(skill.name)));
-                ids.forEach(id=>this.texture(effectCatalog.assetUrl(id)));
+                if(this.fx)this.fx.preload(ids,combatFx.commonSounds);else ids.forEach(id=>this.texture(effectCatalog.assetUrl(id)));
             }
         }
         transition(action,time,impact){
@@ -150,8 +154,18 @@
             this.previousPose=impact?null:this.lastPose;this.transitionAt=time;
             this.active=action;this.animationAt=time-(impact&&animation?Number(animation.hitFrame||0)/animation.fps*1000:0);
         }
+        // 화면 배치와 같은 식으로 구한 플레이어와 보스의 몸 중심(화면 비율)과 반높이(px).
+        fxPoints(){
+            const w=innerWidth,h=innerHeight,narrow=w<680,height=Math.min(480,h*.57,w*(narrow?.43:.32)*480/270),floor=h*(narrow?.75:.79),ph=Math.min(height*.72,320);
+            return{player:{x:narrow?.23:.27,y:(floor-ph*.5)/h},boss:{x:narrow?.70:.67,y:(floor-height*.5)/h},playerHalf:ph*.5,bossHalf:height*.5};
+        }
         playEffects(event,role,hit){
             if(!effectCatalog)return;
+            if(this.fx){
+                // 플레이어가 맞는 사건(actor 쪽에 hit이 있는 경우)은 보스가 시전자, 플레이어가 대상이다.
+                const p=this.fxPoints(),u=this.fx.unit,incoming=role==='actor'&&!!hit,ids=effectCatalog.effectIdsFor(event,role,hit);
+                return this.fx.play(ids,incoming?{role:'target',src:p.boss,dst:p.player,srcHalf:p.bossHalf/u,dstHalf:p.playerHalf/u,event,hit}:{role,src:p.player,dst:p.boss,srcHalf:p.playerHalf/u,dstHalf:p.bossHalf/u,event,hit});
+            }
             const now=performance.now(),candidates=effectCatalog.unique(effectCatalog.effectIdsFor(event,role,hit)).filter(id=>now-(this.recentEffects.get(role+':'+id)??-Infinity)>=760);
             effectCatalog.presentationEffectIds(candidates,2).forEach((id,index)=>{
                 const url=effectCatalog.assetUrl(id),profile=effectCatalog.motionProfile(id);this.texture(url);
@@ -175,9 +189,10 @@
             if(event.bossDefeated)this.transition('defeat',time);
         }
         strike(side,event,hit){
-            if(side==='target')this.playEffects(event,'target',hit);
-            else if(!event.bossAction&&!event.bossRetaliation)this.playEffects(event,'actor',hit);
+            const played=side==='target'?this.playEffects(event,'target',hit):!event.bossAction&&!event.bossRetaliation?this.playEffects(event,'actor',hit):null;
             if(side==='actor'&&Number(hit.damage)>0&&hit.type!=='absorbed'&&hit.type!=='summonAbsorbed')this.hitUntil=performance.now()+180;
+            // 연출이 대상에 닿기까지 걸리는 시간(ms)
+            return played?played.delay:0;
         }
         resize(){
             if(!this.gl)return;
@@ -431,7 +446,7 @@
         if(amount<=0&&!avoided)return;
         let sub=hit.label||(!index?event.skillName||event.source||(tick?'지속 피해':''):'');
         if(received&&(event.bossAction||event.bossRetaliation))sub=event.bossAction==='darkPulse'?'암흑 파동':'일참';
-        if(!avoided)renderer.strike(side,event,hit);
+        const lead=avoided?0:renderer.strike(side,event,hit)||0,land=()=>{
         hud.addPop({
             side,text:avoided?'회피':shield?'흡수 '+number(amount):summon?'대행 '+number(amount):(received?'-':'')+number(amount),
             color:avoided?'#cdd6e2':shield?'#b8d8ff':summon?'#61e7ff':received?'#ff8f87':tick?'#ffd88a':critical?'#ff5d4d':'#ffe06e',
@@ -439,6 +454,9 @@
             label:critical?'치명타':'',sub
         });
         if(amount>0&&!avoided&&!shield&&!summon){audio.hit();if(critical)audio.play('crit',.82);hud.impact(critical);}
+        };
+        // 수치와 타격음은 연출이 닿는 순간에 낸다.
+        schedulePresentation(land,lead);
     }
     function presentEvent(event){
         if(!event)return;
@@ -462,7 +480,7 @@
         }else if(hp>0)hud.addPop({side:'actor',text:'HP +'+number(hp),color:'#63f29b',size:22,y:recoveryPopY(),delay:hits.length?120:0});
         if(mp>0)hud.addPop({side:'actor',text:'MP +'+number(mp),color:'#72c7ff',size:21,y:recoveryPopY()+.04,delay:150});
         if(event.action==='consumable'||event.action==='heal')audio.play('potion',.68);
-        else if(event.action==='skill'||event.curseApplied)audio.play('skill',.68);
+        else if(event.action==='skill'&&!renderer.fx||event.curseApplied)audio.play('skill',.68);
         if(event.curseApplied){hud.consumableMenu=false;hud.showBanner('회복 봉인','흑막의 저주');}
         if(event.defeated){audio.play('fail',.72);hud.showBanner('전투 패배','도전을 마쳤습니다.');}
         else if(event.bossDefeated){audio.play('clear',.82);hud.showBanner('월드보스 처치','흑막');}

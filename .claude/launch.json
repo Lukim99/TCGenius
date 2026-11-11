@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "combat-fx-lab",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/combat-fx-lab/server.js"],
+      "port": 4173
+    }
+  ]
+}

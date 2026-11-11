@@ -2013,6 +2013,14 @@ function getHFieldSpritePart(value) {
     return String(value || '').trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
 }
 
+// 전투 화면이 플레이어 곁에 띄워 둘 소환수. 유지 시간이 남은 것만 내려보낸다.
+function getFieldSummonViews(user) {
+    const field = user && user.field || {}, now = Date.now(), list = [];
+    if (field.iktaeBot && Number(field.iktaeBot.hp || 0) > 0 && Number(field.iktaeBot.expired_at || 0) > now) list.push({ name: '익테봇', until: Number(field.iktaeBot.expired_at) });
+    if (field.sunata && Number(field.sunata.expired_at || 0) > now) list.push({ name: '수나타', until: Number(field.sunata.expired_at) });
+    return list;
+}
+
 function getHFieldCharacterSprite(mainCard) {
     const fallback = '필드/hfield-hunter.png';
     if (!mainCard || !mainCard.name) return '/rpg-ui?file=' + encodeURIComponent(fallback);
@@ -2089,6 +2097,7 @@ function buildHFieldState(user) {
             spriteUrl: getHFieldCharacterSprite(mainCard),
             ...randoCharacters.view(stats, user.field),
             basicUntil: Number(user.field?.basicUntil || 0),
+            summons: getFieldSummonViews(user),
             ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
             ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
@@ -2530,6 +2539,7 @@ function buildGeneralFieldState(user, dailyMode = false) {
             spriteUrl: getHFieldCharacterSprite(mainCard),
             ...randoCharacters.view(stats, user.field),
             basicUntil: Number(user.field?.basicUntil || 0),
+            summons: getFieldSummonViews(user),
             ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
             ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
@@ -2952,6 +2962,7 @@ function buildWorldBossState(user) {
             spriteUrl: getHFieldCharacterSprite(mainCard),
             ...randoCharacters.view(stats, user.field),
             basicUntil: Number(user.field?.basicUntil || 0),
+            summons: getFieldSummonViews(user),
             ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
             ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
@@ -9458,6 +9469,8 @@ function renderHFieldApp(sess) {
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};</script>
 <script src="/static/combat-effects.js"></script>
+<script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-scenes.js"></script>
 <script src="/static/hfield.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
@@ -9475,6 +9488,8 @@ function renderGeneralFieldApp(sess, mode = 'regular') {
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};window.FIELD_MODE=${JSON.stringify(mode)};</script>
 <script src="/static/combat-effects.js"></script>
+<script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-scenes.js"></script>
 <script src="/static/hfield.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
@@ -9507,6 +9522,8 @@ function renderWorldBossApp(sess) {
 </dialog>
 <script>window.WORLD_BOSS_ME=${JSON.stringify(sess.name)};</script>
 <script src="/static/combat-effects.js"></script>
+<script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-scenes.js"></script>
 <script src="/static/worldboss.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
@@ -9523,6 +9540,8 @@ function renderPvpApp(sess, opponent) {
 </main>
 <script>window.PVP_ME=${JSON.stringify(sess.name)};window.PVP_OPPONENT=${JSON.stringify(opponent || '')};</script>
 <script src="/static/combat-effects.js"></script>
+<script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-scenes.js"></script>
 <script src="/static/pvp.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

@@ -7,6 +7,9 @@
 
     const uiAsset = file => '/rpg-ui?file=' + encodeURIComponent(file);
     const effectCatalog = window.CombatEffects || null;
+    const combatFx = window.CombatFX || null;
+    // 연출이 대상에 닿기까지 걸리는 시간(ms). 그만큼 수치와 타격음을 늦춘다.
+    const leadOf = played => typeof played === 'number' ? played : played ? played.delay : 0;
     const ASSETS = {
         background: uiAsset('필드/뉴비즈.png'),
         impact: uiAsset('필드/hfield-impact-v2.png')
@@ -141,6 +144,8 @@
             this.impactCritical = false;
             this.impactSkill = false;
             this.initGl();
+            // 이펙트 그림을 장면 단위로 움직이는 연출 엔진. 만들 수 없으면 기존의 정적 그림 표시로 남는다.
+            this.fx = combatFx && effectCatalog ? combatFx.create({ scene: canvas, muted: () => audio.muted }) : null;
             Object.entries(ASSETS).forEach(([name, url]) => this.loadTexture(name, url));
             this.frame = requestAnimationFrame(time => this.render(time));
         }
@@ -201,6 +206,17 @@
                 const url = side && side.spriteUrl || '';
                 if (url && this.spriteUrls[key] !== url) { this.spriteUrls[key] = url; this.loadTexture(key, url); }
             });
+            // 소환이 유지되는 동안 소환수를 주인 곁에 띄워 둔다.
+            if (this.fx) ['me', 'opp'].forEach(key => {
+                const summon = this.sides[key] && this.sides[key].summon;
+                combatFx.companions(this.fx, key, summon && summon.name ? [{ name: summon.name }] : [], { src: combatAnchor(key, 'actor'), dst: combatAnchor(key === 'me' ? 'opp' : 'me', 'target'), srcHalf: .22, dstHalf: .32 });
+            });
+        }
+        // 정적 그림 대신 연출 엔진으로 재생한다. key는 연출이 붙는 쪽: actor 역할이면 시전자, target 역할이면 맞는 쪽이다.
+        playFx(key, effectIds, options) {
+            const opts = options || {}, role = opts.role === 'actor' ? 'actor' : 'target', other = key === 'me' ? 'opp' : 'me';
+            const from = role === 'actor' ? key : opts.from && opts.from !== key ? opts.from : other, to = role === 'actor' ? other : key;
+            return this.fx.play(effectIds, { role, src: combatAnchor(from, 'actor'), dst: combatAnchor(to, 'target'), srcHalf: .22, dstHalf: .32, event: opts.event, hit: opts.hit });
         }
         resize() {
             const dpr = Math.min(2, devicePixelRatio || 1), w = Math.max(1, Math.round(innerWidth * dpr)), h = Math.max(1, Math.round(innerHeight * dpr));
@@ -245,6 +261,7 @@
         }
         playEffectAssets(key, effectIds, options) {
             if (!effectCatalog) return;
+            if (this.fx) return this.playFx(key, effectIds, options);
             const opts = options || {}, role = opts.role === 'actor' ? 'actor' : 'target';
             const point = combatAnchor(key, role), now = performance.now(), x = point.x, y = Number.isFinite(opts.y) ? opts.y : point.y;
             if (this.recentEffects.size > 128) this.recentEffects.forEach((at, token) => { if (now - at > 5000) this.recentEffects.delete(token); });
@@ -281,6 +298,7 @@
             const effectIds = effectCatalog && effectCatalog.effectIdsFor
                 ? effectCatalog.effectIdsFor(event, 'target', hit)
                 : hit && hit.effectIds && hit.effectIds.length ? hit.effectIds : event && event.effectIds;
+            if (this.fx) return this.playFx(key, effectIds, { role: 'target', from: actorKey, event, hit });
             this.playEffectAssets(key, effectIds, { role: 'target' });
             const point=combatAnchor(key,'target'),x=point.x,y=point.y,effect=combatEffectProfile(event,hit),color=ELEMENT_EFFECT_COLORS[effect.element]||[.35,.72,1,1];
             const count=reducedMotion?4:10,ring=(ringColor,size,delay)=>this.particle({x,y,life:.48,maxLife:.48,width:size,height:size,color:ringColor,mode:4,grow:.72,gravity:0,delay:delay||0});
@@ -315,6 +333,7 @@
             const side=role==='target'?'target':'actor',point=combatAnchor(key,side),y=point.y;
             const effectIds=effectCatalog&&effectCatalog.effectIdsFor?effectCatalog.effectIdsFor(event,side):event&&event.effectIds;
             if(!effectIds||!effectIds.length)return;
+            if(this.fx)return this.playFx(key,effectIds,{role:side,event});
             this.playEffectAssets(key,effectIds,{role:side,y});
             const x=point.x,profile=combatEffectProfile(event,null),color=profile.kind==='summon'?[.2,1,.68,1]:ELEMENT_EFFECT_COLORS[profile.element]||[.38,.72,1,1];
             this.particle({x,y:y+.012,life:.48,maxLife:.48,width:.095,height:.095,color:[color[0],color[1],color[2],.42],mode:4,grow:.5,gravity:0});
@@ -337,18 +356,19 @@
         // 피격 연출: 대상 플래시 + 임팩트 스프라이트 + 파티클
         strike(key, event, hit, actorKey) {
             const now = performance.now(), critical = Number(event && event.criticalCount || 0) > 0, skill = event && event.action === 'skill';
-            this.anim[key].hitUntil = now + (critical ? 520 : 360);
-            this.impactKey = key; this.impactStarted = now; this.impactUntil = now + (skill ? 520 : 390);
+            const lead = leadOf(this.combatEffect(key,event,hit,actorKey)), at = now + lead;
+            this.anim[key].hitFrom = at; this.anim[key].hitUntil = at + (critical ? 520 : 360);
+            this.impactKey = key; this.impactStarted = at; this.impactUntil = at + (skill ? 520 : 390);
             this.impactCritical = critical; this.impactSkill = skill;
-            this.combatEffect(key,event,hit,actorKey);
-            if(critical){const point=combatAnchor(key,'target');this.burst(point.x,point.y,[1,.68,.12,.68],16);}
+            if(critical&&!this.fx){const point=combatAnchor(key,'target');this.burst(point.x,point.y,[1,.68,.12,.68],16);}
+            return lead;
         }
         // 소환수/지속 피해 틱: 공격 모션 없이 대상 피격 연출만
         tickHit(key, event, hit, actorKey) {
-            const now = performance.now();
-            this.anim[key].hitUntil = now + 360;
-            this.impactKey = key; this.impactStarted = now; this.impactUntil = now + 390; this.impactCritical = false; this.impactSkill = false;
-            this.combatEffect(key,event,hit,actorKey);
+            const now = performance.now(), lead = leadOf(this.combatEffect(key,event,hit,actorKey)), at = now + lead;
+            this.anim[key].hitFrom = at; this.anim[key].hitUntil = at + 360;
+            this.impactKey = key; this.impactStarted = at; this.impactUntil = at + 390; this.impactCritical = false; this.impactSkill = false;
+            return lead;
         }
         defendPulse(key) {
             this.anim[key].defendAt = performance.now();
@@ -366,7 +386,7 @@
             const width = mirror ? -fit.width : fit.width;
             this.drawAura(info, key, x, y, width, fit.height, time);
             this.draw(null, x, .83, narrow ? .4 : .27, .11, { mode: 1, color: mirror ? [1,.14,.2,.24] : [.08,.45,1,.25] });
-            this.draw(texture, x, y, width, fit.height, { flash: time < anim.hitUntil ? .75 : 0 });
+            this.draw(texture, x, y, width, fit.height, { flash: time >= (anim.hitFrom || 0) && time < anim.hitUntil ? .75 : 0 });
             const pulse = time - anim.defendAt < 620 ? 1 - (time - anim.defendAt) / 620 : 0;
             if (info && Number(info.defendUntil || 0) > now()) {
                 const wave = reducedMotion ? .5 : (Math.sin(time / 380) + 1) * .5;
@@ -386,7 +406,7 @@
             const narrow = innerWidth < 700, idle = reducedMotion ? 0 : Math.sin(time / 520) * .005;
             this.drawSide('me', narrow, idle, time);
             this.drawSide('opp', narrow, idle, time);
-            if (time < this.impactUntil) {
+            if (!this.fx && time < this.impactUntil) {
                 const p = clamp((time - this.impactStarted) / Math.max(1, this.impactUntil - this.impactStarted), 0, 1), pulse = Math.sin(p * Math.PI),
                     fit = this.fit('impact', (this.impactSkill ? .36 : .3) * (.76 + pulse * .28), this.impactSkill ? .32 : .26),
                     alpha = Math.pow(1 - p, .5) * .68, impact = combatAnchor(this.impactKey,'target');
@@ -743,13 +763,13 @@
         const damage = Number(event.damage || 0), critical = Number(event.criticalCount || 0) > 0;
         if (action === 'summon' || action === 'dot') {
             const tickHits = Array.isArray(event.hits) && event.hits.length ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0) : (damage > 0 ? [{ damage }] : []);
-            tickHits.forEach((hit, index) => setTimeout(() => {
+            let tickLead = 0;
+            tickHits.forEach((hit, index) => {
+                const present = () => {
                 const shieldAbsorb = hit.type === 'absorbed';
                 const summonAbsorb = hit.type === 'summonAbsorbed';
-                if (renderer) {
-                    if (shieldAbsorb || summonAbsorb) renderer.combatEffect(target,event,hit,actor);
-                    else renderer.tickHit(target,event,hit,actor);
-                }
+                const lead = renderer ? leadOf(shieldAbsorb || summonAbsorb ? renderer.combatEffect(target,event,hit,actor) : renderer.tickHit(target,event,hit,actor)) : 0;
+                const land = () => {
                 hud.addPop({
                     side: target,
                     text: shieldAbsorb ? '흡수 ' + number(hit.damage) : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
@@ -758,7 +778,12 @@
                     sub: hit.label || (index === 0 ? event.skillName || (action === 'dot' ? '지속 피해' : '소환수') : '')
                 });
                 if (!shieldAbsorb && !summonAbsorb) { hud.impact(false); audio.hit(); }
-            }, index * 95));
+                };
+                if (lead > 0) setTimeout(land, lead); else land();
+                return lead;
+                };
+                if (index === 0) tickLead = present(); else setTimeout(present, tickLead + index * 95);
+            });
             if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, text: 'HP +' + number(event.targetHeal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: tickHits.length * 95 }); }
             return;
         }
@@ -766,15 +791,15 @@
         const hits = Array.isArray(event.hits) ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
         if (damage > 0 || hits.length > 0) {
             const displayedHits = hits.length ? hits : [{ damage, critical }];
-            displayedHits.forEach((hit, index) => setTimeout(() => {
+            let hitLead = 0;
+            displayedHits.forEach((hit, index) => {
+                const present = () => {
                 const hitCritical = !!hit.critical;
                 const shieldAbsorb = hit.type === 'absorbed';
                 const summonAbsorb = hit.type === 'summonAbsorbed';
                 const presentationHit = Object.assign({}, hit, { presentationIndex: index });
-                if (renderer) {
-                    if (shieldAbsorb || summonAbsorb) renderer.combatEffect(target,event,presentationHit,actor);
-                    else renderer.strike(target, Object.assign({}, event, { criticalCount: hitCritical ? 1 : 0 }),presentationHit,actor);
-                }
+                const lead = renderer ? leadOf(shieldAbsorb || summonAbsorb ? renderer.combatEffect(target,event,presentationHit,actor) : renderer.strike(target, Object.assign({}, event, { criticalCount: hitCritical ? 1 : 0 }),presentationHit,actor)) : 0;
+                const land = () => {
                 hud.addPop({
                     side: target, text: shieldAbsorb ? '흡수 ' + number(hit.damage) : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
                     color: shieldAbsorb ? '#b8d8ff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : hitCritical ? '#ff5d4d' : '#ffe06e',
@@ -784,9 +809,14 @@
                     audio.hit();
                     if (hitCritical) { audio.play('crit', .82); hud.impact(true); } else hud.impact(false);
                 }
-            }, index * 95));
-            if (action === 'skill') audio.play('skill', .68);
-        } else if (action === 'skill') audio.play('skill', .68);
+                };
+                if (lead > 0) setTimeout(land, lead); else land();
+                return lead;
+                };
+                if (index === 0) hitLead = present(); else setTimeout(present, hitLead + index * 95);
+            });
+            if (action === 'skill' && !(renderer && renderer.fx)) audio.play('skill', .68);
+        } else if (action === 'skill' && !(renderer && renderer.fx)) audio.play('skill', .68);
         const reflectedHits = Array.isArray(event.reflectedHits) ? event.reflectedHits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
         reflectedHits.forEach((hit, index) => setTimeout(() => { if(renderer)renderer.combatEffect(actor,{action:'dot',skillName:'가시 반사',effectElement:'암',effectIds:hit.effectIds},hit,target);hud.addPop({ side: actor, text: '-' + number(hit.damage), color: '#d7a2ff', size: 22, y: combatPopY(), sub: hit.label || '가시 반사' }); }, (hits.length + index) * 95));
         if (reflectedHits.length === 0 && Number(event.selfDamage || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','자해')],{role:'target'});hud.addPop({ side: actor, text: '-' + number(event.selfDamage), color: '#ff8f87', size: 22, y: combatPopY(), delay: 120 }); }

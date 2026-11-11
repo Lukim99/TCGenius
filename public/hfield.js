@@ -7,6 +7,7 @@
 
     const uiAsset = file => '/rpg-ui?file=' + encodeURIComponent(file);
     const effectCatalog = window.CombatEffects || null;
+    const combatFx = window.CombatFX || null;
     const dailyMode = window.FIELD_MODE === 'daily';
     const trainingMode = window.FIELD_MODE === 'training';
     const regularMode = window.FIELD_MODE === 'regular' || dailyMode || trainingMode;
@@ -173,6 +174,10 @@
             this.eliteIntro = null;
             this.mobReturnAt = 0;
             this.initGl();
+            // 이펙트 그림을 장면 단위로 움직이는 연출 엔진. 만들 수 없으면 기존의 정적 그림 표시로 남는다.
+            this.fx = combatFx && effectCatalog ? combatFx.create({ scene: canvas, muted: () => audio.muted }) : null;
+            this.fxTarget = null;
+            this.fxSkills = '';
             Object.entries(ASSETS).forEach(([name, url]) => this.loadTexture(name, url));
             this.frame = requestAnimationFrame(time => this.render(time));
         }
@@ -236,7 +241,32 @@
                 if (active) this.previewField(active);
             }
             this.state = next;
+            this.syncFx(next);
         }
+        // 연출 엔진에 곁에 둘 소환수와 미리 받아 둘 이펙트를 알린다.
+        syncFx(next) {
+            if (!this.fx) return;
+            const inField = !!(next && next.inField);
+            combatFx.companions(this.fx, 'me', inField && next.player && next.player.summons || [], { src: this.playerEffectPoint('actor'), dst: this.fxTarget || this.targetEffectPoint(next || {}, null, false) });
+            const names = inField ? (next.skills || []).map(skill => skill.name).join('|') : '';
+            if (!names || names === this.fxSkills) return;
+            this.fxSkills = names;
+            const ids = ['combat:기본 공격', 'combat:치명타', 'combat:HP 회복', 'combat:MP 회복'];
+            (next.skills || []).forEach(skill => ids.push(...effectCatalog.skillEffects(skill.name)));
+            this.fx.preload(ids, combatFx.commonSounds);
+        }
+        // 정적 그림 대신 연출 엔진으로 재생한다. 시전자와 대상의 자리를 함께 넘겨 장면이 둘 사이를 오가게 한다.
+        playFx(x, y, effectIds, options) {
+            const opts = options || {}, role = opts.role === 'actor' ? 'actor' : 'target', player = this.playerEffectPoint('actor');
+            const foe = this.fxTarget || this.targetEffectPoint(this.holdState || this.state || {}, opts.event, false);
+            const onPlayer = Math.abs(x - player.x) < .06;
+            const src = role === 'actor' ? { x, y } : onPlayer ? foe : player;
+            const dst = role === 'actor' ? (onPlayer ? foe : player) : { x, y };
+            // 발밑 위치: 플레이어는 몸 중심에서 .19, 보스와 엘리트는 .28, 잡몹은 .2만큼 아래다(화면 단위).
+            const display = this.holdState || this.state || {}, foeHalf = regularMode && display.phase === 'normal' ? .2 : .28, toFoe = dst === foe || role === 'target' && !onPlayer;
+            return this.fx.play(effectIds, { role, src, dst, srcHalf: toFoe ? .19 : foeHalf, dstHalf: toFoe ? foeHalf : .19, scale: toFoe && foeHalf === .2 ? .72 : 1, event: opts.event, hit: opts.hit });
+        }
+        hitWindow(time) { return time >= (this.targetHitFrom || 0) && time < this.targetHitUntil; }
         previewField(field) {
             if (!regularMode || !field) return;
             const backgroundUrl = field.backgroundUrl || field.background || '';
@@ -307,6 +337,7 @@
         }
         playEffectAssets(x, y, effectIds, options) {
             if (!effectCatalog) return;
+            if (this.fx) return this.playFx(x, y, effectIds, options);
             const opts = options || {}, role = opts.role === 'actor' ? 'actor' : 'target', now = performance.now();
             if (this.recentEffects.size > 128) this.recentEffects.forEach((at, token) => { if (now - at > 5000) this.recentEffects.delete(token); });
             const candidates = effectCatalog.unique(effectIds || []).filter(effectId => {
@@ -346,6 +377,7 @@
             const effectIds = effectCatalog && effectCatalog.effectIdsFor
                 ? effectCatalog.effectIdsFor(event, 'target', hit)
                 : hit && hit.effectIds && hit.effectIds.length ? hit.effectIds : event && event.effectIds;
+            if (this.fx) return this.playFx(x, y, effectIds, { role: 'target', event, hit });
             this.playEffectAssets(x, y, effectIds, { role: 'target' });
             const effect = combatEffectProfile(event, hit), color = ELEMENT_EFFECT_COLORS[effect.element] || [.35,.72,1,1];
             const count = reducedMotion ? 4 : 10;
@@ -391,6 +423,7 @@
             const side = role === 'target' ? 'target' : 'actor';
             const effectIds = effectCatalog && effectCatalog.effectIdsFor ? effectCatalog.effectIdsFor(event, side) : event && event.effectIds;
             if (!effectIds || !effectIds.length) return;
+            if (this.fx) return this.playFx(x, y, effectIds, { role: side, event });
             this.playEffectAssets(x, y, effectIds, { role: side });
             const profile = combatEffectProfile(event, null), color = profile.kind === 'summon' ? [.2,1,.68,1] : ELEMENT_EFFECT_COLORS[profile.element] || [.38,.72,1,1];
             this.particle({x,y:y+.012,life:.48,maxLife:.48,width:.095,height:.095,color:[color[0],color[1],color[2],.42],mode:4,grow:.5,gravity:0});
@@ -529,7 +562,7 @@
         }
         drawRegularElite(display, time, narrow) {
             const field = this.regularField(display), monster = field && field.monster || {}, intro = this.eliteIntro;
-            let x=narrow?.75:.76,y=narrow?.62:.61,scale=1,alpha=1,introProgress=1,flash=time<this.targetHitUntil?.85:0;
+            let x=narrow?.75:.76,y=narrow?.62:.61,scale=1,alpha=1,introProgress=1,flash=this.hitWindow(time)?.85:0;
             if (intro) {
                 const elapsed=time-intro.start,p=clamp((elapsed-420)/1250,0,1),ease=1-Math.pow(1-p,3);
                 introProgress=p;
@@ -553,19 +586,21 @@
         }
         // 소환수/지속 피해 틱: 플레이어 공격 모션 없이 대상 피격 연출만
         tickHit(previous, event) {
-            const now = performance.now();
-            this.targetHitUntil = now + 360; this.impactStarted = now; this.impactUntil = now + 390; this.impactCritical = false; this.impactSkill = false;
-            const target = this.targetEffectPoint(previous, event, true), player = this.playerEffectPoint('actor');
+            const now = performance.now(), target = this.targetEffectPoint(previous, event, true), player = this.playerEffectPoint('actor');
+            this.fxTarget = target;
+            // 연출이 대상에 닿는 순간까지 피격 반응을 늦춘다.
+            const played = this.combatEffect(target.x, target.y, event, event && event.hits && event.hits[0], player.x), lead = played ? played.delay : 0, at = now + lead;
+            this.targetHitFrom = at; this.targetHitUntil = at + 360; this.impactStarted = at; this.impactUntil = at + 390; this.impactCritical = false; this.impactSkill = false;
             this.impactX = target.x; this.impactY = target.y;
-            this.combatEffect(target.x, target.y, event, event && event.hits && event.hits[0], player.x);
-            if (regularMode && previous && previous.phase === 'normal' && !event.eliteEncountered && Number(event && event.killedCount || 0) > 0) setTimeout(() => this.scatterMobs(event.killedCount, false), 90);
+            if (regularMode && previous && previous.phase === 'normal' && !event.eliteEncountered && Number(event && event.killedCount || 0) > 0) setTimeout(() => this.scatterMobs(event.killedCount, false), lead + 90);
+            return lead;
         }
         receiveHit(hit, event) {
             const now = performance.now(), critical = !!(hit && hit.critical), destiny = !!(hit && hit.destiny);
             const player = this.playerEffectPoint('target'), target = this.targetEffectPoint(this.state || {}, event, false);
-            this.playerHitUntil = now + (critical ? 440 : 320);
-            this.combatEffect(player.x,player.y,{action:'attack',effectElement:event&&event.receivedEffectElement||null},hit,target.x);
-            if(critical||destiny)this.burst(player.x,player.y,destiny?[.72,.3,1,.65]:[1,.58,.14,.65],critical?14:10);
+            const played = this.combatEffect(player.x,player.y,{action:'attack',effectElement:event&&event.receivedEffectElement||null},hit,target.x), lead = played ? played.delay : 0;
+            this.playerHitFrom = now + lead; this.playerHitUntil = now + lead + (critical ? 440 : 320);
+            if(!this.fx&&(critical||destiny))this.burst(player.x,player.y,destiny?[.72,.3,1,.65]:[1,.58,.14,.65],critical?14:10);
         }
         animate(event, previous) {
             const now = performance.now();
@@ -574,32 +609,35 @@
             this.attackAt = now; this.attackKind = skillAudience === 'actor' ? 'buff' : event.action || 'attack';
             const outgoingHits = Array.isArray(event.hits) ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
             const receivedHits = Array.isArray(event.receivedHits) ? event.receivedHits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
-            if (regularMode) {
-                if (event.eliteEncountered) this.startEliteIntro(event.killedCount);
-                else if (event.eliteDefeated) this.startMobReturn();
-                else if (previous && previous.phase === 'normal' && Number(event.killedCount || 0) > 0) setTimeout(() => this.scatterMobs(event.killedCount, false), Math.max(90, outgoingHits.length * 95));
-            }
-            if (event.action === 'skill' && (skillAudience === 'actor' || skillAudience === 'both')) this.castEffect(player.x,player.y,event,'actor');
-            if (event.damage > 0 || Number(event.killedCount || 0) > 0) {
-                const target = this.targetEffectPoint(previous, event, true);
-                this.targetHitUntil = now + (event.criticalCount ? 520 : 360);
-                this.impactStarted = now;
-                this.impactUntil = now + (event.action === 'skill' ? 520 : 390);
+            // 연출이 대상에 닿기까지 걸리는 시간(lead)만큼 피격 반응과 수치를 늦춘다.
+            let lead = 0, sound = false;
+            const note = played => { if (played) { lead = Math.max(lead, played.delay); sound = sound || played.sound; } };
+            const strikes = event.damage > 0 || Number(event.killedCount || 0) > 0, aims = event.action === 'skill' && (skillAudience === 'target' || skillAudience === 'both');
+            const target = strikes || aims ? this.targetEffectPoint(previous, event, true) : null;
+            if (target) this.fxTarget = target;
+            if (event.action === 'skill' && (skillAudience === 'actor' || skillAudience === 'both')) note(this.castEffect(player.x,player.y,event,'actor'));
+            if (strikes) {
+                note(this.combatEffect(target.x, target.y, event, outgoingHits[0], player.x));
+                this.targetHitFrom = now + lead;
+                this.targetHitUntil = now + lead + (event.criticalCount ? 520 : 360);
+                this.impactStarted = now + lead;
+                this.impactUntil = now + lead + (event.action === 'skill' ? 520 : 390);
                 this.impactCritical = Number(event.criticalCount || 0) > 0;
                 this.impactSkill = event.action === 'skill';
                 this.impactX = target.x;
                 this.impactY = target.y;
-                this.combatEffect(target.x, target.y, event, outgoingHits[0], player.x);
-                if (event.criticalCount) this.burst(this.impactX,this.impactY,[1,.68,.12,.68],16);
+                if (event.criticalCount && !this.fx) this.burst(this.impactX,this.impactY,[1,.68,.12,.68],16);
                 outgoingHits.slice(1).forEach((hit, index) => {
                     const presentationHit = Object.assign({}, hit, { presentationIndex: index + 1 });
-                    setTimeout(() => this.tickHit(previous, Object.assign({},event,{hits:[presentationHit],damage:hit.damage,killedCount:0,eliteEncountered:false,eliteDefeated:false})), (index + 1) * 95);
+                    setTimeout(() => this.tickHit(previous, Object.assign({},event,{hits:[presentationHit],damage:hit.damage,killedCount:0,eliteEncountered:false,eliteDefeated:false})), lead + (index + 1) * 95);
                 });
-            } else if (event.action === 'skill' && (skillAudience === 'target' || skillAudience === 'both')) {
-                const target = this.targetEffectPoint(previous, event, true);
-                this.castEffect(target.x,target.y,event,'target');
+            } else if (aims) note(this.castEffect(target.x,target.y,event,'target'));
+            if (regularMode) {
+                if (event.eliteEncountered) this.startEliteIntro(event.killedCount);
+                else if (event.eliteDefeated) this.startMobReturn();
+                else if (previous && previous.phase === 'normal' && Number(event.killedCount || 0) > 0) setTimeout(() => this.scatterMobs(event.killedCount, false), lead + Math.max(90, outgoingHits.length * 95));
             }
-            const receivedDelay = Math.max(80, outgoingHits.length * 95 + 80);
+            const receivedDelay = lead + Math.max(80, outgoingHits.length * 95 + 80);
             if (receivedHits.length) receivedHits.forEach((hit, index) => setTimeout(() => this.receiveHit(hit,event), receivedDelay + index * 95));
             else if (event.received > 0) setTimeout(() => this.receiveHit({ damage: event.received },event), receivedDelay);
             if (event.pillarDestroyed != null) {
@@ -608,6 +646,7 @@
                 for(let i=0;i<18;i++) this.particle({x:pillar.x,y:pillar.y,vx:(Math.random()-.5)*.28,vy:-.1-Math.random()*.2,life:.7+Math.random()*.6,maxLife:1.3,width:.008+Math.random()*.018,height:.012+Math.random()*.025,spin:(Math.random()-.5)*8,color:[.32,.15,.09,1],mode:3});
             }
             if (event.cleared && previous) { this.holdState = JSON.parse(JSON.stringify(previous)); if (!regularMode && this.holdState.target) this.holdState.target.pillars = [false, false]; }
+            return { delay: lead, sound: !!this.fx && sound };
         }
         timeBurst(type) {
             const colors = { fever: [1,.25,.04,1], punch: [.1,.8,1,1], hit: [1,.75,.15,1], lucky: [.25,1,.45,1] };
@@ -622,6 +661,7 @@
         recoveryBurst(event) {
             const player = this.playerEffectPoint('actor');
             this.playEffectAssets(player.x, player.y, event && event.effectIds, { role: 'actor' });
+            if (this.fx) return;
             const hp=Number(event&&event.recoveredHp||0),mp=Number(event&&event.recoveredMp||0),colors=hp>0&&mp>0?[[.18,1,.5,1],[.2,.65,1,1]]:hp>0?[[.14,1,.42,1],[.7,1,.35,1]]:[[.18,.58,1,1],[.4,.85,1,1]];
             for(let i=0;i<(reducedMotion?8:18);i++){const a=Math.random()*Math.PI*2,s=.02+Math.random()*.08,color=colors[i%colors.length].slice();color[3]=.64;this.particle({x:player.x+(Math.random()-.5)*.055,y:player.y+.01+Math.random()*.09,vx:Math.cos(a)*s,vy:-.06-Math.random()*.12,life:.55+Math.random()*.5,maxLife:1.05,width:.006+Math.random()*.009,height:.006+Math.random()*.013,spin:(Math.random()-.5)*3,color,mode:i%4===0?2:1});}
         }
@@ -634,9 +674,9 @@
                 const playerFit=this.fit('player',narrow?.62:.78,narrow?.48:.36), playerX=(narrow?.24:.25)+lunge,playerY=narrow?.68:.66-idle;
                 this.drawPlayerAura(display.player,playerX,playerY,playerFit,time);
                 this.draw(null,playerX,.83,narrow?.4:.27,.11,{mode:1,color:[.08,.45,1,.25]});
-                this.draw(this.textures.player,playerX,playerY,playerFit.width,playerFit.height,{flash:time<this.playerHitUntil?.75:0});
+                this.draw(this.textures.player,playerX,playerY,playerFit.width,playerFit.height,{flash:time>=(this.playerHitFrom||0)&&time<this.playerHitUntil?.75:0});
                 if (trainingMode) {
-                    const fit=this.fit('dummy',narrow?.55:.66,narrow?.42:.34),hit=time<this.targetHitUntil;
+                    const fit=this.fit('dummy',narrow?.55:.66,narrow?.42:.34),hit=this.hitWindow(time);
                     this.draw(null,.76,.82,fit.width,.1,{mode:1,color:[.1,.05,.01,.36]});
                     this.draw(this.textures.dummy,.76+(hit?Math.sin(time*.12)*.008:0),narrow?.64:.62,fit.width,fit.height,{uv:[1,0,-1,1],rotation:hit?Math.sin(time*.05)*.035:0,flash:hit?.65:0});
                 } else if (regularMode) {
@@ -645,12 +685,12 @@
                     this.drawMobFlights(display,dt);
                 } else if (phase === 'pillar') {
                     const alive = display.target && display.target.pillars || [true,true];
-                    [0,1].forEach(index => { if (!alive[index]) return; const x=narrow?(index?.78:.61):(index?.81:.65), fit=this.fit('pillar',narrow?.48:.62,narrow?.34:.25),hit=time<this.targetHitUntil&&Math.abs(x-this.impactX)<.11; this.draw(null,x,.78,fit.width*.9,.12,{mode:1,color:[1,.08,.02,.25]}); this.draw(this.textures.pillar,x+(hit?Math.sin(time*.16)*.008:0),.62+idle,fit.width,fit.height,{flash:hit?.85:0}); });
+                    [0,1].forEach(index => { if (!alive[index]) return; const x=narrow?(index?.78:.61):(index?.81:.65), fit=this.fit('pillar',narrow?.48:.62,narrow?.34:.25),hit=this.hitWindow(time)&&Math.abs(x-this.impactX)<.11; this.draw(null,x,.78,fit.width*.9,.12,{mode:1,color:[1,.08,.02,.25]}); this.draw(this.textures.pillar,x+(hit?Math.sin(time*.16)*.008:0),.62+idle,fit.width,fit.height,{flash:hit?.85:0}); });
                 } else {
-                    const fit=this.fit('buta',narrow?.72:.88,narrow?.5:.44),hit=time<this.targetHitUntil; this.draw(null,narrow?.75:.74,.8,narrow?.43:.32,.13,{mode:1,color:[1,.04,.12,.24]}); this.draw(this.textures.buta,(narrow?.75:.74)+(hit?Math.sin(time*.18)*.006:0),narrow?.62:.61+idle,fit.width,fit.height,{flash:hit?.85:0,color:[1,1,1,display.inField?1:.82]});
+                    const fit=this.fit('buta',narrow?.72:.88,narrow?.5:.44),hit=this.hitWindow(time); this.draw(null,narrow?.75:.74,.8,narrow?.43:.32,.13,{mode:1,color:[1,.04,.12,.24]}); this.draw(this.textures.buta,(narrow?.75:.74)+(hit?Math.sin(time*.18)*.006:0),narrow?.62:.61+idle,fit.width,fit.height,{flash:hit?.85:0,color:[1,1,1,display.inField?1:.82]});
                 }
             }
-            if(display.inField&&time<this.impactUntil){const p=clamp((time-this.impactStarted)/Math.max(1,this.impactUntil-this.impactStarted),0,1),pulse=Math.sin(p*Math.PI),fit=this.fit('impact',(this.impactSkill?.36:.3)*(.76+pulse*.28),this.impactSkill?.32:.26),alpha=Math.pow(1-p,.5)*.68;this.draw(this.textures.impact,this.impactX,this.impactY,fit.width,fit.height,{color:[1,1,1,alpha],rotation:(this.impactSkill?-.06:.06)+p*.035});if(this.impactCritical)this.draw(this.textures.impact,this.impactX-.008,this.impactY+.008,fit.width*.66,fit.height*.66,{color:[1,.86,.52,alpha*.55],rotation:-.75});}
+            if(!this.fx&&display.inField&&time<this.impactUntil){const p=clamp((time-this.impactStarted)/Math.max(1,this.impactUntil-this.impactStarted),0,1),pulse=Math.sin(p*Math.PI),fit=this.fit('impact',(this.impactSkill?.36:.3)*(.76+pulse*.28),this.impactSkill?.32:.26),alpha=Math.pow(1-p,.5)*.68;this.draw(this.textures.impact,this.impactX,this.impactY,fit.width,fit.height,{color:[1,1,1,alpha],rotation:(this.impactSkill?-.06:.06)+p*.035});if(this.impactCritical)this.draw(this.textures.impact,this.impactX-.008,this.impactY+.008,fit.width*.66,fit.height*.66,{color:[1,.86,.52,alpha*.55],rotation:-.75});}
             this.drawEffectAssets(time);
             if (time>this.ambientAt) { this.ambientAt=time+(reducedMotion?500:170); this.particle({x:Math.random()<.5?.04:.96,y:.55+Math.random()*.4,vx:(Math.random()-.5)*.01,vy:-.025,life:3,maxLife:3,width:.005+Math.random()*.008,height:.005+Math.random()*.008,color:Math.random()<.5?[.4,.2,1,.55]:[1,.15,.25,.5]}); }
             this.particles=this.particles.filter(p=>{if(p.delay>0){p.delay-=dt;return true;}p.life-=dt;if(p.life<=0)return false;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=p.gravity*dt;p.rotation+=p.spin*dt;const progress=1-p.life/p.maxLife,scale=1+p.grow*progress,c=p.color.slice();c[3]*=clamp(p.life/p.maxLife*2.4,0,1);this.draw(null,p.x,p.y,p.width*scale,p.height*scale,{mode:p.mode,color:c,rotation:p.rotation});return true;});
@@ -972,7 +1012,7 @@
         lastDailyClearKey=key;showRewards(next.clearRewards||[],{lucky:daily.clearReward.lucky});
     }
     async function enter(confirmed){const field=regularMode?selectedField():null,canEnter=regularMode?field&&field.canEnter!==false&&!field.locked:state&&state.canEnter;if(busy||!state||(!confirmed&&!canEnter))return;audio.unlock();const transitionAsset=regularMode?field:state.ticket;setBusy(true);try{const body={confirmed:confirmed===true};if(regularMode)body.fieldName=field&&field.name||selectedFieldName;const result=await request(apiBase+'/enter',body);applyState(result.state,{deferBgm:result.ok});addLog(result.message,result.ok?'good':'bad');if(result.ok)hud.startEntryTransition((result.state&&result.state.activeField)||transitionAsset);else if(result.needsConfirmation){setBusy(false);const accepted=await showDialog('입장 경고',result.message,'입장');if(accepted)return enter(true);await request(apiBase+'/cancel-entry',regularMode?{fieldName:body.fieldName}:{});addLog('필드 입장을 취소했습니다.');}else audio.play('fail',.42);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
-    async function action(path,body){if(busy||hud.inEntryTransition()||hud.inConsumableMenu()||!state||!state.inField||state.pendingFragment)return;audio.unlock();const previous=state;setBusy(true);try{const result=await request(apiBase+path,body||{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok){const event=result.event||{};if(renderer)renderer.animate(event,previous);hud.addDamage(event,previous);if(event.action==='skill')audio.play('skill',.68);else if(event.damage>0||event.killedCount>0)audio.hit();if(event.criticalCount){audio.play('crit',.82);hud.impact(true);}else if(event.damage>0||event.killedCount>0)hud.impact(false);if(event.received>0)setTimeout(()=>audio.hit(),90);if(regularMode&&event.eliteEncountered){setTimeout(()=>hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다'),350);audio.play('start',.82);hud.impact(true);}if(regularMode&&event.eliteDefeated){hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}if(!regularMode&&event.pillarDestroyed!=null){const last=event.pillarDestroyed===1;hud.showBanner(last?'결계 붕괴':'기둥 파괴',last?'보상 봉인이 해제됩니다':'남은 기둥 1 / 2');audio.play(last?'clear':'crit',last?.72:.62);hud.impact(true);}if(dailyMode&&!event.cleared)showDailyTimes(event);if(event.cleared){if(dailyMode){lastDailyClearKey=state.daily.date+':'+state.daily.finishedAt;}showRewards(event.rewards||[],event);}if(event.defeated){hud.showBanner('전투 패배');audio.play('fail',.72);hud.impact(true);}}else audio.play('fail',.32);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
+    async function action(path,body){if(busy||hud.inEntryTransition()||hud.inConsumableMenu()||!state||!state.inField||state.pendingFragment)return;audio.unlock();const previous=state;setBusy(true);try{const result=await request(apiBase+path,body||{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok){const event=result.event||{};const staged=renderer&&renderer.animate(event,previous)||{delay:0,sound:false},land=()=>{hud.addDamage(event,previous);if(event.action==='skill'){if(!staged.sound)audio.play('skill',.68);}else if(event.damage>0||event.killedCount>0)audio.hit();if(event.criticalCount){audio.play('crit',.82);hud.impact(true);}else if(event.damage>0||event.killedCount>0)hud.impact(false);if(event.received>0)setTimeout(()=>audio.hit(),90);};if(staged.delay>0)setTimeout(land,staged.delay);else land();if(regularMode&&event.eliteEncountered){setTimeout(()=>hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다'),350);audio.play('start',.82);hud.impact(true);}if(regularMode&&event.eliteDefeated){hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}if(!regularMode&&event.pillarDestroyed!=null){const last=event.pillarDestroyed===1;hud.showBanner(last?'결계 붕괴':'기둥 파괴',last?'보상 봉인이 해제됩니다':'남은 기둥 1 / 2');audio.play(last?'clear':'crit',last?.72:.62);hud.impact(true);}if(dailyMode&&!event.cleared)showDailyTimes(event);if(event.cleared){if(dailyMode){lastDailyClearKey=state.daily.date+':'+state.daily.finishedAt;}showRewards(event.rewards||[],event);}if(event.defeated){hud.showBanner('전투 패배');audio.play('fail',.72);hud.impact(true);}}else audio.play('fail',.32);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
     async function useConsumable(itemId){if(busy||hud.inEntryTransition()||!state||!state.inField||state.pendingFragment)return;audio.unlock();setBusy(true);try{const result=await request(apiBase+'/use-consumable',{itemId:Number(itemId)});applyState(result.state);addLog(result.message,result.ok?'good':'bad');if(result.ok){const event=result.event||{};if(renderer)renderer.recoveryBurst(event);hud.addRecovery(event);audio.play('potion',.68);}else audio.play('fail',.32);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
     function attack(){const now=Date.now()+clockOffset;if(hud.inEntryTransition()||hud.inConsumableMenu()||!state||state.pendingFragment||now<Number(state.nextActionAt||0))return;action('/attack',{});}
     function useSkill(name){const skill=state&&(state.skills||[]).find(s=>s.name===name),now=Date.now()+clockOffset;if(hud.inEntryTransition()||hud.inConsumableMenu()||state&&state.pendingFragment||!skill||now<Number(skill.cooldownEnd||0)||now<Number(state.nextActionAt||0))return;action('/skill',{skillName:name});}
@@ -980,7 +1020,7 @@
     async function leave(){if(!state||!state.inField||state.pendingFragment)return;const accepted=await showDialog('필드 퇴장',dailyMode?'중도 퇴장하면 보상을 받을 수 없으며 오늘은 다시 입장할 수 없습니다.':regularMode?'현재 사냥을 끝내고 필드 선택으로 돌아갑니다.':'보상을 받지 못하며 사용한 초대장은 반환되지 않습니다.','퇴장');if(!accepted)return;setBusy(true);try{const result=await request(apiBase+'/leave',{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok)audio.stopBgm();}catch(error){addLog(error.message,'bad');}finally{setBusy(false);}}
     function backOrLeave(){if(trainingMode){if(trainingEditor){trainingEditor=null;return;}trainingAuto=false;location.href='/';return;}if(hud.inEntryTransition()||regularMode&&state&&state.pendingFragment)return;if(hud.inConsumableMenu()){hud.closeConsumables();return;}if(dialog){dialog.cancel();return;}if(rewards){closeRewards();return;}if(state&&state.inField)leave();else location.href='/';}
     // 소환수(익테봇/수나타)·지속 피해(유서새김/장비 효과) 틱은 서버에서 백그라운드로 처리되므로 폴링 응답의 events로 데미지 팝업·로그를 그린다
-    function showTickEvents(events,previous){(events||[]).forEach((event,index)=>{const damage=Number(event.damage||0),kills=Number(event.killedCount||0);if(!(damage>0||kills>0||event.phaseChanged||event.cleared||event.defeated||event.source==='무한홀덤덱'))return;setTimeout(()=>{if(event.source==='무한홀덤덱'&&renderer)renderer.animate(event,previous);hud.addDamage(Object.assign({criticalCount:0,skillName:event.source||''},event,{damage,killedCount:kills}),previous);if(damage>0||kills>0){hud.impact(false);audio.hit();if(renderer&&event.source!=='무한홀덤덱'&&typeof renderer.tickHit==='function')renderer.tickHit(previous,event);}if(regularMode&&event.eliteEncountered){if(renderer)renderer.startEliteIntro(kills);hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다');audio.play('start',.82);hud.impact(true);}else if(regularMode&&event.eliteDefeated){if(renderer)renderer.startMobReturn();hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}else if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}if(event.cleared&&(!dailyMode||lastDailyClearKey!==state.daily.date+':'+state.daily.finishedAt)){if(dailyMode)lastDailyClearKey=state.daily.date+':'+state.daily.finishedAt;showRewards(event.rewards||[],event);}if(event.defeated){hud.showBanner('전투 패배');audio.play('fail',.72);}},index*140);addLog(event.source==='무한홀덤덱'?event.message:(event.source||'소환수')+' → '+(damage>0?number(damage)+' 피해':'')+(kills>0?' · '+number(kills)+'마리 처치':''));});}
+    function showTickEvents(events,previous){(events||[]).forEach((event,index)=>{const damage=Number(event.damage||0),kills=Number(event.killedCount||0);if(!(damage>0||kills>0||event.phaseChanged||event.cleared||event.defeated||event.source==='무한홀덤덱'))return;setTimeout(()=>{if(event.source==='무한홀덤덱'&&renderer)renderer.animate(event,previous);const lead=(damage>0||kills>0)&&renderer&&event.source!=='무한홀덤덱'&&typeof renderer.tickHit==='function'?renderer.tickHit(previous,event)||0:0,land=()=>{hud.addDamage(Object.assign({criticalCount:0,skillName:event.source||''},event,{damage,killedCount:kills}),previous);if(damage>0||kills>0){hud.impact(false);audio.hit();}};if(lead>0)setTimeout(land,lead);else land();if(regularMode&&event.eliteEncountered){if(renderer)renderer.startEliteIntro(kills);hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다');audio.play('start',.82);hud.impact(true);}else if(regularMode&&event.eliteDefeated){if(renderer)renderer.startMobReturn();hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}else if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}if(event.cleared&&(!dailyMode||lastDailyClearKey!==state.daily.date+':'+state.daily.finishedAt)){if(dailyMode)lastDailyClearKey=state.daily.date+':'+state.daily.finishedAt;showRewards(event.rewards||[],event);}if(event.defeated){hud.showBanner('전투 패배');audio.play('fail',.72);}},index*140);addLog(event.source==='무한홀덤덱'?event.message:(event.source||'소환수')+' → '+(damage>0?number(damage)+' 피해':'')+(kills>0?' · '+number(kills)+'마리 처치':''));});}
     async function sync(quiet){if(busy||syncing)return;syncing=true;const version=requestVersion;try{const previous=state,next=await request(apiBase);if(busy||version!==requestVersion)return;applyState(next,{deferBgm:hud.inEntryTransition()});if(previous&&previous.inField&&!hud.inEntryTransition()){showTickEvents(next.events,previous);if(regularMode&&next.inField&&previous.phase!==next.phase&&!(next.events||[]).some(event=>event&&(event.eliteEncountered||event.eliteDefeated))){const event={action:'tick',eliteEncountered:previous.phase==='normal'&&next.phase==='elite',eliteDefeated:previous.phase==='elite'&&next.phase==='normal'};if(renderer)renderer.animate(event,previous);hud.showBanner(event.eliteEncountered?'엘리트 조우':'엘리트 처치',event.eliteEncountered?'잡몹들을 밀어내며 등장합니다':'잡몹들이 다시 몰려듭니다');}}recoverDailyClear(next);if(quiet&&previous&&previous.inField&&!next.inField){addLog('전투가 종료되었습니다.');audio.stopBgm();}}catch(error){if(!quiet)addLog(error.message,'bad');}finally{syncing=false;}}
 
     document.addEventListener('keydown',event=>{if(trainingEditor){event.preventDefault();if(trainingEditor.edit)trainingNumberKey(event.key);else if(event.key==='Escape')trainingEditor=null;return;}if(event.repeat)return;audio.unlock();const key=event.key.toLowerCase();if(hud.inConsumableMenu()){event.preventDefault();if(key==='escape'||event.code==='KeyP'){hud.closeConsumables();return;}if(key==='arrowleft'){hud.changeConsumablePage(-1,innerWidth,innerHeight);return;}if(key==='arrowright'){hud.changeConsumablePage(1,innerWidth,innerHeight);return;}if(/^[0-9]$/.test(key)){hud.useConsumableAt(key==='0'?9:Number(key)-1,innerWidth,innerHeight);}return;}if(event.code==='KeyP'&&state&&state.inField&&!trainingMode){event.preventDefault();hud.toggleConsumables();return;}if(trainingMode&&key==='s'){event.preventDefault();openTrainingEditor();return;}if(key===' '||key==='j'){event.preventDefault();attack();return;}if(key==='e'&&state&&!state.inField){enter(false);return;}if(key==='escape'){event.preventDefault();backOrLeave();return;}if(/^[1-9]$/.test(key)&&state&&state.inField){const skill=state.skills[Number(key)-1];if(skill)useSkill(skill.name);}});

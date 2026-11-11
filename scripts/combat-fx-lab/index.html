@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>전투 연출 실험실</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#02040a;color:#eceef2;font:13px Pretendard,-apple-system,"Segoe UI",sans-serif}
+/* 무대는 패널에 가리지 않는다: 넓은 창에서는 패널 왼쪽, 좁은 창에서는 패널 위를 쓴다. */
+#stage{position:fixed;top:0;left:0;right:300px;bottom:0;overflow:hidden}
+body.no-panel #stage{right:0;bottom:0}
+#stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#scene{z-index:1}
+#panel{position:fixed;top:0;right:0;bottom:0;width:300px;z-index:10;background:rgba(16,18,22,.94);border-left:1px solid #2a2e37;display:flex;flex-direction:column}
+body.no-panel #panel{display:none}
+#bar{display:flex;flex-wrap:wrap;gap:6px;padding:10px;border-bottom:1px solid #2a2e37}
+#bar button,#list button{background:#1f232b;color:#eceef2;border:1px solid #3a404c;border-radius:6px;padding:5px 9px;font:inherit;cursor:pointer}
+#bar button.on{background:#e8b04b;color:#1f1503;border-color:#e8b04b}
+#bar input{flex:1 1 100%;background:#14161b;color:#eceef2;border:1px solid #3a404c;border-radius:6px;padding:6px 8px;font:inherit}
+#list{overflow:auto;padding:8px 10px 20px}
+#list h3{margin:14px 0 6px;font-size:12px;color:#9aa3b2;font-weight:600}
+#list button{margin:0 4px 4px 0;font-size:12px}
+#list button:hover{background:#2a2f39}
+#status{position:fixed;left:12px;bottom:10px;z-index:10;color:#9aa3b2;font-size:12px}
+#toggle{position:fixed;top:10px;right:310px;z-index:11;background:#1f232b;color:#eceef2;border:1px solid #3a404c;border-radius:6px;padding:5px 9px;cursor:pointer}
+body.no-panel #toggle{right:10px}
+@media (max-width:1300px){
+#stage{right:0;bottom:42vh}
+#panel{top:auto;left:0;width:auto;height:42vh;border-left:0;border-top:1px solid #2a2e37}
+#toggle{right:10px;top:auto;bottom:calc(42vh + 10px)}
+#status{bottom:calc(42vh + 10px)}
+body.no-panel #toggle,body.no-panel #status{bottom:10px}
+}
+</style></head><body>
+<div id="stage"><canvas id="scene"></canvas></div>
+<aside id="panel"><div id="bar">
+  <input id="search" placeholder="이펙트 검색">
+  <button id="mirror">좌우 반전</button><button id="bot">익테봇</button><button id="sunata">수나타</button>
+  <button id="guard">피해 대행</button><button id="all">전체 재생</button><button id="mute">음소거</button>
+</div><div id="list"></div></aside>
+<button id="toggle">패널</button>
+<div id="status"></div>
+<script src="/static/combat-effects.js"></script>
+<script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-scenes.js"></script>
+<script>
+(async function () {
+    const query = new URLSearchParams(location.search), ui = file => '/rpg-ui?file=' + encodeURIComponent(file);
+    const scene = document.getElementById('scene'), g = scene.getContext('2d'), status = document.getElementById('status'), stage = document.getElementById('stage');
+    const load = src => new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = src; });
+    const [background, player, enemy] = await Promise.all([load(ui(query.get('bg') || '필드/부타게임H.png')), load(ui('필드/캐릭터/' + (query.get('card') || '이익태__전직') + '.png')), load(ui('필드/hfield-buta.png'))]);
+    let mirror = query.get('mirror') === '1', muted = query.get('mute') === '1', hitUntil = 0;
+    const errors = [];
+    const warn = console.warn; console.warn = (...args) => { errors.push(args.map(String).join(' ')); warn.apply(console, args); };
+    window.addEventListener('error', event => errors.push(String(event.message)));
+    const narrow = () => stage.clientWidth < 700;
+    const points = () => {
+        const me = { x: narrow() ? .24 : .25, y: .64 }, foe = { x: narrow() ? .75 : .74, y: narrow() ? .57 : .52 };
+        return mirror ? { me: { x: 1 - me.x, y: me.y }, foe: { x: 1 - foe.x, y: foe.y } } : { me, foe };
+    };
+    function draw(time) {
+        const dpr = Math.min(2, devicePixelRatio || 1), W = stage.clientWidth, H = stage.clientHeight;
+        if (scene.width !== Math.round(W * dpr) || scene.height !== Math.round(H * dpr)) { scene.width = Math.round(W * dpr); scene.height = Math.round(H * dpr); }
+        g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+        if (background) { const s = Math.max(W / background.width, H / background.height); g.drawImage(background, (W - background.width * s) / 2, (H - background.height * s) / 2, background.width * s, background.height * s); }
+        g.fillStyle = 'rgba(2,4,10,.25)'; g.fillRect(0, 0, W, H);
+        const p = points(), figure = (img, x, y, height, maxWidth, flip, flash) => {
+            if (!img) return;
+            let h = height * H, w = h * img.width / img.height; if (w > maxWidth * W) { h *= maxWidth * W / w; w = maxWidth * W; }
+            g.save(); g.translate(x * W, y * H); if (flip) g.scale(-1, 1);
+            if (flash) g.filter = 'brightness(2.2)';
+            g.drawImage(img, -w / 2, -h / 2, w, h); g.restore();
+        };
+        figure(player, p.me.x, narrow() ? .68 : .66, narrow() ? .62 : .78, narrow() ? .48 : .36, mirror, false);
+        figure(enemy, p.foe.x, narrow() ? .62 : .61, narrow() ? .72 : .88, narrow() ? .5 : .44, mirror, time < hitUntil);
+        requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+
+    const fx = CombatFX.create({ scene, muted: () => muted, volume: () => .7, preserve: true });
+    window.lab = { fx, errors };
+    if (!fx) { status.textContent = 'WebGL을 쓸 수 없습니다.'; return; }
+    const catalog = await fetch('/lab/effects').then(response => response.json());
+    const all = Object.entries(catalog).flatMap(([kind, names]) => names.map(name => kind + ':' + name));
+    fx.preload([], CombatFX.commonSounds);
+
+    function play(effectId, options) {
+        const o = options || {}, p = points(), parsed = CombatEffects.parseEffectId(effectId) || {};
+        let role = o.role;
+        if (!role) {
+            if (parsed.kind === 'skill') role = CombatEffects.SKILL_TARGETS[parsed.name] === 'actor' ? 'actor' : 'target';
+            else if (parsed.kind === 'summon') role = /강화/.test(parsed.name) ? 'actor' : 'target';
+            else role = CombatEffects.effectIdsFor({ action: 'skill', effectTarget: 'both', effectIds: [effectId] }, 'actor').includes(effectId) ? 'actor' : 'target';
+        }
+        const received = effectId === 'summon:익테봇 피해대행' || o.received;
+        const result = fx.play([effectId], { role, src: received ? p.foe : p.me, dst: received ? p.me : p.foe, event: { action: 'skill', damage: role === 'target' ? 100 : 0 }, cool: 0 });
+        if (role === 'target' && !received) setTimeout(() => { hitUntil = performance.now() + 220; }, result.delay);
+        status.textContent = effectId + ' · ' + role + ' · 타격 ' + result.delay + 'ms';
+        return result;
+    }
+    window.lab.play = play;
+    const companions = new Set();
+    const sync = () => { const p = points(); CombatFX.companions(fx, 'me', [...companions].map(name => ({ name })), { src: p.me, dst: p.foe }); };
+    window.lab.summon = name => { companions.add(name); sync(); };
+    window.lab.dismiss = name => { companions.delete(name); sync(); };
+
+    const list = document.getElementById('list'), labels = { skill: '스킬', summon: '소환수', element: '속성', combat: '전투', set: '세트', equipment: '장비' };
+    function render(filter) {
+        list.textContent = '';
+        for (const [kind, names] of Object.entries(catalog)) {
+            const shown = names.filter(name => !filter || name.includes(filter));
+            if (!shown.length) continue;
+            const title = document.createElement('h3'); title.textContent = labels[kind] + ' ' + shown.length; list.append(title);
+            shown.forEach(name => { const button = document.createElement('button'); button.textContent = name; button.onclick = () => play(kind + ':' + name); list.append(button); });
+        }
+    }
+    render('');
+    document.getElementById('search').oninput = event => render(event.target.value.trim());
+    const toggle = (id, fn) => { const button = document.getElementById(id); button.onclick = () => { button.classList.toggle('on'); fn(button.classList.contains('on')); }; return button; };
+    toggle('mirror', on => { mirror = on; [...companions].forEach(name => { window.lab.dismiss(name); }); document.getElementById('bot').classList.remove('on'); document.getElementById('sunata').classList.remove('on'); });
+    toggle('bot', on => on ? window.lab.summon('익테봇') : window.lab.dismiss('익테봇'));
+    toggle('sunata', on => on ? window.lab.summon('수나타') : window.lab.dismiss('수나타'));
+    toggle('mute', on => { muted = on; });
+    document.getElementById('guard').onclick = () => play('summon:익테봇 피해대행');
+    document.getElementById('toggle').onclick = () => document.body.classList.toggle('no-panel');
+    let running = false;
+    document.getElementById('all').onclick = async () => {
+        if (running) { running = false; return; }
+        running = true;
+        for (const effectId of all) { if (!running) break; play(effectId); await new Promise(resolve => setTimeout(resolve, 1300)); }
+        running = false;
+    };
+    // 검수용 프레임 시트: lab.sheet([[이펙트, 멈출 시각(초), 옵션], ...], 열 수) — 각 순간을 한 화면에 타일로 모은다.
+    window.lab.sheet = async (jobs, cols) => {
+        let el = document.getElementById('sheet');
+        if (!el) { el = document.createElement('canvas'); el.id = 'sheet'; el.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:100;background:#000'; el.onclick = () => { el.style.display = 'none'; }; document.body.append(el); }
+        el.style.display = 'none';
+        const frames = [];
+        for (const [effectId, time, options] of jobs) {
+            fx.clear(); fx.freezeAfter(null);
+            if (options && options.pre) options.pre();
+            if (options && options.lead) await new Promise(resolve => setTimeout(resolve, options.lead * 1000));
+            if (effectId) play(effectId, options);
+            fx.freezeAfter(time);
+            await new Promise(resolve => setTimeout(resolve, time * 1000 + 420));
+            const shot = document.createElement('canvas'), c = shot.getContext('2d');
+            shot.width = stage.clientWidth; shot.height = stage.clientHeight;
+            c.drawImage(scene, 0, 0, shot.width, shot.height); c.drawImage(fx.canvas, 0, 0, shot.width, shot.height);
+            frames.push([shot, (effectId || '').split(':').pop() + ' ' + time]);
+        }
+        fx.freezeAfter(null);
+        const n = cols || Math.ceil(Math.sqrt(frames.length)), rows = Math.ceil(frames.length / n), dpr = devicePixelRatio || 1;
+        el.width = innerWidth * dpr; el.height = innerHeight * dpr;
+        const c = el.getContext('2d'), w = el.width / n, h = el.height / rows;
+        c.fillStyle = '#000'; c.fillRect(0, 0, el.width, el.height);
+        frames.forEach(([shot, label], i) => {
+            const s = Math.min(w / shot.width, h / shot.height), x = (i % n) * w, y = Math.floor(i / n) * h;
+            c.drawImage(shot, x + (w - shot.width * s) / 2, y + (h - shot.height * s) / 2, shot.width * s, shot.height * s);
+            c.fillStyle = '#ff0'; c.font = (13 * dpr) + 'px sans-serif'; c.fillText(label, x + 6, y + 16 * dpr);
+        });
+        el.style.display = 'block';
+        return frames.length + ' frames; errors=' + JSON.stringify(errors);
+    };
+    // 자동 검증용: ?play=<id>&freeze=<초>&ui=0&bot=1&sunata=1
+    if (query.get('ui') === '0') { document.body.classList.add('no-panel'); document.getElementById('toggle').style.display = 'none'; }
+    if (query.get('bot') === '1') window.lab.summon('익테봇');
+    if (query.get('sunata') === '1') window.lab.summon('수나타');
+    const first = query.get('play');
+    if (first) setTimeout(() => { play(first, { role: query.get('role') || undefined }); if (query.get('freeze')) fx.freezeAfter(Number(query.get('freeze'))); }, Number(query.get('wait') || 700));
+})();
+</script>
+</body></html>
