@@ -290,6 +290,9 @@
 
     function tags(x, y, w, it, dry) {
         const list = (A.limits || []).map(l => ({ t: `${l.label} ${fmt(l.remaining)}/${fmt(l.limit)}`, c: Number(l.remaining) > 0 ? INK : WARN }));
+        // 품목 종류: 무엇을 사는지 이름 앞에서 바로 알 수 있게 첫 꼬리표로 둔다.
+        const kind = it && (it.type === '아이템' ? (it.display && it.display.itemType) || '아이템' : it.type === '가넷' || it.type === '골드' ? '재화' : it.type);
+        if (kind) list.unshift({ t: kind, c: '#9fd3ff' });
         const r = reason(it); if (r) list.unshift({ t: r, c: r === '품절' ? WARN : GOOD });
         let tx = x, ty = y; if (!list.length) return 0;
         list.forEach(({ t, c }) => {
