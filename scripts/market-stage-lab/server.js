@@ -284,6 +284,46 @@ function giftable() {
     };
 }
 
+// ---- 프리셋 (/api/presets): 실제 서버 buildPresetPayload와 같은 모양. 장비는 uid('lab-번호')로, 카드는 표시 이름으로 맞춘다 ----
+const presetLab = (() => {
+    const of = type => me.equipment.map((equip, index) => ({ equip, index })).filter(entry => entry.equip.type === type).map(entry => entry.index);
+    const [w, h, a, acc, sup, art] = ['weapon', 'hat', 'armor', 'accessory', 'support', 'artifact'].map(of);
+    const gear = (list, accessories) => list.filter(i => i != null).map(i => ({ index: i })).concat(accessories.map((i, k) => ({ index: i, slotKey: String(k) })));
+    const current = { main: { id: 11, star: 10, type: '전직' }, slots: [me.cards[0], me.cards[3], me.cards[6]], gear: gear([w[1], h[0], a[0], sup[0], art[0]], acc.slice(0, 3)) };
+    const presets = Array.from({ length: 20 }, () => null);
+    presets[0] = { name: '사냥용', savedAt: Date.now() - 3 * 3600e3, ...JSON.parse(JSON.stringify(current)) };
+    presets[1] = { name: '보스전', savedAt: Date.now() - 26 * 3600e3, main: { id: 12, star: 11, type: '전직', specter: '불사조' }, slots: [me.cards[0], me.cards[7], me.cards[10], me.cards[11], me.cards[13]], gear: gear([w[2], a[2], sup[1], art[0]], [acc[1], acc[3]]), missing: 1 };
+    return { current, presets, unlocked: 3 };
+})();
+function presetPayload() {
+    const L = presetLab, cost = i => i ? { currency: 'garnet', amount: [0, 100, 100, 300, 500][i] ?? 500, label: comma([0, 100, 100, 300, 500][i] ?? 500) + ' 가넷', iconUrl: CURR.garnet } : null;
+    const view = s => s && {
+        mainCard: s.main ? serializeCard(s.main) : null, slotCards: s.slots.map(serializeCard),
+        equipment: s.gear.map(g => ({ ...serializeEquipment(me.equipment[g.index], g.index + 1), equipped: false, slotKey: g.slotKey ?? null }))
+    };
+    const current = view(L.current); current.equipment.forEach(e => { e.equipped = true; });
+    return { ok: true, slotCount: 20, unlocked: L.unlocked, costs: Array.from({ length: 20 }, (_, i) => cost(i)), garnet: me.garnet, point: me.point, accessorySlots: 3, cardSlots: 5, current,
+        presets: L.presets.map(p => p && { name: p.name, savedAt: p.savedAt, missing: p.missing || 0, ...view(p) }) };
+}
+function presetAction(action, body) {
+    const L = presetLab, slot = Number(body.slot);
+    if (!Number.isInteger(slot) || slot < 0 || slot >= 20) return [400, { error: '사용할 수 없는 프리셋 슬롯입니다.' }];
+    if (action === 'unlock') {
+        if (slot !== L.unlocked) return [400, { error: '슬롯은 순서대로 해금할 수 있습니다.' }];
+        const amount = [0, 100, 100, 300, 500][slot] ?? 500; if (me.garnet < amount) return [400, { error: '가넷이 부족합니다.' }];
+        me.garnet -= amount; L.unlocked++; return [200, presetPayload()];
+    }
+    if (slot >= L.unlocked) return [400, { error: '사용할 수 없는 프리셋 슬롯입니다.' }];
+    if (action === 'save') { L.presets[slot] = { name: L.presets[slot]?.name || null, savedAt: Date.now(), ...JSON.parse(JSON.stringify(L.current)) }; return [200, presetPayload()]; }
+    if (action === 'rename') { if (!L.presets[slot]) return [400, { error: '저장된 프리셋이 없습니다.' }]; L.presets[slot].name = String(body.name || '').trim().slice(0, 12) || null; return [200, presetPayload()]; }
+    if (action === 'apply') {
+        const p = L.presets[slot]; if (!p) return [400, { error: '저장된 프리셋이 없습니다.' }];
+        L.current = { main: p.main ? JSON.parse(JSON.stringify(p.main)) : L.current.main, slots: JSON.parse(JSON.stringify(p.slots)), gear: JSON.parse(JSON.stringify(p.gear)) };
+        return [200, { ...presetPayload(), warnings: p.missing ? ['장신구 장비를 찾을 수 없어 건너뛰었습니다.'] : [], profile: profile() }];
+    }
+    return [404, { error: '실험실에 없는 API: ' + action }];
+}
+
 function profile() {
     return {
         user: { name: me.name, level: me.level, exp: 4200, maxExp: 9000, point: me.point, gold: me.gold, garnet: me.garnet, mileage: me.mileage, title: null, canPartyQuest: false, isAdmin: false, maxAccessory: 3 },
@@ -356,6 +396,10 @@ http.createServer((req, res) => {
         }
         const marketReply = market(route, q, body); if (marketReply) return reply(...marketReply);
         if (route === '/api/inventory') return reply(200, { name: me.name, items: inventoryItems(), cards: inventoryCards(), equipment: inventoryEquipment(), pets: [] });
+        if (route === '/api/presets') return reply(200, presetPayload());
+        // 실험실 전용: 장비 하나를 직접 벗은 상태(어느 프리셋에도 없는 장착)를 만든다.
+        if (route === '/api/presets/lab-unequip') { presetLab.current.gear.shift(); return reply(200, presetPayload()); }
+        if (route.startsWith('/api/presets/')) return reply(...presetAction(route.slice(13), body));
         reply(404, { error: '실험실에 없는 API: ' + route });
     });
 }).listen(PORT, () => console.log('거래, 상점, 메일 실험실: http://localhost:' + PORT + '/?tab=shop'));

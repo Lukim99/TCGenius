@@ -3799,18 +3799,34 @@ function getUnlockedPresetSlots(user) {
 function buildPresetPayload(user) {
     const presets = rpgenius.getUserPresets(user);
     // 장비는 인벤토리 탭과 동일한 리치 직렬화(스탯/잠재/패시브 포함)를 uid로 매칭해 재사용
-    const richByUid = new Map(buildInventoryEquipment(user).filter(e => e.uid).map(e => [e.uid, e]));
+    const rich = buildInventoryEquipment(user);
+    const richByUid = new Map(rich.filter(e => e.uid).map(e => [e.uid, e]));
     const views = presets.map(preset => {
         const view = rpgenius.resolvePresetForView(user, preset);
         if (!view) return null;
+        const mainCard = view.mainCard ? serializeCard(view.mainCard, user) : null;
+        const slotCards = view.slotCards.map(card => serializeCard(card, user)).filter(Boolean);
+        // 장신구는 저장할 때의 칸 순서(slotKey)대로 보여 준다.
+        const equipment = view.equipment.map(entry => {
+            const found = entry.equip && richByUid.get(entry.equip.uid);
+            return found ? Object.assign({}, found, { slotKey: entry.slotKey != null ? String(entry.slotKey) : null }) : null;
+        }).filter(Boolean);
         return {
             name: (preset && preset.name) || null,
             savedAt: view.savedAt,
-            mainCard: view.mainCard ? serializeCard(view.mainCard, user) : null,
-            slotCards: view.slotCards.map(card => serializeCard(card, user)).filter(Boolean),
-            equipment: view.equipment.map(entry => entry.equip && richByUid.get(entry.equip.uid) || null).filter(Boolean)
+            mainCard,
+            slotCards,
+            equipment,
+            // 저장한 뒤 분해, 거래 등으로 없어진 품목 수
+            missing: Math.max(0, (preset.equipment || []).length - equipment.length) + (preset.mainCard && !mainCard ? 1 : 0) + Math.max(0, (preset.slotCards || []).length - slotCards.length)
         };
     });
+    // 지금 장착한 상태. 화면이 프리셋과 비교해 바뀔 칸을 표시한다.
+    const current = {
+        mainCard: user.main_card && typeof user.main_card.id != 'undefined' ? serializeCard(user.main_card, user) : null,
+        slotCards: (Array.isArray(user.card_slot) ? user.card_slot : []).map(card => serializeCard(card, user)).filter(Boolean),
+        equipment: rich.filter(e => e.equipped)
+    };
     return {
         ok: true,
         slotCount: rpgenius.PRESET_SLOT_COUNT,
@@ -3823,6 +3839,9 @@ function buildPresetPayload(user) {
         }),
         garnet: Number(user.garnet || 0),
         point: Number(user.point || 0),
+        accessorySlots: Number(user.maxAccessory || 3),
+        cardSlots: Number(user.maxCardSlot || 5),
+        current,
         presets: views
     };
 }
@@ -9668,9 +9687,7 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="낚시"><section id="fishingPanel"></section></div>
   <div class="page" data-page="mail"><section class="market-stage-host" id="mailStageRoot"></section></div>
-  <div class="page" data-page="preset">
-    <section class="panel"><h2 style="margin:0 0 14px">프리셋</h2><div id="presetRoot"></div></section>
-  </div>
+  <div class="page" data-page="preset"><section class="market-stage-host" id="presetStageRoot"></section></div>
   <div class="page" data-page="event">
     <section class="event-dice-panel"><div id="eventDiceRoot"></div></section>
   </div>
@@ -9798,6 +9815,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/market-stage.js"></script>
 <script src="/static/direct-trade.js"></script>
 <script src="/static/mail-stage.js"></script>
+<script src="/static/preset-stage.js"></script>
 <script src="/static/market-board.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

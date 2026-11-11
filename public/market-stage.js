@@ -550,7 +550,7 @@
     const VS = 'attribute vec2 p;varying vec2 uv;void main(){uv=p*.5+.5;gl_Position=vec4(p,0.,1.);}';
     const FS = `precision mediump float;
         varying vec2 uv;uniform sampler2D ui;uniform sampler2D fx;uniform float t;uniform vec2 size;uniform vec2 pointer;
-        uniform vec3 accent;uniform vec3 accent2;uniform float theme;uniform float glow;uniform float seam;uniform float pulse;
+        uniform vec3 accent;uniform vec3 accent2;uniform float theme;uniform float glow;uniform float seam;uniform float pulse;uniform vec2 focus;
         float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
         float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);}
         vec3 hsv(float h,float s,float v){vec3 k=clamp(abs(mod(h*6.+vec3(0.,4.,2.),6.)-3.)-1.,0.,1.);return v*mix(vec3(1.),k,s);}
@@ -581,6 +581,23 @@
                     c+=vec3(1.,.9,.7)*smoothstep(.012,0.,length(q-hp))*.5;}
                 float fiber=pow(noise(vec2(q.x*40.,q.y*4.)+t*.02),6.)*.05;c+=vec3(.9,.85,.75)*fiber;
                 c+=accent*exp(-pow((px.y)/(size.y*.7),2.))*.05;
+            } else if(theme>2.5){
+                // 프리셋: 장비 진열대. 위에서 내리는 조명 기둥이 받침대(focus)를 비추고, 받침대 문양이 천천히 돌며 먼지가 빛 속을 떠오른다.
+                vec2 f=focus/max(size.y,1.);float dx=q.x-f.x;
+                float shaft=exp(-dx*dx/(.012+.05*max(q.y,0.)))*smoothstep(f.y+.25,0.,q.y)*(.11+.02*sin(t*.5));
+                c+=mix(accent,vec3(1.),.4)*shaft*.5;
+                vec2 pd=vec2(dx,(q.y-f.y)*3.4);float r=length(pd),ang=atan(pd.y,pd.x)/6.28318;
+                float rings=smoothstep(.005,0.,abs(r-.30))*.55
+                    +smoothstep(.004,0.,abs(r-.36))*step(.45,fract(ang*14.+t*.03))*.7
+                    +smoothstep(.004,0.,abs(r-.23))*step(.6,fract(ang*28.-t*.05))*.6;
+                c+=accent*rings*(.16+.08*pulse);
+                c+=accent*exp(-r*r*14.)*.05;
+                float dust=0.;
+                for(int i=0;i<16;i++){float k=float(i);
+                    vec2 dp=vec2(f.x+(hash(vec2(k,2.))-.5)*.42,f.y+.08-fract(hash(vec2(k,5.))+t*(.01+hash(vec2(k,7.))*.016))*(f.y+.1));
+                    dust+=smoothstep(.0045,0.,length(q-dp))*(.55+.45*sin(t*1.7+k*2.3));}
+                c+=vec3(1.,.95,.86)*dust*.32;
+                c+=accent2*exp(-pow((size.y-px.y)/(size.y*.35),2.))*.035;
             } else {
                 // 시장: 위에 늘어진 줄을 따라 등불이 흔들리고, 바닥에는 따뜻한 빛이 고인다.
                 float aspect=size.x/max(size.y,1.);float n=9.;
@@ -635,7 +652,7 @@
             vec4 m=texture2D(fx,uv);if(m.a>.5)col=material(col,m,px);
             gl_FragColor=vec4(col,1.);
         }`;
-    const THEMES = { trade: 0, mail: 1, market: 2 };
+    const THEMES = { trade: 0, mail: 1, market: 2, preset: 3 };
     const hexRgb = hex => String(hex).slice(1).match(/../g).map(v => parseInt(v, 16) / 255);
 
     // ── 무대 호스트
@@ -743,7 +760,7 @@
                 el.placeholder = f.o.placeholder || ''; el.maxLength = f.o.maxLength || 200; el.setAttribute('aria-label', f.o.label || f.key);
                 el.inputMode = f.o.numeric ? 'numeric' : 'text'; el.disabled = !!s.busy;
                 const value = String(f.o.value ?? ''); if (document.activeElement !== el && el.value !== value) el.value = value;
-                if (f.o.focus && !s._focused?.[f.key]) { (s._focused ||= {})[f.key] = true; setTimeout(() => el.focus({ preventScroll: true }), 30); }
+                if (f.o.focus && !s._focused?.[f.key]) { (s._focused ||= {})[f.key] = true; setTimeout(() => { el.focus({ preventScroll: true }); if (f.o.select) el.select(); }, 30); }
             }
             for (const [key, el] of fields) if (!fkeys.has(key)) { el.remove(); fields.delete(key); if (s._focused) delete s._focused[key]; }
         }
@@ -761,7 +778,7 @@
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); return t; };
                 uiTex = tex(gl.TEXTURE0, gl.LINEAR); fxTex = tex(gl.TEXTURE1, gl.NEAREST);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                uniforms = Object.fromEntries(['ui', 'fx', 't', 'size', 'pointer', 'accent', 'accent2', 'theme', 'glow', 'seam', 'pulse'].map(k => [k, gl.getUniformLocation(program, k)]));
+                uniforms = Object.fromEntries(['ui', 'fx', 't', 'size', 'pointer', 'accent', 'accent2', 'theme', 'glow', 'seam', 'pulse', 'focus'].map(k => [k, gl.getUniformLocation(program, k)]));
                 gl.uniform1i(uniforms.ui, 0); gl.uniform1i(uniforms.fx, 1);
                 lost = false; root.dataset.gl = 'ready'; canvas.hidden = false; fallback.hidden = true; dirty = true; return true;
             } catch (_) { release(); return false; }
@@ -810,6 +827,7 @@
                 gl.uniform3fv(uniforms.accent, hexRgb(u.accent)); gl.uniform3fv(uniforms.accent2, hexRgb(u.accent2));
                 gl.uniform1f(uniforms.theme, THEMES[opts.theme] || 0); gl.uniform1f(uniforms.glow, u.glow || 0); gl.uniform1f(uniforms.seam, u.seam || height / 2);
                 gl.uniform1f(uniforms.pulse, Math.max(0, 1 - (time - pulseAt) / 900));
+                const focus = u.focus || [width / 2, height * .6]; gl.uniform2f(uniforms.focus, focus[0], focus[1]);
                 gl.drawArrays(gl.TRIANGLES, 0, 3);
             } else { const f = fallback.getContext('2d'); f.setTransform(1, 0, 0, 1, 0, 0); f.drawImage(ui, 0, 0); }
         }
