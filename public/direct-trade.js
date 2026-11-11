@@ -48,7 +48,7 @@
             const e = inspected(), w = Math.min(W - 16, 560), h = Math.min(H - 16, 620), M = K.modal(e.info.kindLabel, w, h, { close: 'overlay-close', tint: e.info.accent });
             K.inspect(e.info, M.x + 8, M.y + 60, M.w - 16, M.h - 68, { detail: 'detail', detailId: e.key });
         }
-        if (ui.picker) MS.drawPicker(K, A, ui.picker, { detailAction: 'picker-detail', tint: MINE, amountNote: (kind, amount) => amount > 0 ? '상대는 수수료 ' + comma0(Math.round(amount * state.feeRate)) + '을 뺀 ' + comma0(amount - Math.round(amount * state.feeRate)) + ' 수령' : '' });
+        if (ui.picker) MS.drawPicker(K, A, ui.picker, { detailAction: 'picker-detail', tint: MINE, amountNote: (kind, amount) => amount > 0 ? '수수료 ' + comma0(Math.round(amount * state.feeRate)) + '   상대 수령 ' + comma0(amount - Math.round(amount * state.feeRate)) : '' });
         if (ui.dialog) K.dialog(ui.dialog);
     }
     function topBar(A, K, x, y, w, h, mobile) {
@@ -85,7 +85,7 @@
         board(A, K, 'mine', state.me, s.offer, s.confirmed, x, sy + seamH + 8, bw, h - boardH - seamH - 16, o.mobile);
         if (inspW) {
             const e = inspected() || allEntries()[0] || null;
-            K.inspect(e && e.info, x + w - inspW, y, inspW, h, { detail: 'detail', detailId: e && e.key, empty: '판 위의 품목을 누르면 여기서 자세히 보입니다' });
+            K.inspect(e && e.info, x + w - inspW, y, inspW, h, { detail: 'detail', detailId: e && e.key });
         }
     }
     function board(A, K, side, player, offer, confirmed, x, y, w, h, mobile) {
@@ -110,7 +110,7 @@
         }
         const list = offerEntries(offer, side);
         if (!list.length) {
-            if (!coins.length) { K.well(bx, by, bwid, bottom - by, 10); K.text(mine ? '올린 물품이 없습니다' : '상대가 올린 물품이 없습니다', bx + bwid / 2, by + (bottom - by) / 2, 14, K.DIM, 'center', 600); }
+            if (!coins.length) { const n = Math.max(1, Math.min(5, Math.floor((bwid + 8) / 128))), sw = (bwid - 8 * (n - 1)) / n; for (let i = 0; i < n; i++) { K.well(bx + i * (sw + 8), by, sw, bottom - by, 9); K.gem(bx + i * (sw + 8) + sw / 2, by + (bottom - by) / 2, 5, 'rgba(255,255,255,.07)'); } if (mine) A.hit('add', 'empty', bx, by, bwid, bottom - by, '물품 올리기', !!state.session.processing); }
             return;
         }
         // 판이 낮으면 칸을 가로형(그림 왼쪽, 글 오른쪽)으로 바꿔 그림이 작아지지 않게 한다.
@@ -142,7 +142,7 @@
         if (both) K.glyph('check', cx, cy, d * .32, '#2b1904');
         else { K.text(s.partnerConfirmed ? '확정' : '대기', cx, cy - d * .2, Math.max(10, d * .13), s.partnerConfirmed ? THEIRS : K.MUTE, 'center', 800); K.text(s.confirmed ? '확정' : '대기', cx, cy + d * .2, Math.max(10, d * .13), s.confirmed ? MINE : K.MUTE, 'center', 800); }
         A.hit('seal', '', cx - d / 2, cy - d / 2, d, d, (s.partnerConfirmed ? '상대 확정함' : '상대 검토 중') + ', ' + (s.confirmed ? '내가 확정함' : '내가 아직 확정하지 않음'), true);
-        const status = s.processing ? '거래 처리 중' : both ? '거래를 마무리하는 중' : s.confirmed ? '상대의 확정을 기다립니다' : s.partnerConfirmed ? '상대가 확정했습니다. 내역을 확인하세요' : '양쪽이 확정하면 거래가 끝납니다';
+        const status = s.processing ? '거래 처리 중' : both ? '거래 마무리 중' : s.confirmed ? '상대 확정 대기' : s.partnerConfirmed ? '상대 확정 완료' : '';
         const confirmDisabled = !s.confirmed && (short || full);
         const flows = [['받는', receive, true], ['주는', give, false]];
         if (mobile) {
@@ -171,7 +171,6 @@
         const facts = [];
         if (receive.ticketCost > 0) facts.push({ text: '거래권 ' + receive.ticketCost + '장 사용  보유 ' + state.balances.tickets, color: short ? K.WARN : K.DIM });
         if (receive.cards.length) facts.push({ text: '카드 공간 ' + state.cardSpace, color: full ? K.WARN : K.DIM });
-        facts.push({ text: '재화 수수료 ' + Math.round(state.feeRate * 100) + '%', color: K.DIM });
         K.chipRow(facts, rx, ry, rw, { h: 22, size: 11, single: true });
         const bh = 46, bw2 = (rw - 8) * .62;
         K.btn('confirm', '', rx, y + h - 12 - bh, bw2, bh, s.confirmed ? '확정 취소' : '거래 확정', { primary: !s.confirmed, disabled: confirmDisabled, size: 16,
@@ -182,9 +181,9 @@
     // 신청 전: 내 카드와 비어 있는 상대 자리, 그 아래 닉네임 칸
     function requestView(A, K, x, y, w, h, mobile) {
         A.uniforms.seam = y + h * .45;
-        const pw = Math.min(w, 860), px = x + (w - pw) / 2, ph = Math.min(h, mobile ? 520 : 470), py = y + Math.max(0, (h - ph) / 2 - 10);
+        const pw = Math.min(w, 860), px = x + (w - pw) / 2, ph = Math.min(h, mobile ? 420 : 420), py = y + Math.max(0, (h - ph) / 2 - 10);
         K.plate(px, py, pw, ph, 18, { a: .62, tint: MINE, tintA: .1 });
-        const cardH = Math.min(mobile ? 170 : 260, ph * .48), cardW = cardH * 399 / 515, gap = mobile ? 20 : 60, cy = py + 22;
+        const cardH = Math.min(mobile ? 220 : 270, ph * .6), cardW = cardH * 399 / 515, gap = mobile ? 20 : 60, cy = py + 22;
         const lx = px + pw / 2 - gap / 2 - cardW, rx = px + pw / 2 + gap / 2;
         portrait(A, K, state.me, lx, cy, cardW, cardH, MINE, '나');
         const C = K.C; K.well(rx, cy, cardW, cardH, 12, K.rgba(THEIRS, .05));
@@ -198,14 +197,6 @@
         K.well(fx, fy, fw - sendW - 8, 50, 8);
         A.field('name', fx + 10, fy + 4, fw - sendW - 28, 42, { value: requestName, placeholder: '상대방 닉네임', label: '거래할 상대 닉네임', maxLength: 100, big: true });
         K.btn('request', '', fx + fw - sendW, fy, sendW, 50, '거래 신청', { primary: true, size: 16, disabled: busy || !requestName.trim() });
-        fy += 66;
-        const facts = [['재화 수수료', Math.round(state.feeRate * 100) + '%'], ['거래권', '5성 이상 카드를 받을 때'], ['신청 유효', '5분'], ['취소하면', '올린 물품 전부 반환']];
-        const cols = mobile ? 2 : 4, fcw = (pw - 32 - 8 * (cols - 1)) / cols, fch = 52;
-        facts.forEach(([k, v], i) => {
-            const bx = px + 16 + (i % cols) * (fcw + 8), by = fy + Math.floor(i / cols) * (fch + 8);
-            if (by + fch > py + ph - 8) return;
-            K.well(bx, by, fcw, fch, 7); K.text(k, bx + 10, by + 16, 11, K.DIM, 'left', 700); K.line(v, bx + 10, by + 36, fcw - 20, 14, K.INK, 'left', 800, 10);
-        });
     }
     function portrait(A, K, player, x, y, w, h, color, label) {
         K.well(x, y, w, h, 12, K.rgba(color, .06));
@@ -263,6 +254,7 @@
 
     // ── 동작
     function act(action, id) {
+        if (MS.linesAct(ui, action)) { stage.invalidate(); return; }
         if (ui.dialog && !['dialog-close', 'cancel-yes'].includes(action)) { if (action === 'back') ui.dialog = null; stage.invalidate(); return; }
         if (ui.picker && action.startsWith('picker-')) return pickerAction(action, id);
         if (action !== 'back') stage.play('select');
@@ -326,6 +318,14 @@
         if (!ui.picker || !active() || state.session?.id !== sessionId) return;
         ui.picker.config.kinds = pickerKinds(data); ui.picker.error = ''; stage.invalidate();
     }
+    // 여러 개를 연달아 올릴 수 있게 보관함을 닫지 않고 목록만 새로 받는다(보유 목록 버전이 바뀌므로).
+    async function reloadPicker(added) {
+        const P = ui.picker; if (!P) return;
+        P.selected = null; P.amount = ''; P.mobileDetail = false; P.done = added;
+        try { const data = await api('/api/trade/inventory'); if (ui.picker === P) { const keep = P.kind; P.config.kinds = pickerKinds(data); P.kind = keep; } }
+        catch (error) { if (ui.picker === P) P.error = error.message; }
+        stage?.invalidate();
+    }
     async function pickerAction(action, id) {
         const P = ui.picker;
         if (action === 'picker-close') { ui.picker = null; stage.play('cancel'); stage.invalidate(); return; }
@@ -348,7 +348,11 @@
             } else Object.assign(payload, { number: sel.raw.number, version: sel.raw.version });
         }
         const ok = await mutate('register', payload);
-        if (ok) { ui.picker = null; stage?.play(kind === 'card' ? 'card' : kindConfig.currency ? 'chips' : 'drop'); stage?.pulse(); }
+        if (ok) {
+            stage?.play(kind === 'card' ? 'card' : kindConfig.currency ? 'chips' : 'drop'); stage?.pulse();
+            const added = kindConfig.currency ? comma0(payload.amount) + ' ' + LABELS[kind] : (MS.pickerSelected(P)?.info.title || '');
+            await reloadPicker(added);
+        }
         else if (ui.picker) { ui.picker.error = errorText; errorText = ''; }
         stage?.invalidate();
     }

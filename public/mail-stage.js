@@ -17,8 +17,8 @@
     function giftInfo(g) {
         if (g.type === 'gold' || g.type === 'garnet' || g.type === 'point') { const info = MS.identify({ iconUrl: g.iconUrl }, g.type); info.title = g.label || comma0(g.amount) + ' ' + CUR_LABEL[g.type]; info.corner = null; info.chips = [{ text: CUR_LABEL[g.type], color: info.accent }, { text: comma0(g.amount), color: info.accent }]; return info; }
         if (g.type === 'item') return MS.identify({ name: g.name, count: g.count, iconUrl: g.iconUrl, frameUrl: g.frameUrl, type: g.itemType, desc: g.desc }, 'item');
-        if (g.type === 'equipment') return MS.identify({ name: g.name, rarity: g.rarity, level: g.level, iconUrl: g.iconUrl, frameUrl: g.frameUrl, typeLabel: g.typeLabel || EQUIP_LABELS[g.equipType] }, 'equipment');
-        if (g.type === 'pet') return MS.identify({ name: g.name, rarity: g.rarity, level: g.level, iconUrl: g.iconUrl, frameUrl: g.frameUrl }, 'pet');
+        if (g.type === 'equipment') return MS.identify({ name: g.name, rarity: g.rarity, level: g.level, iconUrl: g.iconUrl, frameUrl: g.frameUrl, typeLabel: g.typeLabel || EQUIP_LABELS[g.equipType], detail: g.detail || null }, 'equipment');
+        if (g.type === 'pet') return MS.identify({ name: g.name, rarity: g.rarity, level: g.level, iconUrl: g.iconUrl, frameUrl: g.frameUrl, statLines: g.statLines || [] }, 'pet');
         if (g.type === 'card') { const star = String(g.label || '').match(/^\[([^\]]+)\]/); return MS.identify({ formatted: g.label, star: g.star, starText: star ? star[1] : null, type: g.cardType, imageUrl: g.iconUrl }, 'card'); }
         if (g.type === 'avatar') return MS.identify({ name: g.avatarName, grade: g.grade, iconUrl: g.iconUrl, frameUrl: g.frameUrl }, 'avatar');
         if (g.type === 'title') { const info = MS.identify({ name: g.name + ' 칭호', iconUrl: g.iconUrl, type: '칭호' }, 'item'); return info; }
@@ -38,6 +38,10 @@
             letter(A, K, m + rw + 14, top, W - m * 2 - rw - 14, h, false);
         } else if (ui.mode === 'letter' && selected()) letter(A, K, m, top, W - m * 2, h, true);
         else rack(A, K, m, top, W - m * 2, h, mobile);
+        if (ui.giftView != null && selected()?.gifts[ui.giftView]) {
+            const info = giftInfo(selected().gifts[ui.giftView]), Mo = K.modal(info.kindLabel, Math.min(W - 16, 520), Math.min(H - 16, 600), { close: 'gift-close', tint: info.accent });
+            K.inspect(info, Mo.x + 8, Mo.y + 60, Mo.w - 16, Mo.h - 68, { a: .985 });
+        }
         if (ui.compose) composeView(A, K, mobile);
         if (ui.picker) MS.drawPicker(K, A, ui.picker, { tint: ACC, detailAction: null, amountNote: currencyNote, emptyText: '보낼 수 있는 품목이 없습니다' });
         if (ui.dialog) K.dialog(ui.dialog);
@@ -109,7 +113,7 @@
     function letter(A, K, x, y, w, h, mobile) {
         const mail = selected();
         K.plate(x, y, w, h, 16, { a: .58, tint: mail?.gm ? GM : ACC, tintA: .1 });
-        if (!mail) { envelopeArt(K, x + w / 2 - 60, y + h / 2 - 70, 120, 84, false, false); K.text('편지를 고르세요', x + w / 2, y + h / 2 + 40, 16, K.DIM, 'center', 600); return; }
+        if (!mail) { envelopeArt(K, x + w / 2 - 60, y + h / 2 - 70, 120, 84, false, false); return; }
         const p = mobile ? 12 : 20; let ty = y + p;
         if (mobile) { K.btn('letter-back', '', x + p, ty, 44, 40, '', { glyph: 'prev', aria: '편지 목록' }); }
         const sx = x + p + (mobile ? 54 : 0), sw = w - p * 2 - (mobile ? 54 : 0);
@@ -204,7 +208,7 @@
         ry += Math.ceil(adds.length / cols) * (bh + 6);
         // 아래: 수수료, 오류, 보내기
         const by = foot - 50, fees = feeTotal();
-        const msg = c.error || (fees > 0 ? '받는 사람 기준 수수료 합계 ' + comma0(fees) + ', 수수료를 뺀 금액이 전달됩니다' : '');
+        const msg = c.error || (fees > 0 ? '수수료 ' + comma0(fees) : '');
         if (msg) K.line(msg, M.x + p, by - 14, M.w - p * 2, 13, c.error ? K.WARN : K.GOLD, 'left', 700, 10);
         const sendW = mobile ? (M.w - p * 2) * .62 : 220;
         K.btn('compose-close', 'foot', M.x + M.w - p - sendW - 8 - (mobile ? M.w - p * 2 - sendW - 8 : 120), by, mobile ? M.w - p * 2 - sendW - 8 : 120, 50, '닫기');
@@ -218,8 +222,8 @@
     function feeTotal() { return ui.compose.gifts.reduce((s, g) => s + (g.type === 'gold' || g.type === 'garnet' ? feeOf(g.amount) : 0), 0); }
     function currencyNote(kind, amount) {
         if (!(amount > 0)) return '';
-        if (kind.key === 'point') return '받는 사람 ' + comma0(amount) + '포인트 수령';
-        const fee = feeOf(amount); return '받는 사람 기준 수수료 ' + comma0(fee) + ', ' + comma0(Math.max(0, amount - fee)) + ' 수령';
+        if (kind.key === 'point') return '받는 사람 수령 ' + comma0(amount);
+        const fee = feeOf(amount); return '수수료 ' + comma0(fee) + '   받는 사람 수령 ' + comma0(Math.max(0, amount - fee));
     }
 
     // ── 데이터
@@ -237,7 +241,7 @@
     }
     async function select(id, quiet) {
         const mail = box.mails.find(m => m.id === id); if (!mail) return;
-        ui.selectedId = id; ui.mode = 'letter'; ui.bodyPage = 0;
+        ui.selectedId = id; ui.mode = 'letter'; ui.bodyPage = 0; ui.giftView = null;
         if (!quiet) { stage?.play('letter'); stage?.announce(mail.subject); }
         stage?.invalidate();
         if (!mail.read) {
@@ -333,6 +337,7 @@
 
     // ── 동작
     function act(action, id) {
+        if (MS.linesAct(ui, action)) { stage.invalidate(); return; }
         if (ui.dialog) { if (['dialog-close', 'back', 'claim-yes'].includes(action)) { const d = ui.dialog; ui.dialog = null; if (action === 'claim-yes') { claim(d.mailId); return; } } stage.invalidate(); return; }
         if (ui.picker && (action.startsWith('picker-') || action === 'back')) {
             if (action === 'picker-close' || (action === 'back' && !ui.picker.mobileDetail)) { ui.picker = null; stage.play('cancel'); }
@@ -343,7 +348,7 @@
         }
         if (action !== 'back') stage.play('select');
         switch (action) {
-            case 'back': if (ui.compose) ui.compose = null; else if (ui.mode === 'letter' && stage.width < 940) ui.mode = 'list'; break;
+            case 'back': if (ui.giftView != null) ui.giftView = null; else if (ui.compose) ui.compose = null; else if (ui.mode === 'letter' && stage.width < 940) ui.mode = 'list'; break;
             case 'open': select(id); return;
             case 'letter-back': ui.mode = 'list'; break;
             case 'list-next': if (ui.listPage < Math.ceil(box.mails.length / ui.listPer) - 1) ui.listPage++; else if (box.page < box.totalPages) { ui.listPage = 0; load(box.page + 1); } break;
@@ -352,7 +357,8 @@
             case 'body-previous': ui.bodyPage--; break;
             case 'refresh': load(box.page); return;
             case 'claim': ui.dialog = { title: '선물 받기', lines: ['동봉된 선물을 모두 받을까요?'], rows: (selected()?.gifts || []).map(giftInfo), wide: true, mailId: id, tint: '#ffa36b', actions: [{ action: 'dialog-close', label: '취소' }, { action: 'claim-yes', label: '받기', primary: true }] }; break;
-            case 'gift': { const g = selected()?.gifts[Number(id)]; if (g) stage.announce(giftInfo(g).title); break; }
+            case 'gift': { const g = selected()?.gifts[Number(id)]; if (g) { ui.giftView = Number(id); stage.announce(giftInfo(g).title); } break; }
+            case 'gift-close': ui.giftView = null; break;
             case 'compose': openCompose(); return;
             case 'compose-close': ui.compose = null; stage.play('cancel'); break;
             case 'add': openGiftPicker(id); return;

@@ -15235,14 +15235,14 @@ function describeMailGift(gift) {
         const data = getEquipmentData(eq.type, eq.id);
         const name = data ? getEquipmentDisplayName(data, eq) : '장비';
         const lvl = Number(eq.level || 0);
-        return { type: 'equipment', equipType: eq.type, equipId: Number(eq.id), rarity: data ? data.rarity : '', level: lvl, name, label: name + (lvl > 0 ? ' +' + lvl : '') };
+        return { type: 'equipment', equipType: eq.type, equipId: Number(eq.id), rarity: data ? data.rarity : '', level: lvl, name, label: name + (lvl > 0 ? ' +' + lvl : ''), payload: eq };
     }
     if (gift.type == 'pet') {
         const p = gift.pet || {};
         const data = getPetData(p.id);
         const lvl = Number(p.level || 0);
         const name = data ? data.name : '펫';
-        return { type: 'pet', petId: Number(p.id), level: lvl, name, label: name + (lvl > 0 ? ' +' + lvl : '') };
+        return { type: 'pet', petId: Number(p.id), level: lvl, name, label: name + (lvl > 0 ? ' +' + lvl : ''), payload: p };
     }
     if (gift.type == 'item') {
         const items = getDataCache('Item', []);
