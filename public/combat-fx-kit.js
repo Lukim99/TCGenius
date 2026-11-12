@@ -57,7 +57,7 @@
   float tail=smoothstep(-uP.y*2.6,0.,d)*step(d,0.)*(.25+.75*spoke);
   float brk=mix(1.,smoothstep(.3,.62,n+.18*sin(a*4.+uSeed*17.)),uP.w);
   float al=(front+tail*uP.z)*brk*smoothstep(1.,.93,r);
-  return vec4(heat(clamp(front+tail*.4,0.,1.)),al);
+  return vec4(heat(clamp(front*.8+tail*.42,0.,1.)),al);
 }`);
     // 소용돌이. p0 감김, p1 팔 수, p2 도는 속도, p3 가운데 구멍.
     F.shader('vortex', `vec4 fx(vec2 uv){
@@ -182,7 +182,7 @@
     F.shader('trail:slash', `vec4 fx(vec2 uv){
   float y=uv.y,n=noise(vec2(uv.x*uP.x*3.-uTime*uP.y,y*4.+uSeed*3.));
   float edge=1.-smoothstep(0.,.16,y),body=(1.-smoothstep(.1,1.,y+(n-.5)*.5))*(.55+n*.45),fade=pow(uv.x,uP.z);
-  return vec4(heat(clamp(edge*.9+body*.62,0.,1.)),clamp(edge+body,0.,1.)*fade);
+  return vec4(heat(clamp(edge+body*.8+.12,0.,1.)),clamp(edge+body*1.15,0.,1.)*fade);
 }`);
     F.shader('trail:bolt', `vec4 fx(vec2 uv){
   float y=abs(uv.y-.5)*2.,core=1.-smoothstep(.1,.34,y),glow=pow(max(0.,1.-y),2.2)*.8;
@@ -336,7 +336,7 @@
         C, mix, dark, lite, path, clamp, lerp,
         // 리본을 한 번 긋는다: 머리가 먼저 달리고 꼬리가 따라가 지운다.
         stroke(S, kind, pathFn, t, dur, o) {
-            const q = o || {}, node = S.trail(kind, Object.assign({ path: pathFn, width: q.width || S.U * .05, color: q.color, color2: q.color2 || (q.color ? dark(q.color) : undefined), seed: q.seed || S.rnd(t * 91 + 3), z: q.z == null ? 3 : q.z }, q.props), t);
+            const q = o || {}, node = S.trail(kind, Object.assign({ path: pathFn, width: q.width || S.U * .05, color: q.color, color2: q.color2 || (q.color ? dark(q.color, .62) : undefined), seed: q.seed || S.rnd(t * 91 + 3), z: q.z == null ? 3 : q.z }, q.props), t);
             node.to({ head: 1 }, dur * (q.lead || .55), q.ease || 'out3');
             node.seek(dur * (q.lag == null ? .3 : q.lag)).to({ tail: 1 }, dur * (q.trail || .7), q.easeTail || 'io').end();
             return node;
