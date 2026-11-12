@@ -7,7 +7,7 @@
 
     const uiAsset = file => '/rpg-ui?file=' + encodeURIComponent(file);
     const effectCatalog = window.CombatEffects || null;
-    const ultimateCutscene = window.UltimateCutscene?.create({ now: () => Date.now() + clockOffset });
+    const ultimateCutscene = window.UltimateCutscene?.create({ now: () => Date.now() + clockOffset, fold: .64 });
     const embedded = window.FIELD_MODE === 'paradise';
     const combatFx = window.CombatFX || null;
     const dailyMode = window.FIELD_MODE === 'daily';
@@ -180,6 +180,10 @@
             this.fx = combatFx && effectCatalog ? combatFx.create({ scene: canvas, muted: () => audio.muted }) : null;
             this.fxTarget = null;
             this.fxSkills = '';
+            // 궁극기 컷씬 뒤에 장면을 시작할 시간(ms), 시전이 끝나는 시각, 장면이 시키는 몸짓.
+            this.fxAfter = 0;
+            this.castUntil = 0;
+            this.poses = { me: { on: false, x: 0, y: 0, sx: 1, sy: 1, rot: 0, alpha: 1, flash: 0 }, foe: { on: false, x: 0, y: 0, sx: 1, sy: 1, rot: 0, alpha: 1, flash: 0 } };
             Object.entries(ASSETS).forEach(([name, url]) => this.loadTexture(name, url));
             if (!embedded) this.frame = requestAnimationFrame(time => this.render(time));
         }
@@ -259,6 +263,14 @@
             (next.skills || []).forEach(skill => ids.push(...effectCatalog.skillEffects(skill.name)));
             this.fx.preload(ids, combatFx.commonSounds);
         }
+        // 장면이 시전자와 대상에게 시키는 몸짓(돌진, 넉백, 번쩍임)을 읽는다. 장면이 없으면 제자리다.
+        poseOf(tag) {
+            const out = this.poses[tag], pose = this.fx ? this.fx.pose(tag) : null;
+            out.on = !!pose;
+            out.x = pose ? pose.nx : 0; out.y = pose ? pose.ny : 0; out.sx = pose ? pose.sx : 1; out.sy = pose ? pose.sy : 1;
+            out.rot = pose ? pose.rot : 0; out.alpha = pose ? pose.alpha : 1; out.flash = pose ? pose.flash : 0;
+            return out;
+        }
         // 정적 그림 대신 연출 엔진으로 재생한다. 시전자와 대상의 자리를 함께 넘겨 장면이 둘 사이를 오가게 한다.
         playFx(x, y, effectIds, options) {
             const opts = options || {}, role = opts.role === 'actor' ? 'actor' : 'target', player = this.playerEffectPoint('actor');
@@ -268,7 +280,8 @@
             const dst = role === 'actor' ? (onPlayer ? foe : player) : { x, y };
             // 발밑 위치: 플레이어는 몸 중심에서 .19, 보스와 엘리트는 .28, 잡몹은 .2만큼 아래다(화면 단위).
             const display = this.holdState || this.state || {}, foeHalf = regularMode && display.phase === 'normal' ? .2 : .28, toFoe = dst === foe || role === 'target' && !onPlayer;
-            return this.fx.play(effectIds, { role, src, dst, srcHalf: toFoe ? .19 : foeHalf, dstHalf: toFoe ? foeHalf : .19, scale: toFoe && foeHalf === .2 ? .72 : 1, event: opts.event, hit: opts.hit });
+            const mine = role === 'actor' ? onPlayer : !onPlayer;
+            return this.fx.play(effectIds, { role, src, dst, srcHalf: toFoe ? .19 : foeHalf, dstHalf: toFoe ? foeHalf : .19, scale: toFoe && foeHalf === .2 ? .72 : 1, event: opts.event, hit: opts.hit, after: this.fxAfter, tags: mine ? { a: 'me', t: 'foe' } : { a: 'foe', t: 'me' } });
         }
         hitWindow(time) { return time >= (this.targetHitFrom || 0) && time < this.targetHitUntil; }
         previewField(field) {
@@ -636,24 +649,36 @@
             const played = this.combatEffect(player.x,player.y,event?.actor==='enemy'?event:{action:'attack',effectElement:event&&event.receivedEffectElement||null},hit,target.x), lead = played ? played.delay : 0;
             this.playerHitFrom = now + lead; this.playerHitUntil = now + lead + (critical ? 440 : 320);
             if(!this.fx&&(critical||destiny))this.burst(player.x,player.y,destiny?[.72,.3,1,.65]:[1,.58,.14,.65],critical?14:10);
+            return played;
         }
         animateEnemy(event, previous) {
-            ultimateCutscene?.play(event, previous?.player?.cardName);
+            // 궁극기는 컷씬이 접힌 뒤에 장면을 시작한다.
+            const cut = ultimateCutscene?.play(event, previous?.player?.cardName) || 0;
             const now = performance.now(), actor = this.targetEffectPoint(previous, event, false), target = this.playerEffectPoint('target');
             const audience = event.action === 'skill' ? effectCatalog?.skillTarget(event) : null;
             if (event.action !== 'tick') {
                 this.enemyAttackAt = now;
                 this.enemyAttackKind = audience === 'actor' ? 'buff' : event.action;
             }
-            if (event.action === 'skill' && (audience === 'actor' || audience === 'both')) this.castEffect(actor.x, actor.y, event, 'actor');
+            this.fxAfter = this.fx && cut > 0 ? Math.max(0, cut - 70) : 0;
+            let lead = 0, cast = 0, times = null;
+            const note = played => { if (played) { lead = Math.max(lead, played.delay); cast = Math.max(cast, played.cast || 0); if (played.hits) times = played.hits; } };
+            if (event.action === 'skill' && (audience === 'actor' || audience === 'both')) note(this.castEffect(actor.x, actor.y, event, 'actor'));
             const hits = (event.receivedHits || []).filter(hit => hit.damage > 0);
-            if (hits.length) hits.forEach((hit, index) => this.later(() => this.receiveHit(hit, event), 80 + index * 95));
-            else if (event.received > 0) this.later(() => this.receiveHit({damage:event.received}, event), 80);
-            else if (event.action === 'skill' && audience !== 'actor') this.castEffect(target.x, target.y, event, 'target');
+            // 첫 타격의 장면을 바로 시작해 닿는 시각을 알아내고, 이어지는 타격은 장면이 정한 시각에 맞춘다.
+            if (hits.length || event.received > 0) {
+                note(this.receiveHit(hits[0] || { damage: event.received }, event));
+                const at = index => times && index < times.length ? times[index] : (times ? times[times.length - 1] : lead) + (index - (times ? times.length - 1 : 0)) * 95;
+                hits.slice(1).forEach((hit, index) => this.later(() => this.receiveHit(hit, event), at(index + 1)));
+            } else if (event.action === 'skill' && audience !== 'actor') note(this.castEffect(target.x, target.y, event, 'target'));
+            this.fxAfter = 0;
+            if (this.fx && event.action === 'skill') this.castUntil = now + cast;
+            return { delay: lead, cast };
         }
         animate(event, previous) {
-            // 궁극기 컷씬과 이 사건의 연출은 함께 시작한다.
+            // 궁극기는 컷씬이 먼저 나오고, 컷씬이 접힌 뒤에 이 사건의 장면을 시작한다.
             const cut = ultimateCutscene?.play(event, previous?.player?.cardName || this.state?.player?.cardName) || 0;
+            this.fxAfter = this.fx && cut > 0 ? Math.max(0, cut - 70) : 0;
             const now = performance.now();
             const flight = embedded && event.skillName === '돌 던지기' && !reducedMotion ? 280 : 0;
             const skillAudience = event.action === 'skill' && effectCatalog && effectCatalog.skillTarget ? effectCatalog.skillTarget(event) : event.action === 'skill' ? 'target' : null;
@@ -662,8 +687,10 @@
             const outgoingHits = Array.isArray(event.hits) ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
             const receivedHits = Array.isArray(event.receivedHits) ? event.receivedHits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
             // 연출이 대상에 닿기까지 걸리는 시간(lead)만큼 피격 반응과 수치를 늦춘다. 천상의 돌 던지기는 자체 비행 시간(flight)을 따른다.
-            let lead = 0, sound = false;
-            const note = played => { if (played) { lead = Math.max(lead, played.delay); sound = sound || played.sound; } };
+            let lead = 0, sound = false, cast = 0, hitTimes = null;
+            const note = played => { if (played) { lead = Math.max(lead, played.delay); sound = sound || played.sound; cast = Math.max(cast, played.cast || 0); if (played.hits) hitTimes = played.hits; } };
+            // 타수마다 수치와 피격 반응을 낼 시각(ms). 여러 번 때리는 장면은 장면이 정한 시각을 따르고, 그 밖의 줄은 타격 뒤에 잇따른다.
+            const hitAt = index => !index || !hitTimes ? lead + index * 95 : index < hitTimes.length ? hitTimes[index] : hitTimes[hitTimes.length - 1] + (index - hitTimes.length + 1) * 95;
             const strikes = event.damage > 0 || outgoingHits.length > 0 || Number(event.killedCount || 0) > 0, aims = event.action === 'skill' && (skillAudience === 'target' || skillAudience === 'both');
             const target = strikes || aims ? this.targetEffectPoint(previous, event, true) : null;
             if (target) this.fxTarget = target;
@@ -681,15 +708,15 @@
                 if (event.criticalCount && !this.fx) this.burst(this.impactX,this.impactY,[1,.68,.12,.68],16);
                 outgoingHits.slice(1).forEach((hit, index) => {
                     const presentationHit = Object.assign({}, hit, { presentationIndex: index + 1 });
-                    this.later(() => this.tickHit(previous, Object.assign({},event,{hits:[presentationHit],damage:hit.damage,killedCount:0,eliteEncountered:false,eliteDefeated:false})), flight + lead + (index + 1) * 95);
+                    this.later(() => this.tickHit(previous, Object.assign({},event,{hits:[presentationHit],damage:hit.damage,killedCount:0,eliteEncountered:false,eliteDefeated:false})), flight + hitAt(index + 1));
                 });
             } else if (aims) note(this.castEffect(target.x,target.y,event,'target'));
             if (regularMode) {
                 if (event.eliteEncountered) this.startEliteIntro(event.killedCount);
                 else if (event.eliteDefeated) this.startMobReturn();
-                else if (previous && previous.phase === 'normal' && Number(event.killedCount || 0) > 0) this.later(() => this.scatterMobs(event.killedCount, false), lead + Math.max(90, outgoingHits.length * 95));
+                else if (previous && previous.phase === 'normal' && Number(event.killedCount || 0) > 0) this.later(() => this.scatterMobs(event.killedCount, false), Math.max(lead + 90, hitAt(outgoingHits.length - 1) + 60));
             }
-            const receivedDelay = flight + lead + Math.max(80, outgoingHits.length * 95 + 80);
+            const receivedDelay = flight + Math.max(lead + 80, hitAt(Math.max(0, outgoingHits.length - 1)) + 175);
             if (receivedHits.length) receivedHits.forEach((hit, index) => this.later(() => this.receiveHit(hit,event), receivedDelay + index * 95));
             else if (event.received > 0) this.later(() => this.receiveHit({ damage: event.received },event), receivedDelay);
             if (event.pillarDestroyed != null) {
@@ -698,7 +725,10 @@
                 for(let i=0;i<18;i++) this.particle({x:pillar.x,y:pillar.y,vx:(Math.random()-.5)*.28,vy:-.1-Math.random()*.2,life:.7+Math.random()*.6,maxLife:1.3,width:.008+Math.random()*.018,height:.012+Math.random()*.025,spin:(Math.random()-.5)*8,color:[.32,.15,.09,1],mode:3});
             }
             if (event.cleared && previous) { this.holdState = JSON.parse(JSON.stringify(previous)); if (!regularMode && this.holdState.target) this.holdState.target.pillars = [false, false]; }
-            return { delay: lead, sound: !!this.fx && sound, cut: !!this.fx && cut > 0 };
+            this.fxAfter = 0;
+            // 장면이 시전자를 직접 움직이는 스킬은 기본 돌진을 쉬게 한다. 기본 돌진은 타격 순간에 닿도록 늦춘다.
+            if (this.fx && event.action === 'skill') this.castUntil = now + cast; else if (lead > 150) this.attackAt = now + lead - 150;
+            return { delay: lead, sound: !!this.fx && sound, cut: !!this.fx && cut > 0, cast: event.action === 'skill' ? cast : 0, times: outgoingHits.map((hit, index) => hitAt(index)), receivedAt: receivedDelay };
         }
         timeBurst(type) {
             const colors = { fever: [1,.25,.04,1], punch: [.1,.8,1,1], hit: [1,.75,.15,1], lucky: [.25,1,.45,1] };
@@ -722,19 +752,20 @@
             gl.clearColor(.005,.01,.025,1); gl.clear(gl.COLOR_BUFFER_BIT); const bg=this.cover('background');this.draw(this.textures.background,.5,.5,bg.width,bg.height); this.draw(null,.5,.5,1,1,{mode:3,color:[.01,.02,.05,regularMode&&!(this.state&&this.state.inField)?.38:.16]});
             const display = this.holdState || this.state || {}, narrow = innerWidth < 700, phase = display.phase || 'elite';
             const idle = reducedMotion ? 0 : Math.sin(time/520)*.005, progress=clamp((time-this.attackAt)/(this.attackKind==='skill'?620:430),0,1), lunge=this.attackKind==='buff'?0:progress<1?Math.sin(progress*Math.PI)*.12:0;
+            const pm=this.poseOf('me'),pf=this.poseOf('foe');
             if (!regularMode || display.inField) {
-                const playerFit=this.fit('player',embedded?(narrow?.47:.68):narrow?.62:.78,narrow?.48:.36), playerX=(narrow?.24:.25)+lunge,playerY=embedded?.90-playerFit.height/2-idle:narrow?.68:.66-idle;
+                const playerFit=this.fit('player',embedded?(narrow?.47:.68):narrow?.62:.78,narrow?.48:.36), playerX=(narrow?.24:.25)+(pm.on||time<this.castUntil?0:lunge)+pm.x,playerY=embedded?.90-playerFit.height/2-idle:narrow?.68:.66-idle;
                 if (embedded) {
                     const enemyProgress=clamp((time-(this.enemyAttackAt??-10000))/(this.enemyAttackKind==='skill'?620:430),0,1);
                     const enemyLunge=reducedMotion||this.enemyAttackKind==='buff'?0:Math.sin(enemyProgress*Math.PI)*.12;
-                    const target=display.target||{},sprite=target.sprite,fit=this.paradiseTargetLayout(display),hit=time<this.targetHitUntil,x=fit.x-enemyLunge+(hit&&!reducedMotion?Math.sin(time*.12)*.006:0);
-                    const opts={flash:hit?.65:0,color:[1,1,1,1],uv:['mirror','moonDuel'].includes(target.kind)?[1,0,-1,1]:[0,0,1,1]};
-                    if(typeof sprite==='string')this.draw(this.textures.dummy,x,fit.bottom-fit.height/2,fit.width,fit.height,opts);
-                    else if(sprite)this.draw(this.textures.monsterAtlas,x,fit.bottom-fit.height/2,fit.width,fit.height,{...opts,uv:this.monsterUv(sprite,sprite.column===1)});
+                    const target=display.target||{},sprite=target.sprite,fit=this.paradiseTargetLayout(display),hit=time<this.targetHitUntil,x=fit.x-(pf.on||time<this.castUntil?0:enemyLunge)+pf.x+(hit&&!reducedMotion?Math.sin(time*.12)*.006:0);
+                    const opts={flash:Math.max(hit?.65:0,pf.flash*.85),color:[1,1,1,pf.alpha],rotation:pf.rot,uv:['mirror','moonDuel'].includes(target.kind)?[1,0,-1,1]:[0,0,1,1]},fy=fit.bottom-fit.height*pf.sy/2+pf.y,fw=fit.width*pf.sx,fh=fit.height*pf.sy;
+                    if(typeof sprite==='string')this.draw(this.textures.dummy,x,fy,fw,fh,opts);
+                    else if(sprite)this.draw(this.textures.monsterAtlas,x,fy,fw,fh,{...opts,uv:this.monsterUv(sprite,sprite.column===1)});
                 } else if (trainingMode) {
                     const fit=this.fit('dummy',narrow?.55:.66,narrow?.42:.34),hit=this.hitWindow(time);
                     this.draw(null,.76,.82,fit.width,.1,{mode:1,color:[.1,.05,.01,.36]});
-                    this.draw(this.textures.dummy,.76+(hit?Math.sin(time*.12)*.008:0),narrow?.64:.62,fit.width,fit.height,{uv:[1,0,-1,1],rotation:hit?Math.sin(time*.05)*.035:0,flash:hit?.65:0});
+                    this.draw(this.textures.dummy,.76+pf.x+(hit?Math.sin(time*.12)*.008:0),(narrow?.64:.62)+pf.y+fit.height*(1-pf.sy)/2,fit.width*pf.sx,fit.height*pf.sy,{uv:[1,0,-1,1],rotation:pf.rot+(hit?Math.sin(time*.05)*.035:0),flash:Math.max(hit?.65:0,pf.flash*.85),color:[1,1,1,pf.alpha]});
                 } else if (regularMode) {
                     if (phase === 'elite') this.drawRegularElite(display,time,narrow);
                     else this.drawRegularMobs(display,time,narrow);
@@ -743,12 +774,12 @@
                     const alive = display.target && display.target.pillars || [true,true];
                     [0,1].forEach(index => { if (!alive[index]) return; const x=narrow?(index?.78:.61):(index?.81:.65), fit=this.fit('pillar',narrow?.48:.62,narrow?.34:.25),hit=this.hitWindow(time)&&Math.abs(x-this.impactX)<.11; this.draw(null,x,.78,fit.width*.9,.12,{mode:1,color:[1,.08,.02,.25]}); this.draw(this.textures.pillar,x+(hit?Math.sin(time*.16)*.008:0),.62+idle,fit.width,fit.height,{flash:hit?.85:0}); });
                 } else {
-                    const fit=this.fit('buta',narrow?.72:.88,narrow?.5:.44),hit=this.hitWindow(time); this.draw(null,narrow?.75:.74,.8,narrow?.43:.32,.13,{mode:1,color:[1,.04,.12,.24]}); this.draw(this.textures.buta,(narrow?.75:.74)+(hit?Math.sin(time*.18)*.006:0),narrow?.62:.61+idle,fit.width,fit.height,{flash:hit?.85:0,color:[1,1,1,display.inField?1:.82]});
+                    const fit=this.fit('buta',narrow?.72:.88,narrow?.5:.44),hit=this.hitWindow(time); this.draw(null,narrow?.75:.74,.8,narrow?.43:.32,.13,{mode:1,color:[1,.04,.12,.24]}); this.draw(this.textures.buta,(narrow?.75:.74)+pf.x+(hit?Math.sin(time*.18)*.006:0),(narrow?.62:.61+idle)+pf.y+fit.height*(1-pf.sy)/2,fit.width*pf.sx,fit.height*pf.sy,{rotation:pf.rot,flash:Math.max(hit?.85:0,pf.flash*.85),color:[1,1,1,(display.inField?1:.82)*pf.alpha]});
                 }
                 // 좁은 화면이나 돌진 중 겹쳐도 플레이어가 몬스터 앞에 보이도록 마지막에 그린다.
-                this.drawPlayerAura(display.player,playerX,playerY,playerFit,time);
-                this.draw(null,playerX,.83,narrow?.4:.27,.11,{mode:1,color:[.08,.45,1,.25]});
-                this.draw(this.textures.player,playerX,playerY,playerFit.width,playerFit.height,{flash:time>=(this.playerHitFrom||0)&&time<this.playerHitUntil?.75:0});
+                if(pm.alpha>.5&&!pm.rot)this.drawPlayerAura(display.player,playerX,playerY+pm.y,playerFit,time);
+                this.draw(null,playerX,.83,narrow?.4:.27,.11,{mode:1,color:[.08,.45,1,.25*pm.alpha]});
+                this.draw(this.textures.player,playerX,playerY+pm.y+playerFit.height*(1-pm.sy)/2,playerFit.width*pm.sx,playerFit.height*pm.sy,{rotation:pm.rot,color:[1,1,1,pm.alpha],flash:Math.max(pm.flash*.85,time>=(this.playerHitFrom||0)&&time<this.playerHitUntil?.75:0)});
             }
             if(!this.fx&&display.inField&&time>=this.impactStarted&&time<this.impactUntil){const p=clamp((time-this.impactStarted)/Math.max(1,this.impactUntil-this.impactStarted),0,1),pulse=Math.sin(p*Math.PI),fit=this.fit('impact',(this.impactSkill?.36:.3)*(.76+pulse*.28),this.impactSkill?.32:.26),alpha=Math.pow(1-p,.5)*.68;this.draw(this.textures.impact,this.impactX,this.impactY,fit.width,fit.height,{color:[1,1,1,alpha],rotation:(this.impactSkill?-.06:.06)+p*.035});if(this.impactCritical)this.draw(this.textures.impact,this.impactX-.008,this.impactY+.008,fit.width*.66,fit.height*.66,{color:[1,.86,.52,alpha*.55],rotation:-.75});}
             this.drawEffectAssets(time);
@@ -800,7 +831,9 @@
                 this.bar(x,y+38,bw,narrow?12:15,dailyMode?kills:progress,dailyMode?state.daily.target:100,'#b87924');
                 return;
             }
-            const target=state.target||{},key=state.phase+':'+target.maxHp;
+            const real=state.target||{},key=state.phase+':'+real.maxHp,held=this.targetHold&&performance.now()<this.targetHold.until&&this.bossKey===key;
+            // 연출이 닿기 전에는 맞기 전의 체력을 보인다.
+            const target=held?Object.assign({},real,{hp:Math.max(Number(real.hp||0),this.targetHold.hp)}):real;
             if(this.bossKey!==key){this.bossKey=key;this.bossLagHp=Number(target.hp||0);}
             this.bossLagHp+=(Number(target.hp||0)-this.bossLagHp)*.055;
             const meta=embedded?({normal:'',elite:'엘리트',boss:'보스',judge:'심판자',mirror:'거울',moonDuel:'월야섬',rift:'균열',final:'수문장'}[target.kind]||''):trainingMode?({normal:'일반',elite:'엘리트',boss:'보스'}[target.kind]+' · 방어력 '+number(target.def)):state.phase==='pillar'?'결계 기둥 '+(target.pillars||[]).filter(Boolean).length+' / 2':regularMode?'엘리트 몬스터':'';
@@ -959,14 +992,17 @@
             const c=this.ctx,narrow=w<650,cx=w/2,cy=h*.46,top=c.createLinearGradient(0,0,0,h);top.addColorStop(0,'rgba(0,0,0,.18)');top.addColorStop(.55,'rgba(0,0,0,.02)');top.addColorStop(1,'rgba(0,0,0,.72)');c.fillStyle=top;c.fillRect(0,0,w,h);this.gameText('부타게임 [H]',cx,cy-(narrow?110:130),narrow?31:43,'center','#fff7e8');this.line(cx-(narrow?105:150),cy-(narrow?82:94),cx-30,cy-(narrow?82:94),'rgba(232,176,75,.8)',1);this.line(cx+30,cy-(narrow?82:94),cx+(narrow?105:150),cy-(narrow?82:94),'rgba(232,176,75,.8)',1);this.text('Lv. '+state.requirements.minLevel+'–'+state.requirements.maxLevel,cx,cy-(narrow?40:48),narrow?11:13,800,'center','#d8d2c8');if(state.entryError)this.text(state.entryError,cx,cy-(narrow?17:21),narrow?9:11,750,'center','#f0a39b',w-30);const bw=narrow?168:184,bh=narrow?66:72,by=cy+(narrow?34:48),bx=cx-bw/2;this.actionButton(bx,by,bw,bh,{label:state.canEnter?'입장':'입장 불가',labelYRatio:.35,key:'',kind:'gold',disabled:busy||!state.canEnter,action:()=>enter(false)});const iconSize=narrow?28:30,countText=number(state.ticket.count)+'/'+number(state.ticket.cost),countSize=narrow?10:11,rowY=by+bh*.72;c.font='900 '+countSize+'px Pretendard, sans-serif';const rowW=iconSize+6+c.measureText(countText).width,ix=cx-rowW/2,iy=rowY-iconSize/2,icon=this.image(state.ticket.iconUrl);if(icon)c.drawImage(icon,ix,iy,iconSize,iconSize);else{this.cutPath(ix,iy,iconSize,iconSize,3);c.fillStyle='rgba(38,24,5,.35)';c.fill();this.gameText('H',ix+iconSize/2,iy+iconSize/2,10,'center','#3e290c');}this.text(countText,ix+iconSize+6,rowY,countSize,900,'left',state.canEnter?'#2b1b05':'#6f6b62');this.text('E',bx+bw-8,by+9,7,900,'right',state.canEnter?'#4a2d08':'#73706a');
         }
         bannerLayer(w,h){if(!this.banner||this.bannerUntil<=performance.now())return;const remain=this.bannerUntil-performance.now(),age=1-clamp(remain/1250,0,1),alpha=clamp(Math.min(age*5,remain/220),0,1),narrow=w<650,c=this.ctx,cx=w/2,y=h*(narrow?.3:.33),bw=Math.min(w-40,narrow?310:460);c.save();c.globalAlpha=alpha;const glow=c.createRadialGradient(cx,y,0,cx,y,bw*.58);glow.addColorStop(0,'rgba(232,176,75,.2)');glow.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=glow;c.fillRect(cx-bw*.7,y-70,bw*1.4,140);this.line(cx-bw/2,y-22,cx-72,y-22,'rgba(232,176,75,.8)',1);this.line(cx+72,y-22,cx+bw/2,y-22,'rgba(232,176,75,.8)',1);this.text(this.banner,cx,y,narrow?25:36,900,'center','#fff8e8');if(this.bannerSub)this.text(this.bannerSub,cx,y+29,narrow?10:12,800,'center','#e8b04b');c.restore();}
-        addDamage(event,previous){
+        // 타격이 닿을 때까지 대상의 체력 표시를 이전 값으로 붙들어 둔다.
+        holdTarget(ms,hp){this.targetHold=ms>0&&hp!=null?{until:performance.now()+ms,hp:Number(hp)||0}:null;}
+        // times: 타수마다 수치를 띄울 시각(지금부터 ms). 없으면 95ms 간격이다.
+        addDamage(event,previous,times,receivedAfter){
             const now=performance.now()+(embedded&&event.skillName==='돌 던지기'&&!reducedMotion?280:0),narrow=innerWidth<700,phase=previous&&previous.phase;
             const pillarIndex=event.pillarDestroyed===1?1:0;
             const target = embedded ? renderer.targetEffectPoint(previous, event, false) : null;
             const x=target?.x??(phase==='pillar'?(narrow?(pillarIndex?.78:.61):(pillarIndex?.81:.65)):regularMode&&phase==='normal'?.72:(narrow?.75:.74));
             const y=target?.y??(phase==='pillar'?(narrow?.58:.46):regularMode&&phase==='normal'?(narrow?.62:.42):(narrow?.56:.42));
-            const hits=Array.isArray(event.hits)?event.hits.filter(hit=>Number(hit&&hit.damage||0)>0):[],receivedHits=Array.isArray(event.receivedHits)?event.receivedHits.filter(hit=>Number(hit&&hit.damage||0)>0):[],receivedAt=now+Math.max(80,hits.length*95+80);
-            if(hits.length)hits.forEach((hit,index)=>this.damagePops.push({...effectCatalog.damageStyle(event,hit),damage:Number(hit.damage),critical:!!hit.critical,destiny:!!hit.destiny,skill:hit.label||(index===0?event.skillName||'':''),start:now+index*95,x,y,received:false}));
+            const hits=Array.isArray(event.hits)?event.hits.filter(hit=>Number(hit&&hit.damage||0)>0):[],receivedHits=Array.isArray(event.receivedHits)?event.receivedHits.filter(hit=>Number(hit&&hit.damage||0)>0):[],at=index=>times&&times[index]!=null?times[index]:index*95,receivedAt=now+(receivedAfter!=null?receivedAfter:Math.max(80,at(Math.max(0,hits.length-1))+175));
+            if(hits.length)hits.forEach((hit,index)=>this.damagePops.push({...effectCatalog.damageStyle(event,hit),damage:Number(hit.damage),critical:!!hit.critical,destiny:!!hit.destiny,skill:hit.label||(index===0?event.skillName||'':''),start:now+at(index),x,y,received:false}));
             else if(Number(event.damage||0)>0)this.damagePops.push({...effectCatalog.damageStyle(event,{}),damage:Number(event.damage),critical:Number(event.criticalCount||0)>0,skill:event.skillName||'',start:now,x,y,received:false});
             if(regularMode&&Number(event.killedCount||0)>0)this.damagePops.push({kills:Number(event.killedCount),start:now+Math.max(120,hits.length*95),x:regularMode&&phase==='normal'?.72:x,y:narrow?.68:.54});
             const receivedX=narrow?.24:.25,receivedY=embedded?renderer.playerEffectPoint('target').y:narrow?.68:.55;
@@ -1078,8 +1114,14 @@
                     seen.add(event.id);
                     if(!initialized||quiet||document.hidden||Date.now()+clockOffset-event.at>5000||event.enemyId!==next?.target?.id)continue;
                     const before=previous||next;
-                    if(event.actor==='enemy')renderer.animateEnemy(event,before);else if(event.action==='tick')renderer.tickHit(before,event);else renderer.animate(event,before);
-                    hud.addDamage(event,before);
+                    let staged=null,tickLead=0;
+                    if(event.actor==='enemy')staged=renderer.animateEnemy(event,before);else if(event.action==='tick')tickLead=renderer.tickHit(before,event)||0;else staged=renderer.animate(event,before);
+                    // 수치는 연출이 닿는 순간에 띄우고, 그때까지 대상의 체력 표시를 붙들어 둔다.
+                    const lead=staged?staged.delay||0:tickLead,enemy=event.actor==='enemy';
+                    if(lead>0&&!enemy){hud.holdTarget(lead,before?.target?.hp);renderer.later(()=>hud.addDamage(event,before,staged&&staged.times?staged.times.map(time=>time-lead):null,staged&&staged.receivedAt!=null?staged.receivedAt-lead:null),lead);}
+                    else if(lead>80&&enemy)renderer.later(()=>hud.addDamage(event,before),lead-80);
+                    else hud.addDamage(event,before);
+                    if(staged&&staged.cast)duration=Math.max(duration,staged.cast+150);
                     if(event.action==='skill')audio.play('skill',.68);else if(event.damage>0)audio.hit();
                     if(event.criticalCount){audio.play('crit',.82);hud.impact(true);}else if(event.damage>0)hud.impact(false);
                     if(event.received>0)renderer.later(()=>audio.hit(),90);
@@ -1158,7 +1200,7 @@
         lastDailyClearKey=key;showRewards(next.clearRewards||[],{lucky:daily.clearReward.lucky});
     }
     async function enter(confirmed){const field=regularMode?selectedField():null,canEnter=regularMode?field&&field.canEnter!==false&&!field.locked:state&&state.canEnter;if(busy||!state||(!confirmed&&!canEnter))return;audio.unlock();const transitionAsset=regularMode?field:state.ticket;setBusy(true);try{const body={confirmed:confirmed===true};if(regularMode)body.fieldName=field&&field.name||selectedFieldName;const result=await request(apiBase+'/enter',body);applyState(result.state,{deferBgm:result.ok});addLog(result.message,result.ok?'good':'bad');if(result.ok)hud.startEntryTransition((result.state&&result.state.activeField)||transitionAsset);else if(result.needsConfirmation){setBusy(false);const accepted=await showDialog('입장 경고',result.message,'입장');if(accepted)return enter(true);await request(apiBase+'/cancel-entry',regularMode?{fieldName:body.fieldName}:{});addLog('필드 입장을 취소했습니다.');}else audio.play('fail',.42);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
-    async function action(path,body){if(embedded){if(!busy)window.ParadiseBattle.onAction?.(path.slice(1),body);return;}if(busy||hud.inEntryTransition()||hud.inConsumableMenu()||!state||!state.inField||state.pendingFragment)return;audio.unlock();const previous=state;setBusy(true);try{const result=await request(apiBase+path,body||{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok){const event=result.event||{};const staged=renderer&&renderer.animate(event,previous)||{delay:0,sound:false,cut:false};if(staged.cut&&event.action==='skill')audio.play('skill',.68);const land=()=>{hud.addDamage(event,previous);if(event.action==='skill'){if(!staged.sound&&!staged.cut)audio.play('skill',.68);}else if(event.damage>0||event.killedCount>0)audio.hit();if(event.criticalCount){audio.play('crit',.82);hud.impact(true);}else if(event.damage>0||event.killedCount>0)hud.impact(false);if(event.received>0)setTimeout(()=>audio.hit(),90);};if(staged.delay>0)setTimeout(land,staged.delay);else land();if(regularMode&&event.eliteEncountered){setTimeout(()=>hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다'),350);audio.play('start',.82);hud.impact(true);}if(regularMode&&event.eliteDefeated){hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}if(!regularMode&&event.pillarDestroyed!=null){const last=event.pillarDestroyed===1;hud.showBanner(last?'결계 붕괴':'기둥 파괴',last?'보상 봉인이 해제됩니다':'남은 기둥 1 / 2');audio.play(last?'clear':'crit',last?.72:.62);hud.impact(true);}if(dailyMode&&!event.cleared)showDailyTimes(event);if(event.cleared){if(dailyMode){lastDailyClearKey=state.daily.date+':'+state.daily.finishedAt;}showRewards(event.rewards||[],event);}if(event.defeated){hud.showBanner('전투 패배');audio.play('fail',.72);hud.impact(true);}}else audio.play('fail',.32);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
+    async function action(path,body){if(embedded){if(!busy)window.ParadiseBattle.onAction?.(path.slice(1),body);return;}if(busy||hud.inEntryTransition()||hud.inConsumableMenu()||!state||!state.inField||state.pendingFragment)return;audio.unlock();const previous=state;let casting=0;setBusy(true);try{const result=await request(apiBase+path,body||{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok){const event=result.event||{};const staged=renderer&&renderer.animate(event,previous)||{delay:0,sound:false,cut:false};if(staged.cut&&event.action==='skill')audio.play('skill',.68);if(staged.delay>0&&previous.target)hud.holdTarget(staged.delay,previous.target.hp);casting=staged.cast||0;const land=()=>{hud.addDamage(event,previous,staged.times?staged.times.map(time=>time-staged.delay):null,staged.receivedAt!=null?staged.receivedAt-staged.delay:null);if(event.action==='skill'){if(!staged.sound&&!staged.cut)audio.play('skill',.68);}else if(event.damage>0||event.killedCount>0)audio.hit();if(event.criticalCount){audio.play('crit',.82);hud.impact(true);}else if(event.damage>0||event.killedCount>0)hud.impact(false);if(event.received>0)setTimeout(()=>audio.hit(),Math.max(90,(staged.receivedAt||0)-staged.delay));};if(staged.delay>0)setTimeout(land,staged.delay);else land();if(regularMode&&event.eliteEncountered){setTimeout(()=>hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다'),350);audio.play('start',.82);hud.impact(true);}if(regularMode&&event.eliteDefeated){hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}if(!regularMode&&event.pillarDestroyed!=null){const last=event.pillarDestroyed===1;hud.showBanner(last?'결계 붕괴':'기둥 파괴',last?'보상 봉인이 해제됩니다':'남은 기둥 1 / 2');audio.play(last?'clear':'crit',last?.72:.62);hud.impact(true);}if(dailyMode&&!event.cleared)showDailyTimes(event);if(event.cleared){if(dailyMode){lastDailyClearKey=state.daily.date+':'+state.daily.finishedAt;}showRewards(event.rewards||[],event);}if(event.defeated){hud.showBanner('전투 패배');audio.play('fail',.72);hud.impact(true);}}else audio.play('fail',.32);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{if(casting>0)setTimeout(()=>setBusy(false),casting);else setBusy(false);}}
     async function useConsumable(itemId){if(busy||hud.inEntryTransition()||!state||!state.inField||state.pendingFragment)return;audio.unlock();setBusy(true);try{const result=await request(apiBase+'/use-consumable',{itemId:Number(itemId)});applyState(result.state);addLog(result.message,result.ok?'good':'bad');if(result.ok){const event=result.event||{};if(renderer)renderer.recoveryBurst(event);hud.addRecovery(event);audio.play('potion',.68);}else audio.play('fail',.32);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
     function attack(){const now=Date.now()+clockOffset;if(hud.inEntryTransition()||hud.inConsumableMenu()||!state||state.pendingFragment||now<Number(state.nextActionAt||0))return;action('/attack',{});}
     function useSkill(name){const skill=state&&(state.skills||[]).find(s=>s.name===name),now=Date.now()+clockOffset;if(hud.inEntryTransition()||hud.inConsumableMenu()||state&&state.pendingFragment||!skill||now<Number(skill.cooldownEnd||0)||now<Number(state.nextActionAt||0))return;action('/skill',{skillName:name});}

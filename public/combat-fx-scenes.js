@@ -5,6 +5,8 @@
     const F = typeof module == 'object' && module.exports ? require('./combat-fx.js') : root.CombatFX;
     if (!F) return;
     const PI = Math.PI, TAU = PI * 2;
+    // 실시간 재료(리본, 입자, 절차 셰이더). 원형들이 그림 위에 덧입혀 쓴다. 처형박수와 익테봇 계열이 쓰는 함수에는 넣지 않는다.
+    const K = F.kit || null;
     const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
     const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -28,18 +30,8 @@
         sunata: { poly: [[100, 313], [120, 220], [113, 133], [173, 113], [193, 27], [233, 20], [253, 60], [293, 73], [333, 33], [363, 60], [347, 107], [373, 153], [427, 220], [433, 280], [400, 313], [373, 373], [313, 387], [267, 320], [220, 393], [153, 393], [107, 360]], pivot: [257, 200] }
     });
     F.parts('summon:수나타 공격', { cone: { poly: [[177, 133], [280, 120], [400, 113], [497, 253], [500, 313], [400, 427], [253, 400], [177, 373]], pivot: [193, 257] } });
-    F.parts('skill:럭키펀치', {
-        fist: { poly: [[213, 233], [233, 217], [287, 213], [347, 180], [460, 143], [500, 220], [480, 293], [373, 313], [300, 317], [253, 307], [220, 280]], pivot: [217, 257] },
-        clover: { poly: [[53, 220], [87, 157], [160, 117], [220, 120], [260, 160], [267, 200], [220, 220], [207, 267], [220, 320], [253, 347], [220, 380], [153, 383], [87, 333], [60, 280]], pivot: [173, 250] }
-    });
     F.parts('skill:끝판왕', { crown: { poly: [[157, 223], [200, 240], [220, 220], [257, 267], [280, 193], [300, 240], [323, 233], [320, 313], [253, 340], [200, 350], [167, 293]], pivot: [243, 287] } });
     F.parts('skill:수업끝', { bell: { poly: [[150, 63], [180, 57], [207, 80], [260, 110], [293, 160], [267, 173], [233, 213], [193, 240], [167, 227], [157, 167], [163, 107]], pivot: [167, 73], keep: true } });
-    F.parts('skill:포커 못 하시네', { ace: { poly: [[350, 227], [425, 255], [367, 395], [288, 341]], pivot: [357, 310], keep: true } });
-    F.parts('skill:헤즈업', {
-        mid: { poly: [[193, 127], [330, 127], [330, 327], [193, 327]], pivot: [261, 227] },
-        left: { poly: [[89, 198], [177, 155], [195, 193], [195, 328], [157, 335]], pivot: [142, 250] },
-        right: { poly: [[331, 177], [347, 167], [430, 213], [383, 313], [331, 313]], pivot: [380, 240] }
-    });
 
     // 합장한 손의 왼쪽 반. 손끝부터 손바닥까지는 가운데 선(오른쪽 변)에 맞붙고, 그 아래로 팔이 바깥으로 벌어진다.
     // 검은 면에 흰 테두리. 오른손은 뒤집어 쓴다. 둘을 붙이면 손끝이 하나의 아치로 이어진 합장이 되고,
@@ -253,6 +245,7 @@
         if (q.debris !== false) P.debris(S, x, y - size * .05, q.debris || 8, q.rock || [.2, .12, .1], t, { speed: .8 });
         P.sparks(S, x, y - size * .1, 8, color, t, { cone: -PI / 2, spread: 1.6, dist: .28 });
         if (!S.minor) { S.shake(q.shake || 8, .28, t); if (q.stop) S.stop(q.stop, t); }
+        if (K) { K.sparks(S, x, y - size * .08, S.minor ? 5 : 12, color, t, { angle: -PI / 2, spread: 1.5, speed: .9 }); K.embers(S, x, y - size * .3, S.minor ? 4 : 10, color, t + .05, { radius: size * .2, rise: .5, speed: .3 }); K.dust(S, x, y, 4, [.32, .28, .26], t, { flat: .3, radius: size * .2, speed: .25 }); }
         return node;
     }
     // 하늘에서 내리꽂히는 그림.
@@ -265,6 +258,7 @@
         strike(S, x, y - size * .1, t, { power: q.power == null ? .75 : q.power, color, zoom: q.zoom });
         P.decal(S, x, y, size * .46, color, t, .3);
         if (q.debris !== false) P.debris(S, x, y, q.debris || 9, q.rock || [.2, .12, .1], t);
+        if (K) { K.ring(S, x, y, size * .5, color, t, { flat: .3, dur: .4 }); K.sparks(S, x, y - size * .1, S.minor ? 6 : 14, color, t, { angle: -PI / 2, spread: 2.4, speed: 1 }); }
         return node;
     }
     // 한 점에서 터져 나오는 그림. 중심부터 드러나고 중심부터 비어 나간다.
@@ -284,6 +278,8 @@
         P.line(S, x - dx, y - dy, x + dx, y + dy, u * .012, [1, 1, 1], t0, .16, { from: .1, sharp: 1.4 });
         P.sparks(S, x, y, 7, color, t0 + .04, { cone: dir, spread: .7, dist: .26 });
         if (!S.minor) { S.shake(q.shake || 6, .16, t0 + .04); if (q.stop !== 0) S.stop(q.stop || 45, t0 + .05); }
+        // 칼끝이 지나간 자리에 참격의 궤적이 남고, 벤 방향으로 불티가 튄다.
+        if (K) { K.dart(S, x - dx * 1.25, y - dy * 1.25, x + dx * 1.25, y + dy * 1.25, t0, .22, { kind: 'slash', color, width: size * .2, lead: .4, lag: .34, ease: 'out3', props: { taper: .5 } }); K.sparks(S, x, y, S.minor ? 5 : 10, color, t0 + .04, { angle: dir, spread: .9, speed: 1 }); }
         return node;
     }
     // 발밑에서 감겨 오르는 기운. 시전자를 가리지 않도록 옅고 짧다.
@@ -293,6 +289,7 @@
         node.to({ head: 1.45 }, .28, 'out').wait(q.hold == null ? .26 : q.hold).to({ tail: 1.45, y: y - size * .12 }, .4, 'in').end();
         P.decal(S, x, y, size * .4, color, t0, .34, { alpha: .65 });
         M.rise(S, S.id, x, y - size * .45, size, t0 + .12, { dur: .85 });
+        if (K) { K.aura(S, x, y, size * .7, size * 1.2, t0, .7, { color, alpha: .6 }); K.embers(S, x, y - size * .1, S.minor ? 5 : 12, color, t0 + .05, { radius: size * .25, flat: .4, rise: .6, speed: .3, over: .3 }); }
         return node;
     }
     // 대상에 찍히는 낙인. 크게 내려와 박히고 잠시 남는다.
@@ -303,6 +300,7 @@
         P.ring(S, x, y, size * .55, color, t0 + T, { th: .12 });
         P.sparks(S, x, y, 8, color, t0 + T, { dist: .18 });
         if (!S.minor) S.shake(5, .16, t0 + T);
+        if (K) { K.ring(S, x, y, size * .6, color, t0 + T, { dur: .3 }); K.sparks(S, x, y, S.minor ? 5 : 10, color, t0 + T, { speed: .7 }); }
         return node;
     }
     // 소용돌이 그림. 안쪽이 더 빨리 감겼다가 풀린다.
@@ -373,6 +371,7 @@
     });
 
     // ================= 스킬 =================
+    // 여기에는 예전 그대로 두는 장면(처형박수, 익테봇 계열)만 있다. 나머지 스킬은 combat-fx-skills.js가 등록한다.
     def(skill('처형박수'), { impact: .5, images: [skill('처형박수'), combat('화상 틱')], sounds: ['execution_clap', 'boom_low', 'air_whoosh', 'plank', 'boom_b', 'lock'] }, S => {
         // 카사네 테토 '처형박수' 뮤비의 구성을 따른다. 붉게 가라앉은 화면에 검은 손들이 한 줄로 올라와
         // 서로 엇갈릴 만큼 벌어진 채 버티다가, 박수 소리에 맞춰 한 번에 '짝' 닫힌다. 같은 순간 불타는 두 손이
@@ -478,500 +477,6 @@
         return cones;
     });
 
-    def(skill('럭키펀치'), { impact: .3, sounds: ['punch_a', 'glass_a', 'coins_b', 'air_puff'] }, S => {
-        // 대상 위에 네잎클로버가 맺히고, 황금 주먹이 날아와 그것을 깨부순다.
-        const u = S.U, x = S.T.x, y = S.T.y, size = .56 * u, gold = [1, .82, .25], green = [.4, 1, .45];
-        const clover = S.part('clover', { x, y, size, flip: -1, sx: .2, sy: .2, alpha: 0, rot: -.8, glow: .6, edge: green, z: 1 });
-        clover.to({ sx: 1.1, sy: 1.1, alpha: 1, rot: 0 }, .14, 'back').to({ sx: 1, sy: 1 }, .08).wait(.07).set({ flash: 1 }).to({ alpha: 0, sx: 1.3, sy: 1.3 }, .06).end();
-        P.ring(S, x, y, .16 * u, green, .02, { th: .1 }); S.sfx('coins_b', .02, { vol: .4 });
-        const t = .29, fist = S.part('fist', { x: S.A.x + .12 * u, y: S.A.y - .02 * u, size, flip: -1, sx: .7, sy: .7, alpha: 0, glow: .55, edge: gold, flow: .012, fvx: 1.8, fvy: 0, z: 2 }, .06);
-        fist.to({ alpha: 1, x: S.A.x + .05 * u, sx: .85, sy: .85 }, .08, 'out').to({ x: x - .02 * u, y, sx: 1.15, sy: 1.15 }, .15, 'in3').set({ flash: .8 })
-            .to({ flash: 0, x: x + .05 * u, sx: 1.3, sy: 1.05 }, .08, 'out').wait(.1).to({ x: x + .12 * u, alpha: 0, dis: .8 }, .26, 'in').end();
-        S.sfx('air_puff', .12, { vol: .5 }); S.sfx('punch_a', t, { vol: .9 }); S.sfx('glass_a', t, { vol: .55 });
-        strike(S, x, y, t, { power: .95, color: gold, zoom: .04 });
-        P.lines(S, x, y, t, .12, gold, .45);
-        M.shatter(S, S.key('clover'), x, y, size, t, { fx: x - .14 * u, fy: y, spread: .46 * u, dur: .75, frac: .9, extra: { flip: -1 } });
-        for (let i = 0; i < 5; i++) { const a = -PI * .9 + i * PI * .45 + S.rnd(i) * .3; P.flare(S, x + Math.cos(a) * .2 * u, y + Math.sin(a) * .2 * u, .07 * u, gold, t + .04 + i * .03, .34, a); }
-    });
-
-    def(skill('끝판왕'), { impact: .42, sounds: ['gong', 'boom_a', 'fire_big', 'air_long'] }, S => {
-        // 왕관이 빛기둥을 타고 내려와 대상을 내리찍고 깨진다.
-        const u = S.U, x = S.T.x, g = S.gT, size = .78 * u, red = [1, .32, .12], gold = [1, .84, .4];
-        S.dim(.55, 0, .8, S.T); S.sfx('air_long', 0, { vol: .35, rate: 1.3 });
-        P.beam(S, x, g - .5 * u, 1.2 * u, .22 * u, gold, .02, .34);
-        const crown = S.part('crown', { x, y: g - 1.0 * u, size: size * 1.25, alpha: 0, glow: .7, edge: gold, rot: -.2, z: 3 });
-        crown.to({ alpha: 1, y: g - .62 * u, rot: 0 }, .22, 'out').wait(.06).to({ y: g - .2 * u, sy: 1.3 }, .12, 'in3').set({ flash: 1 }).to({ flash: 0, sy: .8, sx: 1.2 }, .06).to({ alpha: 0 }, .08).end();
-        const t = .42;
-        S.sfx('gong', t, { vol: .6 }); S.sfx('boom_a', t, { vol: .8 }); S.hit('fire_big', t, { vol: .55 });
-        const pillar = S.part('~rest', { x, y: g, size, pivot: [.5, .93], ang: -PI / 2, head: 0, soft: .12, sy: .4, sx: 1.25, flow: .016, fvy: -1.8, glow: .6, edge: red, z: 1 }, t);
-        pillar.to({ head: 1.45, sy: 1.14, sx: .95 }, .16, 'out3').to({ sy: 1, sx: 1 }, .16, 'io').wait(.3).to({ tail: 1.45 }, .38, 'in').end();
-        S.flash([1, .85, .6], .45, .18, t); S.stop(85, t); S.shake(20, .5, t); S.punch(.045, t, .4, S.T);
-        P.ring(S, x, g, .5 * u, red, t, { flat: .34, th: .2, dur: .5 }); P.decal(S, x, g, .34 * u, gold, t, .4);
-        M.shatter(S, S.key('crown'), x, g - .2 * u, size * 1.25, t, { fx: x, fy: g - .05 * u, spread: .55 * u, grav: .9 * u, dur: .9, frac: .45, shard: 1, px: .02 * u, hot: .15 });
-        P.debris(S, x, g, 14, [.2, .1, .08], t, { speed: 1.2 }); P.sparks(S, x, g - .1 * u, 18, gold, t, { cone: -PI / 2, spread: 2, dist: .5 });
-    });
-
-    def(skill('빅뱅'), { impact: .4, sounds: ['air_long', 'boom_low', 'boom_a', 'bolt_a'] }, S => {
-        // 그림의 모든 빛이 한 점으로 빨려 들었다가 터진다.
-        const u = S.U, x = S.T.x, y = S.T.y, size = .74 * u, c = [.7, .5, 1];
-        S.dim(.62, 0, .85, S.T); S.sfx('air_long', 0, { vol: .5, rate: 1.5 });
-        M.implode(S, S.id, x, y, size * 1.5, 0, { dur: .38, frac: 1 });
-        S.shape('glow', { x, y, w: .3 * u, h: .3 * u, color: c, alpha: 0, p0: 2.2, z: 2 }).to({ alpha: 1, w: .05 * u, h: .05 * u }, .36, 'in3').to({ alpha: 0 }, .05).end();
-        const t = .4;
-        S.sfx('boom_low', t - .22, { vol: .9 }); S.sfx('boom_a', t, { vol: .85 }); S.hit('bolt_a', t, { vol: .4 });
-        S.flash([1, 1, 1], .45, .2, t); S.stop(100, t + .01); S.shake(26, .6, t); S.punch(.06, t, .45, S.T);
-        const n = S.sprite({ x, y, size, mode: 1, head: 0, soft: .25, sx: .2, sy: .2, rot: -1, swirl: 3, glow: .7, edge: c, chroma: .02, z: 1 }, t);
-        n.to({ head: 1.9, sx: 1.12, sy: 1.12, rot: 0, swirl: 0 }, .22, 'out3').with({ chroma: 0 }, .4).to({ sx: 1, sy: 1 }, .14).wait(.2).to({ tail: 1.9, sx: 1.3, sy: 1.3, rot: .3 }, .42, 'in').end();
-        P.ring(S, x, y, .62 * u, c, t, { th: .2, dur: .55 }); P.ring(S, x, y, .4 * u, [1, .8, .5], t + .08, { th: .12, dur: .5 }); P.ring(S, x, y, .8 * u, [.5, .7, 1], t + .14, { th: .08, dur: .6 });
-        P.flare(S, x, y, .34 * u, [1, 1, 1], t, .45); P.lines(S, x, y, t, .2, [.9, .8, 1], .6); P.sparks(S, x, y, 26, c, t, { dist: .6, len: .12 });
-        M.shatter(S, S.id, x, y, size, t + .06, { spread: .6 * u, grav: 0, dur: .9, frac: .7 });
-    });
-
-    def(skill('불사조'), { impact: .46, sounds: ['fire_long', 'fire_big', 'air_whoosh'] }, S => {
-        // 시전자의 발밑에서 불새가 날개를 펴고 일어나 대상에게 몸을 던진다.
-        const u = S.U, size = .52 * u, fire = [1, .5, .12], a = { x: S.A.x + .12 * u, y: S.gA }, b = S.T;
-        S.hit('fire_long', .46, { vol: .6 }); S.sfx('air_whoosh', .24, { vol: .5 });
-        const bird = S.sprite({ x: a.x, y: a.y, size, pivot: [.5, .9], ang: -PI / 2, head: 0, soft: .16, sx: .45, sy: .6, flow: .02, fvy: -2, glow: .65, edge: fire, z: 1 });
-        bird.to({ head: 1.45, sx: 1.12, sy: 1.06 }, .2, 'out3').to({ sx: .9, sy: 1.1, y: a.y - .1 * u }, .08, 'io')
-            .to({ x: b.x, y: b.y + .2 * u, rot: .5, sx: 1.05, sy: .92 }, .18, 'in3').set({ flash: .8 }).to({ flash: 0, sx: 1.25, sy: 1.25, rot: .2 }, .1, 'out').to({ tail: 1.5, sy: 1.4 }, .3, 'in').end();
-        P.decal(S, a.x, a.y, .2 * u, fire, 0, .25); M.rise(S, S.id, a.x, a.y - .25 * u, size, .1, { dur: .7 });
-        const t = .46;
-        S.hit('fire_big', t, { vol: .7 });
-        strike(S, b.x, b.y, t, { power: .9, color: fire, zoom: .035 });
-        M.shatter(S, S.id, b.x, b.y, size, t, { fx: b.x - .2 * u, fy: b.y + .1 * u, spread: .5 * u, grav: -.25 * u, dur: .9, frac: .9 });
-        P.debris(S, b.x, S.gT, 8, [.25, .1, .05], t);
-    });
-
-    def(skill('빙결'), { impact: .16, sounds: ['ice_b', 'glass_big'] }, S => {
-        // 얼음이 솟아 대상을 가두고, 잠시 뒤 산산이 깨진다.
-        const u = S.U, x = S.T.x, g = S.gT, size = .6 * u, ice = [.6, .85, 1];
-        S.hit('ice_b', .16, { vol: .7 });
-        const n = S.sprite({ x, y: g, size, pivot: [.5, .93], ang: -PI / 2, head: 0, soft: .08, sy: .3, sx: 1.2, glow: .5, edge: ice, z: 1 });
-        n.to({ head: 1.4, sy: 1.1, sx: .96 }, .16, 'out3').to({ sy: 1, sx: 1 }, .2, 'elastic').wait(.34).set({ flash: .9 }).to({ alpha: 0, sx: 1.15, sy: 1.15 }, .08).end();
-        P.decal(S, x, g, .3 * u, ice, 0, .6); P.sparks(S, x, g - .2 * u, 10, ice, .1, { cone: -PI / 2, spread: 1.8 }); S.shake(8, .2, .12);
-        const t = .72;
-        S.sfx('glass_big', t, { vol: .6 }); S.shake(10, .25, t); S.stop(40, t);
-        M.shatter(S, S.id, x, g - size * .43, size, t, { fx: x, fy: g - .15 * u, spread: .5 * u, grav: 1.0 * u, dur: .85, frac: .4, shard: 1, px: .022 * u, hot: .25 });
-        P.ring(S, x, g - .2 * u, .3 * u, ice, t, { th: .14 }); P.flare(S, x, g - .22 * u, .26 * u, [1, 1, 1], t, .3);
-    });
-
-    def(skill('000'), { impact: .34, sounds: ['beep', 'zap_big', 'glass_b'] }, S => {
-        // 흑백의 고리 셋이 차례로 내려와 대상을 훑고, 화면이 한 번 어긋난다.
-        const u = S.U, x = S.T.x, y = S.T.y, size = .56 * u, w = [1, 1, 1];
-        S.dim(.7, 0, .7, S.T);
-        for (let i = 0; i < 3; i++) {
-            S.shape('ring', { x, y: y - .5 * u, w: .34 * u, h: .09 * u, color: w, alpha: 0, p0: .8, p1: .16, z: 2 }, i * .08)
-                .to({ alpha: 1, y: y + (-.18 + i * .16) * u }, .14, 'out3').wait(.14 - i * .04).to({ alpha: 0, w: .5 * u, h: .13 * u }, .14).end();
-            S.sfx('beep', i * .08, { vol: .28, rate: 1 - i * .12 });
-        }
-        const t = .34, n = S.sprite({ x, y, size, ang: PI / 2, head: 0, soft: .05, chroma: .03, glow: .5, edge: w, z: 1 }, t - .08);
-        n.to({ head: 1.4 }, .08, 'lin').tick((p, tt) => { const j = tt < .3 ? Math.floor(tt * 30) : 0; p.x = x + (j ? (S.rnd(j) - .5) * .05 * u : 0); p.chroma = tt < .3 ? .01 + S.rnd(j + 4) * .03 : 0; })
-            .wait(.34).to({ tail: 1.4 }, .16, 'lin').end();
-        S.sfx('zap_big', t, { vol: .6 }); S.sfx('glass_b', t, { vol: .4 });
-        S.flash(w, .35, .1, t); strike(S, x, y, t, { power: .7, color: w });
-        P.line(S, x - .4 * u, y, x + .4 * u, y, .01 * u, w, t, .2, { from: .05, sharp: 2 });
-    });
-
-    def(skill('54버스트'), { impact: .3, sounds: ['swish_a', 'earth_b', 'punch_b'] }, S => {
-        // 보랏빛 창 다섯 자루가 등 뒤 하늘에서 차례로 꽂힌다.
-        const u = S.U, x = S.T.x, y = S.T.y, c = [.75, .3, 1];
-        for (let i = 0; i < 5; i++) {
-            const sx = x - (.5 + i * .04) * u, sy = y - (.55 - i * .03) * u, ex = x + (i - 2) * .035 * u, ey = y + (i % 2 ? .03 : -.02) * u, t0 = i * .045;
-            P.line(S, sx, sy, ex, ey, .022 * u, c, t0, .2, { from: .1, sharp: .9 });
-            P.sparks(S, ex, ey, 3, c, t0 + .08, { dist: .12 }); S.sfx(i % 2 ? 'swish_b' : 'swish_a', t0, { vol: .4, rate: 1 + i * .06, cool: 0 });
-        }
-        const t = .3; S.hit('earth_b', t, { vol: .6, rate: .75 }); S.sfx('punch_b', t, { vol: .7 });
-        pop(S, { t0: t - .04, size: .56, power: .85, rot: -.5, zoom: .03 });
-        P.lines(S, x, y, t, .1, c, .4);
-    });
-
-    def(skill('KICK BACK'), { impact: .2, sounds: ['air_whoosh', 'punch_a', 'wind_a'] }, S => {
-        // 혜성 같은 발차기가 꽂히고, 반동의 고리가 시전자에게 되돌아와 힘이 된다.
-        const u = S.U, c = [.5, .7, 1];
-        S.sfx('air_whoosh', 0, { vol: .5 }); S.sfx('punch_a', .2, { vol: .8 }); S.hit('wind_a', .2, { vol: .4 });
-        sweep(S, { size: .52, t: .2, head: [.84, .4], native: -.25, lift: .1, power: .8, zoom: .03 });
-        S.shape('wave', { x: S.T.x, y: S.T.y, w: .2 * u, h: .2 * u, color: c, alpha: .9, p0: .72, p1: .18, z: 2 }, .24).to({ x: S.A.x, y: S.A.y, w: .3 * u, h: .3 * u }, .26, 'io').to({ alpha: 0, w: .5 * u, h: .5 * u }, .2).end();
-        P.glow(S, S.A.x, S.A.y, .16 * u, c, .5, .35, .6);
-    });
-
-    def(skill('SUPER EASY'), { impact: .26, sounds: ['firework', 'holy_a'] }, S => {
-        // 별 다섯이 둥글게 흩어졌다가 한 점으로 모여 터진다.
-        const u = S.U, x = S.T.x, y = S.T.y, colors = [[1, .5, .8], [.5, .8, 1], [1, .9, .4]];
-        for (let i = 0; i < 5; i++) {
-            const a = -PI / 2 + i * TAU / 5, r = .26 * u;
-            S.shape('flare', { x: x + Math.cos(a) * r * .3, y: y + Math.sin(a) * r * .3, w: .02 * u, h: .02 * u, rot: a, color: colors[i % 3], alpha: 1, p0: .03, z: 3 }, i * .02)
-                .to({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, w: .13 * u, h: .13 * u, rot: a + 2 }, .12, 'out3').to({ x, y, w: .05 * u, h: .05 * u, rot: a + 5 }, .1, 'in3').end();
-        }
-        const t = .26; S.sfx('firework', t, { vol: .55 }); S.hit('holy_a', t, { vol: .5 });
-        pop(S, { t0: t - .03, size: .56, power: .8, rot: .6 });
-        for (let i = 0; i < 3; i++) P.sparks(S, x, y, 7, colors[i], t + .02, { dist: .4, fall: .12, dur: .5 });
-    });
-
-    def(skill('가속'), { impact: 0, sounds: ['air_puff', 'tick', 'wind_a'] }, S => {
-        // 화살표의 잔상이 시전자를 앞으로 훑고 지나간다.
-        const u = S.U, x = S.A.x, y = S.A.y, c = [.4, 1, .9];
-        S.sfx('tick', 0, { vol: .4 }); S.sfx('air_puff', .04, { vol: .5 }); S.hit('wind_a', .2, { vol: .3 });
-        for (let i = 0; i < 3; i++) {
-            const n = S.sprite({ x: x - (.16 - i * .02) * u, y, size: (.36 + i * .04) * u, ang: 0, head: 0, soft: .16, alpha: .9 - i * .25, glow: .5, edge: c, flow: .01, fvx: -2, fvy: 0, z: 1 }, i * .06);
-            n.to({ x: x + (.1 + i * .05) * u, head: 1.4 }, .2, 'out3').to({ tail: 1.45, x: x + (.2 + i * .05) * u }, .22, 'in').end();
-        }
-        for (let i = 0; i < 6; i++) P.line(S, x - .3 * u, y + (S.rnd(i) - .5) * .4 * u, x + .3 * u, y + (S.rnd(i) - .5) * .4 * u, .006 * u, c, i * .03, .22, { from: .1, alpha: .7 });
-    });
-
-    def(skill('갈취'), { impact: .22, images: [skill('갈취'), combat('골드 획득')], sounds: ['chain_b', 'coins_big', 'punch_m'] }, S => {
-        // 사슬 갈고리가 대상에게 박혔다가 당겨지며, 금화가 시전자 쪽으로 쏟아져 온다.
-        const u = S.U, c = [.75, .35, 1], gold = [1, .82, .3];
-        S.sfx('chain_b', 0, { vol: .5 }); S.sfx('punch_m', .22, { vol: .6 });
-        sweep(S, { size: .5, t: .22, flip: -1, native: 2.52, head: [.14, .86], power: .6, shatter: false });
-        P.line(S, S.A.x, S.A.y, S.T.x, S.T.y, .012 * u, c, .22, .3, { from: 1 });
-        M.stream(S, combat('골드 획득'), S.T.x, S.T.y, .4 * u, S.A.x, S.A.y, .3, { dur: .7, frac: .7, shard: 1, px: .012 * u, hot: 0 });
-        S.sfx('coins_big', .5, { vol: .5 }); P.glow(S, S.A.x, S.A.y, .14 * u, gold, .8, .3, .6);
-    });
-
-    def(skill('감사합니다 친구야'), { impact: .34, sounds: ['holy_big', 'field'] }, S => {
-        // 날개 달린 방패가 시전자를 감싸고, 그 빛 한 줄기가 대상에게 닿는다.
-        const u = S.U, gold = [1, .86, .45];
-        S.hit('holy_big', .3, { vol: .6 }); S.sfx('field', .02, { vol: .45 });
-        ward(S, { x: S.A.x, y: S.A.y, size: .5 });
-        P.line(S, S.A.x, S.A.y - .05 * u, S.T.x, S.T.y, .03 * u, gold, .26, .26, { from: .05 });
-        strike(S, S.T.x, S.T.y, .34, { power: .6, color: gold });
-    });
-
-    def(skill('건력'), { impact: .12, sounds: ['chain_a', 'earth_a', 'growl'] }, S => {
-        // 붉은 사슬이 발밑에서 솟아 몸을 조이고, 심장이 두 번 크게 뛴다.
-        const u = S.U, red = [1, .2, .15];
-        S.sfx('chain_a', 0, { vol: .55 }); S.hit('earth_a', .12, { vol: .55 }); S.sfx('growl', .1, { vol: .35 });
-        const n = erupt(S, { x: S.A.x, y: S.gA, size: .5, hold: .5, shake: 6, debris: 5 });
-        n.seek(.3).to({ sx: 1.08, sy: 1.08 }, .07, 'out').to({ sx: 1, sy: 1 }, .1).to({ sx: 1.1, sy: 1.1 }, .07, 'out').to({ sx: 1, sy: 1 }, .12);
-        P.ring(S, S.A.x, S.A.y, .2 * u, red, .3, { th: .1 }); P.ring(S, S.A.x, S.A.y, .24 * u, red, .47, { th: .1 });
-    });
-
-    def(skill('글버지'), { impact: .28, sounds: ['earth_a', 'rock_break', 'field'] }, S => {
-        // 돌가시가 땅을 타고 대상까지 달려가 솟구치고, 시전자 앞에는 녹색 방패가 선다.
-        const u = S.U, g = (S.gA + S.gT) / 2, green = [.4, 1, .55], rock = [.55, .45, .35];
-        for (let i = 0; i < 4; i++) {
-            const x = lerp(S.A.x + .12 * u, S.T.x - .08 * u, i / 4), h = (.07 + i * .02) * u;
-            S.shape('shard', { x, y: g, w: h * .7, h: 0, rot: PI, color: rock, add: 0, white: 0, alpha: 1, z: 1 }, i * .05).to({ h: h * 2, y: g - h }, .07, 'out3').wait(.16).to({ h: 0, y: g, alpha: 0 }, .16).end();
-            S.sfx('stone', i * .05, { vol: .25, rate: 1.2, cool: 0 });
-        }
-        S.hit('earth_a', .28, { vol: .6 }); S.sfx('rock_break', .28, { vol: .5 });
-        erupt(S, { t0: .2, x: S.T.x, y: S.gT, size: .56, t: .1, rock, stop: 50 });
-        S.sfx('field', .3, { vol: .35 });
-        S.shape('hex', { x: S.A.x + .06 * u, y: S.A.y, w: .1 * u, h: .14 * u, color: green, alpha: 0, p0: 4, p1: .08, p2: .06, z: 2 }, .3).to({ w: .3 * u, h: .42 * u, alpha: .8 }, .16, 'back').wait(.3).to({ alpha: 0 }, .3).end();
-    });
-
-    def(skill('나인 멘스 모리스'), { impact: .36, sounds: ['chip', 'earth_b', 'punch_b'] }, S => {
-        // 흑백의 돌 아홉 개가 대상을 돌며 조여들다가 한 수로 맞물린다.
-        const u = S.U, x = S.T.x, y = S.T.y;
-        for (let i = 0; i < 9; i++) {
-            const a0 = i * TAU / 9, color = i % 2 ? [1, 1, 1] : [.25, .22, .2];
-            S.shape('disc', { x, y, w: .045 * u, h: .045 * u, color, add: 0, white: 0, alpha: 0, z: 2 }, i * .012)
-                .tick((p, t) => { const s = clamp(t / .34), r = lerp(.34, .03, s * s) * u, a = a0 + s * s * 5; p.x = x + Math.cos(a) * r; p.y = y + Math.sin(a) * r * .8; p.alpha = clamp(t / .06) * (1 - clamp((t - .32) / .04)); }).wait(.37).end();
-            if (i % 3 === 0) S.sfx('chip', i * .05, { vol: .35, cool: 0 });
-        }
-        const t = .36; S.hit('earth_b', t, { vol: .55, rate: .85 }); S.sfx('punch_b', t, { vol: .6 });
-        vortex(S, { t0: t - .1, size: .56, swirl: 5, t: .3 });
-        strike(S, x, y, t, { power: .75, color: [1, .9, .7] });
-    });
-
-    def(skill('느억맘'), { impact: .14, sounds: ['slash_c', 'slash_d', 'chain_a', 'ice_a'] }, S => {
-        // 두 줄기 칼빛이 엇갈려 지나가고, 그 자리에 사슬과 카드가 흩어진다.
-        const u = S.U, x = S.T.x, y = S.T.y, c = [.4, .6, 1], L = .34 * u;
-        P.line(S, x - L, y - L * .7, x + L, y + L * .7, .02 * u, c, 0, .2, { from: .05, sharp: 1.4 }); S.sfx('slash_c', 0, { vol: .6 });
-        P.line(S, x + L, y - L * .7, x - L, y + L * .7, .02 * u, c, .08, .2, { from: .05, sharp: 1.4 }); S.sfx('slash_d', .08, { vol: .6 });
-        S.sfx('chain_a', .14, { vol: .35 }); S.hit('ice_a', .16, { vol: .4 });
-        pop(S, { t0: .1, size: .54, power: .7, rot: .3 });
-    });
-
-    def(skill('댄져'), { impact: .34, sounds: ['beep', 'water_a', 'splash_big'] }, S => {
-        // 경고 삼각형이 두 번 깜빡인 뒤 물줄기가 뚫고 지나간다.
-        const u = S.U, x = S.T.x, y = S.T.y, red = [1, .2, .2];
-        for (let i = 0; i < 2; i++) {
-            S.shape('shard', { x, y: y + .02 * u, w: .2 * u, h: .22 * u, rot: PI, color: red, alpha: 0, z: 2 }, i * .12).to({ alpha: .7 }, .03).wait(.05).to({ alpha: 0, w: .26 * u, h: .28 * u }, .05).end();
-            S.sfx('beep', i * .12, { vol: .35, rate: 1.3, cool: 0 });
-        }
-        S.hit('water_a', .34, { vol: .65 }); S.sfx('splash_big', .3, { vol: .5 });
-        sweep(S, { t0: .16, size: .56, t: .18, head: [.8, .34], native: -.3, power: .75, flow: .018 });
-        P.debris(S, x, y, 8, [.5, .8, 1], .36, { add: 1, grav: 1.8, size: .014 });
-    });
-
-    def(skill('모드 전환'), { impact: 0, sounds: ['teleport', 'wind_a'] }, S => {
-        // 소용돌이가 시전자를 한 번 삼켰다 뱉는다.
-        const u = S.U;
-        S.sfx('teleport', 0, { vol: .5 }); S.hit('wind_a', .3, { vol: .35 });
-        vortex(S, { x: S.A.x, y: S.A.y, size: .5, swirl: 6, t: .36 });
-        P.ring(S, S.A.x, S.A.y, .3 * u, S.color(), .3, { th: .1 });
-        S.flash(S.color(), .12, .2, .3);
-    });
-
-    def(skill('원영적사고 모드 전환'), { impact: 0, sounds: ['shimmer', 'heal_b'] }, S => {
-        // 분홍빛 문양이 시전자 뒤에서 꽃처럼 피어 천천히 돈다.
-        const u = S.U, pink = [1, .6, .8];
-        S.sfx('shimmer', 0, { vol: .45 }); S.hit('heal_b', .3, { vol: .4 });
-        const n = S.sprite({ x: S.A.x, y: S.A.y - .04 * u, size: .52 * u, mode: 1, head: 0, soft: .3, rot: -.6, sx: .7, sy: .7, glow: .6, edge: pink, alpha: .92, z: 1 });
-        n.to({ head: 1.8, rot: 0, sx: 1, sy: 1 }, .4, 'out3').to({ rot: .25 }, .4, 'lin').to({ tail: 1.8, rot: .5, sx: 1.1, sy: 1.1 }, .4, 'in').end();
-        M.rise(S, S.id, S.A.x, S.A.y, .5 * u, .2, { dur: 1, frac: .4 });
-        for (let i = 0; i < 6; i++) P.flare(S, S.A.x + (S.rnd(i) - .5) * .4 * u, S.A.y + (S.rnd(i + 3) - .6) * .4 * u, .04 * u, pink, .2 + i * .08, .4, i);
-    });
-
-    def(skill('백억이요'), { impact: .22, images: [skill('백억이요'), combat('골드 획득')], sounds: ['holy_b', 'coins_big', 'coins_a'] }, S => {
-        // 금빛 기둥이 떨어지고 금화가 분수처럼 튀어 시전자에게 날아든다.
-        const u = S.U, x = S.T.x, g = S.gT, gold = [1, .84, .3];
-        S.hit('holy_b', .2, { vol: .5 }); S.sfx('coins_big', .22, { vol: .6 }); S.sfx('coins_a', .6, { vol: .45 });
-        drop(S, { size: .66, t: .2, power: .8, rock: [1, .8, .2] });
-        M.shatter(S, S.id, x, g - .25 * u, .6 * u, .22, { fx: x, fy: g, spread: .5 * u, grav: 1.1 * u, dur: .85, frac: .35, shard: 1, px: .016 * u, hot: .15 });
-        M.stream(S, combat('골드 획득'), x, g - .1 * u, .4 * u, S.A.x, S.A.y, .5, { dur: .6, frac: .6, shard: 1, px: .012 * u, hot: 0 });
-        P.glow(S, S.A.x, S.A.y, .14 * u, gold, .95, .3, .6);
-    });
-
-    def(skill('범인은 이 안에'), { impact: 0, sounds: ['lock', 'earth_b', 'tick'] }, S => {
-        // 붉은 빛줄기가 시전자를 훑어 조사한 뒤, 돋보기 문양이 맺힌다.
-        const u = S.U, x = S.A.x, y = S.A.y, red = [1, .2, .2];
-        S.sfx('tick', 0, { vol: .4 }); S.sfx('lock', .26, { vol: .5 }); S.hit('earth_b', .3, { vol: .4, rate: .8 });
-        S.shape('streak', { x: x - .2 * u, y, w: .5 * u, h: .012 * u, rot: PI / 2, color: red, alpha: .9, p0: .2, z: 2 }).to({ x: x + .2 * u }, .24, 'io').to({ alpha: 0 }, .06).end();
-        const n = stamp(S, { x: x + .1 * u, y: y - .2 * u, size: .34, t0: .16, hold: .35, rot: .9 });
-        n.seek(.3).to({ swirl: .5 }, .1).to({ swirl: 0 }, .2);
-    });
-
-    def(skill('비리'), { impact: .2, sounds: ['coins_b', 'slash_d', 'earth_a'] }, S => {
-        // 황금 저울 문양이 대상에 떴다가, 검은 보랏빛 칼이 그것째로 베어 버린다.
-        const u = S.U, x = S.T.x, y = S.T.y, c = [.8, .25, .9];
-        S.sfx('coins_b', 0, { vol: .45 });
-        P.ring(S, x, y, .14 * u, [1, .8, .4], 0, { th: .08, dur: .3 }); P.glow(S, x, y, .1 * u, [1, .8, .4], 0, .3, .6);
-        S.sfx('slash_d', .16, { vol: .75 }); S.hit('earth_a', .22, { vol: .45, rate: .7 });
-        cut(S, { t0: .16, size: .58, native: -.82, stop: 70, shake: 10 });
-        P.debris(S, x, y, 7, c, .22, { add: 1, size: .014 });
-    });
-
-    def(skill('수업끝'), { impact: .34, sounds: ['bell_a', 'bell_b', 'slash_a', 'metal_b'] }, S => {
-        // 종이 대상 머리 위에서 두 번 흔들리고, 푸른 칼빛이 종째로 갈라 버린다.
-        const u = S.U, x = S.T.x, y = S.T.y, size = .58 * u, blue = [.4, .6, 1];
-        const bell = S.part('bell', { x: x - .02 * u, y: y - .36 * u, size: size * 1.1, alpha: 0, rot: -.5, glow: .4, edge: [1, .8, .3], z: 2 });
-        bell.to({ alpha: 1, rot: .45 }, .13, 'io').to({ rot: -.4 }, .13, 'io').to({ rot: 0, y: y - .2 * u }, .08, 'in').set({ flash: 1 }).to({ alpha: 0 }, .05).end();
-        S.sfx('bell_b', .02, { vol: .4 }); S.sfx('bell_a', .15, { vol: .45 });
-        const t = .34; S.sfx('slash_a', t - .04, { vol: .7 }); S.sfx('metal_b', t, { vol: .55 });
-        cut(S, { t0: t - .04, size: .58, native: -.42, stop: 60, shake: 9 });
-        M.shatter(S, S.key('bell'), x - .02 * u, y - .2 * u, size * 1.1, t, { fx: x - .1 * u, fy: y, spread: .4 * u, grav: 1.0 * u, dur: .75, frac: .5, shard: 1, px: .018 * u, hot: .2 });
-        P.ring(S, S.A.x, S.A.y, .26 * u, blue, t + .12, { th: .08, dur: .5, alpha: .6 });
-    });
-
-    def(skill('시벌론'), { impact: 0, sounds: ['slash_b', 'growl', 'wind_b'] }, S => {
-        // 붉은 발톱의 톱니가 시전자를 축으로 한 바퀴 돈다.
-        const u = S.U, red = [1, .2, .15];
-        S.sfx('growl', 0, { vol: .35 }); S.hit('wind_b', .3, { vol: .35 });
-        for (let i = 0; i < 3; i++) S.sfx('slash_b', .06 + i * .1, { vol: .4, rate: 1 + i * .1, cool: 0 });
-        const n = S.sprite({ x: S.A.x, y: S.A.y, size: .54 * u, mode: 1, head: 0, soft: .25, rot: -PI, sx: .6, sy: .6, glow: .55, edge: red, z: 1 });
-        n.to({ head: 1.8, rot: 0, sx: 1.05, sy: 1.05 }, .34, 'out3').to({ rot: 1.2, tail: 1.8, sx: 1.2, sy: 1.2 }, .34, 'in').end();
-        for (let i = 0; i < 3; i++) P.arc(S, S.A.x, S.A.y, .24 * u, i * TAU / 3, red, .06 + i * .1, .12, { span: 1.4 });
-    });
-
-    def(skill('아이돌 할래?'), { impact: .28, sounds: ['holy_a', 'slash_a', 'firework'] }, S => {
-        // 무대 조명 두 줄기가 대상에게 모이고, 별빛이 한 줄로 긋는다.
-        const u = S.U, x = S.T.x, y = S.T.y, c = [.4, .85, 1];
-        for (const side of [-1, 1]) {
-            S.shape('streak', { x: x + side * .22 * u, y: y - .4 * u, w: 1.1 * u, h: .1 * u, rot: PI / 2 + side * .5, color: c, alpha: 0, p0: .1, z: 0 })
-                .to({ alpha: .45, rot: PI / 2 + side * .22, x: x + side * .1 * u }, .22, 'io').wait(.1).to({ alpha: 0 }, .2).end();
-        }
-        S.hit('holy_a', .28, { vol: .45 }); S.sfx('slash_a', .24, { vol: .65 }); S.sfx('firework', .3, { vol: .3 });
-        cut(S, { t0: .24, size: .58, native: -.72, stop: 55 });
-        for (let i = 0; i < 6; i++) P.flare(S, x + (S.rnd(i) - .5) * .4 * u, y + (S.rnd(i + 2) - .5) * .4 * u, .04 * u, c, .3 + i * .04, .3, i);
-    });
-
-    def(skill('안면강타'), { impact: .16, sounds: ['air_puff', 'punch_c', 'punch_a'] }, S => {
-        // 붉은 주먹이 곧장 얼굴에 꽂힌다. 화면이 한 번 움찔한다.
-        const u = S.U, red = [1, .25, .2];
-        S.sfx('air_puff', 0, { vol: .5 }); S.sfx('punch_c', .16, { vol: .9 }); S.sfx('punch_a', .18, { vol: .5 });
-        sweep(S, { size: .5, t: .16, head: [.82, .58], native: .1, power: 1, zoom: .05, follow: .03 });
-        P.lines(S, S.T.x, S.T.y, .16, .1, red, .5);
-        for (let i = 0; i < 3; i++) P.line(S, S.T.x - .3 * u, S.T.y + (i - 1) * .06 * u, S.T.x + .1 * u, S.T.y + (i - 1) * .05 * u, .012 * u, red, .08 + i * .015, .18, { from: .1 });
-    });
-
-    def(skill('유드 알레프'), { impact: .24, sounds: ['holy_big', 'metal_ring', 'earth_a'] }, S => {
-        // 황금 검이 하늘에서 대상에게 꽂히고, 시전자에게는 금빛이 감긴다.
-        const u = S.U, gold = [1, .85, .4];
-        S.hit('holy_big', .24, { vol: .55 }); S.sfx('metal_ring', .24, { vol: .5 }); S.hit('earth_a', .24, { vol: .45 });
-        drop(S, { size: .64, t: .2, power: .85, x: S.T.x, y: S.gT, rock: [.3, .25, .1] });
-        P.decal(S, S.A.x, S.gA, .16 * u, gold, .1, .4); P.glow(S, S.A.x, S.A.y, .2 * u, gold, .2, .5, .5);
-        P.sparks(S, S.A.x, S.gA, 8, gold, .2, { cone: -PI / 2, spread: .8, dist: .4, dur: .6 });
-    });
-
-    def(skill('유서새김'), { impact: .32, sounds: ['slash_b', 'plank', 'squish'] }, S => {
-        // 붓이 세 획을 긋고, 붉은 인장이 그 위에 찍혀 남는다.
-        const u = S.U, x = S.T.x, y = S.T.y, red = [1, .15, .15];
-        const strokes = [[-.16, -.14, .14, -.08], [-.1, .12, .16, -.02], [.02, -.18, -.04, .18]];
-        strokes.forEach(([x1, y1, x2, y2], i) => {
-            P.line(S, x + x1 * u, y + y1 * u, x + x2 * u, y + y2 * u, .018 * u, red, i * .07, .34, { from: .02, sharp: .8 });
-            S.sfx('slash_b', i * .07, { vol: .35, rate: .9 + i * .1, cool: 0 });
-        });
-        const t = .32; S.sfx('plank', t, { vol: .6, rate: .85 }); S.sfx('squish', t, { vol: .4 });
-        stamp(S, { t0: t - .13, size: .5, hold: .7, rot: .5 });
-        P.debris(S, x, y, 6, red, t, { add: 0, size: .012, grav: 2 });
-    });
-
-    def(skill('이어브피'), { impact: .32, sounds: ['ice_a', 'field', 'ice_big'] }, S => {
-        // 얼음 심장이 두 번 뛰며 시전자를 감싸고, 얼음 조각이 대상에게 쏟아진다.
-        const u = S.U, ice = [.5, .8, 1];
-        S.sfx('field', 0, { vol: .4 }); S.hit('ice_a', .08, { vol: .5 });
-        const n = ward(S, { x: S.A.x, y: S.A.y, size: .5, hold: .4 });
-        n.seek(.3).to({ sx: 1.08, sy: 1.08 }, .06).to({ sx: 1, sy: 1 }, .08).to({ sx: 1.08, sy: 1.08 }, .06).to({ sx: 1, sy: 1 }, .08);
-        for (let i = 0; i < 5; i++) P.line(S, S.A.x + .1 * u, S.A.y + (i - 2) * .05 * u, S.T.x, S.T.y + (i - 2) * .03 * u, .014 * u, ice, .22 + i * .025, .2, { from: .08 });
-        S.hit('ice_big', .34, { vol: .4 }); strike(S, S.T.x, S.T.y, .32, { power: .6, color: ice });
-    });
-
-    def(skill('자인'), { impact: .4, sounds: ['air_whoosh', 'ice_a', 'punch_b'] }, S => {
-        // 창이 하늘로 던져져 사라졌다가, 대상의 머리 위에서 내리꽂힌다.
-        const u = S.U, c = [.4, .8, 1], size = .56 * u, x = S.T.x, y = S.T.y;
-        S.sfx('air_whoosh', 0, { vol: .5 });
-        const up = S.sprite({ x: S.A.x + .06 * u, y: S.A.y - .1 * u, size: size * .8, rot: -.35, ang: -.78, head: 0, soft: .15, glow: .5, edge: c, z: 1 });
-        up.to({ head: 1.4 }, .07).to({ x: S.A.x + .34 * u, y: -.2 * u }, .14, 'in').end();
-        const t = .4, down = S.sprite({ x: x - .22 * u, y: -.2 * u, size, rot: 2.05, ang: -.78, glow: .6, edge: c, pivot: [.9, .12], z: 1 }, .26);
-        down.to({ x, y }, .14, 'in3').set({ flash: .8 }).to({ flash: 0 }, .08).wait(.12).to({ tail: 1.5 }, .22, 'in').end();
-        S.hit('ice_a', t, { vol: .55 }); S.sfx('punch_b', t, { vol: .75 });
-        P.line(S, x - .26 * u, y - .5 * u, x, y, .02 * u, c, .3, .2, { from: .1 });
-        strike(S, x, y, t, { power: .85, color: c, zoom: .03 }); P.decal(S, x, S.gT, .22 * u, c, t, .3);
-        P.glow(S, S.A.x, S.A.y, .18 * u, c, .5, .4, .5);
-    });
-
-    def(skill('정권'), { impact: .18, sounds: ['air_puff', 'punch_a', 'boom_b'] }, S => {
-        // 정직한 직선의 주먹. 지나간 자리에 공기의 고리가 남는다.
-        const u = S.U, c = [1, .6, .3];
-        S.sfx('air_puff', 0, { vol: .55 }); S.sfx('punch_a', .18, { vol: .95 }); S.sfx('boom_b', .18, { vol: .35 });
-        sweep(S, { size: .58, t: .18, head: [.84, .52], native: 0, power: 1, zoom: .045, ease: 'in3' });
-        for (let i = 0; i < 3; i++) {
-            const s = (i + 1) / 4, x = lerp(S.A.x, S.T.x, s), y = lerp(S.A.y, S.T.y, s);
-            S.shape('ring', { x, y, w: .02 * u, h: .12 * u, color: c, alpha: .8, p0: .75, p1: .2, z: 0 }, .18 * s).to({ w: .07 * u, h: .36 * u, alpha: 0 }, .3, 'out3').end();
-        }
-        P.lines(S, S.T.x, S.T.y, .18, .1, [1, .9, .8], .45);
-    });
-
-    def(skill('청정수 투척'), { impact: .34, sounds: ['swish_b', 'glass_a', 'splash_big', 'water_a'] }, S => {
-        // 물병이 높이 포물선을 그리며 돌다가 대상에게서 깨진다.
-        const u = S.U, x = S.T.x, y = S.T.y, c = [.5, .8, 1], T = .34;
-        S.sfx('swish_b', 0, { vol: .45 }); S.sfx('glass_a', T, { vol: .6 }); S.sfx('splash_big', T - .1, { vol: .55 }); S.hit('water_a', T, { vol: .5 });
-        const a = { x: S.A.x + .08 * u, y: S.A.y - .1 * u }, b = S.sprite({ x: a.x, y: a.y, size: .2 * u, glow: .4, edge: c, z: 2 });
-        b.tick((p, t) => { const s = clamp(t / T); p.x = lerp(a.x, x, s); p.y = lerp(a.y, y, s) - Math.sin(s * PI) * .34 * u; p.rot = s * 9; p.size = lerp(.16, .26, s) * u; }).wait(T).set({ alpha: 0 }).end();
-        pop(S, { t0: T, size: .6, power: .7, rot: .2 });
-        M.shatter(S, S.id, x, y, .5 * u, T, { spread: .45 * u, grav: 1.1 * u, dur: .8, frac: .9 });
-        P.decal(S, x, S.gT, .26 * u, c, T + .1, .4);
-    });
-
-    def(skill('초특급한탕'), { impact: .3, sounds: ['cannon', 'coins_big', 'firework'] }, S => {
-        // 금빛 포 다섯 문이 차례로 불을 뿜고, 보석과 별이 비처럼 쏟아진다.
-        const u = S.U, x = S.T.x, g = S.gT, gold = [1, .82, .3];
-        for (let i = 0; i < 5; i++) {
-            const px = x + (i - 2) * .09 * u, t0 = i * .05;
-            P.beam(S, px, g - .4 * u, .9 * u, .07 * u, gold, t0, .08);
-            P.flare(S, px, g - (.5 + (i % 2) * .1) * u, .08 * u, gold, t0 + .06, .3, i);
-            if (i % 2 === 0) S.sfx('cannon', t0, { vol: .45, rate: 1 + i * .05, cool: 0 });
-        }
-        const t = .3; S.sfx('coins_big', t, { vol: .6 }); S.sfx('firework', t, { vol: .45 });
-        erupt(S, { t0: t - .1, size: .68, t: .1, rock: gold, stop: 60, shake: 14, debris: 12 });
-        M.shatter(S, S.id, x, g - .3 * u, .66 * u, t, { fx: x, fy: g, spread: .6 * u, grav: 1.3 * u, dur: 1, frac: .4, shard: 1, px: .016 * u, hot: .1 });
-        S.punch(.035, t, .36, S.T);
-    });
-
-    def(skill('카르마'), { impact: .26, sounds: ['metal_ring', 'swish_a', 'punch_b', 'glass_b'] }, S => {
-        // 업보의 바퀴가 대상 위에서 돌고, 붉은 화살이 그 한가운데를 꿰뚫는다.
-        const u = S.U, x = S.T.x, y = S.T.y, red = [1, .2, .2];
-        S.sfx('metal_ring', 0, { vol: .4 });
-        const n = S.sprite({ x, y, size: .54 * u, mode: 1, head: 0, soft: .25, rot: -2.4, sx: .6, sy: .6, glow: .5, edge: [1, 1, 1], z: 1 });
-        n.to({ head: 1.8, rot: 0, sx: 1, sy: 1 }, .24, 'out3').set({ flash: .8, chroma: .02 }).to({ flash: 0, sx: 1.08, sy: 1.08 }, .08).wait(.1).to({ dis: 1, chroma: 0, sx: 1.2, sy: 1.2 }, .32, 'in').end();
-        const t = .26; S.sfx('swish_a', t - .08, { vol: .5 }); S.sfx('punch_b', t, { vol: .75 }); S.sfx('glass_b', t, { vol: .4 });
-        P.line(S, S.A.x, S.A.y, x + .3 * u, y, .024 * u, red, t - .08, .22, { from: .05, sharp: 1.2 });
-        strike(S, x, y, t, { power: .8, color: red });
-    });
-
-    def(skill('카스 살포'), { impact: .3, sounds: ['air_long', 'water_b', 'bubble'] }, S => {
-        // 청록빛 물보라가 넓게 번져 대상을 덮는다.
-        const u = S.U, c = [.3, 1, .8];
-        S.sfx('air_long', 0, { vol: .4, rate: 1.4 }); S.hit('water_b', .3, { vol: .55 });
-        sweep(S, { size: .58, t: .3, head: [.92, .52], native: 0, power: .5, flow: .03, ease: 'out', fade: .4, shatter: false });
-        for (let i = 0; i < 9; i++) {
-            const bx = S.T.x + (S.rnd(i) - .5) * .3 * u, by = S.T.y + (S.rnd(i + 5) - .3) * .3 * u;
-            S.shape('ring', { x: bx, y: by, w: .01 * u, h: .01 * u, color: c, alpha: .8, p0: .8, p1: .16, z: 2 }, .3 + i * .04).to({ w: .05 * u, h: .05 * u, y: by - .08 * u }, .3, 'out').to({ alpha: 0, w: .07 * u, h: .07 * u }, .08).end();
-            if (i % 3 === 0) S.sfx('bubble', .34 + i * .04, { vol: .3, cool: 0 });
-        }
-    });
-
-    def(skill('카운터'), { impact: 0, sounds: ['metal_b', 'ice_a'] }, S => {
-        // 수정 방패가 시전자 앞에 비스듬히 서고, 받아칠 날이 한 번 번뜩인다.
-        const u = S.U, x = S.A.x + .08 * u, y = S.A.y, c = [.6, .8, 1];
-        S.sfx('metal_b', .06, { vol: .5 }); S.hit('ice_a', .1, { vol: .4 });
-        const n = S.sprite({ x, y, size: .46 * u, flip: -1, mode: 1, center: [.56, .5], head: 0, soft: .2, sx: .7, sy: .7, glow: .55, edge: c, z: 1 });
-        n.to({ head: 1.8, sx: 1.06, sy: 1.06 }, .12, 'back').to({ sx: 1, sy: 1 }, .08).wait(.3).to({ dis: 1 }, .3, 'in').end();
-        P.arc(S, x, y, .22 * u, 0, [1, .4, .4], .14, .1, { span: 1.1 }); P.flare(S, x + .06 * u, y - .04 * u, .12 * u, [1, 1, 1], .1, .25);
-    });
-
-    def(skill('포커 못 하시네'), { impact: .36, sounds: ['card_fan', 'card_snap', 'slash_c', 'punch_m'] }, S => {
-        // 카드가 한 장씩 부채꼴로 펼쳐지고, 마지막에 스페이드 에이스가 꽂힌다.
-        const u = S.U, x = S.T.x, y = S.T.y, size = .6 * u, red = [1, .2, .25];
-        S.hit('card_fan', .26, { vol: .55 });
-        const fan = S.sprite({ x, y, size, mode: 2, center: [.5, .82], ang: -PI * .98, head: 0, soft: .03, glow: .4, edge: red, z: 1 });
-        fan.to({ head: .62 }, .26, 'lin').wait(.12).set({ flash: .6 }).to({ flash: 0, head: 1.2 }, .06).wait(.14).to({ dis: 1 }, .3, 'in').end();
-        for (let i = 0; i < 4; i++) S.sfx('card_snap', .04 + i * .06, { vol: .3, rate: 1.1 + i * .08, cool: 0 });
-        const t = .36, ace = S.part('ace', { x: x + .04 * u, y: y - .5 * u, size: size * 1.6, rot: -2, alpha: 0, glow: .5, edge: red, z: 3 }, t - .14);
-        ace.to({ alpha: 1, x: x + .03 * u, y: y + .04 * u, size: size * 1.05, rot: 0 }, .14, 'in3').set({ flash: .9 }).to({ flash: 0 }, .08).wait(.16).to({ alpha: 0, dis: .6 }, .26).end();
-        S.sfx('slash_c', t - .1, { vol: .6 }); S.sfx('punch_m', t, { vol: .7 });
-        strike(S, x, y, t, { power: .8, color: red, zoom: .03 });
-    });
-
-    def(skill('피아스트'), { impact: .3, sounds: ['ice_b', 'field', 'laser_rifle'] }, S => {
-        // 푸른 구슬의 고리들이 감겨 돌다 한 줄기 빛을 쏘고, 시전자에게 막을 남긴다.
-        const u = S.U, c = [.4, .7, 1];
-        S.sfx('field', 0, { vol: .4 }); S.hit('laser_rifle', .3, { vol: .45 });
-        const n = S.sprite({ x: S.A.x + .1 * u, y: S.A.y - .04 * u, size: .4 * u, mode: 1, head: 0, soft: .25, swirl: 5, rot: -1.5, sx: .6, sy: .6, glow: .6, edge: c, z: 1 });
-        n.to({ head: 1.8, swirl: 0, rot: 0, sx: 1, sy: 1 }, .26, 'out3').set({ flash: .6 }).to({ flash: 0, sx: 1.1, sy: 1.1 }, .06).wait(.14).to({ tail: 1.8, sx: .8, sy: .8 }, .3, 'in').end();
-        P.line(S, S.A.x + .14 * u, S.A.y - .04 * u, S.T.x, S.T.y, .03 * u, c, .28, .24, { from: .05, sharp: .8 });
-        strike(S, S.T.x, S.T.y, .3, { power: .7, color: c });
-        S.shape('hex', { x: S.A.x, y: S.A.y, w: .12 * u, h: .16 * u, color: c, alpha: 0, p0: 4.5, p1: .07, p2: .04, z: 2 }, .34).to({ w: .34 * u, h: .44 * u, alpha: .7 }, .16, 'back').wait(.24).to({ alpha: 0 }, .3).end();
-    });
-
-    def(skill('피의 맛'), { impact: .22, sounds: ['growl', 'squish', 'punch_m', 'plant_a'] }, S => {
-        // 핏빛 아가리가 대상을 물어뜯고, 피가 시전자에게 흘러든다.
-        const u = S.U, x = S.T.x, y = S.T.y, size = .58 * u, red = [.9, .1, .15];
-        S.sfx('growl', 0, { vol: .45 });
-        const jaw = (flip, r0) => S.sprite({ x, y, size, flip, rot: r0, alpha: 0, glow: .4, edge: red, z: 1 })
-            .to({ alpha: 1 }, .08).with({ rot: r0 * .9 }, .12, 'out').to({ rot: 0 }, .08, 'in3').set({ flash: .6 }).to({ flash: 0, sx: 1.06, sy: 1.06 }, .08).wait(.12).to({ dis: 1 }, .3, 'in').end();
-        jaw(1, -.9); jaw(-1, .9);
-        const t = .22; S.sfx('squish', t, { vol: .6 }); S.sfx('punch_m', t, { vol: .7 }); S.hit('plant_a', .5, { vol: .4 });
-        strike(S, x, y, t, { power: .75, color: red }); P.debris(S, x, y, 9, red, t, { size: .012, grav: 2.2 });
-        M.stream(S, S.id, x, y, size, S.A.x, S.A.y, t + .1, { dur: .6, frac: .6 });
-        P.glow(S, S.A.x, S.A.y, .16 * u, [1, .3, .3], t + .55, .35, .6);
-    });
-
-    def(skill('핫식스의정력'), { impact: .34, sounds: ['bolt_a', 'field'] }, S => {
-        // 붉은 원이 세 번 맥박치며 차오르고, 넘친 힘이 번개로 튄다.
-        const u = S.U, x = S.A.x, y = S.A.y, c = [1, .35, .2];
-        S.sfx('field', 0, { vol: .4 }); S.hit('bolt_a', .34, { vol: .55 });
-        for (let i = 0; i < 3; i++) P.ring(S, x, y, (.14 + i * .07) * u, c, i * .09, { th: .1, dur: .3 });
-        const n = S.sprite({ x, y, size: .5 * u, mode: 1, head: 0, soft: .25, sx: .6, sy: .6, glow: .6, edge: c, flow: .012, z: 1 });
-        n.to({ head: 1.8, sx: 1.05, sy: 1.05 }, .26, 'out3').to({ sx: 1, sy: 1 }, .1).wait(.2).to({ tail: 1.8, sx: 1.15, sy: 1.15 }, .3, 'in').end();
-        P.bolt(S, x + .08 * u, y - .04 * u, S.T.x, S.T.y, [1, .7, .4], .3);
-        strike(S, S.T.x, S.T.y, .34, { power: .7, color: c });
-    });
-
-    def(skill('헤즈업'), { impact: .3, sounds: ['card_fan', 'card_snap', 'shimmer', 'card_a'] }, S => {
-        // 카드 석 장이 시전자 손에서 부채꼴로 떠오르고, 가운데 한 장이 뒤집히며 빛난다.
-        const u = S.U, x = S.A.x + .04 * u, y = S.A.y - .2 * u, size = .5 * u, c = [.4, .85, 1], attack = S.event && Number(S.event.damage) > 0;
-        S.sfx('card_a', 0, { vol: .5 });
-        const card = (name, dx, rot, t0) => {
-            const n = S.part(name, { x: S.A.x, y: S.A.y, size, sx: .3, sy: .3, rot: rot * 3, alpha: 0, glow: .5, edge: c, z: name === 'mid' ? 3 : 2 }, t0);
-            n.to({ x: x + dx * u, y: y + Math.abs(dx) * .12 * u, sx: 1, sy: 1, rot, alpha: 1 }, .16, 'out3');
-            S.sfx('card_snap', t0 + .1, { vol: .35, rate: 1 + Math.abs(dx), cool: 0 });
-            return n;
-        };
-        card('left', -.13, -.3, 0).wait(.36).to({ alpha: 0, y: y + .06 * u }, .22).end();
-        card('right', .13, .3, .05).wait(.31).to({ alpha: 0, y: y + .06 * u }, .22).end();
-        const mid = card('mid', 0, 0, .1);
-        mid.to({ sx: .04 }, .07, 'in').set({ flash: .9 }).to({ sx: 1.12, sy: 1.12, flash: 0 }, .09, 'out').to({ sx: 1, sy: 1 }, .06);
-        S.sfx('shimmer', .26, { vol: .4 }); P.ring(S, x, y, .2 * u, c, .3, { th: .08 }); P.flare(S, x, y, .2 * u, c, .3, .3);
-        if (attack) {
-            mid.wait(.04).to({ x: S.T.x, y: S.T.y, rot: 6.3, sx: .7, sy: .7 }, .14, 'in3').set({ flash: 1 }).to({ alpha: 0 }, .06).end();
-            strike(S, S.T.x, S.T.y, .6, { power: .7, color: c }); S.sfx('slash_c', .5, { vol: .5 });
-        } else mid.wait(.2).to({ alpha: 0, y: S.A.y, sx: .5, sy: .5 }, .24, 'in').end();
-        M.rise(S, S.id, x, y + .05 * u, size, .2, { dur: .8, frac: .25 });
-    });
-
     def(skill('자폭'), { impact: .5, sounds: ['beep', 'rocket', 'boom_a', 'boom_low'] }, S => {
         // 소환수가 경고음을 세 번 울리며 대상에게 돌진해 터진다.
         const u = S.U, x = S.T.x, y = S.T.y, c = [1, .6, .2], t = .5;
@@ -997,17 +502,6 @@
         P.decal(S, home.x, g, .18 * u, c, 0, .7);
         for (let i = 0; i < 6; i++) S.shape('hex', { x: home.x + (S.rnd(i) - .5) * .2 * u, y: g, w: .03 * u, h: .035 * u, color: c, alpha: .8, p0: 1.2, p1: .14, p2: .3, z: 2 }, .1 + i * .05).to({ y: home.y + (S.rnd(i + 4) - .5) * .1 * u, alpha: 0 }, .5, 'out').end();
         P.ring(S, home.x, home.y, .16 * u, c, .5, { th: .1 }); P.flare(S, home.x, home.y, .16 * u, c, .5, .3);
-    });
-
-    def(skill('수나타 소환'), { impact: 0, sounds: ['warp', 'holy_big', 'shimmer'] }, S => {
-        // 음의 고리가 바닥에 퍼지고, 그 위로 수나타가 빛에서 풀려 나온다.
-        const u = S.U, home = companions.home(S, '수나타'), g = S.gA + .02 * u, c = [.7, .5, 1];
-        S.hit('warp', .4, { vol: .4 }); S.hit('holy_big', .45, { vol: .45 }); S.sfx('shimmer', .5, { vol: .35 });
-        const pad = S.part('~rest', { x: home.x, y: g, size: .56 * u, pivot: [.5, .84], ang: -PI / 2, head: 0, soft: .2, sy: .5, alpha: .95, glow: .5, edge: c, z: 0 });
-        pad.to({ head: .5 }, .14, 'out').to({ head: 1.4, sy: 1 }, .3, 'out').wait(.34).to({ tail: 1.45 }, .4, 'in').end();
-        for (let i = 0; i < 3; i++) P.ring(S, home.x, g, (.14 + i * .08) * u, c, i * .12, { flat: .3, th: .1, dur: .5 });
-        P.beam(S, home.x, (home.y + g) / 2, Math.abs(g - home.y) * 1.4, .12 * u, c, .1, .4);
-        P.flare(S, home.x, home.y, .2 * u, c, .5, .34);
     });
 
     // ================= 소환수 =================
@@ -1044,6 +538,7 @@
         pop(S, { size: .5, power: .9, rot: .5, zoom: .035, hold: .08 });
         P.lines(S, S.T.x, S.T.y, 0, .08, red, .4);
         P.arc(S, S.T.x, S.T.y, .2 * u, -.8, [1, .85, .6], 0, .09, { span: 1.5 });
+        if (K) { K.sparks(S, S.T.x, S.T.y, S.minor ? 8 : 18, [1, .8, .5], 0, { speed: 1.4 }); K.rays(S, S.T.x, S.T.y, .32 * u, 0, .22, { color: [1, .9, .7], color2: red, n: 5, spin: 0, sharp: .9, z: 3 }); }
     });
     def(combat('운명 피해'), { impact: .1, sounds: ['slash_d', 'earth_b'] }, S => { S.sfx('slash_d', 0, { vol: v(S, .55) }); S.hit('earth_b', .1, { vol: v(S, .4), rate: .8 }); cut(S, { size: .5, native: -.8, stop: 55 }); P.ring(S, S.T.x, S.T.y, .2 * S.U, S.color(), .08, { th: .08 }); });
     def(combat('추가 피해'), { impact: .06, sounds: ['punch_m'] }, S => { S.sfx('punch_m', .02, { vol: v(S, .4), cool: 100 }); pop(S, { size: .38, power: .45, hold: .06, x: S.T.x + (S.rnd(1) - .5) * .1 * S.U, y: S.T.y + (S.rnd(2) - .5) * .1 * S.U }); });
@@ -1331,6 +826,8 @@
     }
     F.companions = companions.sync;
     F.archetypes = { sweep, erupt, drop, pop, cut, rise, stamp, vortex, ward, emblem, crest, drain };
+    // 스킬 장면집(combat-fx-skills.js)이 같은 도우미로 장면을 등록한다.
+    F.props = P; F.matter = M; F.strike = strike; F.sceneDef = def;
     // 자주 쓰는 소리. 호스트가 전투 화면에 들어올 때 미리 받는다.
     F.commonSounds = ['swish_a', 'swish_b', 'swish_c', 'slash_c', 'punch_m', 'punch_c', 'glass_a', 'gem', 'shimmer', 'field', 'heal_a', 'heal_b', 'fire_a', 'holy_b', 'earth_b', 'splash', 'metal_ring', 'air_puff'];
 })(typeof globalThis != 'undefined' ? globalThis : this);

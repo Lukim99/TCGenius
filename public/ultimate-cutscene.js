@@ -38,6 +38,9 @@
         host.appendChild(layer);
         const blobs = new Map(), seen = new Set(), queue = [];
         let active = false, generation = 0, timer = null, objectUrl = null;
+        // fold(0~1): 전투 연출이 뒤따르는 화면에서는 클립을 그 비율만큼만 보이고 띠를 빠르게 접는다. 접힌 뒤에 스킬 장면이 시작된다.
+        const fold = options.fold > 0 && options.fold < 1 ? options.fold : 0, FOLD_MS = 150;
+        const shown = clip => reduced.matches ? 1000 : fold ? Math.round(clip.duration * fold) : clip.duration;
 
         function load(clip) {
             const url = assetUrl(clip, reduced.matches);
@@ -49,6 +52,7 @@
         }
         function clearImage() {
             clearTimeout(timer);
+            if (fold) layer.classList.remove('ultimate-cutscene-folding');
             layer.replaceChildren();
             layer.hidden = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -77,7 +81,12 @@
                 layer.dataset.character = clip.character;
                 layer.replaceChildren(image);
                 layer.hidden = false;
-                timer = setTimeout(() => { clearImage(); active = false; next(); }, reduced.matches ? 1000 : clip.duration);
+                const done = () => { clearImage(); active = false; next(); };
+                timer = setTimeout(() => {
+                    if (!fold || reduced.matches) { done(); return; }
+                    layer.classList.add('ultimate-cutscene-folding');
+                    timer = setTimeout(done, FOLD_MS);
+                }, shown(clip));
             };
             image.onerror = () => { if (token === generation) { clearImage(); active = false; next(); } };
             image.src = objectUrl;
@@ -93,7 +102,8 @@
             }
             queue.push(clip);
             next();
-            return reduced.matches ? 1000 : clip.duration;
+            // 돌려주는 값은 띠가 접히기 시작하는 시각(ms)이다.
+            return shown(clip);
         }
         function prepare(skills, cardName) {
             for (const skill of skills || []) {

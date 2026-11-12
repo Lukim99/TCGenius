@@ -12,7 +12,8 @@ const gl = new Proxy({}, {
         if (prop === 'getShaderParameter' || prop === 'getProgramParameter') return () => true;
         if (prop === 'getParameter') return () => 4096;
         if (prop === 'getExtension') return () => null;
-        return () => ({});
+        // 돌려주는 값도 같은 흉내 객체다: 2D 캔버스의 그러데이션처럼 메서드를 이어 부르는 것들이 그대로 통과한다.
+        return () => gl;
     }
 });
 const element = () => ({ style: {}, width: 0, height: 0, setAttribute() {}, addEventListener() {}, remove() {}, getContext: () => gl, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 450 }) });
@@ -51,4 +52,24 @@ assert.strictEqual(fx.play([clap], { role: 'target', src, dst, event }).count, 0
 // 나중에 다시 쓴 스킬은 다시 재생한다.
 clock += 5000;
 assert.strictEqual(fx.play([clap], { role: 'actor', src, dst, event }).count, 1, '다음 시전은 다시 재생한다.');
+
+// 궁극기는 컷씬이 접힌 뒤에 장면을 시작한다(after). 타격 시각도 그만큼 늦고, 그동안 온 같은 사건의 요청은 장면을 다시 시작하지 않는다.
+clock += 5000;
+const late = fx.play([clap], { role: 'actor', src, dst, event, after: 1080 });
+assert.strictEqual(late.delay, 1580, '컷씬 뒤에 시작한 장면은 그만큼 늦게 타격한다: ' + late.delay);
+assert.ok(late.cast >= late.delay, '시전 길이는 타격 뒤까지다: ' + late.cast);
+const joined = fx.play([clap], { role: 'target', src, dst, event });
+assert.strictEqual(joined.count, 0, '컷씬 동안 온 대상 쪽 요청은 같은 장면을 다시 시작하지 않는다.');
+assert.strictEqual(joined.delay, 1580, '대상 쪽 요청도 같은 타격 시각을 받는다: ' + joined.delay);
+clock += late.delay + 95;
+assert.strictEqual(fx.play([clap, 'combat:연격 추가타'], { role: 'target', src, dst, event, hit: { damage: 10 } }).count, 1, '컷씬 뒤에 시작한 장면도 2타째에 다시 재생하지 않는다.');
+
+// 여러 번 때리는 스킬은 타수마다의 시각을 돌려준다.
+require('../public/combat-fx-kit');
+require('../public/combat-fx-skills');
+clock += 5000;
+const poker = fx.play(['skill:포커 못 하시네'], { role: 'target', src, dst, event: { action: 'skill', skillName: '포커 못 하시네' } });
+assert.strictEqual(poker.hits.length, 9, '포커 못 하시네는 아홉 번의 타격 시각을 돌려준다.');
+assert.strictEqual(poker.hits[0], poker.delay, '첫 타격 시각은 delay와 같다.');
+assert.ok(poker.hits.every((time, index) => !index || time > poker.hits[index - 1]) && poker.cast > poker.hits[8], '타격 시각은 차례로 늦어지고 시전은 마지막 타격 뒤에 끝난다.');
 console.log('combat_fx_replay ok');

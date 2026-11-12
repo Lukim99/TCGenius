@@ -9833,7 +9833,9 @@ function renderHFieldApp(sess) {
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};</script>
 <link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
 <script src="/static/combat-shortcuts.js"></script>
 <script src="/static/hfield.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
@@ -9853,7 +9855,9 @@ function renderGeneralFieldApp(sess, mode = 'regular') {
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};window.FIELD_MODE=${JSON.stringify(mode)};</script>
 <link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
 <script src="/static/combat-shortcuts.js"></script>
 <script src="/static/hfield.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
@@ -9888,7 +9892,9 @@ function renderWorldBossApp(sess) {
 <script>window.WORLD_BOSS_ME=${JSON.stringify(sess.name)};</script>
 <link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
 <script src="/static/combat-shortcuts.js"></script>
 <script src="/static/worldboss.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
@@ -9907,7 +9913,9 @@ function renderPvpApp(sess, opponent) {
 <script>window.PVP_ME=${JSON.stringify(sess.name)};window.PVP_OPPONENT=${JSON.stringify(opponent || '')};</script>
 <link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
 <script src="/static/pvp.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

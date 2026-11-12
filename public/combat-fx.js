@@ -112,6 +112,52 @@ void main(){
         'vec2 r=vec2(q.x*cs-q.y*sn,q.x*sn+q.y*cs);float sh=1.-smoothstep(.34,.44,abs(r.x)*2.6+abs(r.y));float a=mix(pow(max(0.,1.-d),2.4),sh,uShard);' +
         'vec3 c=vCol.rgb*mix(1.,.72+.6*step(0.,r.x),uShard);gl_FragColor=vec4(c*a*vCol.a,a*vCol.a*uShard);}';
 
+    // ---- 실시간으로 계산하는 재료: 절차 셰이더(면, 리본, 렌즈)와 입자 ----
+    // 장면집이 CombatFX.shader(이름, 본문)으로 등록한다. 본문은 vec4 fx(vec2 uv)를 정의하고 곧은(곱하지 않은) 색과 알파를 돌려준다.
+    // 노이즈는 한 번 만든 256² 텍스처에서 읽는다(화소마다 sin 해시를 돌리는 것보다 훨씬 싸다).
+    const FX_HEAD = PRECISION + `
+uniform float uTime,uAdd,uSeed,uFlip;uniform vec4 uColor,uP,uQ;uniform vec3 uColor2;uniform sampler2D uNoise,uScene;varying vec2 vUv;
+vec4 ntex(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return texture2D(uNoise,(i+f+.5)/256.);}
+float noise(vec2 p){return ntex(p).r;}
+float fbm(vec2 p){return ntex(p).r*.5+ntex(p*2.03+17.1).g*.25+ntex(p*4.11+41.7).b*.125+ntex(p*8.27+7.3).a*.0625;}
+float fbm2(vec2 p){return ntex(p).r*.62+ntex(p*2.07+17.1).g*.38;}
+mat2 rot2(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}
+vec3 heat(float h){return h<.6?mix(uColor2,uColor.rgb,h/.6):mix(uColor.rgb,vec3(1.),(h-.6)*2.5);}
+vec4 scene(vec2 uv){if(uFlip<0.)uv.x=1.-uv.x;vec2 e=step(vec2(0.),uv)*step(uv,vec2(1.));return texture2D(uScene,uv)*e.x*e.y;}
+`;
+    const FX_MAIN = '\nvoid main(){vec4 c=fx(vUv);float al=clamp(c.a,0.,1.)*uColor.a;gl_FragColor=vec4(c.rgb*al,al*(1.-uAdd));}';
+    // 렌즈는 전투 화면을 찍은 그림을 다시 그리므로 본문이 곱해진 알파를 그대로 돌려준다.
+    const LENS_MAIN = '\nvoid main(){gl_FragColor=fx(vUv)*uColor.a;}';
+    const STRIP_VS = 'attribute vec2 aPos,aUv;uniform vec2 uRes;varying vec2 vUv;void main(){gl_Position=vec4(aPos.x/uRes.x*2.-1.,1.-aPos.y/uRes.y*2.,0.,1.);vUv=aUv;}';
+    // 입자는 태어날 때 한 번만 버퍼에 쓰고, 그 뒤의 운동(속도, 감쇠, 중력, 흔들림, 크기와 색의 변화)은 정점 셰이더가 나이로 계산한다.
+    const PARTICLE_VS = `
+attribute vec4 aA,aB,aC,aD,aE,aF;uniform vec2 uRes;uniform float uNow,uLayer;varying vec2 vUv;varying vec4 vCol;varying float vAdd;
+void main(){
+  float age=uNow-aB.x,t=age/aB.y,layer=floor(aD.y*.5);
+  if(aB.y<=0.||age<0.||t>=1.||layer!=uLayer){gl_Position=vec4(2.,2.,0.,1.);return;}
+  float idx=floor(aD.x+.5),corner=mod(idx,4.),cell=floor(idx*.25);
+  vec2 q=vec2(mod(corner,2.),floor(corner*.5))-.5;
+  float drag=aC.w,k=drag>0.?(1.-exp(-drag*age))/drag:age;
+  vec2 pos=aA.xy+aA.zw*k+vec2(0.,.5*aC.z*age*age);
+  float sd=aA.z*.013+aA.w*.017+aA.x*.031;
+  pos+=vec2(sin(age*5.1+sd*37.),cos(age*4.3+sd*51.))*aD.w*age;
+  float size=mix(aB.z,aB.w,1.-(1.-t)*(1.-t)),ang=aC.x+aC.y*age;vec2 sc=vec2(size);
+  if(aD.z>0.){vec2 vel=aA.zw*exp(-drag*age)+vec2(0.,aC.z*age);ang=atan(vel.y,vel.x);sc.x=size*(1.+aD.z*length(vel)*.01);}
+  float s=sin(ang),c=cos(ang);vec2 o=q*sc;pos+=vec2(o.x*c-o.y*s,o.x*s+o.y*c);
+  vUv=(vec2(mod(cell,4.),floor(cell*.25))+q+.5)*.25;
+  vCol=mix(aE,aF,t);vCol.a*=smoothstep(0.,.06,t)*(1.-smoothstep(.7,1.,t));vAdd=aD.y-layer*2.;
+  gl_Position=vec4(pos.x/uRes.x*2.-1.,1.-pos.y/uRes.y*2.,0.,1.);
+}`;
+    const PARTICLE_FS = PRECISION + 'uniform sampler2D uTex;varying vec2 vUv;varying vec4 vCol;varying float vAdd;void main(){vec4 t=texture2D(uTex,vUv);gl_FragColor=vec4(vCol.rgb*t.rgb*vCol.a,t.a*vCol.a*(1.-vAdd));}';
+    const PARTICLE_CAP = 2048, PARTICLE_STRIDE = 72;
+    const CELL = { dot: 0, hard: 1, spark: 2, smoke: 3, shard: 4, star: 5, ring: 6, flame: 7, drop: 8, petal: 9, zero: 10, one: 11, star5: 12, coin: 13, card: 14, note: 15 };
+    const FIELD_DEFAULTS = { x: 0, y: 0, w: 100, h: 100, rot: 0, alpha: 1, add: 1, p0: 0, p1: 0, p2: 0, p3: 0, q0: 0, q1: 0, q2: 0, q3: 0, seed: 0, z: 1 };
+    const TRAIL_DEFAULTS = { head: 0, tail: 0, width: 20, alpha: 1, add: 1, seg: 28, p0: 4, p1: 2, p2: 1.2, p3: 0, q0: 0, q1: 0, q2: 0, q3: 0, jag: 0, taper: .35, seed: 0, z: 3 };
+    const POSE_DEFAULTS = { dx: 0, dy: 0, sx: 1, sy: 1, rot: 0, alpha: 1, flash: 0, z: 0 };
+    const LENS_DEFAULTS = { x: 0, y: 0, ang: 0, alpha: 1, p0: 0, p1: 0, p2: 0, p3: 0, q0: 0, q1: 0, seed: 0, z: -40 };
+    const shaderBodies = new Map();
+    let atlasPainter = null;
+
     const SPRITE_DEFAULTS = { x: 0, y: 0, size: 100, sx: 1, sy: 1, rot: 0, alpha: 1, flip: 1, add: 0, flash: 0, glow: 0, flow: 0, ff: 3, fvx: 0, fvy: -.6, head: 2, tail: -1, ang: 0, soft: .08, mode: 0, dis: 0, swirl: 0, chroma: 0, z: 0 };
     const SHAPE_DEFAULTS = { x: 0, y: 0, w: 100, h: 100, rot: 0, alpha: 1, add: 1, white: .85, p0: 2, p1: .1, p2: 0, p3: .1, z: 0 };
     const MATTER_DEFAULTS = { x: 0, y: 0, size: 100, rot: 0, flip: 1, t: 0, fx: 0, fy: 0, tx: 0, ty: 0, spread: 120, grav: 0, px: 5, alpha: 1, hot: .5, frac: 1, shard: 0, z: 1 };
@@ -139,11 +185,38 @@ void main(){
         set(props) { return this.to(props, 0, 'lin'); }
         wait(duration) { this.prev = this.cur; this.cur += duration; return this; }
         seek(time) { this.cur = this.born + time; return this; }
+        // 장면 시작부터의 시각으로 옮긴다(seek은 이 노드가 태어난 때부터의 시각).
+        at(time) { this.cur = (this.scene && this.scene.start != null ? this.scene.start : this.born) + time; return this; }
         end(extra) { this.die = this.cur + (extra || 0); return this; }
         tick(fn) { this.fn = fn; return this; }
     }
     const baseTo = Node.prototype.to;
     Node.prototype.to = function (props, duration, ease) { this.prev = this.cur; return baseTo.call(this, props, duration, ease); };
+
+    // 입자가 쓰는 4×4 도형판. 흰색으로 그려 두고 입자마다 색을 입힌다.
+    function paintAtlas(g, N) {
+        const R = N / 2 - 3;
+        const cell = (i, draw) => { g.save(); g.beginPath(); g.rect((i % 4) * N, Math.floor(i / 4) * N, N, N); g.clip(); g.translate((i % 4) * N + N / 2, Math.floor(i / 4) * N + N / 2); draw(); g.restore(); };
+        const radial = (r, stops) => { const fill = g.createRadialGradient(0, 0, 0, 0, 0, r); stops.forEach(([at, a]) => fill.addColorStop(at, 'rgba(255,255,255,' + a + ')')); return fill; };
+        const poly = pts => { g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x * R, y * R)); g.closePath(); };
+        cell(0, () => { g.fillStyle = radial(R, [[0, 1], [.2, .8], [.5, .28], [1, 0]]); g.fillRect(-R, -R, R * 2, R * 2); });
+        cell(1, () => { g.fillStyle = radial(R * .8, [[0, 1], [.78, 1], [1, 0]]); g.fillRect(-R, -R, R * 2, R * 2); });
+        cell(2, () => { g.scale(1, .2); g.fillStyle = radial(R, [[0, 1], [.3, .85], [.7, .3], [1, 0]]); g.fillRect(-R, -R, R * 2, R * 2); g.scale(1, .35); g.fillStyle = radial(R * .7, [[0, 1], [1, 0]]); g.fillRect(-R, -R, R * 2, R * 2); });
+        cell(3, () => { [[0, 0, .62], [-.34, .1, .42], [.3, -.14, .46], [.06, .32, .4], [-.12, -.34, .38]].forEach(([x, y, r]) => { g.save(); g.translate(x * R, y * R); g.fillStyle = radial(r * R, [[0, .5], [.6, .26], [1, 0]]); g.fillRect(-R, -R, R * 2, R * 2); g.restore(); }); });
+        cell(4, () => { poly([[-.7, .5], [-.2, -.8], [.75, -.1], [.3, .7]]); g.fillStyle = '#fff'; g.fill(); poly([[-.7, .5], [-.2, -.8], [.05, .1]]); g.fillStyle = 'rgba(0,0,0,.34)'; g.fill(); poly([[.05, .1], [.75, -.1], [.3, .7]]); g.fillStyle = 'rgba(0,0,0,.16)'; g.fill(); });
+        cell(5, () => { g.fillStyle = radial(R * .5, [[0, .9], [1, 0]]); g.fillRect(-R, -R, R * 2, R * 2); g.fillStyle = '#fff'; g.beginPath(); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, r = i % 2 ? .09 : 1; g.lineTo(Math.cos(a) * r * R, Math.sin(a) * r * R); } g.closePath(); g.fill(); });
+        cell(6, () => { g.strokeStyle = '#fff'; g.lineWidth = R * .16; g.shadowColor = '#fff'; g.shadowBlur = 4; g.beginPath(); g.arc(0, 0, R * .78, 0, TAU); g.stroke(); });
+        cell(7, () => { const fill = g.createLinearGradient(0, R, 0, -R); fill.addColorStop(0, 'rgba(255,255,255,.95)'); fill.addColorStop(.55, 'rgba(255,255,255,.7)'); fill.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = fill; g.beginPath(); g.moveTo(0, -R); g.bezierCurveTo(R * .25, -R * .3, R * .7, R * .1, R * .5, R * .55); g.bezierCurveTo(R * .3, R, -R * .3, R, -R * .5, R * .55); g.bezierCurveTo(-R * .7, R * .1, -R * .2, -R * .3, 0, -R); g.fill(); });
+        cell(8, () => { g.fillStyle = 'rgba(255,255,255,.82)'; g.beginPath(); g.moveTo(0, -R * .95); g.bezierCurveTo(R * .2, -R * .3, R * .62, R * .1, R * .62, R * .42); g.arc(0, R * .38, R * .62, 0, Math.PI); g.bezierCurveTo(-R * .62, R * .1, -R * .2, -R * .3, 0, -R * .95); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.ellipse(-R * .2, R * .28, R * .14, R * .24, .5, 0, TAU); g.fill(); });
+        cell(9, () => { const fill = g.createLinearGradient(-R, 0, R, 0); fill.addColorStop(0, 'rgba(255,255,255,.55)'); fill.addColorStop(1, '#fff'); g.fillStyle = fill; g.beginPath(); g.moveTo(-R * .95, 0); g.quadraticCurveTo(0, -R * .7, R * .95, 0); g.quadraticCurveTo(0, R * .5, -R * .95, 0); g.fill(); });
+        g.font = '700 ' + Math.round(N * .8) + 'px ui-monospace,Consolas,Menlo,monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        cell(10, () => { g.fillStyle = '#fff'; g.fillText('0', 0, N * .04); });
+        cell(11, () => { g.fillStyle = '#fff'; g.fillText('1', 0, N * .04); });
+        cell(12, () => { g.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? .42 : 1; g.lineTo(Math.cos(a) * r * R, Math.sin(a) * r * R); } g.closePath(); g.fillStyle = '#fff'; g.fill(); g.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? .2 : .5; g.lineTo(Math.cos(a) * r * R, Math.sin(a) * r * R); } g.closePath(); g.fillStyle = 'rgba(0,0,0,.14)'; g.fill(); });
+        cell(13, () => { g.fillStyle = '#fff'; g.beginPath(); g.arc(0, 0, R * .9, 0, TAU); g.fill(); g.strokeStyle = 'rgba(0,0,0,.3)'; g.lineWidth = R * .12; g.beginPath(); g.arc(0, 0, R * .62, 0, TAU); g.stroke(); g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(-R * .08, -R * .36, R * .16, R * .72); });
+        cell(14, () => { const w = R * 1.25, h = R * 1.8, r = R * .16; g.fillStyle = '#fff'; g.beginPath(); g.moveTo(-w / 2 + r, -h / 2); g.arcTo(w / 2, -h / 2, w / 2, h / 2, r); g.arcTo(w / 2, h / 2, -w / 2, h / 2, r); g.arcTo(-w / 2, h / 2, -w / 2, -h / 2, r); g.arcTo(-w / 2, -h / 2, w / 2, -h / 2, r); g.fill(); g.strokeStyle = 'rgba(0,0,0,.4)'; g.lineWidth = R * .07; g.strokeRect(-w * .36, -h * .38, w * .72, h * .76); poly([[0, -.34], [.22, 0], [0, .34], [-.22, 0]]); g.fillStyle = 'rgba(0,0,0,.45)'; g.fill(); });
+        cell(15, () => { g.fillStyle = '#fff'; g.beginPath(); g.ellipse(-R * .22, R * .55, R * .34, R * .25, -.4, 0, TAU); g.fill(); g.fillRect(R * .02, -R * .8, R * .13, R * 1.35); g.beginPath(); g.moveTo(R * .15, -R * .8); g.quadraticCurveTo(R * .75, -R * .55, R * .6, R * .05); g.quadraticCurveTo(R * .55, -R * .3, R * .15, -R * .42); g.fill(); });
+    }
 
     function create(options) {
         const opts = options || {}, host = opts.scene;
@@ -189,7 +262,154 @@ void main(){
         try { initGl(); } catch (error) { console.warn('[combat-fx] shader', error); canvas.remove(); return null; }
         // 탭이 오래 가려졌다 돌아오면 브라우저가 GL 컨텍스트를 버릴 수 있다. 되찾으면 셰이더를 다시 만들고 그림은 다시 받는다.
         canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); lost = true; });
-        canvas.addEventListener('webglcontextrestored', () => { try { initGl(); textures.clear(); lost = false; kick(); } catch (error) { console.warn('[combat-fx] restore', error); } });
+        canvas.addEventListener('webglcontextrestored', () => { try { initGl(); resetLive(); textures.clear(); lost = false; kick(); } catch (error) { console.warn('[combat-fx] restore', error); } });
+
+        // ---- 절차 셰이더, 노이즈, 입자, 리본, 화면 캡처: 처음 쓰일 때 만든다 ----
+        const fxPrograms = new Map();
+        const live = { noise: null, particles: null, strip: null, snap: null, snapOk: false, snapAt: -1 };
+        function resetLive() { fxPrograms.clear(); live.noise = live.particles = live.strip = live.snap = live.fbo = null; live.snapOk = false; }
+        function fxProgram(name) {
+            let prog = fxPrograms.get(name);
+            if (prog !== undefined) return prog;
+            const body = shaderBodies.get(name);
+            prog = null;
+            if (body) {
+                const strip = name.startsWith('trail:'), lens = name.startsWith('lens:');
+                try { prog = program(strip ? STRIP_VS : QUAD_VS, FX_HEAD + body + (lens ? LENS_MAIN : FX_MAIN), ['M', 'Res', 'Time', 'Add', 'Seed', 'Flip', 'Color', 'Color2', 'P', 'Q', 'Noise', 'Scene'], strip ? ['Pos', 'Uv'] : ['Pos']); }
+                catch (error) { console.warn('[combat-fx] shader ' + name, error); }
+            }
+            fxPrograms.set(name, prog);
+            return prog;
+        }
+        function noiseTexture() {
+            if (live.noise) return live.noise;
+            const N = 256, bytes = new Uint8Array(N * N * 4);
+            let seed = 20261112;
+            for (let i = 0; i < bytes.length; i++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; bytes[i] = seed >> 16 & 255; }
+            live.noise = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, live.noise);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            return live.noise;
+        }
+        // 입자 버퍼. 고리 모양으로 돌려 쓰며, 가장 오래된 입자부터 덮어쓴다.
+        function particleStore() {
+            if (live.particles) return live.particles;
+            const bytes = new ArrayBuffer(PARTICLE_CAP * 4 * PARTICLE_STRIDE), index = new Uint16Array(PARTICLE_CAP * 6);
+            for (let i = 0; i < PARTICLE_CAP; i++) index.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 1, i * 4 + 3], i * 6);
+            const store = { bytes, f: new Float32Array(bytes), b: new Uint8Array(bytes), head: 0, lo: PARTICLE_CAP, hi: -1, end: [0, 0, 0], buffer: gl.createBuffer(), index: gl.createBuffer(), tex: gl.createTexture(), prog: null };
+            gl.bindBuffer(gl.ARRAY_BUFFER, store.buffer); gl.bufferData(gl.ARRAY_BUFFER, bytes, gl.DYNAMIC_DRAW);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, store.index); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, index, gl.STATIC_DRAW);
+            store.prog = program(PARTICLE_VS, PARTICLE_FS, ['Res', 'Now', 'Layer', 'Tex'], ['A', 'B', 'C', 'D', 'E', 'F']);
+            const sheet = document.createElement('canvas');
+            sheet.width = sheet.height = 256;
+            (atlasPainter || paintAtlas)(sheet.getContext('2d'), 64);
+            gl.bindTexture(gl.TEXTURE_2D, store.tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sheet);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            bound = null;
+            live.particles = store;
+            return store;
+        }
+        const pick = (value, r, fallbackValue) => value == null ? fallbackValue : typeof value === 'number' ? value : value[0] + (value[1] - value[0]) * r;
+        let emitSeed = 7;
+        // 입자 한 무리를 낸다. 좌표와 속도는 화면 픽셀(초당)이고, 태어나는 시각을 미리 적어 두므로 장면 시작에 한꺼번에 불러도 된다.
+        function emit(o, scene, bornAt) {
+            if (lost) return;
+            let store;
+            try { store = particleStore(); } catch (error) { console.warn('[combat-fx] particles', error); return; }
+            const count = Math.max(1, Math.round((o.n || 12) * (quality < 1 ? .55 : 1) * (opts.density || 1) * (reduced() ? .35 : 1)));
+            const mirror = scene && scene.mirror, axis = scene ? scene.axis : 0, f = store.f, b = store.b;
+            const c0 = o.color || WHITE, c1 = o.color2 || c0, a0 = (o.alpha == null ? 1 : o.alpha) * (c0[3] == null ? 1 : c0[3]), a1 = o.color2 ? (c1[3] == null ? a0 : c1[3] * (o.alpha == null ? 1 : o.alpha)) : a0;
+            const cell = CELL[o.cell] == null ? 0 : CELL[o.cell], layer = o.layer == null ? 1 : o.layer, add = o.add == null ? 1 : o.add;
+            let s = emitSeed = (emitSeed * 16807 + (o.seed | 0) * 131 + 11) % 2147483647 || 7;
+            const rnd = () => { s = s * 16807 % 2147483647; return s / 2147483647; };
+            const P = { x: 0, y: 0, vx: 0, vy: 0, life: 0, size: 0, end: 0, rot: 0, spin: 0, t: 0 };
+            let last = 0;
+            for (let i = 0; i < count; i++) {
+                const u = count > 1 ? i / (count - 1) : 0, dir = o.angle == null ? rnd() * TAU : o.angle + (rnd() - .5) * (o.spread == null ? .6 : o.spread);
+                const speed = pick(o.speed, rnd(), 0);
+                P.x = o.x; P.y = o.y; P.vx = Math.cos(dir) * speed + (o.vx || 0); P.vy = Math.sin(dir) * speed + (o.vy || 0);
+                if (o.radius) { const a = rnd() * TAU, r = Math.sqrt(rnd()) * o.radius; P.x += Math.cos(a) * r; P.y += Math.sin(a) * r * (o.flat || 1); }
+                if (o.ring) { const a = o.angle == null ? rnd() * TAU : dir, cs = Math.cos(a), sn = Math.sin(a); P.x += cs * o.ring; P.y += sn * o.ring * (o.flat || 1); if (o.radial) { P.vx = cs * speed * o.radial + (o.vx || 0); P.vy = sn * speed * o.radial * (o.flat || 1) + (o.vy || 0); } }
+                if (o.line) { const k = rnd(); P.x += o.line[0] * k; P.y += o.line[1] * k; }
+                P.life = pick(o.life, rnd(), .5); P.size = pick(o.size, rnd(), 8); P.end = P.size * (o.grow == null ? .25 : o.grow);
+                P.rot = o.rot == null ? rnd() * TAU : o.rot; P.spin = (rnd() - .5) * 2 * (o.spin || 0); P.t = (o.over || 0) * (o.even ? u : rnd());
+                if (o.each) o.each(P, i, u, rnd);
+                if (mirror) { P.x = 2 * axis - P.x; P.vx = -P.vx; P.rot = Math.PI - P.rot; P.spin = -P.spin; }
+                const born = bornAt + P.t, slot = store.head;
+                store.head = (store.head + 1) % PARTICLE_CAP;
+                if (slot < store.lo) store.lo = slot; if (slot > store.hi) store.hi = slot;
+                for (let corner = 0; corner < 4; corner++) {
+                    const v = (slot * 4 + corner) * PARTICLE_STRIDE, k = v / 4;
+                    f[k] = P.x; f[k + 1] = P.y; f[k + 2] = P.vx; f[k + 3] = P.vy;
+                    f[k + 4] = born; f[k + 5] = P.life; f[k + 6] = P.size; f[k + 7] = P.end;
+                    f[k + 8] = P.rot; f[k + 9] = P.spin; f[k + 10] = o.grav || 0; f[k + 11] = o.drag || 0;
+                    f[k + 12] = cell * 4 + corner; f[k + 13] = add + layer * 2; f[k + 14] = o.stretch || 0; f[k + 15] = o.turb || 0;
+                    b[v + 64] = c0[0] * 255; b[v + 65] = c0[1] * 255; b[v + 66] = c0[2] * 255; b[v + 67] = a0 * 255;
+                    b[v + 68] = c1[0] * 255; b[v + 69] = c1[1] * 255; b[v + 70] = c1[2] * 255; b[v + 71] = a1 * 255;
+                }
+                if (born + P.life > last) last = born + P.life;
+            }
+            if (last > store.end[layer]) store.end[layer] = last;
+            kick();
+        }
+        function drawParticles(layer) {
+            const store = live.particles;
+            if (!store || now >= store.end[layer]) return;
+            const prog = store.prog, a = prog.a;
+            bound = prog; gl.useProgram(prog.p);
+            gl.bindBuffer(gl.ARRAY_BUFFER, store.buffer);
+            if (store.hi >= store.lo) {
+                const from = store.lo * 4 * PARTICLE_STRIDE, to = (store.hi + 1) * 4 * PARTICLE_STRIDE;
+                gl.bufferSubData(gl.ARRAY_BUFFER, from, new Uint8Array(store.bytes, from, to - from));
+                store.lo = PARTICLE_CAP; store.hi = -1;
+            }
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, store.index);
+            ['A', 'B', 'C', 'D'].forEach((name, i) => { gl.enableVertexAttribArray(a[name]); gl.vertexAttribPointer(a[name], 4, gl.FLOAT, false, PARTICLE_STRIDE, i * 16); });
+            gl.enableVertexAttribArray(a.E); gl.vertexAttribPointer(a.E, 4, gl.UNSIGNED_BYTE, true, PARTICLE_STRIDE, 64);
+            gl.enableVertexAttribArray(a.F); gl.vertexAttribPointer(a.F, 4, gl.UNSIGNED_BYTE, true, PARTICLE_STRIDE, 68);
+            gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, store.tex); gl.uniform1i(prog.u.Tex, 0);
+            gl.uniform2f(prog.u.Res, W, H); gl.uniform1f(prog.u.Now, now); gl.uniform1f(prog.u.Layer, layer);
+            gl.drawElements(gl.TRIANGLES, PARTICLE_CAP * 6, gl.UNSIGNED_SHORT, 0);
+            ['A', 'B', 'C', 'D', 'E', 'F'].forEach(name => gl.disableVertexAttribArray(a[name]));
+        }
+        // 전투 화면(호스트 캔버스)을 한 장 찍어 렌즈 셰이더의 재료로 쓴다. 찍을 수 없으면 렌즈는 그리지 않는다.
+        // WebGL 캔버스는 화면에 내보낸 뒤 그림 버퍼가 비워진다. 호스트가 그리기 전에 찍히면 빈 그림이 되므로,
+        // 장면마다 처음 찍을 때 몇 점을 읽어 비었는지 확인하고, 비어 있으면 그 렌즈는 그리지 않는다(두 번 이어지면 렌즈를 끈다).
+        const probe = new Uint8Array(4);
+        function blank(width, height) {
+            if (!live.fbo) live.fbo = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, live.fbo);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, live.snap, 0);
+            let sum = 1;
+            if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) {
+                sum = 0;
+                for (const [fx, fy] of [[.5, .5], [.3, .62], [.72, .38]]) { gl.readPixels(Math.floor(width * fx), Math.floor(height * fy), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, probe); sum += probe[0] + probe[1] + probe[2] + probe[3]; }
+            }
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            return sum === 0;
+        }
+        function capture(check) {
+            const source = opts.snapshot ? opts.snapshot() : host.tagName === 'CANVAS' ? host : null;
+            if (!source || !source.width || !source.height) return false;
+            try {
+                if (!live.snap) {
+                    live.snap = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, live.snap);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                } else gl.bindTexture(gl.TEXTURE_2D, live.snap);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+                live.snapOk = true; live.snapAt = now;
+                if (check && blank(source.width, source.height)) { live.snapOk = false; live.blanks = (live.blanks || 0) + 1; if (live.blanks >= 2) live.failed = true; }
+                else if (check) live.blanks = 0;
+            } catch (_) { live.snapOk = false; live.failed = true; }
+            return live.snapOk;
+        }
 
         let W = 1, H = 1, dpr = 1, U = 1, quality = 1, slow = 0;
         function resize() {
@@ -393,6 +613,21 @@ void main(){
         let nodes = [], timers = [], keepers = 0;
         const camera = { amp: 0, start: 0, dur: 0, zoom: 0, zoomStart: 0, zoomDur: 0, ox: .5, oy: .5, applied: '' };
         const recent = new Map();
+        const poses = [], poseOut = { dx: 0, dy: 0, nx: 0, ny: 0, sx: 1, sy: 1, rot: 0, alpha: 1, flash: 0 };
+        function pose(tag) {
+            let any = false;
+            poseOut.dx = poseOut.dy = poseOut.rot = poseOut.flash = 0; poseOut.sx = poseOut.sy = poseOut.alpha = 1;
+            for (let i = poses.length - 1; i >= 0; i--) {
+                const node = poses[i], p = node.p;
+                if (node.gone || node.dead) { poses.splice(i, 1); continue; }
+                if (p.who !== tag || now < node.born) continue;
+                const m = node.scene && node.scene.mirror ? -1 : 1;
+                any = true; poseOut.dx += p.dx * m; poseOut.dy += p.dy; poseOut.rot += p.rot * m; poseOut.sx *= p.sx; poseOut.sy *= p.sy; poseOut.alpha *= p.alpha; if (p.flash > poseOut.flash) poseOut.flash = p.flash;
+            }
+            if (!any) return null;
+            poseOut.nx = poseOut.dx / W; poseOut.ny = poseOut.dy / H;
+            return poseOut;
+        }
 
         function makeNode(kind, defaults, props, born, scene) {
             const node = new Node(kind, Object.assign({}, defaults, props), born, scene);
@@ -405,7 +640,7 @@ void main(){
 
         // 장면이 쓰는 도구. 모든 좌표는 화면 픽셀이고, 왼쪽의 시전자가 오른쪽의 대상을 치는 방향으로 적는다.
         function stage(context, start) {
-            const scene = { mirror: context.mirror, axis: context.axis, impact: 0, stopped: false, nodes: [] };
+            const scene = { mirror: context.mirror, axis: context.axis, impact: 0, stopped: false, nodes: [], start };
             const S = {
                 t0: start,
                 id: context.id, A: context.A, T: context.T, gA: context.gA, gT: context.gT, U, W, H,
@@ -427,6 +662,32 @@ void main(){
                     const p = Object.assign({ key: key === undefined ? context.id : key, matter: MATTER[kind] }, props);
                     const node = makeNode('matter', MATTER_DEFAULTS, p, start + (t0 || 0), scene); scene.nodes.push(node); return node;
                 },
+                // 절차 셰이더로 그리는 면. name은 CombatFX.shader로 등록한 이름이다.
+                field(name, props, t0) {
+                    const p = Object.assign({ shader: name, color: S.tone }, props);
+                    const node = makeNode('field', FIELD_DEFAULTS, p, start + (t0 || 0), scene); scene.nodes.push(node); return node;
+                },
+                // 경로를 따라 그리는 리본. path(s)는 0~1의 s에 화면 좌표 [x, y]를 돌려주고, tail~head 구간만 보인다.
+                trail(name, props, t0) {
+                    const p = Object.assign({ shader: 'trail:' + (name || 'energy'), color: S.tone }, props);
+                    const node = makeNode('trail', TRAIL_DEFAULTS, p, start + (t0 || 0), scene); scene.nodes.push(node); return node;
+                },
+                // 전투 화면을 찍어 일그러뜨리는 렌즈. 찍을 수 없는 화면에서는 아무것도 그리지 않는다.
+                lens(name, props, t0) {
+                    if (S.reduced || live.failed || opts.lens === false) return new Node('none', {}, 0, scene);
+                    const p = Object.assign({ shader: 'lens:' + name, x: W / 2, y: H / 2 }, props);
+                    const node = makeNode('lens', LENS_DEFAULTS, p, start + (t0 || 0), scene); scene.nodes.push(node); return node;
+                },
+                // 시전자('a')나 대상('t')의 몸짓. 호스트가 fx.pose(이름)으로 읽어 캐릭터 그림에 반영한다.
+                // dx, dy는 화면 픽셀(시전자에서 대상 쪽이 +x), sx·sy는 발을 기준으로 한 배율, rot은 몸 가운데를 축으로 한 기울기,
+                // alpha는 투명도, flash는 흰 번쩍임이다. 끝날 때는 제자리로 돌려놓는다.
+                pose(who, props, t0) {
+                    const tag = context.tags[who === 'a' ? 'a' : 't'];
+                    if (!tag || S.reduced) return new Node('none', {}, 0, scene);
+                    const node = makeNode('pose', POSE_DEFAULTS, Object.assign({ who: tag }, props), start + (t0 || 0), scene); scene.nodes.push(node); poses.push(node); return node;
+                },
+                // 입자 무리. spec.t는 장면 시작부터의 시각이다.
+                burst(spec) { if (!scene.stopped) emit(spec, scene, start + (spec.t || 0)); },
                 at(t, fn) { scheduleAt(start + t, () => { if (!scene.stopped) fn(); }); },
                 sfx(name, t0, options) { if (!context.silent) scheduleAt(start + (t0 || 0), () => sound(name, options)); },
                 // 소리의 타격점이 t0에 떨어지도록 앞당겨 튼다. 앞소리가 있는 음원은 날아가는 동안 그 앞소리가 깔린다.
@@ -560,6 +821,75 @@ void main(){
             gl.disableVertexAttribArray(a.Rnd); gl.disableVertexAttribArray(a.Col);
         }
 
+        function fxUniforms(prog, node, mirror) {
+            const p = node.p, u = prog.u, color = p.color || WHITE, second = p.color2 || color;
+            gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, noiseTexture()); gl.uniform1i(u.Noise, 1);
+            gl.uniform1f(u.Time, now - node.born + p.seed * 3.7); gl.uniform1f(u.Add, p.add == null ? 0 : p.add); gl.uniform1f(u.Seed, p.seed); gl.uniform1f(u.Flip, mirror ? -1 : 1);
+            gl.uniform4f(u.Color, color[0], color[1], color[2], p.alpha); gl.uniform3f(u.Color2, second[0], second[1], second[2]);
+            gl.uniform4f(u.P, p.p0, p.p1, p.p2, p.p3); gl.uniform4f(u.Q, p.q0, p.q1, p.q2 || 0, p.q3 || 0);
+        }
+        function drawField(node) {
+            const p = node.p;
+            if (p.alpha <= .003) return;
+            const prog = fxProgram(p.shader);
+            if (!prog) return;
+            const scene = node.scene, mirror = scene && scene.mirror;
+            useQuad(prog);
+            fxUniforms(prog, node, mirror);
+            setMatrix(prog.u.M, mirror ? 2 * scene.axis - p.x : p.x, p.y, mirror ? -p.w : p.w, p.h, mirror ? -p.rot : p.rot, .5, .5);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+        // 화면 전체를 덮는 렌즈. 초점(x, y)과 각도는 좌우 반전에 맞춰 넘긴다.
+        function drawLens(node) {
+            const p = node.p;
+            if (p.alpha <= .003) return;
+            const prog = fxProgram(p.shader);
+            if (!prog) return;
+            if (node.skip) return;
+            if (!node.shot) { node.shot = true; if (!capture(true)) { node.skip = true; return; } }
+            else if (p.live && live.snapAt !== now && !capture(false)) return;
+            if (!live.snapOk) return;
+            const scene = node.scene, mirror = scene && scene.mirror, x = mirror ? 2 * scene.axis - p.x : p.x;
+            useQuad(prog);
+            fxUniforms(prog, node, false);
+            gl.uniform4f(prog.u.Q, x / W, p.y / H, mirror ? Math.PI - p.ang : p.ang, W / H);
+            gl.uniform1f(prog.u.Add, 0);
+            gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, live.snap); gl.uniform1i(prog.u.Scene, 2);
+            setMatrix(prog.u.M, W / 2, H / 2, W, H, 0, .5, .5);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+        const STRIP_MAX = 96, stripData = new Float32Array((STRIP_MAX + 1) * 8);
+        function drawTrail(node) {
+            const p = node.p, span = p.head - p.tail;
+            if (p.alpha <= .003 || span <= .001 || !p.path) return;
+            const prog = fxProgram(p.shader);
+            if (!prog) return;
+            if (!live.strip) live.strip = gl.createBuffer();
+            const scene = node.scene, mirror = scene && scene.mirror, axis = scene ? scene.axis : 0;
+            const n = Math.max(2, Math.min(STRIP_MAX, Math.round(p.seg * (quality < 1 ? .6 : 1)))), t = now - node.born, tick = Math.floor(t * 28) + p.seed * 13;
+            let nx = 0, ny = 1;
+            for (let i = 0; i <= n; i++) {
+                const u = i / n, s = p.tail + span * u, point = p.path(s, t);
+                let x = point[0], y = point[1];
+                if (i < n) { const next = p.path(Math.min(1, s + span / n), t), dx = next[0] - x, dy = next[1] - y, len = Math.hypot(dx, dy); if (len > .0001) { nx = -dy / len; ny = dx / len; } }
+                if (p.jag) { const h = Math.sin((i * 12.9898 + tick * 78.233) % 6.2831853) * 43758.5453, j = (h - Math.floor(h) - .5) * 2 * p.jag * Math.sin(u * Math.PI); x += nx * j; y += ny * j; }
+                // 꼬리는 가늘게 시작해 머리 쪽으로 굵어지고, 맨 앞에서 다시 뾰족해진다.
+                const half = p.width * .5 * (p.shapeFn ? p.shapeFn(u) : Math.pow(Math.sin(Math.min(1, u / (1 - p.taper * .5)) * Math.PI * .5), .7) * (u > 1 - p.taper ? Math.sqrt(Math.max(0, (1 - u) / p.taper)) : 1));
+                const ax = x + nx * half, ay = y + ny * half, bx = x - nx * half, by = y - ny * half, o = i * 8;
+                stripData[o] = mirror ? 2 * axis - ax : ax; stripData[o + 1] = ay; stripData[o + 2] = u; stripData[o + 3] = 0;
+                stripData[o + 4] = mirror ? 2 * axis - bx : bx; stripData[o + 5] = by; stripData[o + 6] = u; stripData[o + 7] = 1;
+            }
+            bound = prog; gl.useProgram(prog.p);
+            gl.bindBuffer(gl.ARRAY_BUFFER, live.strip);
+            gl.bufferData(gl.ARRAY_BUFFER, stripData.subarray(0, (n + 1) * 8), gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(prog.a.Pos); gl.vertexAttribPointer(prog.a.Pos, 2, gl.FLOAT, false, 16, 0);
+            gl.enableVertexAttribArray(prog.a.Uv); gl.vertexAttribPointer(prog.a.Uv, 2, gl.FLOAT, false, 16, 8);
+            fxUniforms(prog, node, mirror);
+            gl.uniform2f(prog.u.Res, W, H);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, (n + 1) * 2);
+            gl.disableVertexAttribArray(prog.a.Uv);
+        }
+
         function step(dt) {
             if (timers.length) {
                 const due = timers.filter(timer => timer.t <= now);
@@ -580,24 +910,41 @@ void main(){
                 }
                 if (node.fn) node.fn(node.p, now - node.born, dt, node);
                 const dead = node.dead || (node.die != null ? now >= node.die : !node.p.keep && !tracks.length && now >= node.cur);
-                if (dead) { if (node.p.keep) keepers--; continue; }
+                if (dead) { if (node.p.keep) keepers--; node.gone = true; continue; }
                 nodes[alive++] = node;
             }
             nodes.length = alive;
         }
+        const drawList = [], byDepth = (a, b) => a.p.z - b.p.z || a.seq - b.seq;
         function draw() {
             if (lost) return;
             resize();
             gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-            const list = nodes.filter(node => now >= node.born).sort((a, b) => a.p.z - b.p.z || a.seq - b.seq);
-            for (const node of list) {
-                if (node.kind === 'sprite') drawSprite(node);
-                else if (node.kind === 'shape') drawShape(node);
-                else if (node.kind === 'matter') drawMatter(node);
+            drawList.length = 0;
+            let sorted = true, prev = null;
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+                if (now < node.born) continue;
+                if (prev && (prev.p.z > node.p.z || prev.p.z === node.p.z && prev.seq > node.seq)) sorted = false;
+                drawList.push(node); prev = node;
             }
+            if (!sorted) drawList.sort(byDepth);
+            // 입자는 두 겹으로 그린다: 그림 뒤(z 0 앞)와 그림 앞(z 6 뒤).
+            let layer = 0;
+            for (let i = 0; i < drawList.length; i++) {
+                const node = drawList[i], kind = node.kind;
+                while (layer < 2 && node.p.z >= (layer ? 6.5 : 0)) drawParticles(layer++);
+                if (kind === 'sprite') drawSprite(node);
+                else if (kind === 'shape') drawShape(node);
+                else if (kind === 'field') drawField(node);
+                else if (kind === 'trail') drawTrail(node);
+                else if (kind === 'matter') drawMatter(node);
+                else if (kind === 'lens') drawLens(node);
+            }
+            while (layer < 2) drawParticles(layer++);
             applyCamera();
         }
-        const busy = () => nodes.length > 0 || timers.length > 0 || camera.amp > 0 || camera.zoom > 0;
+        const busy = () => nodes.length > 0 || timers.length > 0 || camera.amp > 0 || camera.zoom > 0 || !!live.particles && now < Math.max(live.particles.end[0], live.particles.end[1]);
         function frame(real) {
             raf = 0;
             const elapsed = Math.max(0, (real - lastReal) / 1000), dtReal = Math.min(.05, elapsed);
@@ -624,7 +971,7 @@ void main(){
             return {
                 id: effectId, A, T, mirror, axis, gA: A.y + (o.srcHalf == null ? half : o.srcHalf * U), gT: T.y + (o.dstHalf == null ? half : o.dstHalf * U),
                 role: o.role === 'actor' ? 'actor' : 'target', event: o.event, hit: o.hit, minor: !!o.minor, silent: !!o.silent,
-                tone: o.tone, scale: o.scale || 1, seed: (sequence * 7.13 + (o.seed || 0)) % 997
+                tone: o.tone, scale: o.scale || 1, tags: o.tags || {}, seed: (sequence * 7.13 + (o.seed || 0)) % 997
             };
         }
         function run(effectId, options, delay) {
@@ -648,10 +995,13 @@ void main(){
         // 돌려주는 delay(ms)는 주 장면이 대상에 닿는 순간이다. 호스트는 그때 수치와 피격 반응을 낸다.
         const resolve = effectId => definitions.get(effectId) || (fallback && fallback(effectId)) || null;
         // 주 장면이 대상에 닿을 시각. 같은 사건(같은 스킬이나 출처)의 이어지는 타격만 그 순간에 맞춰 터뜨린다.
-        const staged = { until: 0, x: -1, key: '' };
+        const staged = { until: 0, x: -1, key: '', hits: null, cast: 0 };
+        // 장면의 길이(다시 시작하지 않을 시간)와, 전투를 멈춰 둘 시간.
+        const span = definition => definition ? (definition.dur != null ? definition.dur : Math.max(definition.impact || 0, definition.hits ? definition.hits[definition.hits.length - 1] : 0) + .7) : .7;
+        const castOf = definition => definition ? (definition.cast != null ? definition.cast : Math.max(definition.impact || 0, definition.hits ? definition.hits[definition.hits.length - 1] : 0) + .22) : 0;
         const eventKey = event => event ? String(event.skillName || event.source || event.action || '') : '';
         function play(effectIds, options) {
-            const o = options || {}, real = performance.now();
+            const o = options || {}, real = performance.now(), after = Math.max(0, Number(o.after) || 0) / 1000;
             if (recent.size > 160) recent.forEach((until, token) => { if (real > until + 3000) recent.delete(token); });
             const role = o.role === 'actor' ? 'actor' : 'target', anchor = role === 'actor' ? o.src || o.dst : o.dst || o.src;
             const ids = Array.from(new Set((effectIds || []).filter(Boolean))).filter(effectId => {
@@ -660,14 +1010,15 @@ void main(){
                 if (real < (recent.get(token) || 0)) return false;
                 const definition = resolve(effectId);
                 // 여러 번 맞는 스킬은 타수마다 다시 불린다. 장면이 끝날 때까지는 다시 시작하지 않는다.
-                recent.set(token, real + (o.cool != null ? o.cool : own ? 700 + (definition && definition.impact || 0) * 1000 : 520));
+                recent.set(token, real + (o.cool != null ? o.cool : own ? after * 1000 + span(definition) * 1000 : 520));
                 return true;
             });
             const ranked = (catalog && catalog.presentationEffectIds ? catalog.presentationEffectIds(ids, o.limit || 3) : ids.slice(0, o.limit || 3)).filter(resolve);
             const lead = ranked.length ? resolve(ranked[0]).impact || 0 : 0, target = Number((o.dst || o.src).x);
             // 앞선 주 장면이 아직 대상에 닿지 않았으면, 뒤따르는 치명타나 속성 같은 곁장면은 그 순간에 맞춰 터뜨린다.
             const key = eventKey(o.event), waits = role === 'target' && real < staged.until && Math.abs(target - staged.x) < .08 && key === staged.key ? (staged.until - real) / 1000 : 0;
-            const base = Math.max(0, waits - lead);
+            // after(ms): 궁극기 컷씬처럼 먼저 보여줄 것이 있으면 그만큼 뒤에 장면을 시작한다.
+            const base = Math.max(waits ? 0 : after, waits - lead);
             let sounded = false, count = 0;
             ranked.forEach((effectId, index) => {
                 const minor = index > 0 || !!o.minor || waits > 0;
@@ -680,9 +1031,14 @@ void main(){
             });
             // 이미 재생 중이라 건너뛴 경우에도, 앞선 주 장면이 닿을 때까지 남은 시간을 알려 준다.
             const delay = count ? Math.round((base + lead) * 1000) : Math.round(Math.max(waits, 0) * 1000);
-            if (count && !waits && lead > .12) { staged.until = real + delay; staged.x = target; staged.key = key; }
+            const main = count && ranked.length ? resolve(ranked[0]) : null;
+            if (count && !waits && lead > .12) { staged.until = real + delay; staged.x = target; staged.key = key; staged.hits = main && main.hits ? main.hits.map(t => real + (base + t) * 1000) : null; staged.cast = real + (base + castOf(main)) * 1000; }
             kick();
-            return { delay, sound: sounded, count };
+            // hits: 타수마다 수치를 낼 시각(ms). cast: 이 장면이 끝나 전투를 다시 흘려도 되는 시각(ms). 이미 재생 중이면 앞선 장면의 것을 돌려준다.
+            const joined = !count && waits > 0 || count && waits > 0;
+            const hits = joined ? (staged.hits ? staged.hits.map(at => Math.max(0, Math.round(at - real))) : null) : main && main.hits ? main.hits.map(t => Math.round((base + t) * 1000)) : null;
+            const cast = joined ? Math.max(0, Math.round(staged.cast - real)) : main ? Math.round((base + castOf(main)) * 1000) : 0;
+            return { delay, sound: sounded, count, hits, cast };
         }
         // 소환수처럼 계속 남는 장면. 돌려받은 손잡이로 끝낸다.
         function persist(effectId, options, runner) {
@@ -716,7 +1072,8 @@ void main(){
             (sounds || []).forEach(loadSound);
         }
         function clear() {
-            nodes.forEach(node => { node.dead = true; }); nodes = []; timers = []; keepers = 0; camera.amp = 0; camera.zoom = 0;
+            nodes.forEach(node => { node.dead = true; }); nodes = []; timers = []; keepers = 0; camera.amp = 0; camera.zoom = 0; poses.length = 0;
+            if (live.particles) { live.particles.f.fill(0); live.particles.lo = 0; live.particles.hi = PARTICLE_CAP - 1; live.particles.end = [0, 0, 0]; }
             gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); applyCamera();
         }
         function onVisibility() { if (document.hidden) { cancelAnimationFrame(raf); raf = 0; } else kick(); }
@@ -728,8 +1085,20 @@ void main(){
             canvas.remove();
         }
         resize();
+        // 셰이더는 처음 쓰일 때 컴파일하지만, 그 순간의 끊김을 없애려고 한가한 틈에 하나씩 미리 만들어 둔다.
+        (function warmShaders() {
+            const names = Array.from(shaderBodies.keys());
+            let index = -2;
+            const idle = fn => root.requestIdleCallback ? root.requestIdleCallback(fn, { timeout: 2500 }) : setTimeout(fn, 120);
+            const next = () => {
+                if (lost || !canvas.isConnected) return;
+                try { if (index === -2) noiseTexture(); else if (index === -1) particleStore(); else fxProgram(names[index]); } catch (_) { return; }
+                if (++index < names.length) idle(next);
+            };
+            setTimeout(() => idle(next), 900);
+        })();
         const instance = {
-            canvas, play, persist, preload, clear, destroy, sound, unlock, shake, hitstop, loadSound, kick,
+            canvas, play, persist, preload, clear, destroy, sound, unlock, shake, hitstop, loadSound, kick, pose,
             get time() { return now; }, get unit() { return U; }, get size() { return { W, H }; },
             get busy() { return busy(); }, get count() { return nodes.length; },
             // 검증용: 지금부터 seconds 뒤의 화면에서 시간을 멈춘다. null이면 다시 흐른다.
@@ -746,6 +1115,11 @@ void main(){
         partSpecs: () => parts,
         // 그림 파일 없이 캔버스에 직접 그려 쓰는 텍스처. draw(ctx, width, height)
         paint(id, width, height, draw) { painters.set(id, { width, height, draw }); },
+        // 절차 셰이더 등록. 이름이 'trail:'로 시작하면 리본용, 'lens:'로 시작하면 화면 렌즈용이다.
+        shader(name, body) { shaderBodies.set(name, body); },
+        shaders: () => shaderBodies,
+        atlas(painter) { atlasPainter = painter; },
+        CELL,
         fallback(fn) { fallback = fn; },
         defined: effectId => definitions.has(effectId),
         resolve: effectId => definitions.get(effectId) || (fallback && fallback(effectId)) || null

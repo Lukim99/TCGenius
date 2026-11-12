@@ -39,7 +39,9 @@ body.no-panel #toggle,body.no-panel #status{bottom:10px}
 <div id="status"></div>
 <script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
 <script>
 (async function () {
     const query = new URLSearchParams(location.search), ui = file => '/rpg-ui?file=' + encodeURIComponent(file);
@@ -61,15 +63,18 @@ body.no-panel #toggle,body.no-panel #status{bottom:10px}
         g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
         if (background) { const s = Math.max(W / background.width, H / background.height); g.drawImage(background, (W - background.width * s) / 2, (H - background.height * s) / 2, background.width * s, background.height * s); }
         g.fillStyle = 'rgba(2,4,10,.25)'; g.fillRect(0, 0, W, H);
-        const p = points(), figure = (img, x, y, height, maxWidth, flip, flash) => {
+        // 장면이 시키는 몸짓(돌진, 넉백, 번쩍임)을 캐릭터 그림에 반영한다. 실제 호스트도 같은 값을 읽는다.
+        const p = points(), figure = (img, x, y, height, maxWidth, flip, flash, tag) => {
             if (!img) return;
+            const pose = window.lab && window.lab.fx && window.lab.fx.pose(tag) || { nx: 0, ny: 0, sx: 1, sy: 1, rot: 0, alpha: 1, flash: 0 };
             let h = height * H, w = h * img.width / img.height; if (w > maxWidth * W) { h *= maxWidth * W / w; w = maxWidth * W; }
-            g.save(); g.translate(x * W, y * H); if (flip) g.scale(-1, 1);
-            if (flash) g.filter = 'brightness(2.2)';
+            g.save(); g.translate((x + pose.nx) * W, (y + pose.ny) * H); g.rotate(pose.rot); g.translate(0, h / 2); g.scale(pose.sx, pose.sy); g.translate(0, -h / 2); if (flip) g.scale(-1, 1);
+            g.globalAlpha = pose.alpha;
+            if (flash || pose.flash > .02) g.filter = 'brightness(' + (flash ? 2.2 : 1 + pose.flash * 2.4) + ')';
             g.drawImage(img, -w / 2, -h / 2, w, h); g.restore();
         };
-        figure(player, p.me.x, narrow() ? .68 : .66, narrow() ? .62 : .78, narrow() ? .48 : .36, mirror, false);
-        figure(enemy, p.foe.x, narrow() ? .62 : .61, narrow() ? .72 : .88, narrow() ? .5 : .44, mirror, time < hitUntil);
+        figure(player, p.me.x, narrow() ? .68 : .66, narrow() ? .62 : .78, narrow() ? .48 : .36, mirror, false, 'me');
+        figure(enemy, p.foe.x, narrow() ? .62 : .61, narrow() ? .72 : .88, narrow() ? .5 : .44, mirror, time < hitUntil, 'foe');
         requestAnimationFrame(draw);
     }
     requestAnimationFrame(draw);
@@ -90,7 +95,7 @@ body.no-panel #toggle,body.no-panel #status{bottom:10px}
             else role = CombatEffects.effectIdsFor({ action: 'skill', effectTarget: 'both', effectIds: [effectId] }, 'actor').includes(effectId) ? 'actor' : 'target';
         }
         const received = effectId === 'summon:익테봇 피해대행' || o.received;
-        const result = fx.play([effectId], { role, src: received ? p.foe : p.me, dst: received ? p.me : p.foe, event: { action: 'skill', damage: role === 'target' ? 100 : 0 }, cool: 0 });
+        const result = fx.play([effectId], { role, src: received ? p.foe : p.me, dst: received ? p.me : p.foe, tags: received ? { a: 'foe', t: 'me' } : { a: 'me', t: 'foe' }, after: o.after, event: { action: 'skill', damage: role === 'target' ? 100 : 0 }, cool: 0 });
         if (role === 'target' && !received) setTimeout(() => { hitUntil = performance.now() + 220; }, result.delay);
         status.textContent = effectId + ' · ' + role + ' · 타격 ' + result.delay + 'ms';
         return result;

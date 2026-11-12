@@ -55,7 +55,7 @@ function mockAction(pathname, body) {
     }
     const target = isSkill ? combatEffects.SKILL_TARGETS[skillName] : 'target';
     if (target !== 'actor' || skillName === '자폭') {
-        const count = !isSkill && Math.random() < .35 ? 2 : skillName === '포커 못 하시네' ? 5 : 1, critical = Math.random() < .3;
+        const count = !isSkill && Math.random() < .35 ? 2 : skillName === '포커 못 하시네' ? 9 : 1, critical = Math.random() < .3;
         event.hits = Array.from({ length: count }, (_, index) => ({ damage: 20000 + Math.floor(Math.random() * 60000), critical: critical && index === 0, destiny: false, isComboHit: index > 0 && !isSkill }));
         // 실제 서버는 장비 추가 피해 같은 줄마다 타격을 따로 보낸다. 스킬에도 그런 타격 하나를 붙여 둔다.
         if (isSkill) event.hits.push({ damage: 8000 + Math.floor(Math.random() * 8000), critical: false, destiny: false, label: '고정 피해' });
@@ -100,7 +100,9 @@ const FIELD_PAGE = `<!doctype html>
 <script>window.HFIELD_ME="실험실";</script>
 <link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
 ${DEBUG_HOOK}
 <script src="/static/combat-shortcuts.js"></script>
 <script src="/static/hfield.js"></script>
@@ -154,7 +156,9 @@ const WB_PAGE = `<!doctype html>
 <script>window.WORLD_BOSS_ME="실험실";</script>
 <link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
 ${DEBUG_HOOK}
 <script src="/static/combat-shortcuts.js"></script>
 <script src="/static/worldboss.js"></script>
@@ -198,7 +202,9 @@ const PVP_PAGE = `<!doctype html>
 <script>window.PVP_ME="실험실";window.PVP_OPPONENT="상대";</script>
 <link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
 ${DEBUG_HOOK}
 <script src="/static/pvp.js"></script>
 </body></html>`;

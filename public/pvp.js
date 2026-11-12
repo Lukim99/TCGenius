@@ -7,7 +7,7 @@
 
     const uiAsset = file => '/rpg-ui?file=' + encodeURIComponent(file);
     const effectCatalog = window.CombatEffects || null;
-    const ultimateCutscene = window.UltimateCutscene?.create({ now: () => Date.now() + clockOffset });
+    const ultimateCutscene = window.UltimateCutscene?.create({ now: () => Date.now() + clockOffset, fold: .64 });
     const combatFx = window.CombatFX || null;
     // 연출이 대상에 닿기까지 걸리는 시간(ms). 그만큼 수치와 타격음을 늦춘다.
     const leadOf = played => typeof played === 'number' ? played : played ? played.delay : 0;
@@ -217,7 +217,10 @@
         playFx(key, effectIds, options) {
             const opts = options || {}, role = opts.role === 'actor' ? 'actor' : 'target', other = key === 'me' ? 'opp' : 'me';
             const from = role === 'actor' ? key : opts.from && opts.from !== key ? opts.from : other, to = role === 'actor' ? other : key;
-            return this.fx.play(effectIds, { role, src: combatAnchor(from, 'actor'), dst: combatAnchor(to, 'target'), srcHalf: .22, dstHalf: .32, event: opts.event, hit: opts.hit });
+            // after: 궁극기 컷씬이 접힌 뒤에 장면을 시작한다. tags: 장면이 시전자와 대상에게 시키는 몸짓을 어느 쪽 캐릭터가 받는지.
+            const played = this.fx.play(effectIds, { role, src: combatAnchor(from, 'actor'), dst: combatAnchor(to, 'target'), srcHalf: .22, dstHalf: .32, event: opts.event, hit: opts.hit, after: this.fxAfter || 0, tags: { a: from, t: to } });
+            this.lastPlayed = played;
+            return played;
         }
         resize() {
             const dpr = Math.min(2, devicePixelRatio || 1), w = Math.max(1, Math.round(innerWidth * dpr)), h = Math.max(1, Math.round(innerHeight * dpr));
@@ -383,11 +386,13 @@
             const fit = this.fit(key, narrow ? .62 : .78, narrow ? .46 : .36);
             const progress = clamp((time - anim.attackAt) / (anim.kind === 'skill' ? 620 : 430), 0, 1);
             const lunge = anim.kind === 'buff' ? 0 : progress < 1 ? Math.sin(progress * Math.PI) * .12 * (mirror ? -1 : 1) : 0;
-            const x = sideX(key, narrow) + lunge, y = (narrow ? .68 : .66) - idle;
-            const width = mirror ? -fit.width : fit.width;
+            // 장면이 시키는 몸짓(돌진, 넉백, 번쩍임). 장면이 캐릭터를 직접 움직이는 동안에는 기본 돌진을 쉰다.
+            const pose = this.fx ? this.fx.pose(key) : null, px = pose ? pose.nx : 0, py = pose ? pose.ny : 0, psx = pose ? pose.sx : 1, psy = pose ? pose.sy : 1, prot = pose ? pose.rot : 0, palpha = pose ? pose.alpha : 1, pflash = pose ? pose.flash : 0;
+            const x = sideX(key, narrow) + (pose || time < (anim.castUntil || 0) ? 0 : lunge) + px, y = (narrow ? .68 : .66) - idle + py;
+            const width = (mirror ? -fit.width : fit.width) * psx;
             this.drawAura(info, key, x, y, width, fit.height, time);
             this.draw(null, x, .83, narrow ? .4 : .27, .11, { mode: 1, color: mirror ? [1,.14,.2,.24] : [.08,.45,1,.25] });
-            this.draw(texture, x, y, width, fit.height, { flash: time >= (anim.hitFrom || 0) && time < anim.hitUntil ? .75 : 0 });
+            this.draw(texture, x, y + fit.height * (1 - psy) / 2, width, fit.height * psy, { rotation: prot, color: [1, 1, 1, palpha], flash: Math.max(pflash * .85, time >= (anim.hitFrom || 0) && time < anim.hitUntil ? .75 : 0) });
             const pulse = time - anim.defendAt < 620 ? 1 - (time - anim.defendAt) / 620 : 0;
             if (info && Number(info.defendUntil || 0) > now()) {
                 const wave = reducedMotion ? .5 : (Math.sin(time / 380) + 1) * .5;
@@ -486,8 +491,8 @@
             this.text('레이팅 '+number(side.rating),infoX,y+32,9,700,'left','#e8b04b',infoW-52);
             if(Number(side.defendUntil||0)>now())this.badge(infoRight,y+25,'방어 중','#7ec4ff');
             const hpY=y+(narrow?46:52),mpY=y+(narrow?66:72);
-            this.bar(infoX,hpY,infoW,6,side.hp,side.maxHp,'#b92d2d',side.shield);
-            this.text(number(side.hp)+' / '+number(side.maxHp),infoRight,hpY-8,8,800,'right','#e9e5dc');
+            this.bar(infoX,hpY,infoW,6,shownHp(side),side.maxHp,'#b92d2d',side.shield);
+            this.text(number(shownHp(side))+' / '+number(side.maxHp),infoRight,hpY-8,8,800,'right','#e9e5dc');
             this.bar(infoX,mpY,infoW,6,side.resource??side.mp,side.maxResource??side.maxMp,'#147fc4');
             this.text((side.resourceLabel||'MP')+' '+number(side.resource??side.mp),infoRight,mpY-8,8,800,'right','#a9b6c4');
             if(effectCatalog&&side.attackOrder)effectCatalog.drawAttackOrder(this,side.attackOrder,x+8,y+ph-25,pw-16);
@@ -505,8 +510,8 @@
             this.text(side.cardFormatted||[side.cardSkin,side.cardName].filter(Boolean).join(' '),infoX,y+34,narrow?8:10,700,'left','#aeb4bf',infoW);
             const hpTextY=y+(narrow?48:52),hpBarY=y+(narrow?54:59),mpTextY=y+(narrow?65:71),mpBarY=y+(narrow?71:78);
             this.text('HP',infoX,hpTextY,8,800,'left','#bbb1a0');
-            this.text(number(side.hp)+(Number(side.shield||0)>0?' +'+number(side.shield):''),infoRight,hpTextY,8,800,'right','#e9e5dc');
-            this.bar(infoX,hpBarY,infoW,6,side.hp,side.maxHp,'#b92d2d',side.shield);
+            this.text(number(shownHp(side))+(Number(side.shield||0)>0?' +'+number(side.shield):''),infoRight,hpTextY,8,800,'right','#e9e5dc');
+            this.bar(infoX,hpBarY,infoW,6,shownHp(side),side.maxHp,'#b92d2d',side.shield);
             this.text('MP',infoX,mpTextY,8,800,'left','#bbb1a0');
             this.text(number(side.mp),infoRight,mpTextY,8,800,'right','#e9e5dc');
             this.bar(infoX,mpBarY,infoW,6,side.resource??side.mp,side.maxResource??side.maxMp,'#147fc4');
@@ -702,6 +707,26 @@
         return new Promise(resolve => { dialog = { title, message, okLabel, cancel: () => { dialog = null; resolve(false); }, ok: () => { dialog = null; resolve(true); } }; });
     }
 
+    // 사건은 한 번에 하나씩 보인다. 스킬을 시전하는 동안에는 뒤따르는 사건(상대의 반격, 소환수, 지속 피해)을 기다리게 해 전투가 잠시 멈춘다.
+    // 서버의 전투는 계속 흐르므로, 멈추는 것은 보여 주는 순서다. 밀린 사건이 많으면 기다림을 줄여 따라잡는다.
+    const eventQueue = [], hpHold = { me: null, opp: null };
+    let pumping = false, pendingResult = null;
+    const shownHp = side => { const key = view && side === view.me ? 'me' : view && side === view.opp ? 'opp' : null; return key && hpHold[key] != null ? Math.max(Number(side.hp || 0), hpHold[key]) : side.hp; };
+    function pump() {
+        if (pumping) return;
+        const event = eventQueue.shift();
+        if (!event) {
+            hpHold.me = hpHold.opp = null;
+            if (pendingResult) { const result = pendingResult; pendingResult = null; stage = 'result'; audio.stopBgm(); showResult(result, false); }
+            return;
+        }
+        pumping = true;
+        let wait = 140;
+        try { wait = playEvent(event) || 140; } catch (error) { console.warn('[pvp] event', error); }
+        if (eventQueue.length > 6) wait = Math.min(wait, 200);
+        setTimeout(() => { pumping = false; pump(); }, Math.min(4200, wait));
+    }
+
     function applyView(next, options) {
         if (!next) return;
         if (view?.id !== next.id) ultimateCutscene?.reset();
@@ -710,22 +735,21 @@
         const events = (next.events || []).filter(event => Number(event.seq || 0) > lastSeq).sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
         lastSeq = events.reduce((max, event) => Math.max(max, Number(event.seq || 0)), Math.max(lastSeq, Number(next.seq || 0)));
         const hadResult = !!(view && view.result);
+        // 결과 화면은 남은 사건(마지막 일격의 연출)을 다 보인 뒤에 띄운다.
+        const deferResult = !!next.result && !hadResult && !silent && (events.length > 0 || pumping || eventQueue.length > 0);
+        if (!silent && view && events.length) ['me', 'opp'].forEach(key => {
+            const foe = key === 'me' ? 'opp' : 'me';
+            if (hpHold[key] == null && view[key] && events.some(event => (event.actor === 'opp' ? 'opp' : 'me') === foe && Number(event.damage || 0) > 0)) hpHold[key] = Number(view[key].hp || 0);
+        });
         view = next;
-        stage = next.result ? 'result' : 'battle';
+        stage = next.result && !deferResult && !pendingResult ? 'result' : 'battle';
         if (renderer) renderer.setSides(next.me, next.opp);
         ultimateCutscene?.prepare(next.me?.skills, next.me?.cardName);
         ultimateCutscene?.prepare(next.opp?.skills, next.opp?.cardName);
         if (silent) events.forEach(event => addLog(event.text));
-        else {
-            let delay = 0;
-            events.forEach(event => {
-                setTimeout(() => playEvent(event), delay);
-                const hitCount = Array.isArray(event.hits) ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0).length : 0;
-                delay += Math.max(140, hitCount * 95 + 45);
-            });
-        }
+        else { events.forEach(event => eventQueue.push(event)); pump(); }
         if (stage === 'battle') audio.playBgm(); else audio.stopBgm();
-        if (next.result && !hadResult) showResult(next.result, silent);
+        if (next.result && !hadResult) { if (deferResult) pendingResult = next.result; else showResult(next.result, silent); }
     }
 
     function showResult(result, silent) {
@@ -738,6 +762,10 @@
     }
 
     function playEvent(event) {
+        try { return presentEvent(event); }
+        finally { if (renderer) renderer.fxAfter = 0; }
+    }
+    function presentEvent(event) {
         if (!event) return;
         const actor = event.actor === 'opp' ? 'opp' : 'me', target = actor === 'me' ? 'opp' : 'me', action = event.action || 'attack';
         if (!event.effectElement && view && view[actor]) {
@@ -745,16 +773,21 @@
             if (skill && skill.element) event.effectElement = skill.element;
         }
         if (effectCatalog) effectCatalog.annotateEvent(event);
-        // 궁극기 컷씬과 이 사건의 연출은 함께 시작한다.
+        // 궁극기는 컷씬이 먼저 나오고, 컷씬이 접힌 뒤에 이 사건의 장면을 시작한다.
         const cut = ultimateCutscene?.play(event, view?.[actor]?.cardName) || 0;
+        if (renderer) renderer.fxAfter = renderer.fx && cut > 0 ? Math.max(0, cut - 70) : 0;
+        // cast: 이 사건의 장면이 끝나는 시각(ms). hitTimes: 타수마다 수치를 낼 시각.
+        let cast = 0, hitTimes = null;
+        const note = played => { if (played && typeof played === 'object') { cast = Math.max(cast, played.cast || 0); if (played.hits) hitTimes = played.hits; } return played; };
+        const spacing = Math.max(140, (Array.isArray(event.hits) ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0).length : 0) * 95 + 45);
         const skillAudience = action === 'skill' && effectCatalog && effectCatalog.skillTarget ? effectCatalog.skillTarget(event) : action === 'skill' ? 'target' : null;
         const hasTargetImpact = Number(event.damage || 0) > 0 || (Array.isArray(event.hits) && event.hits.some(hit => Number(hit && hit.damage || 0) > 0));
         addLog(event.text, actor === 'opp' && Number(event.damage || 0) > 0 ? 'bad' : action === 'start' ? 'good' : '');
         if (action === 'start') { hud.showBanner('전투 시작', view && view.opp ? view.opp.name : ''); audio.play('start', .76); hud.impact(true); return; }
         if (action === 'ko' || action === 'timeout' || action === 'forfeit') return;
         if (action === 'skill' && renderer) {
-            if (skillAudience === 'actor' || skillAudience === 'both') renderer.castEffect(actor,event,'actor');
-            if ((skillAudience === 'target' || skillAudience === 'both') && !hasTargetImpact) renderer.castEffect(target,event,'target');
+            if (skillAudience === 'actor' || skillAudience === 'both') note(renderer.castEffect(actor,event,'actor'));
+            if ((skillAudience === 'target' || skillAudience === 'both') && !hasTargetImpact) note(renderer.castEffect(target,event,'target'));
         }
         if (action === 'defend') { if (renderer) { renderer.defendPulse(actor); renderer.playEffectAssets(actor,event.effectIds,{role:'actor'}); } audio.play('count', .3); return; }
         if (action === 'shield') {
@@ -779,6 +812,7 @@
                 const summonAbsorb = hit.type === 'summonAbsorbed';
                 const lead = renderer ? leadOf(shieldAbsorb || summonAbsorb ? renderer.combatEffect(target,event,hit,actor) : renderer.tickHit(target,event,hit,actor)) : 0;
                 const land = () => {
+                if (index === 0) hpHold[target] = null;
                 hud.addPop({
                     side: target,
                     dot: action === 'dot', text: shieldAbsorb ? '(-' + number(hit.damage) + ')' : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
@@ -794,13 +828,15 @@
                 if (index === 0) tickLead = present(); else setTimeout(present, tickLead + index * 95);
             });
             if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, text: 'HP +' + number(event.targetHeal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: tickHits.length * 95 }); }
-            return;
+            return spacing;
         }
         if (renderer && !(action === 'skill' && skillAudience === 'actor')) renderer.lunge(actor, action);
         const hits = Array.isArray(event.hits) ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
+        let hitLead = 0;
+        // 타수마다 수치를 낼 시각: 여러 번 때리는 장면은 장면이 정한 시각을 따르고, 그 밖의 줄은 타격 뒤에 잇따른다.
+        const hitAt = index => !index || !hitTimes ? hitLead + index * 95 : index < hitTimes.length ? hitTimes[index] : hitTimes[hitTimes.length - 1] + (index - hitTimes.length + 1) * 95;
         if (damage > 0 || hits.length > 0) {
             const displayedHits = hits.length ? hits : [{ damage, critical }];
-            let hitLead = 0;
             displayedHits.forEach((hit, index) => {
                 const present = () => {
                 const hitCritical = !!hit.critical;
@@ -808,7 +844,9 @@
                 const summonAbsorb = hit.type === 'summonAbsorbed';
                 const presentationHit = Object.assign({}, hit, { presentationIndex: index });
                 const lead = renderer ? leadOf(shieldAbsorb || summonAbsorb ? renderer.combatEffect(target,event,presentationHit,actor) : renderer.strike(target, Object.assign({}, event, { criticalCount: hitCritical ? 1 : 0 }),presentationHit,actor)) : 0;
+                if (index === 0 && renderer) note(renderer.lastPlayed);
                 const land = () => {
+                if (index === 0) hpHold[target] = null;
                 hud.addPop({
                     side: target, text: shieldAbsorb ? '(-' + number(hit.damage) + ')' : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
                     color: shieldAbsorb || effectCatalog.damageStyle(event,hit).fixed ? '#ffffff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : hitCritical ? '#ff5d4d' : '#ffe06e',
@@ -822,16 +860,20 @@
                 if (lead > 0) setTimeout(land, lead); else land();
                 return lead;
                 };
-                if (index === 0) hitLead = present(); else setTimeout(present, hitLead + index * 95);
+                if (index === 0) hitLead = present(); else setTimeout(present, hitAt(index));
             });
             if (action === 'skill' && (cut || !(renderer && renderer.fx))) audio.play('skill', .68);
         } else if (action === 'skill' && (cut || !(renderer && renderer.fx))) audio.play('skill', .68);
+        const after = hits.length ? hitAt(hits.length - 1) : hitLead;
         const reflectedHits = Array.isArray(event.reflectedHits) ? event.reflectedHits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
-        reflectedHits.forEach((hit, index) => setTimeout(() => { if(renderer)renderer.combatEffect(actor,{action:'dot',skillName:'가시 반사',effectElement:'암',effectIds:hit.effectIds},hit,target);hud.addPop({ side: actor, text: '-' + number(hit.damage), color: '#d7a2ff', size: 22, y: combatPopY(), sub: hit.label || '가시 반사' }); }, (hits.length + index) * 95));
-        if (reflectedHits.length === 0 && Number(event.selfDamage || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','자해')],{role:'target'});hud.addPop({ side: actor, text: '-' + number(event.selfDamage), color: '#ff8f87', size: 22, y: combatPopY(), delay: 120 }); }
-        if (Number(event.heal || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: actor, text: 'HP +' + number(event.heal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: 120 }); }
-        if (Number(event.mpRecovery || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','MP 회복')],{role:'actor'});hud.addPop({ side: actor, text: 'MP +' + number(event.mpRecovery), color: '#72c7ff', size: 21, y: recoveryPopY()+.04, delay: 150 }); }
-        if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, text: 'HP +' + number(event.targetHeal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: 120 }); }
+        reflectedHits.forEach((hit, index) => setTimeout(() => { if(renderer)renderer.combatEffect(actor,{action:'dot',skillName:'가시 반사',effectElement:'암',effectIds:hit.effectIds},hit,target);hud.addPop({ side: actor, text: '-' + number(hit.damage), color: '#d7a2ff', size: 22, y: combatPopY(), sub: hit.label || '가시 반사' }); }, after + (index + 1) * 95));
+        if (reflectedHits.length === 0 && Number(event.selfDamage || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','자해')],{role:'target'});hud.addPop({ side: actor, text: '-' + number(event.selfDamage), color: '#ff8f87', size: 22, y: combatPopY(), delay: 120 + after }); }
+        if (Number(event.heal || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: actor, text: 'HP +' + number(event.heal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: 120 + after }); }
+        if (Number(event.mpRecovery || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','MP 회복')],{role:'actor'});hud.addPop({ side: actor, text: 'MP +' + number(event.mpRecovery), color: '#72c7ff', size: 21, y: recoveryPopY()+.04, delay: 150 + after }); }
+        if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, text: 'HP +' + number(event.targetHeal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: 120 + after }); }
+        // 장면이 시전자를 직접 움직이는 스킬은 기본 돌진을 쉬게 하고, 장면이 끝날 때까지 다음 사건을 기다리게 한다.
+        if (action === 'skill' && renderer && renderer.fx) renderer.anim[actor].castUntil = performance.now() + cast;
+        return Math.max(spacing, action === 'skill' ? cast : 0);
     }
 
     async function loadLobby() {

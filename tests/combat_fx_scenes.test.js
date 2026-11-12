@@ -6,7 +6,9 @@ const ROOT = path.join(__dirname, '..');
 globalThis.CombatEffects = require('../public/combat-effects');
 const combatEffects = globalThis.CombatEffects;
 const combatFx = require('../public/combat-fx');
+require('../public/combat-fx-kit');
 require('../public/combat-fx-scenes');
+require('../public/combat-fx-skills');
 
 // 이미지 자산은 git 밖(S3 동기화 폴더)에 있다. 다른 작업 사본에서는 RPG_UI_DIR로 그 폴더를 가리킨다.
 const UI_ROOT = process.env.RPG_UI_DIR || path.join(ROOT, 'DB', 'RPGenius', 'ui');
@@ -27,13 +29,26 @@ assert.ok(effectIds.length >= 224, '이펙트 그림 목록');
 for (const effectId of effectIds) {
     const definition = combatFx.resolve(effectId);
     assert.ok(definition && typeof definition.run === 'function', effectId + ' 장면');
-    assert.ok(Number(definition.impact || 0) >= 0 && Number(definition.impact || 0) <= .6, effectId + ' 타격 시각은 0.6초 안이어야 조작감이 늦지 않다.');
-    (definition.images || []).forEach(id => assert.ok(fs.existsSync(imagePath(id)), effectId + ' 장면이 쓰는 그림 ' + id));
+    // 스킬은 시전하는 동안 전투가 멈추므로 타격이 늦어도 된다(궁극기는 컷씬 뒤 1.7초 안). 그 밖의 이펙트는 0.6초 안에 닿아야 조작감이 늦지 않다.
+    const impact = Number(definition.impact || 0), remade = definition.cast != null;
+    assert.ok(impact >= 0 && impact <= (remade ? 1.7 : .6), effectId + ' 타격 시각');
+    if (remade) {
+        const hits = definition.hits || [impact];
+        assert.strictEqual(hits[0], impact, effectId + ' 첫 타수는 타격 시각과 같다.');
+        hits.forEach((time, index) => assert.ok(!index || time > hits[index - 1], effectId + ' 타수 시각은 뒤로 갈수록 늦다.'));
+        assert.ok(definition.cast >= hits[hits.length - 1] && definition.cast <= 2.4, effectId + ' 시전 길이는 마지막 타격 뒤, 2.4초 안이다.');
+    }
+    if (effectId.startsWith('skill:') && !['skill:처형박수', 'skill:자폭', 'skill:익테봇 소환'].includes(effectId)) assert.ok(remade, effectId + '는 스킬 장면집의 장면이어야 한다.');
+    // 'paint:'으로 시작하는 것은 장면집이 직접 그린 도형이라 파일이 없다.
+    (definition.images || []).filter(id => !id.startsWith('paint:')).forEach(id => assert.ok(fs.existsSync(imagePath(id)), effectId + ' 장면이 쓰는 그림 ' + id));
     if (/^(skill|summon|element|combat):/.test(effectId)) assert.ok(combatFx.defined(effectId), effectId + '는 전용 장면이 있어야 한다.');
 }
 
 // 장면이 부르는 소리는 모두 파일로 있어야 하고, 쓰지 않는 파일은 남기지 않는다.
-const source = fs.readFileSync(path.join(ROOT, 'public', 'combat-fx-scenes.js'), 'utf8');
+const source = ['combat-fx-scenes.js', 'combat-fx-skills.js', 'combat-fx-kit.js'].map(file => fs.readFileSync(path.join(ROOT, 'public', file), 'utf8')).join(String.fromCharCode(10));
+// 장면이 쓰는 절차 셰이더는 등록되어 있어야 한다.
+for (const match of source.matchAll(/S\.(field|trail|lens)\('([a-z:]+)'/g)) { const name = (match[1] === 'field' ? '' : match[1] + ':') + match[2]; assert.ok(combatFx.shaders().has(name), '셰이더 ' + name); }
+for (const match of source.matchAll(/shader: '([a-z:]+)'/g)) assert.ok(combatFx.shaders().has(match[1]), '셰이더 ' + match[1]);
 const sounds = new Set(combatFx.commonSounds);
 effectIds.forEach(effectId => (combatFx.resolve(effectId).sounds || []).forEach(name => sounds.add(name)));
 for (const match of source.matchAll(/S\.(?:sfx|hit)\(\s*'([a-z_]+)'/g)) sounds.add(match[1]);
@@ -59,16 +74,21 @@ for (const [effectId, spec] of combatFx.partSpecs()) {
 const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
 assert.strictEqual(server.split('<script src="/static/combat-fx.js"></script>').length - 1, 4, '필드, 일반 필드, 월드보스, PVP 페이지가 연출 엔진을 싣는다.');
 assert.strictEqual(server.split('<script src="/static/combat-fx-scenes.js"></script>').length - 1, 4, '네 페이지가 장면집을 싣는다.');
+// 재료집은 엔진 바로 다음에, 스킬 장면집은 장면집 바로 다음에 싣는다.
+const ordered = ['combat-fx.js', 'combat-fx-kit.js', 'combat-fx-scenes.js', 'combat-fx-skills.js'].map(file => '<script src="/static/' + file + '"></script>');
+assert.strictEqual(server.split(String.fromCharCode(10)).map(line => line.trim()).filter((line, index, lines) => ordered.every((tag, offset) => lines[index + offset] === tag)).length, 4, '네 페이지가 재료집과 스킬 장면집을 순서대로 싣는다.');
 assert.strictEqual(server.split('summons: getFieldSummonViews(user),').length - 1, 3, '필드와 월드보스 상태가 곁에 둘 소환수를 내려보낸다.');
 // 천상과 지옥(낙원)은 같은 hfield.js를 내장해 쓰므로, 그 페이지도 hfield.js보다 먼저 엔진과 장면집을 싣는다.
 const paradisePage = fs.readFileSync(path.join(ROOT, 'paradise_web.js'), 'utf8');
-assert.ok(/combat-effects\.js" defer><\/script><script src="\/static\/combat-fx\.js" defer><\/script><script src="\/static\/combat-fx-scenes\.js" defer><\/script>[^`]*\/static\/hfield\.js"/.test(paradisePage), '천상과 지옥 페이지도 hfield.js보다 먼저 연출 엔진과 장면집을 싣는다.');
+assert.ok(/combat-effects\.js" defer><\/script><script src="\/static\/combat-fx\.js" defer><\/script><script src="\/static\/combat-fx-kit\.js" defer><\/script><script src="\/static\/combat-fx-scenes\.js" defer><\/script><script src="\/static\/combat-fx-skills\.js" defer><\/script>[^`]*\/static\/hfield\.js"/.test(paradisePage), '천상과 지옥 페이지도 hfield.js보다 먼저 연출 엔진과 장면집을 싣는다.');
 assert.ok(/const audio = embedded \? \{[\s\S]{0,160}get muted\(\) \{ return !!window\.ParadiseAudio\?\.muted; \}/.test(fs.readFileSync(path.join(ROOT, 'public', 'hfield.js'), 'utf8')), '낙원에서는 연출 효과음이 낙원의 소리 끄기를 따른다.');
 for (const file of ['hfield.js', 'pvp.js', 'worldboss.js']) {
     const client = fs.readFileSync(path.join(ROOT, 'public', file), 'utf8');
     assert.ok(/combatFx\s*&&\s*effectCatalog\s*\?\s*combatFx\.create\(/.test(client), file + '는 연출 엔진을 만들 수 없을 때를 대비해야 한다.');
     assert.ok(client.includes('combatFx.companions(this.fx,'), file + '는 소환수를 곁에 띄운다.');
     assert.ok(client.includes('effectSprites'), file + '는 엔진이 없을 때 쓰는 기존 그림 표시를 지우지 않는다.');
-    assert.ok(/ultimateCutscene\?\.play\(/.test(client) && !/\.hold\(/.test(client), file + '는 궁극기 컷씬과 그 사건의 연출을 함께 시작한다(사용자 지정 2026-11-12).');
+    // 궁극기는 컷씬이 먼저 나오고, 빠르게 접힌 뒤에 장면이 시작한다(사용자 지정 2026-11-12, 같은 날 '함께 시작'에서 바뀜).
+    assert.ok(/ultimateCutscene\?\.play\(/.test(client) && /fold:\s*\.64/.test(client) && /fxAfter\s*=\s*(?:this|renderer)\.fx\s*&&\s*cut\s*>\s*0/.test(client) && /after:\s*this\.fxAfter/.test(client), file + '는 컷씬이 접힌 뒤에 그 사건의 연출을 시작한다.');
+    assert.ok(/\.pose\(/.test(client), file + '는 장면이 시키는 몸짓을 캐릭터에 반영한다.');
 }
 console.log('combat fx scenes test passed (' + effectIds.length + ' effects, ' + files.size + ' sounds)');

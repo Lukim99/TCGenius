@@ -5,7 +5,7 @@
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),ratio=(v,m)=>m>0?clamp(Number(v||0)/Number(m),0,1):0;
     const number=v=>Math.round(Number(v||0)).toLocaleString('ko-KR');
     const uiAsset=file=>'/rpg-ui?file='+encodeURIComponent(file),effectCatalog=window.CombatEffects,combatFx=window.CombatFX||null;
-    const ultimateCutscene=window.UltimateCutscene?.create({now:()=>Date.now()+clockOffset});
+    const ultimateCutscene=window.UltimateCutscene?.create({now:()=>Date.now()+clockOffset,fold:.64});
     const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
     const sideX=(side,narrow)=>side==='target'?(narrow?.70:.67):(narrow?.23:.27);
     const combatPopY=()=>innerWidth<700?.6:.44,recoveryPopY=()=>innerWidth<700?.66:.5;
@@ -54,7 +54,7 @@
         audio.play(gained?'clear':'count',gained?.82:.32);
     }
     document.getElementById('wbRewardClose').onclick=()=>{rewardDialog.close();hudCanvas.focus();};
-    function applyState(next){if(!next)return;const entering=next.inField&&!(state&&state.inField);state=next;potionShortcuts.refresh();clockOffset=Number(next.serverNow||Date.now())-Date.now();if(!selectedBoss&&next.bosses&&next.bosses.length)selectedBoss=next.bosses[0].name;renderer.applyState(next);if(entering){logs=[];presentationEpoch++;hud.damagePops=[];audio.play('start',.76);hud.showBanner('전투 시작',next.current.name);hud.impact(true);}if(next.inField)audio.playBgm();else{audio.stopBgm();hud.consumableMenu=false;}renderSelection();}
+    function applyState(next){if(!next)return;const entering=next.inField&&!(state&&state.inField);previousBossHp=state&&state.current?Number(state.current.hp||0):null;state=next;potionShortcuts.refresh();clockOffset=Number(next.serverNow||Date.now())-Date.now();if(!selectedBoss&&next.bosses&&next.bosses.length)selectedBoss=next.bosses[0].name;renderer.applyState(next);if(entering){logs=[];presentationEpoch++;hud.damagePops=[];audio.play('start',.76);hud.showBanner('전투 시작',next.current.name);hud.impact(true);}if(next.inField)audio.playBgm();else{audio.stopBgm();hud.consumableMenu=false;}renderSelection();}
 
     const selectionLayer=document.getElementById('wbSelection'),skillCards=document.getElementById('wbSkillCards');
     let selectionKey='';
@@ -95,7 +95,7 @@
             // 이펙트 그림을 장면 단위로 움직이는 연출 엔진. 만들 수 없으면 기존의 정적 그림 표시로 남는다.
             this.fx=combatFx&&effectCatalog?combatFx.create({scene:canvas,muted:()=>audio.muted}):null;
             this.textures=new Map();this.active='idle';this.animationAt=performance.now();
-            this.effect=null;this.lastState=null;this.lastPose=null;this.previousPose=null;this.effectSprites=[];this.recentEffects=new Map();this.playerAttackAt=-1000;this.hitUntil=0;
+            this.effect=null;this.lastState=null;this.lastPose=null;this.previousPose=null;this.effectSprites=[];this.recentEffects=new Map();this.playerAttackAt=-1000;this.hitUntil=0;this.fxAfter=0;this.castUntil=0;this.lastPlayed=null;
             this.frame=requestAnimationFrame(t=>this.render(t));
             if(!this.gl)return;
             const gl=this.gl,vs=gl.createShader(gl.VERTEX_SHADER),fs=gl.createShader(gl.FRAGMENT_SHADER);
@@ -167,7 +167,10 @@
             if(this.fx){
                 // 플레이어가 맞는 사건(actor 쪽에 hit이 있는 경우)은 보스가 시전자, 플레이어가 대상이다.
                 const p=this.fxPoints(),u=this.fx.unit,incoming=role==='actor'&&!!hit,ids=effectCatalog.effectIdsFor(event,role,hit);
-                return this.fx.play(ids,incoming?{role:'target',src:p.boss,dst:p.player,srcHalf:p.bossHalf/u,dstHalf:p.playerHalf/u,event,hit}:{role,src:p.player,dst:p.boss,srcHalf:p.playerHalf/u,dstHalf:p.bossHalf/u,event,hit});
+                // after: 궁극기 컷씬이 접힌 뒤에 장면을 시작한다. tags: 장면이 시키는 몸짓을 받는 쪽.
+                const played=this.fx.play(ids,incoming?{role:'target',src:p.boss,dst:p.player,srcHalf:p.bossHalf/u,dstHalf:p.playerHalf/u,event,hit,tags:{a:'foe',t:'me'}}:{role,src:p.player,dst:p.boss,srcHalf:p.playerHalf/u,dstHalf:p.bossHalf/u,event,hit,after:this.fxAfter,tags:{a:'me',t:'foe'}});
+                this.lastPlayed=played;
+                return played;
             }
             const now=performance.now(),candidates=effectCatalog.unique(effectCatalog.effectIdsFor(event,role,hit)).filter(id=>now-(this.recentEffects.get(role+':'+id)??-Infinity)>=760);
             effectCatalog.presentationEffectIds(candidates,2).forEach((id,index)=>{
@@ -187,9 +190,12 @@
                 const boss=this.boss(),effects=boss&&boss.assets&&boss.assets.effects||{};
                 this.effect={url:effects[key],at:time,duration:key==='curse'?700:450};
             }
-            if(event.action==='skill'||event.action==='consumable'||event.action==='heal'||event.action==='shield')this.playEffects(event,'actor');
-            if((event.action==='attack'||event.action==='skill')&&(Number(event.damage)>0||(event.hits||[]).length))this.playerAttackAt=time;
+            let played=null;
+            if(event.action==='skill'||event.action==='consumable'||event.action==='heal'||event.action==='shield')played=this.playEffects(event,'actor');
+            // 스킬은 장면이 시전자를 직접 움직이므로 기본 돌진을 하지 않는다.
+            if((event.action==='attack'||event.action==='skill'&&!this.fx)&&(Number(event.damage)>0||(event.hits||[]).length))this.playerAttackAt=time;
             if(event.bossDefeated)this.transition('defeat',time);
+            return played;
         }
         strike(side,event,hit){
             const played=side==='target'?this.playEffects(event,'target',hit):!event.bossAction&&!event.bossRetaliation?this.playEffects(event,'actor',hit):null;
@@ -264,13 +270,15 @@
                         const height=Math.min(480,h*.57,w*(narrow?.43:.32)*480/270);
                         const shake=!reducedMotion&&time<this.hitUntil?Math.sin(time*.12)*4:0;
                         const width=height*270/480,center=w*(narrow?.70:.67)+shake,floor=h*(narrow?.75:.79);
-                        this.drawSheet(animation,(center-width/2)/w,(floor-height)/h,width/w,height/h,time);
+                        // 장면이 시키는 몸짓(돌진, 넉백). 값을 바로 옮겨 적는다(pose가 돌려주는 객체는 다음 호출에서 다시 쓰인다).
+                        const read=tag=>{const pose=this.fx?this.fx.pose(tag):null;return pose?[pose.dx,pose.dy,pose.sx,pose.sy,pose.alpha]:[0,0,1,1,1];},pf=read('foe'),pm=read('me');
+                        this.drawSheet(animation,(center+pf[0]-width*pf[2]/2)/w,(floor+pf[1]-height*pf[3])/h,width*pf[2]/w,height*pf[3]/h,time);
                         const player=this.texture(this.lastState.player&&this.lastState.player.spriteUrl);
                         if(player&&player.texture){
                             const ph=Math.min(height*.72,320),pw=Math.min(ph*player.width/player.height,w*.32);
                             const fitH=pw*player.height/player.width;
                             const lunge=reducedMotion?0:Math.sin(clamp((time-this.playerAttackAt)/240,0,1)*Math.PI)*Math.min(22,w*.035);
-                            this.draw(player,(w*(narrow?.23:.27)-pw/2+lunge+shake)/w,(floor-fitH)/h,pw/w,fitH/h,null,1);
+                            this.draw(player,(w*(narrow?.23:.27)+pm[0]-pw*pm[2]/2+lunge+shake)/w,(floor+pm[1]-fitH*pm[3])/h,pw*pm[2]/w,fitH*pm[3]/h,null,pm[4]);
                         }
                         if(this.effect&&time-this.effect.at<this.effect.duration){
                             const progress=(time-this.effect.at)/this.effect.duration;
@@ -378,8 +386,8 @@
             const boss=state.current;if(!boss)return;
             const narrow=w<650,bw=Math.min(w-120,720),bx=(w-bw)/2,by=18;
             this.text(boss.name,w/2,by+8,narrow?18:22,900,'center','#f7f2e8');
-            this.bar(bx,by+26,bw,narrow?15:19,boss.hp,boss.maxHp,'#b92d2d');
-            this.text(number(boss.hp)+' / '+number(boss.maxHp),w/2,by+35,narrow?8:10,800,'center','#fff');
+            this.bar(bx,by+26,bw,narrow?15:19,shownBossHp(boss),boss.maxHp,'#b92d2d');
+            this.text(number(shownBossHp(boss))+' / '+number(boss.maxHp),w/2,by+35,narrow?8:10,800,'center','#fff');
             this.text('전투 '+(Number(state.elapsedMs||0)/1000).toFixed(1)+'초',narrow?w-12:w/2,by+(narrow?67:58),10,750,narrow?'right':'center','#d8c89f');
             if(state.curseApplied)this.text('회복 봉인',narrow?w-12:w/2,by+(narrow?86:77),11,900,narrow?'right':'center','#e0655c');
             this.playerHud(w,h);this.combatLog(w,h);this.actions(w,h);
@@ -438,6 +446,10 @@
 
     const audio=new WorldBossAudio(),renderer=new Renderer(canvas),hud=new Hud(hudCanvas);
     const potionShortcuts = window.createCombatShortcuts({ account: window.WORLD_BOSS_ME, getState: () => ({ active: !!state?.inField, items: state?.consumables || [], busy: busy || hud.consumableMenu || !!document.getElementById('wbRewardDialog')?.open }), use: itemId => useConsumable(itemId) });
+    // 연출이 닿기 전에는 보스의 체력을 맞기 전 값으로 보인다.
+    let castingUntil=0,previousBossHp=null,bossHold=null;
+    const shownBossHp=boss=>bossHold&&performance.now()<bossHold.until?Math.max(Number(boss.hp||0),bossHold.hp):boss.hp;
+    const casting=()=>performance.now()<castingUntil;
     function schedulePresentation(callback,delay){
         if(!delay)return callback();
         const epoch=presentationEpoch;
@@ -466,32 +478,43 @@
         if(!event)return;
         if(event.message)addLog(event.message,event.defeated?'bad':'');
         if(event.skipped)return;
-        // 궁극기 컷씬과 이 사건의 연출은 함께 시작한다.
+        // 궁극기는 컷씬이 먼저 나오고, 컷씬이 접힌 뒤에 이 사건의 장면을 시작한다.
         const cut=ultimateCutscene?.play(event,state?.player?.cardName)||0;
-        renderer.animate(event);
+        renderer.fxAfter=renderer.fx&&cut>0?Math.max(0,cut-70):0;
+        // cast: 장면이 끝나는 시각(ms). times: 타수마다 수치를 낼 시각.
+        let cast=0,times=null,lead=0;
+        const note=played=>{if(played&&typeof played==='object'){cast=Math.max(cast,played.cast||0);lead=Math.max(lead,played.delay||0);if(played.hits)times=played.hits;}};
+        note(renderer.animate(event));
         const hits=event.hits&&event.hits.length?event.hits:Number(event.damage)>0?[{damage:event.damage,critical:Number(event.criticalCount)>0}]:[];
         const received=event.receivedHits&&event.receivedHits.length?event.receivedHits:Number(event.received)>0?[{damage:event.received}]:[];
         // Match PVP: each hit's pop, effect, sound and impact share one 95ms cue.
         // Incoming damage starts immediately; never put a wind-up after the HP update.
-        hits.forEach((hit,i)=>schedulePresentation(()=>presentHit(event,hit,'target',i),i*95));
+        // 첫 타격의 장면을 시작해 닿는 시각을 알아내고, 이어지는 타격은 장면이 정한 시각(없으면 95ms 간격)에 낸다.
+        const hitAt=i=>!i||!times?lead+i*95:i<times.length?times[i]:times[times.length-1]+(i-times.length+1)*95;
+        if(hits.length){presentHit(event,hits[0],'target',0);note(renderer.lastPlayed);if(lead>0&&previousBossHp!=null)bossHold={until:performance.now()+lead,hp:previousBossHp};}
+        hits.forEach((hit,i)=>{if(i)schedulePresentation(()=>presentHit(event,hit,'target',i),hitAt(i));});
+        renderer.fxAfter=0;
+        const after=hits.length?hitAt(hits.length-1):0;
         received.forEach((hit,i)=>schedulePresentation(()=>presentHit(event,hit,'actor',i),i*95));
         if(event.dodged){renderer.playEffects({action:'attack',effectIds:['combat:회피']},'target');hud.addPop({side:'target',text:'회피',color:'#cdd6e2',size:26});}
         if(event.counterDamage)presentHit({action:'attack',skillName:'카운터',effectIds:['skill:카운터']},{damage:event.counterDamage},'target',0);
         const reflected=event.reflectedHits||[];
-        reflected.forEach((hit,i)=>schedulePresentation(()=>{renderer.strike('actor',{action:'dot',effectIds:hit.effectIds},hit);hud.addPop({side:'actor',text:'-'+number(hit.damage),color:'#d7a2ff',size:22,sub:hit.label||'가시 반사'});},(hits.length+i)*95));
-        if(!reflected.length&&Number(event.selfDamage)>0)hud.addPop({side:'actor',text:'-'+number(event.selfDamage),color:'#ff8f87',size:22,delay:120});
+        reflected.forEach((hit,i)=>schedulePresentation(()=>{renderer.strike('actor',{action:'dot',effectIds:hit.effectIds},hit);hud.addPop({side:'actor',text:'-'+number(hit.damage),color:'#d7a2ff',size:22,sub:hit.label||'가시 반사'});},after+(i+1)*95));
+        if(!reflected.length&&Number(event.selfDamage)>0)hud.addPop({side:'actor',text:'-'+number(event.selfDamage),color:'#ff8f87',size:22,delay:120+after});
         const hp=Number(event.recoveredHp||event.heal||0),mp=Number(event.recoveredMp||event.mpRecovery||0);
         if(event.action==='shield'){
             const amount=Number(event.shield||event.heal||0);if(amount>0)hud.addPop({side:'actor',text:'+'+number(amount)+' 보호막',color:'#eaf2ff',size:22,y:recoveryPopY()});
-        }else if(hp>0)hud.addPop({side:'actor',text:'HP +'+number(hp),color:'#63f29b',size:22,y:recoveryPopY(),delay:hits.length?120:0});
-        if(mp>0)hud.addPop({side:'actor',text:'MP +'+number(mp),color:'#72c7ff',size:21,y:recoveryPopY()+.04,delay:150});
+        }else if(hp>0)hud.addPop({side:'actor',text:'HP +'+number(hp),color:'#63f29b',size:22,y:recoveryPopY(),delay:hits.length?120+after:0});
+        if(mp>0)hud.addPop({side:'actor',text:'MP +'+number(mp),color:'#72c7ff',size:21,y:recoveryPopY()+.04,delay:150+after});
         if(event.action==='consumable'||event.action==='heal')audio.play('potion',.68);
         else if(event.action==='skill'&&(cut||!renderer.fx)||event.curseApplied)audio.play('skill',.68);
         if(event.curseApplied){hud.consumableMenu=false;hud.showBanner('회복 봉인','흑막의 저주');}
         if(event.defeated){audio.play('fail',.72);hud.showBanner('전투 패배','도전을 마쳤습니다.');}
         else if(event.bossDefeated){audio.play('clear',.82);hud.showBanner('월드보스 처치','흑막');}
+        // 시전하는 동안에는 입력과 갱신을 쉬게 해 전투가 잠시 멈춘다(보스의 반격은 장면이 끝난 뒤에 보인다).
+        if(event.action==='skill'&&renderer.fx&&cast>0)castingUntil=Math.max(castingUntil,performance.now()+cast);
     }
-    async function mutate(path,body){if(busy||rewardDialog.open)return;audio.unlock();busy=true;potionShortcuts.refresh();renderSelection();try{if(syncing)await syncing;const result=await request(path,body||{});const next=result.state||result;applyState(next);(next.events||[]).forEach(presentEvent);if(result.message)addLog(result.message,result.ok?'good':'bad');if(result.ok&&result.event)presentEvent(result.event);if(!result.ok)showNotice(result.message);return result;}catch(error){addLog(error.message,'bad');showNotice(error.message);return{ok:false,message:error.message};}finally{busy=false;potionShortcuts.refresh();renderSelection();}}
+    async function mutate(path,body){if(busy||casting()||rewardDialog.open)return;audio.unlock();busy=true;potionShortcuts.refresh();renderSelection();try{if(syncing)await syncing;const result=await request(path,body||{});const next=result.state||result;applyState(next);(next.events||[]).forEach(presentEvent);if(result.message)addLog(result.message,result.ok?'good':'bad');if(result.ok&&result.event)presentEvent(result.event);if(!result.ok)showNotice(result.message);return result;}catch(error){addLog(error.message,'bad');showNotice(error.message);return{ok:false,message:error.message};}finally{busy=false;potionShortcuts.refresh();renderSelection();}}
     const enterBoss=name=>mutate('/api/worldboss/enter',{bossName:name});
     const selectSkill=index=>mutate('/api/worldboss/select',{index});
     const cancelSelection=()=>mutate('/api/worldboss/cancel',{});
@@ -501,7 +524,7 @@
     const useSkill=name=>mutate('/api/worldboss/skill',{skillName:name});
     const useConsumable=itemId=>mutate('/api/worldboss/use-consumable',{itemId});
     function backOrLeave(){if(state&&state.inField)showNotice('월드보스 전투 중에는 퇴장할 수 없습니다.');else if(state&&state.selecting)cancelSelection();else location.href='/';}
-    function sync(){if(busy||syncing)return;syncing=(async()=>{try{const next=await request('/api/worldboss');applyState(next);(next.events||[]).forEach(presentEvent);}catch(error){showNotice(error.message);}finally{syncing=null;}})();return syncing;}
+    function sync(){if(busy||casting()||syncing)return;syncing=(async()=>{try{const next=await request('/api/worldboss');applyState(next);(next.events||[]).forEach(presentEvent);}catch(error){showNotice(error.message);}finally{syncing=null;}})();return syncing;}
     addEventListener('pointerdown',()=>audio.unlock(),{passive:true});
     document.addEventListener('visibilitychange',()=>{if(document.hidden)audio.stopBgm();else{audio.playBgm();sync();}});
     addEventListener('pagehide',()=>audio.stopBgm());
