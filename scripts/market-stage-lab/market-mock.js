@@ -37,6 +37,35 @@ module.exports = function createMarket(h) {
     add(orders, '워뇨띠', 'pet', { id: me.pets[1].id }, 500000, 'gold', 1, 110);
     add(orders, '제우스', 'avatar', { name: me.avatars[0].name }, 4000, 'garnet', 1, 160);
 
+    // 시세: server.js의 marketKey, marketVariant와 같은 규칙. 체결 기록은 품목마다 정해진 씨앗으로 지어낸다(빈 품목도 섞인다).
+    const marketKey = (kind, p) => kind === 'card' ? 'c:' + p.id + ':' + Number(p.star || 0) : kind === 'equipment' ? 'e:' + p.type + ':' + p.id : kind === 'item' ? 'i:' + p.id : kind === 'pet' ? 'p:' + p.id : 'a:' + p.name;
+    const marketVariant = (kind, p, isOrder) => kind === 'card' ? (isOrder ? p.type || null : p.type || '일반') : kind === 'equipment' ? (isOrder ? (typeof p.level === 'number' ? p.level : null) : Number(p.level || 0)) : kind === 'pet' ? (isOrder ? null : Number(p.level || 0)) : null;
+    const hash = s => { let h = 2166136261; for (const ch of s) h = Math.imul(h ^ ch.codePointAt(0), 16777619); return h >>> 0; };
+    const rng = seed => () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+    const nice = v => { const k = Math.pow(10, Math.max(0, Math.floor(Math.log10(v)) - 1)); return Math.max(1, Math.round(v / k) * k); };
+    const prices = new Map();
+    function tradesFor(key) {
+        if (prices.has(key)) return prices.get(key);
+        const r = rng(hash(key)), [kind, a, b] = key.split(':'), list = [];
+        const listed = [...auctions, ...orders].find(e => marketKey(e.kind, e.payload) === key);
+        let base = listed ? listed.price : kind === 'c' ? 40000 * Math.pow(1.7, Number(b)) : kind === 'e' ? 300000 * (1 + ['일반', '고급', '레어', '유니크', '레전더리', '신화', '초월'].indexOf((EQUIP[a] && EQUIP[a][b] || {}).rarity)) : kind === 'i' ? 300 + r() * 2500 : kind === 'p' ? 450000 : 3000;
+        const currency = listed ? listed.currency : kind === 'a' ? 'garnet' : 'gold';
+        const variants = kind === 'c' ? ['전직', '전직', '일반', '각성'] : kind === 'e' ? [0, 3, 7, 10, 12, 12, 15] : kind === 'p' ? [0, 1, 2, 3] : [null];
+        const n = [0, 2, 6, 11, 17, 24, 30][Math.floor(r() * 7)];
+        let t = now - (n * 1.4 + 3) * 86400000, price = base;
+        for (let i = 0; i < n; i++) {
+            t += (.15 + r() * 2.4) * 86400000 * (n > 18 ? .7 : 1);
+            price = Math.max(1, price * (1 + (r() - .47) * .14));
+            const v = variants[Math.floor(r() * variants.length)], lift = kind === 'e' ? 1 + Number(v) * .09 : kind === 'c' && v === '일반' ? .55 : kind === 'c' && v === '각성' ? 1.5 : 1;
+            list.push([Math.min(Math.round(t), now - 300000), nice(price * lift), kind === 'i' ? [1, 5, 20, 120, 250][Math.floor(r() * 5)] : 1, currency, v]);
+        }
+        if (n && hash(key) % 4 === 0) for (let i = 0; i < 3; i++) list.splice(Math.floor(r() * list.length), 0, [list[0][0] + i * 3600000, nice(base / 900 * (1 + r() * .2)), 1, currency === 'gold' ? 'garnet' : 'gold', variants[0]]);
+        list.sort((x, y) => x[0] - y[0]);
+        prices.set(key, list); return list;
+    }
+    function recordTrade(e, n, variant) { const list = tradesFor(marketKey(e.kind, e.payload)); list.push([Date.now(), e.price, n, e.currency, variant]); if (list.length > 30) list.shift(); }
+    const listing = (e, isOrder) => ({ price: e.price, count: e.count, currency: e.currency, variant: marketVariant(e.kind, e.payload, isOrder), mine: (isOrder ? e.buyerName : e.sellerName) === me.name });
+
     const ticketCost = kind => (payload) => kind === 'card' ? Math.max(0, Number(payload.star || 0) - 3) : 0;
     function identity(e) {
         const p = e.payload;
@@ -104,7 +133,7 @@ module.exports = function createMarket(h) {
             const e = auctions.find(x => x.id === body.id); if (!e) return fail('존재하지 않거나 이미 판매된 경매입니다.');
             const n = e.kind === 'item' ? Math.max(1, Number(body.count) || 1) : 1, cost = e.price * n;
             if (me[e.currency] < cost) return fail((e.currency === 'gold' ? '골드' : '가넷') + '가 부족합니다.');
-            me[e.currency] -= cost; e.count -= n; if (e.count <= 0) auctions.splice(auctions.indexOf(e), 1);
+            me[e.currency] -= cost; recordTrade(e, n, marketVariant(e.kind, e.payload, false)); e.count -= n; if (e.count <= 0) auctions.splice(auctions.indexOf(e), 1);
             if (e.kind === 'item') me.items.set(e.payload.id, (me.items.get(e.payload.id) || 0) + n); else if (e.kind === 'card') me.cards.push(e.payload); else if (e.kind === 'equipment') me.equipment.push(e.payload);
             return [200, { ok: true }];
         }
@@ -120,14 +149,23 @@ module.exports = function createMarket(h) {
         }
         if (path === '/api/buyorder/fulfill') {
             const o = orders.find(x => x.id === body.id); if (!o) return fail('존재하지 않거나 이미 종료된 구매 등록입니다.');
-            let n = 1;
+            let n = 1, sold = null;
             if (o.kind === 'item') { n = Math.max(1, Number(body.count) || 1); const have = me.items.get(o.payload.id) || 0; if (n > have || n > o.count) return fail('수량이 올바르지 않습니다.'); me.items.set(o.payload.id, have - n); }
-            else if (o.kind === 'card') { if (!me.cards[body.index]) return fail('카드를 찾을 수 없습니다.'); me.cards.splice(body.index, 1); }
-            else if (o.kind === 'equipment') { if (!me.equipment[body.index]) return fail('장비를 찾을 수 없습니다.'); me.equipment.splice(body.index, 1); }
-            else if (o.kind === 'pet') { if (!me.pets[body.index]) return fail('펫을 찾을 수 없습니다.'); me.pets.splice(body.index, 1); }
+            else if (o.kind === 'card') { if (!me.cards[body.index]) return fail('카드를 찾을 수 없습니다.'); sold = me.cards.splice(body.index, 1)[0].type || '일반'; }
+            else if (o.kind === 'equipment') { if (!me.equipment[body.index]) return fail('장비를 찾을 수 없습니다.'); sold = me.equipment.splice(body.index, 1)[0].level || 0; }
+            else if (o.kind === 'pet') { if (!me.pets[body.index]) return fail('펫을 찾을 수 없습니다.'); sold = me.pets.splice(body.index, 1)[0].level || 0; }
             else { const i = me.avatars.findIndex(a => a.id === body.avatarId); if (i < 0) return fail('아바타를 찾을 수 없습니다.'); me.avatars.splice(i, 1); }
-            me[o.currency] += Math.floor(o.price * n * .95); o.count -= n; if (o.count <= 0) orders.splice(orders.indexOf(o), 1);
+            me[o.currency] += Math.floor(o.price * n * .95); recordTrade(o, n, sold); o.count -= n; if (o.count <= 0) orders.splice(orders.indexOf(o), 1);
             return [200, { ok: true }];
+        }
+        if (path === '/api/market/history') {
+            const key = q.get('key') || '';
+            if (!/^(c:\d+:\d+|e:[a-z]+:\d+|i:\d+|p:\d+|a:.{1,60})$/.test(key)) return fail('품목을 확인해주세요.');
+            return [200, {
+                trades: tradesFor(key).map(([time, price, count, currency, variant]) => ({ time, price, count, currency, variant })),
+                asks: auctions.filter(e => marketKey(e.kind, e.payload) === key).map(e => listing(e, false)),
+                bids: orders.filter(e => marketKey(e.kind, e.payload) === key).map(e => listing(e, true))
+            }];
         }
         if (path === '/api/buyorder/cancel') { const i = orders.findIndex(x => x.id === body.id && x.buyerName === me.name); if (i < 0) return fail('취소할 수 없습니다.'); const o = orders.splice(i, 1)[0]; me[o.currency] += o.price * o.count; return [200, { ok: true }]; }
         return null;

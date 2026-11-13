@@ -14,9 +14,12 @@
     const SORTS = [['new', '최신'], ['priceAsc', '낮은 가격'], ['priceDesc', '높은 가격']];
     const SORT_FN = { new: (a, b) => b.createdAt - a.createdAt, priceAsc: (a, b) => a.unitPrice - b.unitPrice, priceDesc: (a, b) => b.unitPrice - a.unitPrice };
     const GOOD = '#86e3b6', WARN = '#ff8f7a', GOLD = '#ffd873', DIM = 'rgba(214,222,236,.66)';
+    // 시세 그래프 색: 체결가 선, 팝니다 최저가 점선, 삽니다 최고가 점선, 입력한 가격 선, 오름(빨강), 내림(파랑)
+    const LINE = { trade: '#ffd873', ask: '#ff7a59', bid: '#5fd3c6', mine: '#f3f5f9', up: '#ff6b6b', down: '#6fb4ff' };
     const fmt = n => Number(n || 0).toLocaleString('ko-KR');
+    const short = n => { const t = v => (v >= 100 ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString('ko-KR'); return n >= 1e8 ? t(n / 1e8) + '억' : n >= 1e4 ? t(n / 1e4) + '만' : fmt(Math.round(n)); };
     let mode = null, stage = null, loadToken = 0, toastTimer = 0;
-    const data = { list: [], loading: false, error: '', sellable: null, auctions: null, infos: new Map(), best: new Map() };
+    const data = { list: [], loading: false, error: '', sellable: null, infos: new Map(), best: new Map(), history: new Map() };
     const ui = { hover: '', focus: '', busy: false, filter: 'all', currency: 'all', sort: 'new', query: '', page: 0, selected: '', overlay: false, qty: 1, picker: null, dialog: null, toast: '', working: false };
     const M = () => MODES[mode];
     const wallet = () => (typeof myGoods === 'object' && myGoods) || { gold: 0, garnet: 0 };
@@ -112,7 +115,7 @@
             const Mo = K.modal('분류', Math.min(W - 16, 420), 64 + rows * 54 + 12, { close: 'filters-close', tint: M().accent }), bw = (Mo.w - 36 - 8) / 2;
             tabs.forEach(([k, l], i) => K.btn('filter', k, Mo.x + 18 + (i % cols) * (bw + 8), Mo.y + 66 + Math.floor(i / cols) * 54, bw, 46, l, { on: ui.filter === k, pressed: ui.filter === k, size: 15, color: M().accent }));
         }
-        if (ui.picker) MS.drawPicker(K, A, ui.picker, { tint: M().accent, detailAction: 'picker-detail' });
+        if (ui.picker) MS.drawPicker(K, A, ui.picker, { tint: M().accent, detailAction: 'picker-detail', full: !!ui.picker.config.panel });
         if (ui.dialog) K.dialog(ui.dialog);
         if (ui.toast && !ui.picker && !ui.dialog) {
             const tw = Math.min(W - 24, K.tw(ui.toast, 14, 700) + 48), tx = (W - tw) / 2;
@@ -264,14 +267,24 @@
     }
 
     // ── 등록, 판매(이행)용 보관함의 추가 조작
-    // 가격 줄: 이름표와 최저가 맞추기, 그 아래 금액 칸과 화폐 두 개를 한 줄에 둔다.
+    // 가격 줄: 이름표와 시세 바로 넣기 단추, 그 아래 금액 칸과 화폐 두 개를 한 줄에 둔다.
+    // 단추 왼쪽 색 막대는 시세 그래프의 같은 값 선 색이다.
     function priceBlock(K, A, P, x, y, w, opts = {}) {
         K.text(opts.priceLabel || '가격', x, y + 9, 12, K.DIM, 'left', 700);
-        const hint = opts.hint;
-        if (hint) { const hw = Math.min(w * .62, K.tw(hint.label, 12, 700) + 28); K.btn('reg-hint', '', x + w - hw, y - 3, hw, 24, hint.label, { size: 12, color: GOOD, aria: hint.label + ' 가격으로 맞추기' }); }
+        let rx = x + w;
+        (opts.quick || []).slice().reverse().forEach(q => {
+            const label = q.label + ' ' + fmt(q.value), qw = Math.min(K.tw(label, 11, 800) + 26, (w - 64) / 2);
+            rx -= qw;
+            K.btn('reg-quick', q.key, rx, y - 4, qw, 26, label, { size: 11, align: 'left', aria: q.label + ' ' + fmt(q.value) + ' 가격으로 맞추기' });
+            K.C.fillStyle = q.color; K.C.fillRect(rx + 5, y + 2, 3, 14);
+            rx -= 6;
+        });
         y += 26;
         const tw = 62, fw = w - tw * 2 - 12;
         K.well(x, y, fw, 44, 6); A.currency(P.currency, x + 10, y + 11, 22);
+        // 큰 금액은 칸 오른쪽에 만, 억 단위로 줄여 함께 보인다(입력 글자와 겹치지 않을 때만).
+        const value = Number(P.price) || 0, unit = value >= 1e4 ? short(value) : '';
+        if (unit && 44 + K.tw(P.price, 18, 700) + K.tw(unit, 13, 800) + 18 < fw) K.text(unit, x + fw - 10, y + 22.5, 13, K.rgba(GOLD, .75), 'right', 800);
         A.field('reg-price', x + 40, y + 2, fw - 48, 40, { value: P.price, placeholder: '0', numeric: true, big: true, label: (opts.priceLabel || '가격') + ' ' + CUR[P.currency], maxLength: 16 });
         Object.entries(CUR).forEach(([k, l], i) => K.btn('reg-currency', k, x + fw + 6 + i * (tw + 6), y, tw, 44, l, { on: P.currency === k, pressed: P.currency === k, size: 12, color: M().accent }));
         return y + 52;
@@ -286,16 +299,11 @@
         K.btn(plus, '', x + w - 40, y, 40, 40, '', { glyph: 'plus', disabled: o.maxDisabled, aria: label + ' 늘리기' });
         return y + 46;
     }
-    const lowestSell = key => {
-        let best = null;
-        for (const e of data.auctions || []) if (groupKey(e.kind, e.display || {}) === key && (!best || e.unitPrice < best.unitPrice)) best = e;
-        return best;
-    };
-
     // 판매 등록 (팝니다)
     async function openSellRegister() {
-        ui.picker = MS.createPicker({ title: '판매 등록', kinds: [{ key: 'card', label: '카드', entries: [] }], submitLabel: '등록하기' });
+        ui.picker = MS.createPicker({ title: '판매 등록', kinds: [{ key: 'card', label: '카드', entries: [] }], submitLabel: '등록하기', panel: marketPanelConfig });
         Object.assign(ui.picker, { currency: 'gold', price: '' });
+        data.history.clear();
         ui.picker.error = '보유 목록 확인 중'; stage.play('paper'); stage.invalidate();
         await reloadSellable(ui.picker, 'card');
     }
@@ -306,18 +314,15 @@
             const typeRank = { 각성: 0, 전직: 1, 일반: 2 };
             const tradeChip = e => e.raw.tradeCount != null ? [{ text: '거래 ' + fmt(e.raw.tradeCount) + '회 남음', color: DIM }] : [];
             P.config.kinds = [
-                { key: 'card', label: '카드', entries: s.cards.slice().sort((a, b) => b.star - a.star || (typeRank[a.type] ?? 3) - (typeRank[b.type] ?? 3)).map(c => ({ key: 'c' + c.index, raw: c, info: MS.identify(c, 'card'), group: groupKey('card', { cardId: c.id, star: c.star, cardType: c.type, skin: c.skin }) })), filter: e => (e.raw.type || '일반') + ' 카드' },
-                { key: 'equipment', label: '장비', entries: s.equipment.map(q => ({ key: 'e' + q.index, raw: q, info: MS.identify(q, 'equipment'), group: groupKey('equipment', { equipType: q.type, equipId: q.id, level: q.level }) })), filter: e => e.raw.typeLabel },
-                { key: 'item', label: '아이템', entries: s.items.map(i => ({ key: 'i' + i.id, raw: i, info: MS.identify(i, 'item'), group: groupKey('item', { itemId: i.id }) })), filter: e => e.raw.type || '기타', quantity: e => e.raw.count },
-                { key: 'pet', label: '펫', entries: (s.pets || []).map(p => { const info = MS.identify(p, 'pet'); info.chips = info.chips.concat(tradeChip({ raw: p })); return { key: 'p' + p.index, raw: p, info, group: groupKey('pet', { petId: p.id }) }; }), filter: e => e.raw.rarity },
-                { key: 'avatar', label: '아바타', entries: (s.avatars || []).map(a => { const info = MS.identify(a, 'avatar'); if (a.grade === '유니크') info.chips.push({ text: '거래 ' + Math.max(0, 3 - Number(a.trades || 0)) + '회 남음', color: DIM }); return { key: 'a' + a.id, raw: a, info, group: groupKey('avatar', { name: a.name }) }; }), filter: e => e.raw.grade || '일반' }
+                { key: 'card', label: '카드', entries: s.cards.slice().sort((a, b) => b.star - a.star || (typeRank[a.type] ?? 3) - (typeRank[b.type] ?? 3)).map(c => ({ key: 'c' + c.index, raw: c, info: MS.identify(c, 'card') })), filter: e => (e.raw.type || '일반') + ' 카드' },
+                { key: 'equipment', label: '장비', entries: s.equipment.map(q => ({ key: 'e' + q.index, raw: q, info: MS.identify(q, 'equipment') })), filter: e => e.raw.typeLabel },
+                { key: 'item', label: '아이템', entries: s.items.map(i => ({ key: 'i' + i.id, raw: i, info: MS.identify(i, 'item') })), filter: e => e.raw.type || '기타', quantity: e => e.raw.count },
+                { key: 'pet', label: '펫', entries: (s.pets || []).map(p => { const info = MS.identify(p, 'pet'); info.chips = info.chips.concat(tradeChip({ raw: p })); return { key: 'p' + p.index, raw: p, info }; }), filter: e => e.raw.rarity },
+                { key: 'avatar', label: '아바타', entries: (s.avatars || []).map(a => { const info = MS.identify(a, 'avatar'); if (a.grade === '유니크') info.chips.push({ text: '거래 ' + Math.max(0, 3 - Number(a.trades || 0)) + '회 남음', color: DIM }); return { key: 'a' + a.id, raw: a, info }; }), filter: e => e.raw.grade || '일반' }
             ];
             P.kind = keepKind || P.kind; P.error = '';
             P.config.extraHeight = () => 84;
-            P.config.extra = (K, A, P2, kind, sel, x, y, w) => {
-                const low = data.list.filter(e => groupKey(e.kind, e.display || {}) === sel.group && e.currency === P2.currency && !e.mine).sort((a, b) => a.unitPrice - b.unitPrice)[0];
-                return priceBlock(K, A, P2, x, y, w, { priceLabel: kind.key === 'item' ? '개당 가격' : '가격', hint: low ? { label: '최저가 ' + fmt(low.unitPrice), value: low.unitPrice } : null });
-            };
+            P.config.extra = (K, A, P2, kind, sel, x, y, w) => priceBlock(K, A, P2, x, y, w, { priceLabel: kind.key === 'item' ? '개당 가격' : '가격', quick: quickPrices(P2, kind, sel) });
         } catch (error) { if (ui.picker === P) P.error = error.message; }
         stage?.invalidate();
     }
@@ -336,7 +341,7 @@
         ui.working = true; stage.invalidate();
         try {
             await postApi('/api/auction/register', body);
-            stage.play('stamp'); stage.pulse();
+            stage.play('stamp'); stage.pulse(); data.history.clear();
             P.done = sel.info.title; P.selected = null; P.amount = ''; P.price = '';
             refreshProfile(); await load(); await reloadSellable(P, kind);
         } catch (error) { P.error = error.message; }
@@ -345,12 +350,12 @@
 
     // 구매 등록 (삽니다)
     async function openBuyRegister() {
-        const P = ui.picker = MS.createPicker({ title: '구매 등록', kinds: [{ key: 'card', label: '카드', entries: [] }], submitLabel: '등록하기' });
+        const P = ui.picker = MS.createPicker({ title: '구매 등록', kinds: [{ key: 'card', label: '카드', entries: [] }], submitLabel: '등록하기', panel: marketPanelConfig });
         Object.assign(P, { currency: 'gold', price: '', star: 0, cardType: '', levelOn: false, level: 0, count: 1 });
+        data.history.clear();
         P.error = '목록 확인 중'; stage.play('paper'); stage.invalidate();
         try {
-            const [lk, auctions] = await Promise.all([api('/api/buyorder/lookups'), api('/api/auction').catch(() => ({ items: [] }))]);
-            data.auctions = auctions.items || [];
+            const lk = await api('/api/buyorder/lookups');
             if (ui.picker !== P) return;
             const plain = (info) => { info.chips = info.chips.filter(c => !/^\+\d+$/.test(c.text)); info.corner = null; return info; };
             P.config.kinds = [
@@ -378,8 +383,7 @@
                     else yy += 46;
                 }
                 if (kind.key !== 'avatar') yy = stepper(K, A, '수량', P2.count, x, yy, w, 'reg-count-minus', 'reg-count-plus', { field: 'reg-count', minDisabled: P2.count <= 1 });
-                const key = buyGroupKey(kind.key, sel, P2), low = lowestSell(key);
-                yy = priceBlock(K, A, P2, x, yy, w, { priceLabel: '개당 가격', hint: low && low.currency === P2.currency ? { label: '팝니다 최저가 ' + fmt(low.unitPrice), value: low.unitPrice } : null });
+                yy = priceBlock(K, A, P2, x, yy, w, { priceLabel: '개당 가격', quick: quickPrices(P2, kind, sel) });
                 const count = kind.key === 'avatar' ? 1 : P2.count, total = (Number(P2.price) || 0) * count;
                 const tickets = kind.key === 'card' ? Math.max(0, P2.star - 3) * count : 0;
                 K.line('선결제 ' + fmt(total) + ' ' + CUR[P2.currency] + (tickets ? '   거래권 ' + tickets + '장' : ''), x, yy + 6, w, 13, GOLD, 'left', 800, 10);
@@ -387,14 +391,6 @@
             };
         } catch (error) { if (ui.picker === P) P.error = error.message; }
         stage?.invalidate();
-    }
-    function buyGroupKey(kind, sel, P) {
-        const r = sel.raw;
-        if (kind === 'card') return groupKey('card', { cardId: r.id, star: P.star, cardType: P.cardType || '일반' });
-        if (kind === 'equipment') return groupKey('equipment', { equipType: r.type, equipId: r.id, level: P.levelOn ? P.level : '' });
-        if (kind === 'item') return groupKey('item', { itemId: r.id });
-        if (kind === 'pet') return groupKey('pet', { petId: r.id });
-        return groupKey('avatar', { name: r.name });
     }
     async function submitBuy(P) {
         const kind = P.kind, sel = MS.pickerSelected(P);
@@ -412,11 +408,206 @@
         ui.working = true; stage.invalidate();
         try {
             await postApi('/api/buyorder/register', body);
-            stage.play('stamp'); stage.pulse();
+            stage.play('stamp'); stage.pulse(); data.history.clear();
             P.done = sel.info.title; P.price = '';
             refreshProfile(); await load();
         } catch (error) { P.error = error.message; }
         finally { ui.working = false; stage?.invalidate(); }
+    }
+
+    // ── 시세판: 고른 품목의 최근 거래가 그래프. 금색 선이 체결가, 점선이 지금 걸린 팝니다 최저가와 삽니다 최고가, 흰 선이 입력한 가격이다.
+    // 카드는 같은 번호와 성급, 장비와 펫은 같은 번호끼리 모으고, 카드 종류와 강화 수치(variant)는 고른 것만 보거나 전체를 본다.
+    const variantLabel = v => typeof v === 'number' ? '+' + v : String(v);
+    const pad2 = n => String(n).padStart(2, '0');
+    const marketPanelConfig = { min: 128, max: 320, draw: marketPanel };
+    function historyFor(key) {
+        let h = data.history.get(key);
+        if (!h) {
+            h = { loading: true, error: '', trades: [], asks: [], bids: [] }; data.history.set(key, h);
+            api('/api/market/history?key=' + encodeURIComponent(key))
+                .then(r => Object.assign(h, { trades: r.trades || [], asks: r.asks || [], bids: r.bids || [] }))
+                .catch(error => { h.error = error.message; })
+                .finally(() => { h.loading = false; stage?.invalidate(); });
+        }
+        return h;
+    }
+    // 판매 등록은 내 물건, 구매 등록은 고른 조건으로 품목 키와 종류를 정한다(server.js marketKey, marketVariant와 같은 규칙).
+    function marketTarget(P, kind, sel) {
+        if (!sel || !kind) return null;
+        const r = sel.raw, buy = mode === 'buy';
+        if (kind.key === 'card') return { key: 'c:' + r.id + ':' + (buy ? P.star : r.star), variant: buy ? P.cardType || null : r.type || '일반' };
+        if (kind.key === 'equipment') return { key: 'e:' + r.type + ':' + r.id, variant: buy ? (P.levelOn ? P.level : null) : Number(r.level || 0) };
+        if (kind.key === 'item') return { key: 'i:' + r.id, variant: null };
+        if (kind.key === 'pet') return { key: 'p:' + r.id, variant: buy ? null : Number(r.level || 0) };
+        if (kind.key === 'avatar') return { key: 'a:' + r.name, variant: null };
+        return null;
+    }
+    function marketView(P, kind, sel) {
+        const t = marketTarget(P, kind, sel); if (!t) return null;
+        const h = historyFor(t.key), item = t.key + '|' + t.variant;
+        if (P.chartItem !== item) { P.chartItem = item; P.chartAll = false; P.chartPick = -1; }
+        const exact = t.variant != null && !P.chartAll, cur = P.currency, other = cur === 'gold' ? 'garnet' : 'gold';
+        const same = v => !exact || v === t.variant, open = list => list.filter(x => !x.mine);
+        const pick = c => ({
+            trades: h.trades.filter(x => x.currency === c && same(x.variant)).sort((a, b) => a.time - b.time),
+            asks: open(h.asks).filter(x => x.currency === c && same(x.variant)),
+            bids: open(h.bids).filter(x => x.currency === c && (x.variant == null || same(x.variant)))
+        });
+        const s = pick(cur), o = pick(other), n = s.trades.length, total = s.trades.reduce((sum, x) => sum + x.count, 0);
+        return {
+            ...t, h, cur, other, trades: s.trades,
+            otherCount: o.trades.length + o.asks.length + o.bids.length,
+            variants: t.variant != null && (h.trades.some(x => x.currency === cur && x.variant !== t.variant) || open(h.asks).some(x => x.currency === cur && x.variant !== t.variant)),
+            last: n ? s.trades[n - 1].price : 0, prev: n > 1 ? s.trades[n - 2].price : 0,
+            avg: total ? Math.round(s.trades.reduce((sum, x) => sum + x.price * x.count, 0) / total) : 0,
+            ask: s.asks.length ? Math.min(...s.asks.map(x => x.price)) : 0,
+            bid: s.bids.length ? Math.max(...s.bids.map(x => x.price)) : 0
+        };
+    }
+    // 가격 줄 바로 넣기: 최근 거래가, 그리고 판매 등록은 팝니다 최저가, 구매 등록은 삽니다 최고가.
+    function quickPrices(P, kind, sel) {
+        const v = marketView(P, kind, sel); if (!v) return [];
+        return [{ key: 'last', label: '최근', value: v.last, color: LINE.trade },
+            mode === 'buy' ? { key: 'bid', label: '최고', value: v.bid, color: LINE.bid } : { key: 'ask', label: '최저', value: v.ask, color: LINE.ask }].filter(q => q.value > 0);
+    }
+    function chartGrid(K, x, y, w, h) {
+        K.well(x, y, w, h, 8, 'rgba(2,4,8,.42)');
+        for (let i = 1; i < 4; i++) { K.C.fillStyle = 'rgba(255,255,255,.045)'; K.C.fillRect(x + 10, Math.round(y + h * i / 4), w - 20, 1); }
+    }
+    function marketPanel(K, A, P, kind, sel, x, y, w, h) {
+        const v = marketView(P, kind, sel);
+        if (!v) { chartGrid(K, x, y, w, h); K.gem(x + w / 2, y + h / 2, 6, 'rgba(255,255,255,.08)'); return; }
+        const sig = [v.key, v.variant, !!P.chartAll, v.cur, v.h.loading].join('|');
+        if (P.chartSig !== sig) { P.chartSig = sig; P.chartAt = A.time || 0; P.chartPick = -1; }
+        // 보여 줄 값이 없으면 머리 없이 빈 그래프 판만 둔다(불러오는 중, 기록 없음, 다른 화폐 시세 단추).
+        const any = v.trades.length || v.ask || v.bid;
+        if (v.h.loading || v.h.error || (!any && !v.variants)) { priceChart(K, A, P, v, x, y, w, h); return; }
+        // 고른 종류의 기록만 비어 있으면 머리에는 종류 고르기 단추만 남긴다.
+        const tight = h < 200 || !any, headH = !any ? 40 : tight ? 36 : 62;
+        // 오른쪽 위: 고른 강화 수치나 카드 종류만 볼지, 전체를 볼지
+        let right = x + w;
+        if (v.variants) [['all', '전체'], ['one', variantLabel(v.variant)]].forEach(([id, label]) => {
+            const bw = Math.max(52, K.tw(label, 12, 700) + 26), on = (id === 'all') === !!P.chartAll;
+            right -= bw; K.btn('reg-variant', id, right, y, bw, 30, label, { on, pressed: on, size: 12, color: LINE.trade, aria: '시세 ' + label }); right -= 5;
+        });
+        // 왼쪽: 최근 거래가와 직전 거래 대비 등락, 오른쪽 아래에 평균
+        const vy = tight ? y + 15 : y + 44, isz = tight ? 18 : 24;
+        if (!tight) K.text('최근 거래가', x + 2, y + 11, 12, K.DIM, 'left', 700);
+        else if (!any) K.text(variantLabel(v.variant) + ' 기록 없음', x + 2, vy, 13, K.MUTE, 'left', 700);
+        if (v.trades.length) {
+            const avgText = !tight && w >= 320 ? fmt(v.avg) : '', avgW = avgText ? K.tw(avgText, 14, 800) + K.tw('평균', 11, 700) + 16 : 0;
+            A.currency(v.cur, x, vy - isz / 2, isz);
+            const tx = x + isz + 6, vw = K.line(fmt(v.last), tx, vy + 1, (tight ? right : x + w) - tx - avgW - 84, tight ? 18 : 25, K.GOLD, 'left', 800, 12);
+            if (v.prev && v.prev !== v.last) {
+                const up = v.last > v.prev, pct = Math.abs(v.last - v.prev) / v.prev * 100;
+                K.chip((up ? '▲ ' : '▼ ') + (pct >= 100 ? Math.round(pct) : pct.toFixed(1)) + '%', tx + vw + 8, vy - 10, up ? LINE.up : LINE.down, { h: 21, size: 11 });
+            }
+            if (avgText) { K.text(avgText, x + w, vy + 1, 14, K.INK, 'right', 800); K.text('평균', x + w - K.tw(avgText, 14, 800) - 6, vy + 1, 11, K.DIM, 'right', 700); }
+        } else if (!v.h.loading && !v.h.error && (v.ask || v.bid)) K.text('거래 기록 없음', x + 2, vy, 14, K.MUTE, 'left', 700);
+        priceChart(K, A, P, v, x, y + headH, w, h - headH);
+    }
+    function niceStep(span, count) { const raw = span / count, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag; return Math.max(1, (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * mag); }
+    function priceChart(K, A, P, v, x, y, w, h) {
+        const C = K.C, S = K.S, n = v.trades.length, mine = Number(P.price) || 0;
+        const refs = [v.ask && { value: v.ask, color: LINE.ask, label: '팝니다 최저' }, v.bid && { value: v.bid, color: LINE.bid, label: '삽니다 최고' }].filter(Boolean);
+        if (v.h.loading || v.h.error || (!n && !refs.length)) {
+            chartGrid(K, x, y, w, h);
+            const swap = !v.h.loading && !v.h.error && v.otherCount > 0;
+            // 고른 종류만 비었을 때는 머리에 이미 적혀 있다.
+            K.line(v.h.loading ? '불러오는 중' : v.h.error || (v.variants ? '' : '거래 기록 없음'), x + w / 2, y + h / 2 - (swap ? 20 : 0), w - 24, 13, v.h.error ? K.WARN : K.DIM, 'center', 700, 10);
+            if (swap) { const label = CUR[v.other] + ' 시세', bw = K.tw(label, 13, 700) + 64; K.btn('reg-chart-currency', v.other, x + (w - bw) / 2, y + h / 2 + 2, bw, 38, label, { size: 13, icon: v.other, aria: CUR[v.other] + ' 시세 보기' }); }
+            return;
+        }
+        K.well(x, y, w, h, 8, 'rgba(2,4,8,.42)');
+        // 범례: 그려지는 기준선만 적는다.
+        const legend = h >= 130 ? refs.concat(mine ? [{ label: '내 가격', color: LINE.mine, solid: true }] : []) : [];
+        let lx = x + 12, shown = 0;
+        for (const item of legend) {
+            const lw = 19 + K.tw(item.label, 11, 700);
+            if (lx + lw > x + w - 8) break;
+            C.save(); C.strokeStyle = item.color; C.lineWidth = 1.8; if (!item.solid) C.setLineDash([4, 3]);
+            C.beginPath(); C.moveTo(lx, y + 15); C.lineTo(lx + 14, y + 15); C.stroke(); C.restore();
+            K.text(item.label, lx + 19, y + 15.5, 11, K.DIM, 'left', 700); lx += lw + 14; shown++;
+        }
+        const gut = w >= 320 ? 82 : 72, l = x + 10, r = x + w - gut, t = y + (shown ? 34 : 16), b = y + h - 24, pw = r - l, ph = Math.max(12, b - t);
+        // 세로 범위: 체결가와 걸린 가격. 입력한 가격은 너무 멀지 않을 때만 넣고, 멀면 값표를 끝에 붙여 화살표로 알린다.
+        const vals = v.trades.map(q => q.price).concat(refs.map(q => q.value));
+        let lo = Math.min(...vals), hi = Math.max(...vals);
+        if (mine && mine >= lo / 3 && mine <= hi * 3) { lo = Math.min(lo, mine); hi = Math.max(hi, mine); }
+        if (hi - lo < hi * .04) { const pad = Math.max(1, hi * .06); lo -= pad; hi += pad; }
+        const padY = (hi - lo) * .14; lo = Math.max(0, lo - padY); hi += padY;
+        const Y = val => b - (val - lo) / (hi - lo) * ph;
+        const step = niceStep(hi - lo, ph > 150 ? 4 : ph > 80 ? 3 : 2);
+        for (let g = Math.ceil(lo / step) * step, guard = 0; g <= hi && guard < 12; g += step, guard++) {
+            const gy = Math.round(Y(g)) + .5; if (gy < t - 2 || gy > b + 1) continue;
+            C.fillStyle = 'rgba(255,255,255,.055)'; C.fillRect(l, gy - .5, pw, 1);
+            K.text(short(g), l + 3, gy - 7, 10, K.MUTE, 'left', 700);
+        }
+        const sx = pw / Math.max(1, n), X = i => l + sx * (i + .5), pts = v.trades.map((q, i) => [X(i), Y(q.price)]);
+        const k = A.reduced ? 1 : K.clamp(((A.time || 0) - P.chartAt) / 560, 0, 1), ease = 1 - Math.pow(1 - k, 3);
+        if (k < 1) A.again();
+        refs.forEach(ref => { const ry = Math.round(K.clamp(Y(ref.value), t, b)) + .5; C.save(); C.setLineDash([6, 5]); C.lineWidth = 1.4; C.strokeStyle = K.rgba(ref.color, .85); C.beginPath(); C.moveTo(l, ry); C.lineTo(r, ry); C.stroke(); C.restore(); });
+        // 체결가: 면, 빛나는 선, 점. 처음 그릴 때 왼쪽에서 오른쪽으로 펼친다.
+        if (n) {
+            C.save(); C.beginPath(); C.rect(x, y, l - x + pw * ease + 2, h); C.clip();
+            if (n > 1) {
+                C.beginPath(); C.moveTo(pts[0][0], b); pts.forEach(([px, py]) => C.lineTo(px, py)); C.lineTo(pts[n - 1][0], b); C.closePath();
+                const g = C.createLinearGradient(0, t, 0, b); g.addColorStop(0, K.rgba(LINE.trade, .28)); g.addColorStop(1, K.rgba(LINE.trade, 0)); C.fillStyle = g; C.fill();
+                C.beginPath(); pts.forEach(([px, py], i) => i ? C.lineTo(px, py) : C.moveTo(px, py));
+                C.lineWidth = 2.2; C.lineJoin = 'round'; C.lineCap = 'round'; C.strokeStyle = LINE.trade; C.shadowColor = K.rgba(LINE.trade, .65); C.shadowBlur = 10; C.stroke(); C.shadowBlur = 0;
+            }
+            pts.forEach(([px, py], i) => { const last = i === n - 1; C.beginPath(); C.arc(px, py, last ? 4.4 : 2.7, 0, 7); C.fillStyle = last ? LINE.trade : '#241a06'; C.fill(); C.lineWidth = 1.6; C.strokeStyle = LINE.trade; C.stroke(); });
+            const [ex, ey] = pts[n - 1]; C.beginPath(); C.arc(ex, ey, 8.5, 0, 7); C.lineWidth = 1.2; C.strokeStyle = K.rgba(LINE.trade, .4); C.stroke();
+            C.restore();
+            if (k >= 1) { C.save(); C.setLineDash([2, 3]); C.strokeStyle = K.rgba(LINE.trade, .5); C.lineWidth = 1; C.beginPath(); C.moveTo(ex + 9, Math.round(ey) + .5); C.lineTo(r, Math.round(ey) + .5); C.stroke(); C.restore(); }
+        }
+        let mineY = 0, mineOut = 0;
+        if (mine) { const my = Y(mine); mineOut = my < t ? 1 : my > b ? -1 : 0; mineY = K.clamp(my, t, b); if (!mineOut) { C.fillStyle = K.rgba(LINE.mine, .8); C.fillRect(l, Math.round(mineY) - .5, pw, 1.5); } }
+        // 오른쪽 값표: 최근 거래가(금색), 걸린 가격, 입력한 가격. 겹치면 위아래로 민다.
+        const tags = [];
+        if (n) tags.push({ y: pts[n - 1][1], text: fmt(v.last), color: LINE.trade, solid: true });
+        refs.forEach(ref => tags.push({ y: K.clamp(Y(ref.value), t, b), text: fmt(ref.value), color: ref.color }));
+        if (mine) tags.push({ y: mineY, text: (mineOut > 0 ? '▲ ' : mineOut < 0 ? '▼ ' : '') + fmt(mine), color: LINE.mine });
+        tags.sort((p1, p2) => p1.y - p2.y);
+        const gap = Math.min(20, (b - y - 10) / Math.max(1, tags.length - 1));
+        for (let i = 1; i < tags.length; i++) tags[i].y = Math.max(tags[i].y, tags[i - 1].y + gap);
+        const spill = tags.length ? tags[tags.length - 1].y - b : 0;
+        if (spill > 0) tags.forEach(tag => { tag.y -= spill; });
+        tags.forEach(tag => priceTag(K, r + 4, tag.y, gut - 8, 18, tag));
+        // 아래 날짜: 하루 안이면 시각, 아니면 월.일. 최근 쪽부터 겹치지 않게 고른다.
+        if (n) {
+            const oneDay = new Date(v.trades[0].time).toDateString() === new Date(v.trades[n - 1].time).toDateString();
+            const label = q => { const d = new Date(q.time); return oneDay ? pad2(d.getHours()) + ':' + pad2(d.getMinutes()) : (d.getMonth() + 1) + '.' + d.getDate(); };
+            const marks = []; v.trades.forEach((q, i) => { const s = label(q); if (!marks.length || marks[marks.length - 1].s !== s) marks.push({ i, s }); });
+            let edge = Infinity;
+            for (let m = marks.length - 1; m >= 0; m--) {
+                const half = K.tw(marks[m].s, 10, 700) / 2 + 5, mx = K.clamp(X(marks[m].i), l + half, r - half);
+                if (mx + half > edge) continue;
+                K.text(marks[m].s, mx, b + 13, 10, K.MUTE, 'center', 700); edge = mx - half;
+            }
+        }
+        // 점을 가리키거나 누르면 그 거래의 값, 때, 수량을 띄운다.
+        let focus = -1;
+        for (let i = 0; i < n; i++) { const key = 'reg-chart:' + i; if (S.hover === key || S.focus === key) focus = i; }
+        if (focus < 0 && P.chartPick >= 0 && P.chartPick < n) focus = P.chartPick;
+        if (focus >= 0 && k >= 1) {
+            const [fx, fy] = pts[focus], q = v.trades[focus], d = new Date(q.time);
+            C.save(); C.setLineDash([3, 3]); C.strokeStyle = 'rgba(255,255,255,.32)'; C.lineWidth = 1; C.beginPath(); C.moveTo(Math.round(fx) + .5, t); C.lineTo(Math.round(fx) + .5, b); C.stroke(); C.restore();
+            C.beginPath(); C.arc(fx, fy, 5.5, 0, 7); C.fillStyle = LINE.trade; C.fill(); C.lineWidth = 2; C.strokeStyle = '#ffffff'; C.stroke();
+            const sub = [(d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()), q.count > 1 ? '×' + fmt(q.count) : '', P.chartAll && q.variant != null ? variantLabel(q.variant) : ''].filter(Boolean).join('   ');
+            const bw = Math.max(K.tw(fmt(q.price), 14, 800) + 28, K.tw(sub, 11, 700)) + 22, bh = 46;
+            const bx = K.clamp(fx - bw / 2, x + 4, x + w - 4 - bw), by = fy - bh - 12 >= y + 4 ? fy - bh - 12 : fy + 12;
+            K.plate(bx, by, bw, bh, 6, { a: .97, edge: .8, tint: LINE.trade, tintA: .14 });
+            A.currency(v.cur, bx + 11, by + 7, 16); K.text(fmt(q.price), bx + 32, by + 15.5, 14, K.GOLD, 'left', 800);
+            K.text(sub, bx + 11, by + 33, 11, K.DIM, 'left', 700);
+        }
+        for (let i = 0; i < n; i++) { const q = v.trades[i], d = new Date(q.time); A.hit('reg-chart', i, X(i) - sx / 2, t, sx, b - t, (d.getMonth() + 1) + '월 ' + d.getDate() + '일 거래 ' + fmt(q.price) + ' ' + CUR[q.currency] + (q.count > 1 ? ' ' + fmt(q.count) + '개' : '')); }
+    }
+    function priceTag(K, x, y, w, h, tag) {
+        const C = K.C;
+        C.beginPath(); C.moveTo(x, y); C.lineTo(x + 6, y - h / 2); C.lineTo(x + w, y - h / 2); C.lineTo(x + w, y + h / 2); C.lineTo(x + 6, y + h / 2); C.closePath();
+        C.fillStyle = tag.solid ? tag.color : 'rgba(10,12,18,.94)'; C.fill(); C.lineWidth = 1; C.strokeStyle = K.rgba(tag.color, tag.solid ? 1 : .8); C.stroke();
+        K.line(tag.text, x + 6 + (w - 6) / 2, y + .5, w - 12, 11, tag.solid ? '#2b1904' : tag.color, 'center', 800, 8);
     }
 
     // 삽니다 요청에 내 물품으로 판매
@@ -531,8 +722,10 @@
     }
     function regAct(P, action, id) {
         stage.play('select');
-        if (action === 'reg-currency') P.currency = id;
-        else if (action === 'reg-hint') { const low = hintValue(P); if (low) { P.price = String(low); stage.play('chips'); } }
+        if (action === 'reg-currency' || action === 'reg-chart-currency') P.currency = id;
+        else if (action === 'reg-quick') { const { kind } = MS.pickerList(P), q = quickPrices(P, kind, MS.pickerSelected(P)).find(x => x.key === id); if (q) { P.price = String(q.value); P.error = ''; stage.play('chips'); } }
+        else if (action === 'reg-variant') { P.chartAll = id === 'all'; P.chartPick = -1; }
+        else if (action === 'reg-chart') P.chartPick = P.chartPick === Number(id) ? -1 : Number(id);
         else if (action === 'reg-star-minus') P.star = Math.max(0, P.star - 1);
         else if (action === 'reg-star-plus') P.star = Math.min(11, P.star + 1);
         else if (action === 'reg-type') P.cardType = id === 'any' ? '' : id;
@@ -541,11 +734,6 @@
         else if (action === 'reg-level-plus') P.level = Math.min(15, P.level + 1);
         else if (action === 'reg-count-minus') P.count = Math.max(1, P.count - 1);
         else if (action === 'reg-count-plus') P.count += 1;
-    }
-    function hintValue(P) {
-        const sel = MS.pickerSelected(P); if (!sel) return 0;
-        if (mode === 'sell') { const low = data.list.filter(e => groupKey(e.kind, e.display || {}) === sel.group && e.currency === P.currency && !e.mine).sort((a, b) => a.unitPrice - b.unitPrice)[0]; return low ? low.unitPrice : 0; }
-        const low = lowestSell(buyGroupKey(P.kind, sel, P)); return low && low.currency === P.currency ? low.unitPrice : 0;
     }
     function field(key, value, how) {
         if (key === 'search') { ui.query = value; ui.page = 0; }

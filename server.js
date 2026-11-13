@@ -4961,6 +4961,29 @@ server.post('/api/buyorder/cancel', requireUser, async (req, res) => {
     }
 });
 
+// 시세: 한 품목의 최근 체결가와 지금 걸린 팝니다, 삽니다 가격. 거래 상대 이름은 내보내지 않는다.
+server.get('/api/market/history', requireUser, async (req, res) => {
+    try {
+        const key = String(req.query.key || '');
+        if (!/^(c:\d+:\d+|e:[a-z]+:\d+|i:\d+|p:\d+|a:.{1,60})$/.test(key)) return res.status(400).json({ error: '품목을 확인해주세요.' });
+        await getTradeLogList();
+        const [auctions, orders] = await Promise.all([getAuctionList(), getBuyOrderList()]);
+        const me = req.session.name;
+        const listing = (entry, isOrder) => ({
+            price: Number(entry.price || 0), count: Number(entry.count || 1), currency: entry.currency,
+            variant: marketVariant(entry.kind, entry.payload, isOrder), mine: (isOrder ? entry.buyerName : entry.sellerName) == me
+        });
+        res.json({
+            trades: (marketPrices()[key] || []).map(([time, price, count, currency, variant]) => ({ time, price, count, currency, variant })),
+            asks: auctions.filter(entry => marketKey(entry.kind, entry.payload) == key).map(entry => listing(entry, false)),
+            bids: orders.filter(entry => marketKey(entry.kind, entry.payload) == key).map(entry => listing(entry, true))
+        });
+    } catch (e) {
+        console.error('market history error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // ===== 파티 퀘스트 =====
 
 server.get('/api/party/quests', requirePartyQuest, async (req, res) => {
@@ -7995,7 +8018,7 @@ async function getTradeLogList() {
 }
 
 async function saveTradeLogList(items) {
-    await rpgenius.saveRpgeniusDataEntry('TradeLog', { items });
+    await rpgenius.saveRpgeniusDataEntry('TradeLog', { items, prices: marketPrices() });
 }
 
 function buildTradeLogPayload(entry) {
@@ -8093,18 +8116,78 @@ function buildAuctionTradeNotice(type, entry, actorName, count) {
     return lines.join('\n');
 }
 
-async function appendTradeLog(record) {
+// variant: 실제로 넘어간 물건의 카드 종류나 강화 수치. 삽니다 체결은 판 물건 기준으로 넘겨준다.
+async function appendTradeLog(record, variant = marketVariant(record.kind, record.payload, false)) {
     try {
         const list = await getTradeLogList();
+        const prices = marketPrices();
         const log = Object.assign({
             id: 'trd_' + Date.now().toString(36) + '_' + crypto.randomBytes(4).toString('hex'),
             time: Date.now()
         }, record);
         list.unshift(log);
         if (list.length > TRADE_LOG_LIMIT) list.length = TRADE_LOG_LIMIT;
+        addMarketPrice(prices, log, variant);
         await saveTradeLogList(list);
     } catch (e) {
         console.error('[trade-log] 기록 실패:', e);
+    }
+}
+
+// ===== 시세 =====
+// 팝니다, 삽니다 체결가를 품목별로 최근 몇 건씩 모은다. 거래 로그와 같은 DynamoDB 항목(TradeLog.prices)에 둔다.
+// 품목 키: 카드 c:번호:성급, 장비 e:부위:번호, 아이템 i:번호, 펫 p:번호, 아바타 a:이름. 카드 종류와 강화 수치는 기록마다 variant로 따로 둔다.
+const MARKET_PRICE_PER_KEY = 30;
+const MARKET_PRICE_BUDGET = 150000; // JSON 길이 상한. 거래 로그(최대 200건)와 합쳐 400KB 항목 한도 아래에 둔다.
+const MARKET_EQUIP_SLOTS = { '무기': 'weapon', '모자': 'hat', '갑옷': 'armor', '상의': 'armor', '하의': 'pants', '신발': 'shoes', '장신구': 'accessory', '보조': 'support' };
+
+function marketKey(kind, payload) {
+    const p = payload || {};
+    if (kind == 'card') return 'c:' + Number(p.id) + ':' + Number(p.star || 0);
+    if (kind == 'equipment') {
+        const slot = MARKET_EQUIP_SLOTS[p.type] || p.type;
+        return /^[a-z]+$/.test(String(slot || '')) ? 'e:' + slot + ':' + Number(p.id) : null;
+    }
+    if (kind == 'item') return 'i:' + Number(p.id);
+    if (kind == 'pet') return 'p:' + Number(p.id);
+    if (kind == 'avatar') return p.name ? 'a:' + String(p.name) : null;
+    return null;
+}
+
+// 등록된 물건(isOrder=false)은 실제 값, 삽니다 조건(isOrder=true)은 지정하지 않았으면 null(무관)이다.
+function marketVariant(kind, payload, isOrder) {
+    const p = payload || {};
+    if (kind == 'card') return isOrder ? (p.type || null) : (p.type || '일반');
+    if (kind == 'equipment') return isOrder ? (typeof p.level == 'number' ? p.level : null) : Number(p.level || 0);
+    if (kind == 'pet') return isOrder ? null : Number(p.level || 0);
+    return null;
+}
+
+function marketPrices() {
+    const data = rpgenius.getDataCache('TradeLog', null);
+    if (!data || typeof data != 'object') return {};
+    if (!data.prices || typeof data.prices != 'object') {
+        // 처음에는 남아 있는 거래 로그로 채운다. 예전 삽니다 체결은 판 물건을 모르므로 조건 값을 쓴다.
+        data.prices = {};
+        (Array.isArray(data.items) ? data.items : []).slice().reverse()
+            .forEach(log => addMarketPrice(data.prices, log, marketVariant(log.kind, log.payload, log.tradeType == '삽니다')));
+    }
+    return data.prices;
+}
+
+function addMarketPrice(prices, log, variant) {
+    const key = marketKey(log.kind, log.payload), price = Number(log.unitPrice);
+    if (!key || !(price > 0) || !['gold', 'garnet'].includes(log.currency)) return;
+    const list = prices[key] || (prices[key] = []);
+    list.push([Number(log.time) || Date.now(), price, Math.max(1, Number(log.count) || 1), log.currency, variant == null ? null : variant]);
+    if (list.length > MARKET_PRICE_PER_KEY) list.splice(0, list.length - MARKET_PRICE_PER_KEY);
+    // 크기 상한을 넘으면 가장 오래된 체결부터 지운다.
+    let size = JSON.stringify(prices).length;
+    while (size > MARKET_PRICE_BUDGET) {
+        let oldest = null;
+        for (const k in prices) if (!oldest || prices[k][0][0] < prices[oldest][0][0]) oldest = k;
+        size -= JSON.stringify(prices[oldest].shift()).length + 1;
+        if (!prices[oldest].length) { delete prices[oldest]; size -= JSON.stringify(oldest).length + 3; }
     }
 }
 
@@ -8995,6 +9078,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
     const stock = Number(entry.count || 1);
     const unitPrice = Number(entry.price || 0);
     let sellCount = 1;
+    let soldVariant = null;
     const cards = (seller.inventory && seller.inventory.card) || [];
     const equips = (seller.inventory && seller.inventory.equipment) || [];
 
@@ -9014,6 +9098,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
             type: transferred.type || '일반',
             skin: ''
         });
+        soldVariant = transferred.type || '일반';
     } else if (entry.kind == 'equipment') {
         const index = Number(body.index);
         if (!Number.isInteger(index) || index < 0 || !equips[index]) return { error: '판매할 장비를 선택해주세요.' };
@@ -9026,6 +9111,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         const transferred = rpgenius.markEquipmentTraded(rpgenius.cloneEquipmentInstance(eq, eq.type));
         equips.splice(index, 1);
         buyer.inventory.equipment.push(transferred);
+        soldVariant = Number(eq.level || 0);
     } else if (entry.kind == 'item') {
         sellCount = Math.floor(Number(body.count || 1));
         if (!Number.isInteger(sellCount) || sellCount < 1) return { error: '판매 갯수는 1 이상의 정수여야 합니다.' };
@@ -9048,6 +9134,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         const transferred = rpgenius.markPetTraded(rpgenius.clonePetInstance(pet));
         pets.splice(index, 1);
         buyer.inventory.pet.push(transferred);
+        soldVariant = Number(pet.level || 0);
     } else if (entry.kind == 'avatar') {
         const avatarName = String(entry.payload && entry.payload.name || '');
         const blockReason = rpgenius.getAvatarTradeBlockReason(seller, avatarName, body.avatarId);
@@ -9091,7 +9178,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         totalPrice: totalPrice,
         fee: fee,
         currency: entry.currency
-    });
+    }, soldVariant);
     return { notice };
 }
 

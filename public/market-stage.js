@@ -458,9 +458,11 @@
         if (kind.currency) return Math.max(0, Number(kind.balance) || 0);
         const e = pickerSelected(P); return e ? Math.max(0, Number(kind.quantity ? kind.quantity(e) : 1) || 0) : 0;
     }
+    // config.panel: { min, max, draw(K, A, P, kind, sel, x, y, w, h) } 고른 품목 곁에 붙는 판(시세 그래프 등).
+    // 넓은 화면에서는 감정대 옆에 한 줄을 따로 세우고, 좁으면 감정대와 조작 칸 사이에 끼운다. o.full이면 겹창이 무대 전체를 덮는다.
     function drawPicker(K, A, P, o = {}) {
-        const { C } = K, W = A.w, H = A.h, mobile = W < 760;
-        const M = K.modal(P.config.title, mobile ? W - 8 : Math.min(1080, W - 40), mobile ? H - 8 : Math.min(760, H - 32), { close: 'picker-close', tint: o.tint });
+        const { C } = K, W = A.w, H = A.h, mobile = W < 760, panel = P.config.panel || null;
+        const M = K.modal(P.config.title, mobile || o.full ? W - 8 : Math.min(1080, W - 40), mobile || o.full ? H - 8 : Math.min(760, H - 32), { close: 'picker-close', tint: o.tint });
         const p = mobile ? 12 : 18, { kind, list, filters } = pickerList(P), kinds = P.config.kinds;
         let y = M.y + 66;
         // 종류 탭
@@ -474,27 +476,33 @@
         y += tabRows * (tabH + 6) + 4;
         const foot = M.y + M.h - p;
         if (kind && kind.currency) { drawAmountPanel(K, A, P, kind, M.x + p, y, M.w - p * 2, foot - y, o); return; }
+        // 오른쪽 자리: 감정대 폭과, 넓은 화면이면 그 옆 판 한 줄.
+        const inner = M.w - p * 2, column = !mobile && !!panel && inner >= 1140;
+        const inspW = mobile ? 0 : !panel ? Math.min(400, Math.round(inner * .38)) : column ? K.clamp(Math.round(inner * .22), 290, 360) : K.clamp(Math.round(inner * .44), 330, 420);
+        const colW = column ? K.clamp(Math.round(inner * .28), 370, 460) : 0, rightW = inspW ? inspW + 14 + (colW ? colW + 14 : 0) : 0;
         // 분류와 검색
-        const searchW = mobile ? M.w - p * 2 : Math.min(260, (M.w - p * 2) * .3);
+        const searchW = mobile ? M.w - p * 2 : panel ? K.clamp((inner - rightW) * .4, 200, 260) : Math.min(260, inner * .3);
         K.well(M.x + p, y, searchW, 40, 6); K.glyph('search', M.x + p + 18, y + 20, 14, K.DIM);
         A.field('picker-search', M.x + p + 32, y + 2, searchW - 36, 36, { value: P.query, placeholder: '이름, 등급, 성급 검색', label: '보관함 검색', maxLength: 30 });
-        const inspW0 = mobile ? 0 : Math.min(400, Math.round((M.w - p * 2) * .38)), rowY = y;
-        let fy = y, fx0 = M.x + p + searchW + 10, fw = M.w - p * 2 - searchW - 10 - (inspW0 ? inspW0 + 14 : 0);
+        const rowY = y;
+        let fy = y, fx0 = M.x + p + searchW + 10, fw = inner - searchW - 10 - rightW;
         if (mobile) { fy = y + 48; fx0 = M.x + p; fw = M.w - p * 2; }
         // 분류 버튼이 한 줄에 다 안 들어가면 다음 줄로 넘긴다(두 줄째는 격자 폭 전체를 쓴다).
         let fx = fx0, rowStart = fx0, rowEnd = fx0 + fw, lines = 1;
-        const gridRight = M.x + M.w - p - (inspW0 ? inspW0 + 14 : 0);
+        const gridRight = M.x + M.w - p - rightW;
         for (const f of filters) {
             const bw = K.tw(f, 13, 700) + 26;
             if (fx + bw > rowEnd) { if (lines >= 2) break; lines++; fy += 46; rowStart = M.x + p; rowEnd = gridRight; fx = rowStart; }
             K.btn('picker-filter', f, fx, fy, bw, 40, f, { on: P.filter === f, pressed: P.filter === f, size: 13 }); fx += bw + 6;
         }
         y = fy + 50;
-        const sel = pickerSelected(P), inspW = mobile ? 0 : Math.min(400, Math.round((M.w - p * 2) * .38));
-        const gx = M.x + p, gw = M.w - p * 2 - (inspW ? inspW + 14 : 0), gh = foot - y - 54 - (mobile && sel ? 0 : 0);
+        const sel = pickerSelected(P);
+        const gx = M.x + p, gw = inner - rightW, gh = foot - y - 54;
         // 격자
         const minW = mobile ? 0 : 128, cols = mobile ? Math.max(2, Math.floor(gw / 150)) : Math.max(2, Math.floor((gw + 10) / (minW + 10)));
-        const ch0 = P.kind === 'card' ? 196 : 164, rows = Math.max(1, Math.floor((gh + 10) / (ch0 + 10))), per = cols * rows, pages = Math.max(1, Math.ceil(list.length / per));
+        // 화면 전체를 쓰는 겹창은 칸을 조금 줄여서라도 남는 높이에 한 줄을 더 채운다. 품목이 적으면 필요한 줄만 써서 칸을 키운다.
+        const ch0 = P.kind === 'card' ? 196 : 164, fitRows = Math.max(1, Math.floor((gh + 10) / (ch0 * (o.full ? .9 : 1) + 10)));
+        const rows = o.full ? Math.min(fitRows, Math.max(1, Math.ceil(list.length / cols))) : fitRows, per = cols * rows, pages = Math.max(1, Math.ceil(list.length / per));
         P.perPage = per; P.page = K.clamp(P.page, 0, pages - 1);
         const cw = (gw - 10 * (cols - 1)) / cols, ch = Math.min(ch0 * 1.25, (gh - 10 * (rows - 1)) / rows);
         if (!list.length) { K.well(gx, y, gw, gh, 10); K.text(P.query || P.filter !== '전체' ? '맞는 품목이 없습니다' : o.emptyText || '보낼 수 있는 품목이 없습니다', gx + gw / 2, y + gh / 2, 15, K.DIM, 'center', 600); }
@@ -502,18 +510,50 @@
             K.slot(e.info, gx + (i % cols) * (cw + 10), y + Math.floor(i / cols) * (ch + 10), cw, ch, { action: 'picker-pick', id: e.key, on: e.key === P.selected, small: mobile });
         });
         K.pager(gx, foot - 44, gw, P.page, pages, 'picker-previous', 'picker-next');
+        const extraH = sel && P.config.extraHeight ? P.config.extraHeight(kind, sel) : 0;
+        // 판을 끼울 자리: 감정대 머리(그림, 이름)를 남기고 나머지를 판에 준다. 머리 자리도 모자라면 한 줄짜리 머리로 바꾼다.
+        // 한 줄짜리 머리로도 판이 안 들어가는 아주 낮은 화면에서는 판을 빼고 조작 칸만 남긴다.
+        const band = (height, actH) => {
+            const min = panel.min || 96, lim = v => K.clamp(v, min, panel.max || 260);
+            if (height - actH - 84 < min) return { ph: 0, slim: true };
+            const ph = lim(height - actH - 150);
+            return height - actH - ph < 140 ? { ph: lim(height - actH - 84), slim: true } : { ph, slim: false };
+        };
+        // 한 줄짜리 머리: 그림, 이름, 꼬리표와 상세 단추. right는 오른쪽에 비워 둘 폭(닫기 단추 자리).
+        const slimHead = (x0, y0, w0, a, right) => {
+            K.plate(x0, y0, w0, a.h, 16, { a: a.alpha, tint: sel.info.accent });
+            const hasDetail = !!(o.detailAction && sel.info.detail);
+            K.mini(sel.info, x0 + 10, y0 + 10, w0 - 20 - right - (hasDetail ? 48 : 0), 60);
+            if (hasDetail) K.btn(o.detailAction, sel.key, x0 + w0 - 10 - right - 44, y0 + 20, 44, 40, '', { glyph: 'eye', aria: sel.info.title + ' 상세 정보' });
+        };
         if (!mobile) {
-            const ix = M.x + M.w - p - inspW, actH = sel ? (kind.quantity ? 168 : 112) + (P.config.extraHeight ? P.config.extraHeight(kind, sel) : 0) : 112;
-            K.inspect(sel && sel.info, ix, rowY, inspW, foot - rowY, { bottom: actH, detail: sel && o.detailAction, detailId: sel && sel.key });
-            if (sel) drawPickAction(K, A, P, kind, sel, ix + 16, foot - actH + 6, inspW - 32, o);
+            // 판이 붙으면 단추 아래 여백을 줄여 판에 준다(오류 한 줄 자리는 남긴다).
+            const ix = gx + gw + 14, actH = sel ? (kind.quantity ? 168 : 112) + extraH - (panel ? 22 : 0) : 112;
+            if (column) {
+                K.inspect(sel && sel.info, ix, rowY, inspW, foot - rowY, { detail: sel && o.detailAction, detailId: sel && sel.key });
+                const cx = ix + inspW + 14, ch2 = foot - rowY;
+                K.plate(cx, rowY, colW, ch2, 16, { a: .6, tint: o.tint });
+                panel.draw(K, A, P, kind, sel, cx + 16, rowY + 16, colW - 32, ch2 - 32 - (sel ? actH : 0));
+                if (sel) drawPickAction(K, A, P, kind, sel, cx + 16, foot - actH + 6, colW - 32, o);
+            } else {
+                const { ph, slim } = sel && panel ? band(foot - rowY, actH) : { ph: 0, slim: false };
+                if (slim) slimHead(ix, rowY, inspW, { h: foot - rowY, alpha: .6 }, 0);
+                else K.inspect(sel && sel.info, ix, rowY, inspW, foot - rowY, { bottom: actH + ph, detail: sel && o.detailAction, detailId: sel && sel.key });
+                if (ph) panel.draw(K, A, P, kind, sel, ix + 16, foot - actH - ph, inspW - 32, ph - 6);
+                if (sel) drawPickAction(K, A, P, kind, sel, ix + 16, foot - actH + 6, inspW - 32, o);
+            }
         } else if (sel && P.mobileDetail) {
-            // 휴대폰: 고른 품목을 아래에서 올라오는 판으로 보여 준다.
-            const sh = Math.min(H - 24, (kind.quantity ? 520 : 450) + (P.config.extraHeight ? P.config.extraHeight(kind, sel) : 0)), sx = M.x + 4, sy = M.y + M.h - sh - 4;
+            // 휴대폰: 고른 품목을 아래에서 올라오는 판으로 보여 준다. 판이 붙으면 화면 높이를 다 쓴다.
+            const sh = panel ? H - 24 : Math.min(H - 24, (kind.quantity ? 520 : 450) + extraH), sx = M.x + 4, sy = M.y + M.h - sh - 4, sw = M.w - 8;
             C.fillStyle = 'rgba(3,5,9,.55)'; C.fillRect(M.x, M.y, M.w, M.h); A.shade();
-            const actH = (kind.quantity ? 160 : 104) + (P.config.extraHeight ? P.config.extraHeight(kind, sel) : 0);
-            K.inspect(sel.info, sx, sy, M.w - 8, sh, { bottom: actH, detail: o.detailAction, detailId: sel.key, a: .985, headRight: 56 });
-            K.btn('picker-back', '', sx + M.w - 8 - 52, sy + 8, 44, 40, '', { glyph: 'close', aria: '고르기 취소' });
-            drawPickAction(K, A, P, kind, sel, sx + 16, sy + sh - actH + 4, M.w - 40, o);
+            // 판이 붙으면 화면 끝까지 쓰므로 단추 아래 여백을 줄여 판에 준다(오류 한 줄 자리는 남긴다).
+            const actH = (kind.quantity ? 160 : 104) + extraH - (panel ? 22 : 0);
+            const { ph, slim } = panel ? band(sh, actH) : { ph: 0, slim: false };
+            if (slim) slimHead(sx, sy, sw, { h: sh, alpha: .985 }, 50);
+            else K.inspect(sel.info, sx, sy, sw, sh, { bottom: actH + ph, detail: o.detailAction, detailId: sel.key, a: .985, headRight: 56 });
+            K.btn('picker-back', '', sx + sw - 52, sy + (slim ? 20 : 8), 44, 40, '', { glyph: 'close', aria: '고르기 취소' });
+            if (ph) panel.draw(K, A, P, kind, sel, sx + 16, sy + sh - actH - ph, sw - 32, ph - 6);
+            drawPickAction(K, A, P, kind, sel, sx + 16, sy + sh - actH + 4, sw - 32, o);
         }
     }
     function drawPickAction(K, A, P, kind, sel, x, y, w, o) {
