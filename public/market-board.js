@@ -215,12 +215,20 @@
         const e = selectedEntry() || (inOverlay ? null : visible()[0] || null);
         if (!e) { K.inspect(null, x, y, w, h, {}); return; }
         if (!inOverlay && !ui.selected) ui.selected = e.id;
-        const info = infoOf(e), actH = actionHeight(e);
-        K.inspect(info, x, y, w, h, { bottom: actH, detail: info.detail ? 'detail' : null, detailId: e.id, a: inOverlay ? .985 : .6 });
+        const info = infoOf(e), actH = actionHeight(e), chartH = K.clamp(h - actH - 150, 128, 280);
+        if (ui.chart?.entry?.id !== e.id) ui.chart = { entry: e, currency: e.currency };
+        ui.chart.entry = e;
+        ui.chart.price = ui.chart.currency === e.currency ? e.unitPrice : 0;
+        if (h - actH - chartH < 140) {
+            K.plate(x, y, w, h, 16, { a: inOverlay ? .985 : .6, tint: info.accent });
+            K.mini(info, x + 10, y + 10, w - 20 - (info.detail ? 48 : 0), 60);
+            if (info.detail) K.btn('detail', e.id, x + w - 54, y + 20, 44, 40, '', { glyph: 'eye', aria: info.title + ' 상세 정보' });
+        } else K.inspect(info, x, y, w, h, { bottom: actH + chartH, detail: info.detail ? 'detail' : null, detailId: e.id, a: inOverlay ? .985 : .6 });
+        marketPanel(K, A, ui.chart, null, null, x + 16, y + h - actH - chartH, w - 32, chartH - 8);
         actions(A, K, e, x + 16, y + h - actH, w - 32, actH - 14);
     }
     function actionHeight(e) {
-        if (mode === 'sell') return e.mine ? 128 : (e.kind === 'item' ? 232 : 178);
+        if (mode === 'sell') return e.mine ? 128 : (e.kind === 'item' ? 200 : 178);
         return e.mine ? 150 : 168;
     }
     function row(K, label, value, x, y, w, color, goods, A) {
@@ -431,8 +439,16 @@
         }
         return h;
     }
-    // 판매 등록은 내 물건, 구매 등록은 고른 조건으로 품목 키와 종류를 정한다(server.js marketKey, marketVariant와 같은 규칙).
+    // 매물은 공개된 품목 정보, 판매 등록은 내 물건, 구매 등록은 고른 조건으로 품목 키와 종류를 정한다.
     function marketTarget(P, kind, sel) {
+        if (P.entry) {
+            const e = P.entry, d = e.display || {};
+            if (e.kind === 'card') return { key: 'c:' + d.cardId + ':' + d.star, variant: d.cardType || (mode === 'buy' ? null : '일반') };
+            if (e.kind === 'equipment') return { key: 'e:' + d.equipType + ':' + d.equipId, variant: d.level };
+            if (e.kind === 'item') return { key: 'i:' + d.itemId, variant: null };
+            if (e.kind === 'pet') return { key: 'p:' + d.petId, variant: null };
+            if (e.kind === 'avatar') return { key: 'a:' + d.name, variant: null };
+        }
         if (!sel || !kind) return null;
         const r = sel.raw, buy = mode === 'buy';
         if (kind.key === 'card') return { key: 'c:' + r.id + ':' + (buy ? P.star : r.star), variant: buy ? P.cardType || null : r.type || '일반' };
@@ -447,7 +463,7 @@
         const h = historyFor(t.key), item = t.key + '|' + t.variant;
         if (P.chartItem !== item) { P.chartItem = item; P.chartAll = false; P.chartPick = -1; }
         const exact = t.variant != null && !P.chartAll, cur = P.currency, other = cur === 'gold' ? 'garnet' : 'gold';
-        const same = v => !exact || v === t.variant, open = list => list.filter(x => !x.mine);
+        const same = v => !exact || v === t.variant, open = list => P.entry ? list : list.filter(x => !x.mine);
         const pick = c => ({
             trades: h.trades.filter(x => x.currency === c && same(x.variant)).sort((a, b) => a.time - b.time),
             asks: open(h.asks).filter(x => x.currency === c && same(x.variant)),
@@ -520,7 +536,7 @@
         }
         K.well(x, y, w, h, 8, 'rgba(2,4,8,.42)');
         // 범례: 그려지는 기준선만 적는다.
-        const legend = h >= 130 ? refs.concat(mine ? [{ label: '내 가격', color: LINE.mine, solid: true }] : []) : [];
+        const legend = h >= 130 ? refs.concat(mine ? [{ label: P.entry ? '매물 가격' : '내 가격', color: LINE.mine, solid: true }] : []) : [];
         let lx = x + 12, shown = 0;
         for (const item of legend) {
             const lw = 19 + K.tw(item.label, 11, 700);
@@ -693,6 +709,7 @@
             if (action.startsWith('picker-')) { stage.play('select'); MS.pickerAct(P, action, id); stage.invalidate(); return; }
             if (action.startsWith('reg-')) { regAct(P, action, id); stage.invalidate(); return; }
         }
+        if (ui.chart && ['reg-variant', 'reg-chart', 'reg-chart-currency'].includes(action)) { regAct(ui.chart, action, id); stage.invalidate(); return; }
         if (action !== 'back') stage.play('select');
         const e = selectedEntry();
         switch (action) {
@@ -754,7 +771,7 @@
 
     // ── 데이터
     async function load() {
-        const token = ++loadToken, m0 = mode; data.loading = true; data.error = ''; stage?.invalidate();
+        const token = ++loadToken, m0 = mode; data.history.clear(); data.loading = true; data.error = ''; stage?.invalidate();
         try {
             const res = await api(M().list);
             if (token !== loadToken || mode !== m0) return;
@@ -767,7 +784,7 @@
     function open(nextMode) {
         close(); mode = nextMode;
         const host = document.getElementById(M().root); if (!host || !MS) return;
-        Object.assign(ui, { filter: 'all', currency: 'all', sort: 'new', query: '', page: 0, selected: '', overlay: false, qty: 1, picker: null, dialog: null, toast: '' });
+        Object.assign(ui, { filter: 'all', currency: 'all', sort: 'new', query: '', page: 0, selected: '', overlay: false, qty: 1, chart: null, picker: null, dialog: null, toast: '' });
         data.list = []; data.infos.clear(); data.sellable = null;
         stage = MS.mount(host, { theme: 'market', label: M().title, state: ui, currencyIcons: new Proxy({}, { get: (_, k) => currencyIcons()[k] }), draw, onAct: act, onField: field });
         load(); if (mode === 'buy') loadSellable();

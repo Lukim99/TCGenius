@@ -771,6 +771,30 @@ test('흑화 호두 시전은 공통 카드에 원래 이름, 남은 시간과 �
     assert.notEqual(party.__test.serializeMonster(room.monster).patternEvents[0].id, first[0].id);
 });
 
+test('종언은 일반·익스트림 모두 우선 대상의 최대 HP 80% 피해를 주고 보호막을 적용한다', async () => {
+    for (const questId of ['blackHodu', 'blackHoduExtreme']) {
+        for (const [hp, shield, expectedHp] of [[900, 0, 100], [900, 200, 300], [700, 0, 0]]) {
+            const room = await battle('normal', 3); room.questId = questId; room.phaseIndex = 2;
+            const mon = room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === questId).phases[2]);
+            const st = mon.bossState, handler = party.__test.BOSS_HANDLERS[mon.bossKey];
+            st.phase50Started = true; st.curseTriggered = true;
+            mon.hp = mon.hpMax * .1;
+            room.members.forEach((m, i) => { m.position = ['탱커', '메인딜러', '서브딜러'][i]; });
+            const target = room.members[1];
+            Object.assign(target.runtime, { hp, hpMax: 1000 });
+            if (shield) party.__test.grantMemberShield(room, target, target, shield);
+            handler.step(room, mon, .2);
+            assert.equal(st.casting.id, 'execute'); assert.equal(target.runtime.hp, hp, '시전 중에는 피해가 없다');
+            handler.step(room, mon, st.casting.duration);
+            assert.equal(target.runtime.hp, expectedHp, questId + '/' + hp + '/' + shield);
+            assert.equal(target.runtime.dead, expectedHp === 0);
+            assert.equal(target.runtime.shield, 0);
+            assert.equal(room.members[0].runtime.hp, 1000000);
+            assert.equal(room.members[2].runtime.hp, 1000000);
+        }
+    }
+});
+
 test('익스트림의 저주와 역할 방패는 원래 명칭과 지속시간을 공통 카드에 표시한다', async () => {
     const room = await battle(); room.questId = 'blackHoduExtreme'; room.phaseIndex = 2;
     room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[2]);
@@ -935,7 +959,7 @@ test('잉여왕의 주시, 레인 보호막과 저지 시전은 대상자와 참
     room.monster.hp = room.monster.hpMax * .7; tick(room);
     events = party.__test.serializeMonster(room.monster).patternEvents;
     const rain = events.find(event => event.id === 'rain');
-    assert.equal(rain.label, '레인! 도와줘!'); assert.equal(rain.duration, 10); assert.deepEqual(rain.targets, [st.markName]);
+    assert.equal(rain.label, '레인! 도와줘!'); assert.equal(rain.duration, 10); assert.deepEqual(rain.targets, room.members.slice(0, 2).map(m => m.name));
     assert.equal(rain.effect, 'rain-shield');
     assert.equal(new Set(events.map(event => event.id)).size, events.length);
     st.gimmickActive = null; st.hpGimmicks = []; st.flameTimer = 999; st.chargeTimer = .2;
@@ -945,6 +969,36 @@ test('잉여왕의 주시, 레인 보호막과 저지 시전은 대상자와 참
     st.blockUsers.add(seeds[0].name);
     const progress = party.__test.serializeMonster(room.monster).patternEvents.find(event => event.id === charge.id);
     assert.deepEqual(progress.responded, [seeds[0].name]); assert.equal(progress.label, charge.label);
+});
+
+test('레인 보호막은 주시 대상과 다음 생존자가 공격하며 마지막 순번에서 순환한다', async () => {
+    for (const questId of ['butaGame', 'butaGameHard']) {
+        for (const [marked, dead, expected] of [[0, [], [0, 1]], [2, [], [2, 0]], [0, [1], [0, 2]], [0, [0], [1, 2]], [0, [1, 2], [0]]]) {
+            const room = await battle('normal', 3); room.questId = questId; room.phaseIndex = 1;
+            const mon = room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === questId).phases[1]);
+            party.__test.BOSS_HANDLERS[mon.bossKey].onSpawn(room, mon);
+            mon.bossState.markName = room.members[marked].name;
+            for (const i of dead) { room.members[i].runtime.dead = true; room.members[i].runtime.hp = 0; }
+            mon.bossState.gimmickActive = {};
+            mon.bossState.hpGimmicks[0].run(room, mon);
+            const rain = party.__test.serializeMonster(mon).patternEvents.find(e => e.id === 'rain');
+            assert.deepEqual(rain.targets, expected.map(i => room.members[i].name), questId);
+            for (const [i, member] of room.members.entries()) {
+                if (dead.includes(i)) continue;
+                assert.equal(Number(member.runtime.sealRemain || 0) > 0, !expected.includes(i));
+                const shield = mon.shield;
+                member.baseSnapshot.stats.atk = 1000;
+                room.awaitingChoices = false;
+                const result = party.attackMobPhase(member.name);
+                room.awaitingChoices = true;
+                if (expected.includes(i)) {
+                    assert.equal(result.error, undefined); assert.ok(mon.shield < shield, '허용된 두 대상은 실제 보호막을 공격한다');
+                } else {
+                    assert.equal(result.error, '봉인 상태입니다.'); assert.equal(mon.shield, shield);
+                }
+            }
+        }
+    }
 });
 
 test('모든 레이드 관문 컷씬은 3초 동안 실제 전투와 모든 전투 행동을 멈춘다', async () => {
