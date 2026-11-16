@@ -9624,6 +9624,7 @@ const SUPPORT_PLUS_STAT_LABELS = {
     finalDamage: '최종 피해', extraDamage: '추가 피해', nonElementDamage: '[무]속성 공격 피해',
     ultimateDamage: '궁극기 스킬 피해', elementalExtraDamage: '속성 공격 추가 피해',
     burnDamage: '화상 피해', lightFinalDamage: '명속성 공격 최종 피해',
+    bossDmg: '보스 몬스터에게 주는 피해 증가',
     summonDuration: '소환 지속시간', cooldown: '쿨타임 감소',
     dotDamage: '지속 피해', waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해",
     butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
