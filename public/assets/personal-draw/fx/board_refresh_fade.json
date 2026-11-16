@@ -1,0 +1,39 @@
+{
+  "file": "board_refresh_fade.webp",
+  "mask": "board_refresh_white.png",
+  "size": [
+    944,
+    944
+  ],
+  "sampleIntervalMs": 40,
+  "totalDurationMs": 800,
+  "playCount": 1,
+  "newBoardAtMs": 240,
+  "whiteThroughMs": 400,
+  "fullyClearAtMs": 760,
+  "unlockAtMs": 800,
+  "color": "#FFFFFF",
+  "scope": "board only",
+  "keyframes": [
+    {
+      "t": 0,
+      "opacity": 0
+    },
+    {
+      "t": 240,
+      "opacity": 1
+    },
+    {
+      "t": 400,
+      "opacity": 1
+    },
+    {
+      "t": 760,
+      "opacity": 0
+    },
+    {
+      "t": 800,
+      "opacity": 0
+    }
+  ]
+}
