@@ -102,7 +102,6 @@
                 "type": "executePositionCast",
                 "threshold": 0.15,
                 "castTime": 3,
-                "damageTargetMaxHpPct": 0.8,
                 "targetPriority": ["메인딜러", "서브딜러", "탱커", "브루저", "서포터"],
                 "interruptByStun": true,
                 "once": true
@@ -265,7 +264,6 @@
                 "type": "executePositionCast",
                 "threshold": 0.2,
                 "castTime": 1.5,
-                "damageTargetMaxHpPct": 0.8,
                 "targetPriority": ["메인딜러", "서브딜러", "탱커", "브루저", "서포터"],
                 "interruptByStun": true,
                 "once": true

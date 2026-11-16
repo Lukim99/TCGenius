@@ -101,14 +101,16 @@
         A.uniforms.accent = M().accent; A.uniforms.accent2 = M().accent2; A.uniforms.glow = 0; A.uniforms.seam = 0;
         ui.busy = ui.working;
         let y = topBar(A, K, m, mobile ? 6 : 10, W - m * 2, mobile ? 40 : 48, mobile);
-        const detailW = wide ? K.clamp(Math.round(W * .3), 320, 400) : 0, listW = W - m * 2 - (detailW ? detailW + 14 : 0);
+        const detailW = wide ? K.clamp(Math.round(W * .23), 280, 360) : 0, chartW = wide ? K.clamp(Math.round(W * .28), 340, 460) : 0;
+        const listW = W - m * 2 - (detailW ? detailW + chartW + 28 : 0);
         const top = y;
-        y = toolbar(A, K, m, y, listW, mobile);
+        y = toolbar(A, K, m, y, listW, mobile || listW < 700);
         board(A, K, m, y, listW, H - y - m, mobile);
-        if (detailW) detailPanel(A, K, m + listW + 14, top, detailW, H - top - m, false);
+        if (detailW) detailPanel(A, K, m + listW + 14, top, detailW, H - top - m, false, chartW);
         else if (ui.overlay && selectedEntry()) {
-            const e = selectedEntry(), Mo = K.modal(infoOf(e).kindLabel, Math.min(W - 8, 560), H - 8, { close: 'overlay-close', tint: infoOf(e).accent });
-            detailPanel(A, K, Mo.x + 6, Mo.y + 60, Mo.w - 12, Mo.h - 66, true);
+            const e = selectedEntry(), Mo = K.modal(infoOf(e).kindLabel, mobile ? Math.min(W - 8, 560) : W - 8, H - 8, { close: 'overlay-close', tint: infoOf(e).accent });
+            const sideW = mobile ? 0 : K.clamp(Math.round(W * .4), 300, 370);
+            detailPanel(A, K, Mo.x + 6, Mo.y + 60, Mo.w - 12 - (sideW ? sideW + 14 : 0), Mo.h - 66, true, sideW);
         }
         if (ui.filtersOpen) {
             const tabs = [...KINDS, ['mine', M().mine]].concat(mode === 'buy' ? [['can', '판매 가능']] : []), cols = 2, rows = Math.ceil(tabs.length / cols);
@@ -117,7 +119,8 @@
         }
         if (ui.picker) MS.drawPicker(K, A, ui.picker, { tint: M().accent, detailAction: 'picker-detail', full: !!ui.picker.config.panel });
         if (ui.dialog) K.dialog(ui.dialog);
-        if (ui.toast && !ui.picker && !ui.dialog) {
+        if (ui.chartOpen) chartModal(A, K);
+        if (ui.toast && !ui.picker && !ui.dialog && !ui.chartOpen) {
             const tw = Math.min(W - 24, K.tw(ui.toast, 14, 700) + 48), tx = (W - tw) / 2;
             K.plate(tx, top + 2, tw, 34, 8, { a: .96, edge: .7, tint: ui.toastBad ? WARN : GOOD, tintA: .25 });
             K.line(ui.toast, W / 2, top + 19.5, tw - 20, 14, ui.toastBad ? WARN : GOOD, 'center', 700, 10);
@@ -211,21 +214,32 @@
         }, footerH: footH, aria: [info.title, ...badges.map(b => b.text), fmt(e.unitPrice) + ' ' + CUR[e.currency], mm.whoLabel + ' ' + e[mm.who]].join(', ') });
     }
     // 감정대와 거래 버튼
-    function detailPanel(A, K, x, y, w, h, inOverlay) {
+    function detailPanel(A, K, x, y, w, h, inOverlay, chartW = 0) {
         const e = selectedEntry() || (inOverlay ? null : visible()[0] || null);
         if (!e) { K.inspect(null, x, y, w, h, {}); return; }
         if (!inOverlay && !ui.selected) ui.selected = e.id;
-        const info = infoOf(e), actH = actionHeight(e), chartH = K.clamp(h - actH - 150, 128, 280);
+        const info = infoOf(e), actH = actionHeight(e);
         if (ui.chart?.entry?.id !== e.id) ui.chart = { entry: e, currency: e.currency };
         ui.chart.entry = e;
         ui.chart.price = ui.chart.currency === e.currency ? e.unitPrice : 0;
-        if (h - actH - chartH < 140) {
-            K.plate(x, y, w, h, 16, { a: inOverlay ? .985 : .6, tint: info.accent });
-            K.mini(info, x + 10, y + 10, w - 20 - (info.detail ? 48 : 0), 60);
-            if (info.detail) K.btn('detail', e.id, x + w - 54, y + 20, 44, 40, '', { glyph: 'eye', aria: info.title + ' 상세 정보' });
-        } else K.inspect(info, x, y, w, h, { bottom: actH + chartH, detail: info.detail ? 'detail' : null, detailId: e.id, a: inOverlay ? .985 : .6 });
-        marketPanel(K, A, ui.chart, null, null, x + 16, y + h - actH - chartH, w - 32, chartH - 8);
-        actions(A, K, e, x + 16, y + h - actH, w - 32, actH - 14);
+        K.inspect(info, x, y, w, h, { bottom: chartW ? 0 : actH + 48, detail: info.detail ? 'detail' : null, detailId: e.id, a: inOverlay ? .985 : .6 });
+        if (chartW) {
+            const cx = x + w + 14;
+            K.plate(cx, y, chartW, h, 16, { a: inOverlay ? .985 : .6, tint: M().accent });
+            marketPanel(K, A, ui.chart, null, null, cx + 16, y + 16, chartW - 32, h - actH - 32);
+            actions(A, K, e, cx + 16, y + h - actH, chartW - 32, actH - 14);
+        } else {
+            K.btn('chart-open', '', x + 16, y + h - actH - 48, w - 32, 40, '시세 보기', { color: GOLD });
+            actions(A, K, e, x + 16, y + h - actH, w - 32, actH - 14);
+        }
+    }
+    function chartModal(A, K) {
+        const P = ui.picker || ui.chart, sel = ui.picker ? MS.pickerSelected(P) : null;
+        const kind = ui.picker ? MS.pickerList(P).kind : null, e = selectedEntry();
+        if (!P || (ui.picker ? !sel : !e)) { ui.chartOpen = false; return; }
+        const info = sel ? sel.info : infoOf(e), Mo = K.modal('시세', Math.min(A.w - 8, 680), Math.min(A.h - 8, 640), { close: 'chart-close', tint: M().accent });
+        K.mini(info, Mo.x + 16, Mo.y + 66, Mo.w - 32, 60);
+        marketPanel(K, A, P, kind, sel, Mo.x + 16, Mo.y + 140, Mo.w - 32, Mo.h - 156);
     }
     function actionHeight(e) {
         if (mode === 'sell') return e.mine ? 128 : (e.kind === 'item' ? 200 : 178);
@@ -427,7 +441,7 @@
     // 카드는 같은 번호와 성급, 장비와 펫은 같은 번호끼리 모으고, 카드 종류와 강화 수치(variant)는 고른 것만 보거나 전체를 본다.
     const variantLabel = v => typeof v === 'number' ? '+' + v : String(v);
     const pad2 = n => String(n).padStart(2, '0');
-    const marketPanelConfig = { min: 128, max: 320, draw: marketPanel };
+    const marketPanelConfig = { min: 128, max: 320, draw: marketPanel, mobileAction: 'chart-open', mobileLabel: '시세 보기' };
     function historyFor(key) {
         let h = data.history.get(key);
         if (!h) {
@@ -693,6 +707,12 @@
         finally { ui.working = false; stage?.invalidate(); }
     }
     function act(action, id) {
+        if (ui.chartOpen) {
+            if (action === 'chart-close' || action === 'back') ui.chartOpen = false;
+            else if (['reg-variant', 'reg-chart', 'reg-chart-currency'].includes(action)) regAct(ui.picker || ui.chart, action, id);
+            stage.invalidate(); return;
+        }
+        if (action === 'chart-open') { ui.chartOpen = true; stage.play('paper'); stage.invalidate(); return; }
         if (MS.linesAct(ui, action)) { stage.invalidate(); return; }
         if (ui.dialog) {
             const d = ui.dialog;
@@ -784,7 +804,7 @@
     function open(nextMode) {
         close(); mode = nextMode;
         const host = document.getElementById(M().root); if (!host || !MS) return;
-        Object.assign(ui, { filter: 'all', currency: 'all', sort: 'new', query: '', page: 0, selected: '', overlay: false, qty: 1, chart: null, picker: null, dialog: null, toast: '' });
+        Object.assign(ui, { filter: 'all', currency: 'all', sort: 'new', query: '', page: 0, selected: '', overlay: false, qty: 1, chart: null, chartOpen: false, picker: null, dialog: null, toast: '' });
         data.list = []; data.infos.clear(); data.sellable = null;
         stage = MS.mount(host, { theme: 'market', label: M().title, state: ui, currencyIcons: new Proxy({}, { get: (_, k) => currencyIcons()[k] }), draw, onAct: act, onField: field });
         load(); if (mode === 'buy') loadSellable();

@@ -458,7 +458,7 @@
         if (kind.currency) return Math.max(0, Number(kind.balance) || 0);
         const e = pickerSelected(P); return e ? Math.max(0, Number(kind.quantity ? kind.quantity(e) : 1) || 0) : 0;
     }
-    // config.panel: { min, max, draw(K, A, P, kind, sel, x, y, w, h) } 고른 품목 곁에 붙는 판(시세 그래프 등).
+    // config.panel: { min, max, draw(K, A, P, kind, sel, x, y, w, h), mobileAction?, mobileLabel? } 고른 품목 곁에 붙는 판.
     // 넓은 화면에서는 감정대 옆에 한 줄을 따로 세우고, 좁으면 감정대와 조작 칸 사이에 끼운다. o.full이면 겹창이 무대 전체를 덮는다.
     function drawPicker(K, A, P, o = {}) {
         const { C } = K, W = A.w, H = A.h, mobile = W < 760, panel = P.config.panel || null;
@@ -548,11 +548,12 @@
             C.fillStyle = 'rgba(3,5,9,.55)'; C.fillRect(M.x, M.y, M.w, M.h); A.shade();
             // 판이 붙으면 화면 끝까지 쓰므로 단추 아래 여백을 줄여 판에 준다(오류 한 줄 자리는 남긴다).
             const actH = (kind.quantity ? 160 : 104) + extraH - (panel ? 22 : 0);
-            const { ph, slim } = panel ? band(sh, actH) : { ph: 0, slim: false };
+            const { ph, slim } = panel?.mobileAction ? { ph: 48, slim: sh - actH - 48 < 140 } : panel ? band(sh, actH) : { ph: 0, slim: false };
             if (slim) slimHead(sx, sy, sw, { h: sh, alpha: .985 }, 50);
             else K.inspect(sel.info, sx, sy, sw, sh, { bottom: actH + ph, detail: o.detailAction, detailId: sel.key, a: .985, headRight: 56 });
             K.btn('picker-back', '', sx + sw - 52, sy + (slim ? 20 : 8), 44, 40, '', { glyph: 'close', aria: '고르기 취소' });
-            if (ph) panel.draw(K, A, P, kind, sel, sx + 16, sy + sh - actH - ph, sw - 32, ph - 6);
+            if (panel?.mobileAction) K.btn(panel.mobileAction, '', sx + 16, sy + sh - actH - ph, sw - 32, 40, panel.mobileLabel, { color: o.tint });
+            else if (ph) panel.draw(K, A, P, kind, sel, sx + 16, sy + sh - actH - ph, sw - 32, ph - 6);
             drawPickAction(K, A, P, kind, sel, sx + 16, sy + sh - actH + 4, sw - 32, o);
         }
     }
