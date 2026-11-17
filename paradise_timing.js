@@ -5,6 +5,7 @@ const diagnostics = require('node:diagnostics_channel');
 const context = new AsyncLocalStorage();
 const pendingWork = new WeakMap();
 const activeWork = new Map();
+const httpTrace = Symbol('httpTrace');
 const id = () => randomBytes(6).toString('hex');
 const rounded = values => Object.fromEntries(Object.entries(values).map(([key, value]) => [key, Math.round(value)]));
 const sample = () => ({ at: performance.now(), cpu: process.cpuUsage(), loop: performance.eventLoopUtilization() });
@@ -108,12 +109,12 @@ function instrumentDynamo(client) {
     }, { relation: 'after', toMiddleware: 'retryMiddleware', name: 'paradiseAttemptTiming' });
 }
 
-// Only stage/action names, opaque IDs and timings are exposed, never game data or credentials.
+// Only operational counters, names, opaque IDs and timings are exposed, never accounts or credentials.
 function requestTiming(action, response) {
     const started = sample(), startedAt = started.at, durations = {};
     const end = (name, start) => { durations[name] = (durations[name] || 0) + Math.max(0, performance.now() - start); };
     const timing = {
-        trace: id(), closed: false, active: new Map(), operations: [], omitted: 0,
+        trace: response?.[httpTrace] || id(), closed: false, active: new Map(), operations: [], omitted: 0,
         run: run => context.run({ timing }, run),
         start: () => performance.now(),
         end,
@@ -131,7 +132,7 @@ function requestTiming(action, response) {
             timing.closed = true;
             res.setHeader('X-Paradise-Trace', timing.trace);
             res.setHeader('Server-Timing', Object.entries(durations).map(([name, duration]) => name + ';dur=' + duration.toFixed(1)).join(', '));
-            if (durations.total >= 1000 || status >= 500) console.warn('[paradise timing]', JSON.stringify({ trace: timing.trace, action, status, durations: rounded(durations), runtime: elapsed(started), operations: timing.operations, omitted: timing.omitted }));
+            if (durations.total >= 1000 || status >= 500) console.warn('[paradise timing]', JSON.stringify({ trace: timing.trace, action, status, durations: rounded(durations), runtime: elapsed(started), advance: timing.advance, operations: timing.operations, omitted: timing.omitted }));
             return res.status(status).json(payload);
         }
     };
@@ -142,6 +143,7 @@ function requestTiming(action, response) {
     }, 10000);
     watchdog.unref();
     let finished = false;
+    if (response?.destroyed) console.warn('[paradise transport]', JSON.stringify({ trace: timing.trace, action, event: 'disconnected_before_handler' }));
     response?.once?.('finish', () => {
         finished = true;
         if (performance.now() - startedAt >= 1000) console.warn('[paradise transport]', JSON.stringify({ trace: timing.trace, action, event: 'finish', status: response.statusCode, ...elapsed(started) }));
@@ -151,4 +153,26 @@ function requestTiming(action, response) {
     });
     return timing;
 }
-module.exports = { requestTiming, measureWork, waitFor, instrumentDynamo };
+
+// A slow Paradise promise can be a victim of another HTTP handler blocking the process.
+function httpTiming(req, res, next) {
+    const started = sample();
+    res[httpTrace] = id();
+    let recorded = false;
+    const record = event => {
+        if (recorded) return;
+        recorded = true;
+        if (String(res.getHeader('Content-Type') || '').startsWith('text/event-stream')) return;
+        const runtime = elapsed(started);
+        if (runtime.ms < 1000) return;
+        console.warn('[http timing]', JSON.stringify({
+            method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(req.method) ? req.method : 'other',
+            route: typeof req.route?.path === 'string' ? req.route.path : '(unmatched)',
+            event, status: res.statusCode, trace: res[httpTrace], ...runtime
+        }));
+    };
+    res.once('finish', () => record('finish'));
+    res.once('close', () => record('disconnect'));
+    return next();
+}
+module.exports = { requestTiming, measureWork, waitFor, instrumentDynamo, httpTiming };

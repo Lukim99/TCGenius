@@ -144,6 +144,34 @@ test('timings use a monotonic clock and slow logs contain no response or user da
     assert.equal(logs.filter(([tag]) => tag === '[paradise pending]').length, 6);
     release(); await joined;
     pending.send(res, 503, payload);
+
+    const httpResponse = new EventEmitter();
+    httpResponse.statusCode = 200;
+    httpResponse.getHeader = () => undefined;
+    context.module.exports.httpTiming({ method: 'GET', route: { path: '/api/example/:id' }, path: '/api/example/private-id', query: { secret: 'private-secret' } }, httpResponse, () => { now += 1500; });
+    httpResponse.emit('finish'); httpResponse.emit('close');
+    const httpLogs = logs.filter(([tag]) => tag === '[http timing]');
+    assert.equal(httpLogs.length, 1);
+    assert.equal(JSON.parse(httpLogs[0][1]).route, '/api/example/:id');
+    assert.equal(JSON.parse(httpLogs[0][1]).ms, 1500);
+    assert.doesNotMatch(JSON.stringify(httpLogs), /private/);
+
+    const disconnected = new EventEmitter();
+    disconnected.statusCode = 200;
+    disconnected.getHeader = () => undefined;
+    context.module.exports.httpTiming({ method: 'POST', route: { path: '/api/paradise/attack' } }, disconnected, () => { now += 12000; });
+    disconnected.destroyed = true; disconnected.emit('close');
+    const outerTrace = JSON.parse(logs.at(-1)[1]).trace;
+    const late = context.module.exports.requestTiming('attack', disconnected);
+    assert.equal(late.trace, outerTrace, 'an outer-queue disconnect stays linked to the later handler');
+    assert.equal(JSON.parse(logs.at(-1)[1]).event, 'disconnected_before_handler');
+    late.send(res, 503, payload);
+    assert.equal(timers.size, 0);
+    const streaming = new EventEmitter(), beforeStreams = logs.length;
+    streaming.getHeader = () => 'text/event-stream';
+    context.module.exports.httpTiming({ method: 'GET' }, streaming, () => { now += 60000; });
+    streaming.emit('finish');
+    assert.equal(logs.length, beforeStreams, 'a long-lived event stream is not a slow HTTP action');
 });
 
 test('concurrent request traces retain the identity of a shared background save without sharing spans', async () => {

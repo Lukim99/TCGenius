@@ -9,6 +9,12 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
     const weeklyRewards = require('./paradise_rewards');
     weeklyRewards.startWeeklyRewards();
     const advanceCombat = async (user, timing) => {
+        const run = user.paradise, sequence = Number(run?.combatSequence || 0);
+        const fighting = corridor.active(user) && run.mode !== 'hell' && run.phase === 'combat';
+        const mirror = fighting && !!run.enemy?.mirror;
+        timing.advance = { clockMissing: fighting && !run.clock, mirror,
+            enemyOverdueMs: fighting && !mirror ? Math.max(0, Date.now() - Number(user.field.nextEnemyAttackAt || user.field.enteredAt || Date.now())) : 0,
+            aiOverdueMs: mirror ? Math.max(0, Date.now() - Number(run.enemy.mirror.nextActionAt || Date.now())) : 0 };
         const changed = timing.measure('advance_compute', () => {
             const timeAdvanced = corridor.advanceTime(user);
             const resourcesAdded = corridor.active(user) && !user.paradise.resources;
@@ -20,6 +26,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             const advanced = rpgenius.advanceParadiseCombat(user);
             return timeAdvanced || resourcesAdded || chestLimitChanged || rebalanced || offerNormalized || relicOfferNormalized || advanced;
         });
+        timing.advance.events = Math.max(0, Number(run?.combatSequence || 0) - sequence);
         if (!changed) return;
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
         await timing.measureAsync('advance_save', () => rpgenius.commitProtectedUserChange(user, keys));

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const { registerParadiseRoutes } = require('./paradise_web');
+const { httpTiming } = require('./paradise_timing');
 const shopCatalog = require('./shop_catalog');
 const pointUsage = require('./point_usage');
 const { createBlackMarket, lotTitle } = require('./black_market');
@@ -38,6 +39,7 @@ const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const fs = require('fs');
 
 const server = express();
+server.use(httpTiming);
 server.get('/healthz', async (req, res) => {
     const ready = await rpgenius.isRuntimeReady() && assetStore.syncState.status === 'done';
     res.set('Cache-Control', 'no-store').status(ready ? 200 : 503).json({ ready, revision: process.env.DEPLOY_REVISION || null });
