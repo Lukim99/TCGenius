@@ -54,7 +54,7 @@ function createGamePresentation({ inventories, card, itemAssets, rpg }) {
 
 function registerGameActionRoutes(server, deps) {
     const canUsePartyQuest = deps.canUsePartyQuest || deps.rpg.canUsePartyQuest;
-    const { rpg, requireUser, serializeItemUse, getPartyBlock, buildProfile, buildCards, getStarterCards, itemAssets, inventories, presentation } = deps;
+    const { rpg, requireUser, serializeItemUse, getPartyBlock, buildProfile, buildCards, buildFishingCards, getStarterCards, itemAssets, inventories, presentation } = deps;
     const fail = (message, status = 400) => { throw Object.assign(new Error(String(message).replace(/^❌\s*/, '')), { status }); };
     const checked = message => { if (String(message).startsWith('❌')) fail(message); return message; };
     const assertVersion = (user, kind, version) => {
@@ -72,7 +72,7 @@ function registerGameActionRoutes(server, deps) {
             items: Object.entries(user.fishingNet || {}).filter(([, count]) => count > 0).map(([id, count]) => ({
                 name: items[id] ? items[id].name : '알 수 없는 아이템', count,
                 ...itemAssets(items[id])
-            })).concat(buildCards({ ...user, inventory: { ...user.inventory, card: user.fishingCards || [] } }).map(card => ({ name: card.formatted, count: 1, kind: 'card', iconUrl: card.iconUrl })))
+            })).concat(buildFishingCards(user))
         };
     }
     function state(user) {

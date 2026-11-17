@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { Worker } = require('node:worker_threads');
 
 const SPLIT_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage', '카드분리');
 const CHARACTER_DIR = path.join(SPLIT_IMAGE_PATH, '캐릭터');
@@ -300,6 +301,51 @@ function composeCardImage(card) {
     return result;
 }
 
+// 합성·PNG 압축은 작업 스레드에서 수행해 다른 HTTP 요청을 막지 않는다.
+// 스레드 하나가 기존 LRU/mtime 캐시를 유지하고, 유휴 상태에서는 종료를 막지 않는다.
+let compositeWorker = null;
+
+function getCompositeWorker() {
+    if (compositeWorker) return compositeWorker;
+    const worker = new Worker(path.join(__dirname, 'card_composite_worker.js'));
+    const state = { worker, pending: new Map(), nextId: 0 };
+    compositeWorker = state;
+    const fail = error => {
+        if (compositeWorker === state) compositeWorker = null;
+        for (const job of state.pending.values()) job.reject(error);
+        state.pending.clear();
+        worker.unref();
+    };
+    worker.on('error', fail);
+    worker.on('exit', code => fail(new Error('Card image worker exited (' + code + ')')));
+    worker.on('message', ({ id, buffer, error }) => {
+        const job = state.pending.get(id);
+        if (!job) return;
+        state.pending.delete(id);
+        if (state.pending.size === 0) worker.unref();
+        if (error) job.reject(new Error(error));
+        else job.resolve(buffer === null ? null : Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength));
+    });
+    worker.unref();
+    return state;
+}
+
+function composeCardImageAsync(card) {
+    return new Promise((resolve, reject) => {
+        const state = getCompositeWorker();
+        const id = ++state.nextId;
+        state.pending.set(id, { resolve, reject });
+        state.worker.ref();
+        try {
+            state.worker.postMessage({ id, card });
+        } catch (error) {
+            state.pending.delete(id);
+            if (state.pending.size === 0) state.worker.unref();
+            reject(error);
+        }
+    });
+}
+
 // kind: '일반' | '각성' | '전직'
 function getCoverPath(name, kind) {
     if (!isSafeName(name) || !['일반', '각성', '전직'].includes(kind)) return null;
@@ -307,4 +353,4 @@ function getCoverPath(name, kind) {
     return fs.existsSync(filePath) ? filePath : null;
 }
 
-module.exports = { resolveCardLayers, canCompose, composeCardImage, getCoverPath, decodePng };
+module.exports = { resolveCardLayers, canCompose, composeCardImage, composeCardImageAsync, getCoverPath, decodePng };

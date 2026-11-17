@@ -256,6 +256,23 @@ test('new Glencheck and Dealer avatar layers are served for each card tier and p
     }
 });
 
+test('worker-composed card images preserve authentication, PNG bytes and browser cache validation', async () => {
+    const spec = { name: '키노', star: 11, type: '각성', square: true, specter: true };
+    const url = base + '/card-image?' + new URLSearchParams({ ...spec, square: '1', specter: '1' });
+    assert.equal((await fetch(url)).status, 401);
+    const response = await fetch(url, { headers: { Cookie: cookie } });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /^image\/png/);
+    assert.equal(response.headers.get('cache-control'), 'private, max-age=86400');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert.deepEqual(bytes, require('../card_composite').composeCardImage(spec));
+    const etag = response.headers.get('etag');
+    assert.ok(etag);
+    const cached = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': etag, 'Cache-Control': 'max-age=0' } });
+    assert.equal(cached.status, 304);
+    assert.equal((await cached.arrayBuffer()).byteLength, 0);
+});
+
 test('avatar gallery serves distinct card, portrait and available cutscene media with currency icons', async () => {
     const { body } = await api('/api/cards/avatars?source=main');
     const uniqueAvatar = body.avatars.find(a => a.grade === '유니크');

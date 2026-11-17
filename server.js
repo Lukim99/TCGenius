@@ -1334,7 +1334,7 @@ registerGameActionRoutes(server, {
         const room = partyquest.getMyRoomSnapshot(user.name);
         return room && room.state === 'inProgress' ? '레이드를 마친 뒤 이용해주세요.' : null;
     },
-    buildProfile: buildUserProfile, buildCards: buildCombineCards, itemAssets: getItemDisplayAssets,
+    buildProfile: buildUserProfile, buildCards: buildCombineCards, buildFishingCards, itemAssets: getItemDisplayAssets,
     getStarterCards: user => readJson(CHARACTER_CARDS_PATH, []).map((card, id) => card ? serializeCard({ id, star: 0, type: '일반' }, user) : null).filter(Boolean)
 });
 
@@ -5162,7 +5162,7 @@ server.get('/card-image', requireUser, async (req, res) => {
         return res.sendFile(coverPath);
     }
     if (typeof req.query.star != 'undefined') {
-        const buffer = cardComposite.composeCardImage({
+        const buffer = await cardComposite.composeCardImageAsync({
             name,
             star: Number(req.query.star),
             type: String(req.query.type || '일반'),
@@ -6506,6 +6506,15 @@ function buildInventoryCards(user) {
         .filter(Boolean);
 }
 
+function buildFishingCards(user) {
+    const cards = Array.isArray(user.fishingCards) ? user.fishingCards : [];
+    if (!cards.length) return [];
+    const characters = readJson(CHARACTER_CARDS_PATH, []);
+    return cards.filter(card => card && characters[card.id])
+        .sort((a, b) => Number(b.star || 0) - Number(a.star || 0) || Number(a.id) - Number(b.id))
+        .map(card => ({ name: rpgenius.formatUserCard(card), count: 1, kind: 'card', iconUrl: getCardIconUrl(card, user) }));
+}
+
 function buildCombineCards(user) {
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     return cards.map((card, i) => {
@@ -6615,6 +6624,7 @@ function buildEquipmentSetOverview(setName, inventoryEntries) {
 
 function buildInventoryEquipment(user) {
     const result = [];
+    const version = inventoryVersion(user, 'equipment');
     const labels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
     let number = 1;
     const add = (equip, type, equipped, meta) => {
@@ -6651,7 +6661,7 @@ function buildInventoryEquipment(user) {
             slotKey: meta && typeof meta.slotKey != 'undefined' ? String(meta.slotKey) : null,
             name: rpgenius.getEquipmentDisplayName(data, equip),
             baseName: data.name,
-            version: inventoryVersion(user, 'equipment'),
+            version,
             locked: !!equip.locked,
             rarity: rpgenius.getEquipmentRarityLabel(data, equip),
             baseRarity: data.rarity,

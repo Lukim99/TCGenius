@@ -689,6 +689,25 @@ test('아이템 판매는 운영 판매가를 사용하고 수량 초과·음수
     assert.equal(rpg.getInventoryItemCount(after, id), 3);
     assert.equal(after.gold, 1000000 + Number(items[id].sellPrice) * 2);
 });
+test('장비 300개 목록은 같은 버전을 한 번만 계산하고 보유·장착 장비를 보존한다', async t => {
+    const user = await reset({ inventory: { card: [], item: [], pet: [], equipment: Array.from({ length: 300 }, (_, i) => ({ type: 'weapon', id: 0, level: i % 3, locked: i % 2 === 0, uid: 'inventory-view-' + i })) } });
+    const expectedVersion = inventoryVersion(user, 'equipment');
+    const snapshot = JSON.stringify({ equipment: user.inventory.equipment, equipments: user.equipments });
+    const count = databaseWrites;
+    const crypto = require('node:crypto'), createHash = crypto.createHash;
+    let versionHashes = 0;
+    t.mock.method(crypto, 'createHash', (algorithm, ...args) => { if (algorithm === 'sha256') versionHashes++; return createHash(algorithm, ...args); });
+    const response = await request('/api/inventory/equipment');
+    assert.equal(response.status, 200);
+    assert.equal(response.data.equipment.filter(entry => !entry.equipped).length, 300);
+    assert.ok(response.data.equipment.some(entry => entry.equipped));
+    assert.ok(response.data.equipment.every(entry => entry.version === expectedVersion));
+    assert.equal(versionHashes, 1);
+    const current = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(JSON.stringify({ equipment: current.inventory.equipment, equipments: current.equipments }), snapshot);
+    assert.equal(databaseWrites, count);
+});
+
 test('장비 잠금·해제, 잠긴 장비와 장착 장비 제외, 다중 분해를 검증한다', async () => {
     await reset();
     let equipment = (await request('/api/inventory/equipment')).data.equipment;
@@ -784,6 +803,56 @@ test('펫 장착·해제·추출은 거래 횟수와 장착 상태를 지킨다'
     assert.equal(after.inventory.pet.length, 0);
     assert.equal(rpg.getInventoryItemCount(after, 155), rpg.PET_EXTRACT_YIELD[pet.rarity]);
 });
+test('낚시 카드 목록은 기존 성급 정렬과 메인·보관 카드의 스킨·유니크 아바타 표시를 보존한다', async t => {
+    const originalFashion = structuredClone(rpg.getDataCache('Fashion', []));
+    const unique = require('../scripts/register_unique_avatars').fashions.find(fashion => fashion.primary_card.includes(0));
+    const skin = originalFashion.find(fashion => fashion.primary_card?.includes(0));
+    packageData = { Fashion: [...originalFashion, unique] };
+    await rpg.loadRpgeniusDataEntry('Fashion');
+    t.after(async () => { await reset({ fishingCards: [] }); packageData = { Fashion: originalFashion }; await rpg.loadRpgeniusDataEntry('Fashion'); packageData = null; });
+    const cards = Array.from({ length: 12 }, (_, star) => ({ id: star % 3, star, type: ['일반', '전직', '각성'][star % 3] })).reverse();
+    cards.push({ id: 0, star: 10, type: '전직', skin: skin.name }, { id: 0, star: 10, type: '전직', skin: unique.name }, { id: 999999, star: 11 });
+    const user = await reset({ main_card: { id: 0, star: 11, type: '일반', skin: unique.name }, prestige: true, jobPrestige: true,
+        fishingCards: structuredClone(cards), inventory: { item: [], equipment: [], pet: [], card: structuredClone(cards) } });
+    const snapshot = JSON.stringify({ main_card: user.main_card, inventory: user.inventory, fishingCards: user.fishingCards });
+    const count = databaseWrites;
+    const combined = await request('/api/combine/cards');
+    assert.equal(combined.status, 200);
+    const expected = combined.data.cards.map(card => ({ name: card.formatted, count: 1, kind: 'card', iconUrl: card.iconUrl }));
+    assert.ok(expected.some(card => card.name.includes('할로윈') && card.iconUrl?.includes(encodeURIComponent(unique.name))));
+    assert.ok(expected.some(card => card.name.includes(skin.name) && card.iconUrl?.includes(encodeURIComponent(skin.name))));
+    for (const url of ['/api/game/state', '/api/fishing']) {
+        const response = await request(url);
+        assert.equal(response.status, 200);
+        const fishing = url === '/api/game/state' ? response.data.fishing : response.data;
+        assert.deepEqual(fishing.items, expected);
+        assert.equal(fishing.count, cards.length);
+    }
+    const current = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(JSON.stringify({ main_card: current.main_card, inventory: current.inventory, fishingCards: current.fishingCards }), snapshot);
+    assert.equal(databaseWrites, count, '목록 조회는 보관 카드나 운영 데이터를 저장하지 않는다');
+});
+
+test('낚시 카드 200장 상태 조회는 표시하지 않는 전투 능력치와 스킬 설명을 계산하지 않는다', async t => {
+    await reset({ fishingCards: Array.from({ length: 200 }, () => ({ id: 0, star: 4, type: '일반' })) });
+    t.after(() => reset({ fishingCards: [] }));
+    const stats = t.mock.method(rpg, 'calculateUserStats');
+    const slots = t.mock.method(rpg, 'calculateCardSlotEffects');
+    const read = fs.readFileSync;
+    let skillReads = 0;
+    t.mock.method(fs, 'readFileSync', (file, ...args) => { if (String(file).endsWith('Skills.json')) skillReads++; return read(file, ...args); });
+    const count = databaseWrites;
+    for (const url of ['/api/game/state', '/api/fishing']) {
+        const response = await request(url);
+        assert.equal(response.status, 200);
+        assert.equal((url === '/api/game/state' ? response.data.fishing : response.data).items.length, 200);
+    }
+    assert.equal(stats.mock.callCount(), 0);
+    assert.equal(slots.mock.callCount(), 0);
+    assert.equal(skillReads, 0);
+    assert.equal(databaseWrites, count);
+});
+
 test('낚시 시작은 멱등이며 살림망 수령은 한 번만 지급하고 낚시를 멈춘다', async () => {
     const user = await reset();
     const baitId = rpg.getCurrentBaitItemId(user);
