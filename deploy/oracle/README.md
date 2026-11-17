@@ -25,6 +25,18 @@ sudo docker image ls rpgenius
 
 For maintenance, create `/var/lib/rpgenius/maintenance`; remove it only after the app is healthy. Do not run a second production process against the same in-memory user cache. For a manual rollback, enable maintenance, stop the current container with a 30-second timeout, start the preceding image with the same environment/volume/port arguments in `deploy.sh`, verify `/healthz`, and disable maintenance.
 
+## Paradise latency diagnosis
+
+`/api/paradise` and its exploration actions return `X-Paradise-Trace` and `Server-Timing`. Requests taking at least one second, and server errors, emit `[paradise timing]`. `advance_compute` measures synchronous combat advancement; `advance_save` measures its persistence. `save` is the subsequent player action's persistence. The historical 48.194-second request predates these subdivisions, so its original `advance=48125` alone cannot identify the cause.
+
+`operations` separates `protected_flush`, existing `flush_wait`, `usage_delivery`/`usage_publish`, and DynamoDB calls. An operation's `waitingFor` links a request to work started by an earlier request or a background timer. Slow persistence jobs also emit `[persistence timing]`. `omitted` reports operations beyond the per-request limit of 32. `[paradise pending]` reports active work and its dependencies every ten seconds, up to six times; a client disconnect does not cancel a durable save or stop this diagnosis.
+
+DynamoDB `tries` includes attempt duration, HTTP status, sanitized error name/code and network milestones. `dispatchMs` measures attempt start to HTTP dispatch and includes SDK preparation and socket-pool waiting. DNS, TCP, TLS, sent, headers and body times are cumulative from HTTP dispatch; absent connection phases are normal for a reused socket. `attempts` and `retryDelayMs` distinguish SDK retries. A long wait for headers alone does not distinguish the network from service processing: compare AWS metrics and the recorded AWS request ID. CPU and event-loop measurements cover the whole process during the interval, not exclusive CPU use by that request.
+
+`[paradise transport]` distinguishes response finish from client disconnect. A server status of 200 after a disconnect does not prove the client received the result. The new timing records contain action/stage names, opaque IDs, error codes and timings, not accounts, request bodies, game state or credentials. Healthy requests are not sampled into server logs, so these logs do not provide a latency percentile or failure-rate denominator.
+
+User-cache scans use strongly consistent reads to avoid replacing a saved value with an older read. This doubles read-capacity consumption for those scans, not for all application traffic. Operational content remains in its existing DB/configuration; deployment does not import local content defaults. Run tests only after checking their external-service isolation; `hfield_flow.test.js` now uses an in-memory DB and blocks outbound network connections.
+
 ## Free-tier boundary
 
 At migration time, the existing VM uses 1 OCPU / 2 GB / 47 GB. Combined with this VM, usage is 2 OCPU / 8 GB / 97 GB. This fits the conservative current Oracle allowance of 1,500 OCPU-hours, 9,000 GB-hours and 200 GB block storage. Outbound transfer is limited to 10 TB/month. No paid load balancer, NAT gateway, extra disk, or backup policy is added. Existing external database/API costs are unchanged. Free-tier limits and actual billing should be checked when adding resources.

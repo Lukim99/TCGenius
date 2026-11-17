@@ -18,7 +18,7 @@ function client(fetchImpl, { reduced = false, hidden = false } = {}) {
         initial: snapshot(), reduced, document: { hidden, addEventListener: (name, fn) => { listeners[name] = fn; } },
         performance: { now: () => time }, Date: { now: () => time }, AbortController,
         setTimeout(fn, ms) { timers.set(++timerId, { at: time + ms, fn }); return timerId; }, clearTimeout: id => timers.delete(id),
-        fetch(url, options) { calls.push({ url, options }); return fetchImpl(url, options, calls); },
+        fetch(url, options) { calls.push({ url, options, at: time }); return fetchImpl(url, options, calls); },
         crypto: { randomUUID: () => 'request-00000000-' + (++id) }, location: {},
         announce: message => notices.push(message), sound() {}, fmt: String, syncPuzzle() {},
         renderer: { clearCards() {}, image() {} }, audio: { play() {}, visibility() {} }, battle: { reset() {} },
@@ -70,18 +70,40 @@ test('HTTP failures, non-JSON and malformed success keep the identical operation
     });
 });
 
-test('automatic retries stop after one; manual retry still uses the same ID and body', async () => {
-    let count = 0;
-    const c = client(() => Promise.resolve(++count <= 2 ? response(503, { error: 'retry' }) : success()));
-    await c.api.mutate('route', { choice: 'left' }); await c.advance(1000); await c.advance(60000);
-    assert.equal(c.calls.length, 2); assert.ok(c.api.pending); assert.equal(c.api.busy, false);
+test('recovery keeps the original operation and backs off to one confirmation every 30 seconds', async () => {
+    let recovered = false;
+    const c = client(() => Promise.resolve(recovered ? success() : response(503, { error: 'retry' })));
+    await c.api.mutate('route', { choice: 'left' }); await c.advance(61000);
+    assert.deepEqual(c.calls.map(call => call.at - c.calls[0].at), [0, 1000, 3000, 7000, 15000, 31000, 61000]);
+    await c.advance(30000); assert.equal(c.calls.length, 8);
+    assert.ok(c.api.pending); assert.equal(c.api.busy, false);
+    assert.ok(c.calls.every(call => call.options.body === c.calls[0].options.body));
+    recovered = true;
     await c.api.mutate('ignored', { choice: 'changed' }, true);
-    assert.equal(c.calls.length, 3); assert.equal(c.calls[2].url, c.calls[0].url);
-    assert.equal(c.calls[2].options.body, c.calls[0].options.body); assert.equal(c.api.pending, null);
+    assert.equal(c.calls.length, 9); assert.equal(c.calls[8].url, c.calls[0].url);
+    assert.equal(c.calls[8].options.body, c.calls[0].options.body); assert.equal(c.api.pending, null);
+    await c.advance(60000); assert.equal(c.calls.length, 9, 'manual success cancels the scheduled confirmation');
+});
+
+test('a 48.194-second server delay recovers without a tab switch and ignores abandoned responses', async () => {
+    const replies = Array.from({ length: 4 }, deferred); let posts = 0;
+    const c = client((_, options) => options.method === 'POST' ? replies[posts++].promise : Promise.resolve(response(200, snapshot('combat', 4))));
+    c.api.state = snapshot('combat');
+    const action = c.api.mutate('attack'); await c.advance(48194); await action;
+    assert.equal(posts, 4); assert.equal(c.api.busy, true); assert.ok(c.api.pending);
+    assert.deepEqual(c.calls.map(call => call.options.signal.aborted), [true, true, true, false]);
+    assert.ok(c.calls.every(call => call.options.body === c.calls[0].options.body));
+    replies[3].resolve(success('combat', 3)); await flush();
+    assert.equal(c.api.pending, null); assert.equal(c.api.busy, false); assert.equal(c.accepted.length, 1);
+    for (const reply of replies.slice(0, 3)) reply.resolve(success('combat', 99));
+    await flush(); assert.equal(c.api.state.revision, 3); assert.equal(c.accepted.length, 1);
+    c.api.pollState(); await flush();
+    assert.equal(c.api.state.revision, 4); assert.equal(c.accepted.length, 2, 'ordinary state polling resumes after confirmation');
+    await c.advance(60000); assert.equal(posts, 4);
 });
 
 test('business rejection and stale revision resolve; 401 redirects without retry or clearing pending', async t => {
-    for (const status of [400, 409]) await t.test(String(status), async () => {
+    for (const status of [400, 403, 404, 409, 422]) await t.test(String(status), async () => {
         const c = client(() => Promise.resolve(response(status, { error: 'rejected', state: snapshot('route', 7) })));
         await c.api.mutate('route', { choice: 'left' }); await c.advance(30000);
         assert.equal(c.api.pending, null); assert.equal(c.api.state.revision, 7); assert.equal(c.calls.length, 1);
@@ -145,6 +167,16 @@ test('hidden failure defers recovery until visible and does not start a new oper
     first.reject(new TypeError('network')); await action; await c.advance(30000); assert.equal(c.calls.length, 1);
     await c.visibility(false); assert.equal(c.calls.length, 2);
     assert.equal(c.calls[0].options.body, c.calls[1].options.body); assert.equal(c.api.pending, null);
+});
+
+test('hiding a tab suspends scheduled recovery and returning confirms the same operation once', async () => {
+    let count = 0;
+    const c = client(() => Promise.resolve(++count === 1 ? response(503, { error: 'retry' }) : success()));
+    await c.api.mutate('route', { choice: 'left' }); await c.advance(500); await c.visibility(true);
+    await c.advance(60000); assert.equal(c.calls.length, 1); assert.ok(c.api.pending);
+    await c.visibility(false); assert.equal(c.calls.length, 2); assert.equal(c.api.pending, null);
+    assert.equal(c.calls[0].options.body, c.calls[1].options.body);
+    await c.advance(60000); assert.equal(c.calls.length, 2);
 });
 
 test('a stalled state read unlocks and retries later without stacking requests', async () => {

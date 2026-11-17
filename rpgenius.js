@@ -19,6 +19,7 @@ const paradiseStones = require('./paradise_stones');
 const paradiseRoutes = require('./paradise_routes');
 const shopCatalog = require('./shop_catalog');
 const pointUsage = require('./point_usage');
+const { measureWork, waitFor, instrumentDynamo } = require('./paradise_timing');
 const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
 const { regularCardPackBaseChance } = require('./chuseok_event');
 const { applyBlackWhite } = require('./reggiero');
@@ -656,6 +657,7 @@ const dynamoClient = new DynamoDBClient({
     }
 });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
+instrumentDynamo(dynamoClient);
 
 const rpgeniusDataCache = {};
 const shopCatalogSnapshots = new WeakMap();
@@ -11521,8 +11523,10 @@ function getArtifactView(user, equip) {
 
 // 신규 재화·최초 지급 처리는 변경한 필드와 원래 값이 함께 맞을 때만 저장한다.
 async function commitProtectedUserChange(user, keys) {
-    await flushCachedUser(user.id);
+    const flushed = await measureWork('protected_flush', () => flushCachedUser(user.id));
+    if (!flushed.success) throw flushed.result[0];
     const usageEvents = keys.includes('point') ? pointUsage.pending(user, JSON.parse(user.__loaded?.point || '0')) : [];
+    if (usageEvents.length) await waitFor('usage_wait', userCacheById.get(user.id)?.usageDelivery);
     const cacheEntry = userCacheById.get(user.id);
     if (usageEvents.length) {
         user[pointUsage.OUTBOX] = pointUsage.append(cacheEntry?.raw[pointUsage.OUTBOX], usageEvents);
@@ -14046,6 +14050,7 @@ async function putNewItem(table, item) {
 // save()는 인스턴스의 변경분(__loaded 대비)을 캐시 raw에 즉시 반영하고,
 // DB 쓰기는 기본 즉시 flush / 핫패스(save({defer:true}))만 지연-합산(디바운스)한다.
 // flush는 raw와 dbSnap(DB 반영분 스냅샷)의 diff만 SET/REMOVE로 기록한다.
+// DB 반영 시 dbSnap 객체를 교체해, 값이 원래대로 돌아와도 진행 중 재조회가 변경을 감지한다.
 const USER_FLUSH_DELAY_MS = 60 * 1000; // 지연 저장 합산 창 — 틱(2~5s)·낚시(30~60s)가 1회 쓰기로 묶인다. 크래시 시 최대 이만큼의 사냥 진행분 유실(정상 종료는 SIGTERM flush가 커버)
 const USER_FLUSH_SWEEP_MS = 30 * 1000;
 const USER_CACHE_MISS_RELOAD_INTERVAL_MS = 60 * 1000;
@@ -14085,7 +14090,7 @@ async function scanAllUserItems() {
     const items = [];
     let ExclusiveStartKey = undefined;
     do {
-        const res = await docClient.send(new ScanCommand({ TableName: TABLE_NAME, ExclusiveStartKey }));
+        const res = await docClient.send(new ScanCommand({ TableName: TABLE_NAME, ExclusiveStartKey, ConsistentRead: true }));
         (res.Items || []).forEach(item => { if (item && typeof item.id != 'undefined') items.push(item); });
         ExclusiveStartKey = res.LastEvaluatedKey;
     } while (ExclusiveStartKey);
@@ -14119,6 +14124,7 @@ async function isRuntimeReady() {
 // force=false: 미반영(dirty) 로컬 변경이 있는 유저는 보존, 항목 삭제 없음 (외부 프로세스가 만든 유저 편입용)
 // force=true: DB를 그대로 미러링 — 로컬 변경 폐기 (PITR 복원 등 "DB가 정답"일 때만)
 async function reloadAllUsersFromDb(force) {
+    const before = !force && new Map([...userCacheById].map(([id, entry]) => [id, { entry, dbSnap: entry.dbSnap }]));
     const items = await scanAllUserItems();
     if (force) {
         userCacheById.clear();
@@ -14128,7 +14134,11 @@ async function reloadAllUsersFromDb(force) {
     for (const item of items) {
         seen.add(item.id);
         const cur = userCacheById.get(item.id);
-        if (cur && cur.dirty && !force) continue;
+        if (cur && !force) {
+            const previous = before.get(item.id);
+            // 스캔이 진행되는 동안 끝난 저장도 오래된 스캔 응답으로 되돌리지 않는다.
+            if (cur.dirty || cur.flushChain || cur.usageDelivery || cur !== previous?.entry || cur.dbSnap !== previous.dbSnap) continue;
+        }
         putUserCacheEntry(item);
     }
     if (force) for (const id of [...userCacheById.keys()]) { if (!seen.has(id)) userCacheById.delete(id); }
@@ -14214,9 +14224,12 @@ function scheduleUserFlush(entry) {
 
 // 같은 유저의 flush를 직렬화한다 (즉시 저장과 지연 flush가 겹쳐도 순서 보장).
 function flushUserEntry(entry) {
-    const prev = Promise.allSettled([entry.flushChain, entry.usageDelivery].filter(Boolean));
-    const next = prev.catch(() => { }).then(() => flushUserEntryNow(entry)).finally(() => {
-        if (entry.flushChain === next) entry.flushChain = null;
+    const previous = entry.flushChain, delivery = entry.usageDelivery;
+    const next = measureWork('user_flush', async () => {
+        try {
+            await Promise.allSettled([waitFor('flush_previous', previous), waitFor('usage_wait', delivery)]);
+            return await flushUserEntryNow(entry);
+        } finally { if (entry.flushChain === next) entry.flushChain = null; }
     });
     entry.flushChain = next;
     return next;
@@ -14258,6 +14271,7 @@ async function flushUserEntryNow(entry) {
         }
         if (Object.keys(values).length) params.ExpressionAttributeValues = values;
         await docClient.send(new UpdateCommand(params));
+        entry.dbSnap = { ...entry.dbSnap };
         setKeys.forEach(k => { entry.dbSnap[k] = curStr[k]; });
         removeKeys.forEach(k => { delete entry.dbSnap[k]; });
         schedulePointUsageDelivery(entry);
@@ -14281,22 +14295,26 @@ async function flushUserEntryNow(entry) {
 // The queue is committed in the same wallet update; Supabase UUID conflicts make delivery retry-safe.
 function schedulePointUsageDelivery(entry) {
     if (!entry || entry.usageDelivery || entry.usageRetryAt > Date.now() || !entry.dbSnap[pointUsage.OUTBOX]) return;
-    const job = (entry.flushChain || Promise.resolve()).catch(() => {}).then(async () => {
-        const events = Object.values(JSON.parse(entry.dbSnap[pointUsage.OUTBOX] || '{}')).slice(0, 100);
-        if (!events.length) return;
-        await pointUsage.publish(events);
-        const names = { '#outbox': pointUsage.OUTBOX };
-        events.forEach((event, i) => { names['#event' + i] = event.id; });
-        await docClient.send(new UpdateCommand({ TableName: TABLE_NAME, Key: { id: entry.raw.id },
-            UpdateExpression: 'REMOVE ' + events.map((_, i) => '#outbox.#event' + i).join(', '), ExpressionAttributeNames: names }));
-        const saved = JSON.parse(entry.dbSnap[pointUsage.OUTBOX] || '{}');
-        for (const event of events) { delete saved[event.id]; if (entry.raw[pointUsage.OUTBOX]) delete entry.raw[pointUsage.OUTBOX][event.id]; }
-        entry.dbSnap[pointUsage.OUTBOX] = JSON.stringify(saved);
-        entry.usageRetryAt = 0;
-    }).catch(error => {
-        entry.usageRetryAt = Date.now() + 15000;
-        console.error('[point-usage] 전송 대기:', error.message);
-    }).finally(() => { entry.usageDelivery = null; });
+    const previous = entry.flushChain;
+    const job = measureWork('usage_delivery', async () => {
+        try {
+            await waitFor('usage_flush', previous).catch(() => {});
+            const events = Object.values(JSON.parse(entry.dbSnap[pointUsage.OUTBOX] || '{}')).slice(0, 100);
+            if (!events.length) return;
+            await measureWork('usage_publish', () => pointUsage.publish(events));
+            const names = { '#outbox': pointUsage.OUTBOX };
+            events.forEach((event, i) => { names['#event' + i] = event.id; });
+            await docClient.send(new UpdateCommand({ TableName: TABLE_NAME, Key: { id: entry.raw.id },
+                UpdateExpression: 'REMOVE ' + events.map((_, i) => '#outbox.#event' + i).join(', '), ExpressionAttributeNames: names }));
+            const saved = JSON.parse(entry.dbSnap[pointUsage.OUTBOX] || '{}');
+            for (const event of events) { delete saved[event.id]; if (entry.raw[pointUsage.OUTBOX]) delete entry.raw[pointUsage.OUTBOX][event.id]; }
+            entry.dbSnap = { ...entry.dbSnap, [pointUsage.OUTBOX]: JSON.stringify(saved) };
+            entry.usageRetryAt = 0;
+        } catch (error) {
+            entry.usageRetryAt = Date.now() + 15000;
+            console.error('[point-usage] 전송 대기:', error.message);
+        } finally { entry.usageDelivery = null; }
+    });
     entry.usageDelivery = job;
 }
 
@@ -14319,6 +14337,7 @@ function getPointUsageDeliveryStatus() {
 function applyDirectDbWriteToCache(id, changes) {
     const entry = userCacheById.get(id);
     if (!entry) return;
+    entry.dbSnap = { ...entry.dbSnap };
     for (const k of Object.keys(changes)) {
         const v = changes[k];
         if (typeof v === 'undefined') {
@@ -14335,14 +14354,20 @@ function applyDirectDbWriteToCache(id, changes) {
 
 // 특정 유저의 미반영 변경을 지금 DB에 기록한다 (조건부 트랜잭션 전 정렬용).
 async function flushCachedUser(id) {
-    const entry = userCacheById.get(id);
+    let entry = userCacheById.get(id);
+    // dirty는 전송 시작 때 해제되므로, 이미 전송 중인 저장의 결과도 확인한다.
+    while (entry?.flushChain) {
+        const flushed = await waitFor('flush_wait', entry.flushChain);
+        if (!flushed.success) return flushed;
+        entry = userCacheById.get(id);
+    }
     if (!entry || !entry.dirty) return { success: true, result: ['noop'] };
     return flushUserEntry(entry);
 }
 
 async function flushAllDirtyUsers() {
     const jobs = [];
-    for (const entry of userCacheById.values()) if (entry.dirty) jobs.push(flushUserEntry(entry));
+    for (const entry of userCacheById.values()) if (entry.dirty || entry.flushChain) jobs.push(flushCachedUser(entry.raw.id));
     if (jobs.length) await Promise.allSettled(jobs);
     return jobs.length;
 }

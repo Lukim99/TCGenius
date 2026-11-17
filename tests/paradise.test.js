@@ -34,7 +34,10 @@ DynamoDBDocumentClient.prototype.send = async command => {
     }
     if (type === 'UpdateCommand' && input.TableName === 'rpgenius_data' && input.Key.key.startsWith('ParadiseSettlement:')) { data[input.Key.key].completedAt = input.ExpressionAttributeValues[':now']; return {}; }
     if (type === 'GetCommand') return input.TableName === 'rpgenius_data' ? { Item: data[input.Key.key] === undefined ? undefined : { data: structuredClone(data[input.Key.key]) } } : { Item: structuredClone(persisted.get(input.Key.id)) };
-    if (type === 'ScanCommand') return { Items: input.TableName === 'rpgenius_user' ? [...persisted.values()].map(v => structuredClone(v)) : [] };
+    if (type === 'ScanCommand') {
+        if (input.TableName === 'rpgenius_user') assert.equal(input.ConsistentRead, true, '유저 캐시는 완료된 저장보다 오래된 DB 값을 읽지 않는다');
+        return { Items: input.TableName === 'rpgenius_user' ? [...persisted.values()].map(v => structuredClone(v)) : [] };
+    }
     if (type === 'PutCommand' && input.TableName === 'rpgenius_data' && input.Item.key === 'EliteState') return {};
     if (type === 'UpdateCommand' && input.TableName === 'rpgenius_user') {
         writes.push(structuredClone(input));
@@ -264,11 +267,163 @@ test('회랑 API는 인증이 필요하고 임의 상태 전이를 허용하지 
     assert.equal((await request('/api/paradise/event', { ...bodyFor(state), choice: 'rift' })).status, 400);
 });
 
-test('배포 전에 열린 화면의 낙원 에셋 요청은 S3 동기화 경로로 연결한다', async () => {
+test('천상 공격은 진행 중인 지연 저장을 기다리며 저장 실패를 성공으로 처리하지 않는다', async t => {
+    for (const failed of [false, true]) await t.test(failed ? '선행 저장 실패' : '선행 저장 성공', async t => {
+        const user = await reset();
+        corridor.enter(user); corridor.startCombat(user, 'normal', null, () => .99);
+        Object.assign(user.paradise.enemy, { hp: 1e9, maxHp: 1e9, atk: 0 });
+        user.field.nextEnemyAttackAt = Date.now() + 600000;
+        await user.save();
+        const state = (await request('/api/paradise')).data, body = bodyFor(state);
+        let release, started, protectedStarted, held = false, protectedWrites = 0;
+        const gate = new Promise(resolve => { release = resolve; });
+        const flushing = new Promise(resolve => { started = resolve; });
+        const protecting = new Promise(resolve => { protectedStarted = resolve; });
+        const send = DynamoDBDocumentClient.prototype.send, commit = rpg.commitProtectedUserChange;
+        t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function (command) {
+            if (command.constructor.name === 'UpdateCommand' && command.input.TableName === 'rpgenius_user') {
+                if (command.input.ConditionExpression?.includes('attribute_exists(id)')) protectedWrites++;
+                if (!held) {
+                    held = true; started(); await gate;
+                    if (failed) throw new Error('isolated pending flush failure');
+                }
+            }
+            return send.call(this, command);
+        });
+        t.mock.method(rpg, 'commitProtectedUserChange', (...args) => { protectedStarted(); return commit(...args); });
+        const tick = await rpg.getRPGUserByName(account.name);
+        tick.paradise.combatLog = ['저장 중인 지속 피해'];
+        await tick.save({ defer: true });
+        const pendingFlush = rpg.flushAllDirtyUsers();
+        let attack;
+        try {
+            await flushing;
+            attack = request('/api/paradise/attack', body);
+            await protecting;
+            await new Promise(resolve => setImmediate(resolve));
+            assert.equal(protectedWrites, 0, '선행 DB 저장이 끝나기 전에는 조건부 쓰기를 보내지 않는다');
+            release(); await pendingFlush;
+            const response = await attack;
+            assert.equal(response.status, failed ? 503 : 200);
+            assert.equal(protectedWrites, failed ? 0 : 1);
+            if (failed) assert.equal(response.data.retryable, true);
+            else {
+                const replay = await request('/api/paradise/attack', body);
+                assert.equal(replay.status, 200);
+                assert.equal(protectedWrites, 1, '응답을 다시 확인해도 같은 공격을 중복 저장하지 않는다');
+                assert.equal(replay.data.state.run.combatEvents.at(-1).id, response.data.state.run.combatEvents.at(-1).id);
+            }
+        } finally { release(); await pendingFlush; if (attack) await attack; }
+    });
+});
+
+test('종료용 전체 저장은 이미 전송 중인 저장의 성공과 실패까지 기다린다', async t => {
+    for (const failed of [false, true]) await t.test(failed ? '전송 실패' : '전송 성공', async t => {
+        const user = await reset(), previousGold = user.gold;
+        let release, started, held = false, completed = false;
+        const gate = new Promise(resolve => { release = resolve; });
+        const flushing = new Promise(resolve => { started = resolve; });
+        const send = DynamoDBDocumentClient.prototype.send;
+        t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function (command) {
+            if (!held && command.constructor.name === 'UpdateCommand' && command.input.TableName === 'rpgenius_user') {
+                held = true; started(); await gate;
+                if (failed) throw new Error('isolated shutdown flush failure');
+            }
+            return send.call(this, command);
+        });
+        user.gold = previousGold + 1;
+        const pendingSave = user.save();
+        let shutdownFlush;
+        try {
+            await flushing;
+            shutdownFlush = rpg.flushAllDirtyUsers().then(count => { completed = true; return count; });
+            await new Promise(resolve => setImmediate(resolve));
+            assert.equal(completed, false, '전송 결과가 나오기 전에는 종료용 저장이 완료되지 않는다');
+            release();
+            assert.equal((await pendingSave).success, !failed);
+            assert.equal(await shutdownFlush, 1);
+            assert.equal(persisted.get(account.id).gold, failed ? previousGold : user.gold);
+            if (failed) {
+                assert.equal(await rpg.flushAllDirtyUsers(), 1, '실패한 변경은 재시도할 수 있게 남긴다');
+                assert.equal(persisted.get(account.id).gold, user.gold);
+            }
+        } finally { release(); await pendingSave; if (shutdownFlush) await shutdownFlush; }
+    });
+});
+
+test('캐시 재조회는 dirty가 해제됐어도 아직 저장 중인 탐험을 덮어쓰지 않는다', async t => {
+    for (const finishesDuringScan of [false, true]) await t.test(finishesDuringScan ? '스캔 응답 전에 저장 완료' : '스캔 응답 후에 저장 완료', async t => {
+        const user = await reset(); corridor.enter(user); await user.save();
+        let release, started, releaseScan, scanned, held = false;
+        const gate = new Promise(resolve => { release = resolve; });
+        const flushing = new Promise(resolve => { started = resolve; });
+        const scanGate = new Promise(resolve => { releaseScan = resolve; });
+        const scanning = new Promise(resolve => { scanned = resolve; });
+        const send = DynamoDBDocumentClient.prototype.send;
+        t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function (command) {
+            if (!held && command.constructor.name === 'UpdateCommand' && command.input.TableName === 'rpgenius_user') {
+                held = true; started(); await gate;
+            }
+            const result = await send.call(this, command);
+            if (finishesDuringScan && command.constructor.name === 'ScanCommand' && command.input.TableName === 'rpgenius_user') {
+                scanned(); await scanGate;
+            }
+            return result;
+        });
+        user.paradise.combatLog = ['아직 DB에 도착하지 않은 전투'];
+        await user.save({ defer: true });
+        const pendingFlush = rpg.flushAllDirtyUsers();
+        let reloading;
+        try {
+            await flushing;
+            reloading = rpg.reloadAllUsersFromDb(false);
+            if (finishesDuringScan) { await scanning; release(); await pendingFlush; releaseScan(); }
+            await reloading;
+            assert.deepEqual((await rpg.getRPGUserByName(account.name)).paradise.combatLog, user.paradise.combatLog);
+            release(); await pendingFlush;
+            assert.deepEqual(persisted.get(account.id).paradise.combatLog, user.paradise.combatLog);
+        } finally { release(); releaseScan(); await pendingFlush; if (reloading) await reloading; }
+    });
+});
+
+test('캐시 재조회 중 값을 바꿨다가 되돌려도 중간 스캔 결과가 최신 저장을 덮지 않는다', async t => {
+    const user = await reset(); corridor.enter(user); await user.save();
+    const originalLog = structuredClone(user.paradise.combatLog);
+    let releaseRead, scanStarted, releaseResponse, scanRead;
+    const readGate = new Promise(resolve => { releaseRead = resolve; });
+    const started = new Promise(resolve => { scanStarted = resolve; });
+    const responseGate = new Promise(resolve => { releaseResponse = resolve; });
+    const read = new Promise(resolve => { scanRead = resolve; });
+    const send = DynamoDBDocumentClient.prototype.send;
+    t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function (command) {
+        if (command.constructor.name !== 'ScanCommand' || command.input.TableName !== 'rpgenius_user') return send.call(this, command);
+        scanStarted(); await readGate;
+        const response = await send.call(this, command);
+        scanRead(); await responseGate; return response;
+    });
+    const reloading = rpg.reloadAllUsersFromDb(false);
+    try {
+        await started;
+        user.paradise.combatLog = ['스캔이 읽은 중간 상태']; await user.save();
+        releaseRead(); await read;
+        user.paradise.combatLog = originalLog; await user.save();
+        releaseResponse(); await reloading;
+        assert.deepEqual(persisted.get(account.id).paradise.combatLog, originalLog);
+        assert.deepEqual((await rpg.getRPGUserByName(account.name)).paradise.combatLog, originalLog);
+    } finally { releaseRead(); releaseResponse(); await reloading; }
+});
+
+test('배포 전에 열린 화면의 낙원 에셋 요청은 로컬 파일 또는 S3 동기화 경로로 연결한다', async () => {
     for (const file of ['corridor.webp', 'gambler.webp', 'audio/heaven.mp3']) {
         const response = await fetch(base + '/static/assets/paradise/' + file, { headers: { Cookie: cookie() }, redirect: 'manual' });
-        assert.equal(response.status, 307);
-        assert.equal(response.headers.get('location'), '/rpg-ui?file=' + encodeURIComponent('낙원/' + file));
+        const local = path.join(__dirname, '../public/assets/paradise', file);
+        if (fs.existsSync(local)) {
+            assert.equal(response.status, 200);
+            assert.deepEqual(Buffer.from(await response.arrayBuffer()), fs.readFileSync(local));
+        } else {
+            assert.equal(response.status, 307);
+            assert.equal(response.headers.get('location'), '/rpg-ui?file=' + encodeURIComponent('낙원/' + file));
+        }
     }
     const missing = await fetch(base + '/static/assets/paradise/missing.webp', { headers: { Cookie: cookie() }, redirect: 'manual' });
     assert.equal(missing.status, 404);

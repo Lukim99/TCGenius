@@ -306,10 +306,10 @@
         } catch (error) {
             if (!error.auth) announce(error.message || '연결이 끊겼습니다. 같은 요청으로 재시도해주세요.');
             selection = null; fall = null; chestPick = null;
-            // At most one automatic recovery. The original request ID/body is never replaced.
-            if (pending === operation && !operation.autoRetried && !error.auth && !document.hidden) {
-                operation.autoRetried = true;
-                operation.retryTimer = setTimeout(() => { if (pending === operation && !busy && !document.hidden) mutate(operation.action, {}, true); }, 1000);
+            // Keep confirming an unresolved operation, backing off without replacing its ID/body.
+            if (pending === operation && !error.auth && !document.hidden) {
+                operation.retryDelay = Math.min(30000, (operation.retryDelay || 500) * 2);
+                operation.retryTimer = setTimeout(() => { if (pending === operation && !busy && !document.hidden) mutate(operation.action, {}, true); }, operation.retryDelay);
             }
         }
         finally { busy = false; regionKey = ''; }

@@ -129,6 +129,32 @@ test('전송 중 다음 구매가 저장되어도 새 미전송 내역을 지우
     assert.ok(rows.has(firstId)); assert.ok(rows.has(secondId)); assert.equal(rpg.getPointUsageDeliveryStatus().pending, 0);
 });
 
+test('조건부 포인트 저장은 전송 중인 원장 정리를 기다리되 일반 변경은 기다리지 않는다', async () => {
+    let release;
+    deliveryGate = new Promise(resolve => { release = resolve; });
+    const started = new Promise(resolve => { deliveryStarted = resolve; });
+    const first = await rpg.getRPGUserByName('spend'); first.point -= 20;
+    const firstId = usage.record(first, { amount: 20, category: 'shop', action: 'purchase', productName: '이전 구매' });
+    let saved;
+    try {
+        await first.save(); await started;
+        const ordinary = await rpg.getRPGUserByName('spend'); ordinary.gold = Number(ordinary.gold || 0) + 1;
+        await rpg.commitProtectedUserChange(ordinary, ['gold']);
+        const second = await rpg.getRPGUserByName('spend'); second.point -= 30;
+        const secondId = usage.record(second, { amount: 30, category: 'shop', action: 'purchase', productName: '다음 구매' });
+        const before = writes.length;
+        saved = rpg.commitProtectedUserChange(second, ['point']);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(writes.length, before, '이전 원장 REMOVE와 새 원장 SET을 겹치지 않는다');
+        deliveryGate = null; release(); await saved; await rpg.flushPointUsageOutboxes();
+        const wallet = writes.findLast(input => Object.values(input.ExpressionAttributeValues || {}).some(value => value && value[secondId]));
+        const outbox = Object.values(wallet.ExpressionAttributeValues).find(value => value && value[secondId]);
+        assert.deepEqual(Object.keys(outbox), [secondId], '이미 전송한 이전 이벤트를 다시 붙이지 않는다');
+        assert.ok(rows.has(firstId)); assert.ok(rows.has(secondId));
+        assert.equal(rpg.getPointUsageDeliveryStatus().pending, 0);
+    } finally { deliveryGate = null; release(); if (saved) await saved; await rpg.flushPointUsageOutboxes(); }
+});
+
 test('메일 선물은 정상 차감하되 포인트 사용 원장에는 기록하지 않는다', async () => {
     const user = await rpg.getRPGUserByName('spend');
     const beforePoint = user.point, beforeCount = rows.size;

@@ -8,18 +8,21 @@ const { requestTiming } = require('./paradise_timing');
 function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getCharacterSprite, getMonsterSprite, getEquipmentIconUrl, getItemIconUrl, getCombatView }) {
     const weeklyRewards = require('./paradise_rewards');
     weeklyRewards.startWeeklyRewards();
-    const advanceCombat = async user => {
-        const timeAdvanced = corridor.advanceTime(user);
-        const resourcesAdded = corridor.active(user) && !user.paradise.resources;
-        if (resourcesAdded) { corridor.getResources(user); user.paradise.revision++; }
-        const chestLimitChanged = hell.normalizeChestSelection(user);
-        const rebalanced = corridor.rebalanceEnemy(user);
-        const offerNormalized = corridor.normalizeAugmentOffer(user);
-        const relicOfferNormalized = corridor.normalizeRelicOffer(user);
-        const advanced = rpgenius.advanceParadiseCombat(user);
-        if (!timeAdvanced && !resourcesAdded && !chestLimitChanged && !rebalanced && !offerNormalized && !relicOfferNormalized && !advanced) return;
+    const advanceCombat = async (user, timing) => {
+        const changed = timing.measure('advance_compute', () => {
+            const timeAdvanced = corridor.advanceTime(user);
+            const resourcesAdded = corridor.active(user) && !user.paradise.resources;
+            if (resourcesAdded) { corridor.getResources(user); user.paradise.revision++; }
+            const chestLimitChanged = hell.normalizeChestSelection(user);
+            const rebalanced = corridor.rebalanceEnemy(user);
+            const offerNormalized = corridor.normalizeAugmentOffer(user);
+            const relicOfferNormalized = corridor.normalizeRelicOffer(user);
+            const advanced = rpgenius.advanceParadiseCombat(user);
+            return timeAdvanced || resourcesAdded || chestLimitChanged || rebalanced || offerNormalized || relicOfferNormalized || advanced;
+        });
+        if (!changed) return;
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
-        await rpgenius.commitProtectedUserChange(user, keys);
+        await timing.measureAsync('advance_save', () => rpgenius.commitProtectedUserChange(user, keys));
     };
     const rewardView = (reward, user) => {
         const card = reward.kind === 'card' ? serializeCard(reward.card, user) : null;
@@ -97,18 +100,18 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         res.type('html').send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#05090e"><title>낙원</title><link rel="stylesheet" href="/static/paradise.css"></head><body><main id="paradiseRoot" aria-label="낙원"><canvas id="paScene" aria-hidden="true"></canvas><div id="paBattle" hidden><canvas id="hfCanvas" aria-hidden="true"></canvas><canvas id="hfHud" aria-hidden="true"></canvas></div><canvas id="paHud" aria-hidden="true"></canvas><div id="paControls" aria-label="게임 조작"></div><form id="paPuzzle" hidden></form><div id="paLive" class="sr-only" role="status" aria-live="polite"></div><div id="paFatal" hidden></div></main><noscript>낙원에 입장하려면 JavaScript를 켜주세요.</noscript><script>window.FIELD_MODE="paradise";</script><link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js" defer></script><script src="/static/combat-fx.js" defer></script><script src="/static/combat-fx-kit.js" defer></script><script src="/static/combat-fx-scenes.js" defer></script><script src="/static/combat-fx-skills.js" defer></script><script src="/static/paradise-audio.js" defer></script><script src="/static/hfield.js" defer></script><script src="/static/paradise-lobby.js" defer></script><script src="/static/paradise-shop.js" defer></script><script src="/static/paradise.js" defer></script></body></html>`);
     });
     server.get('/api/paradise', requireUser, async (req, res) => {
-        const timing = requestTiming('view');
+        const timing = requestTiming('view', res);
         try {
             const user = await timing.measureAsync('load', () => rpgenius.getRPGUserByName(req.session.name));
             if (!user) return timing.send(res, 404, { error: '유저를 찾을 수 없습니다.' });
             res.setHeader('Cache-Control', 'no-store');
             const queuedAt = timing.start();
-            const view = await rpgenius.enqueueFieldAction(user, async () => {
+            const view = await timing.run(() => rpgenius.enqueueFieldAction(user, async () => {
                 timing.end('queue', queuedAt);
                 const latest = await timing.measureAsync('reload', () => rpgenius.getRPGUserByName(req.session.name));
-                await timing.measureAsync('advance', () => advanceCombat(latest));
+                await timing.measureAsync('advance', () => advanceCombat(latest, timing));
                 return timing.measure('state', () => state(latest));
-            });
+            }));
             timing.send(res, 200, view);
         } catch (error) { console.error('[paradise view]', error.message); timing.send(res, 500, { error: '회랑 상태를 불러오지 못했습니다.' }); }
     });
@@ -174,7 +177,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         server.post('/api/paradise/' + action, requireUser, async (req, res) => {
             const body = req.body || {};
             if (!/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId || '') || !Number.isSafeInteger(body.revision) || body.revision < 0 || body.runId != null && typeof body.runId !== 'string') return res.status(400).json({ error: '낙원 화면을 새로 열어주세요.' });
-            const timing = requestTiming(action);
+            const timing = requestTiming(action, res);
             const responseState = user => timing.measure('state', () => state(user));
             try {
                 // Startup + the minute scheduler own durable weekly settlement and retries.
@@ -182,10 +185,10 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                 const seed = await timing.measureAsync('load', () => rpgenius.getRPGUserByName(req.session.name));
                 if (!seed) return timing.send(res, 404, { error: '유저를 찾을 수 없습니다.' });
                 const queuedAt = timing.start();
-                const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+                const payload = await timing.run(() => rpgenius.enqueueFieldAction(seed, async () => {
                     timing.end('queue', queuedAt);
                     const user = await timing.measureAsync('reload', () => rpgenius.getRPGUserByName(req.session.name));
-                    await timing.measureAsync('advance', () => advanceCombat(user));
+                    await timing.measureAsync('advance', () => advanceCombat(user, timing));
                     const receipt = user.paradiseReceipt;
                     if (receipt?.id === body.requestId) {
                         if (receipt.action !== action) return { error: '이미 다른 동작에 사용한 요청입니다.' };
@@ -237,7 +240,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
                     await timing.measureAsync('save', () => rpgenius.commitProtectedUserChange(user, keys));
                     return { ok: true, message: result.message, reveal: revealView(result.reveal, user), state: responseState(user) };
-                });
+                }));
                 timing.send(res, payload.error ? payload.stale ? 409 : 400 : 200, payload);
             } catch (error) {
                 console.error('[paradise ' + action + ']', error.message);

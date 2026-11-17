@@ -947,13 +947,15 @@ void main(){
         const busy = () => nodes.length > 0 || timers.length > 0 || camera.amp > 0 || camera.zoom > 0 || !!live.particles && now < Math.max(live.particles.end[0], live.particles.end[1]);
         function frame(real) {
             raf = 0;
-            const elapsed = Math.max(0, (real - lastReal) / 1000), dtReal = Math.min(.05, elapsed);
+            const elapsed = Math.max(0, (real - lastReal) / 1000);
+            const activeElapsed = Math.max(0, (real - Math.max(lastReal, frozenUntil)) / 1000);
             lastReal = real;
-            // 프레임이 계속 밀리는 기기에서는 해상도와 입자 수를 절반으로 낮춘다. 창이 가려져 멈췄던 프레임은 세지 않는다.
-            if (quality === 1 && elapsed < .12) { slow = slow * .96 + (elapsed > .03 ? .04 : 0); if (slow > .6) quality = .5; }
-            const dt = real < frozenUntil || pauseAt != null && now >= pauseAt ? 0 : dtReal;
+            // 지속 정체는 품질을 낮추되 한 번의 긴 멈춤이 판정을 지배하지 않게 한다. 숨김 탭 복귀는 kick에서 시각을 다시 잡는다.
+            if (quality === 1) { slow += ((elapsed > .03 ? 1 : 0) - slow) * (1 - Math.pow(.96, Math.min(.1, elapsed) * 60)); if (slow > .6) quality = .5; }
+            const dt = pauseAt == null ? activeElapsed : Math.min(activeElapsed, Math.max(0, pauseAt - now));
+            // 장면 수명과 타격 시각은 실제 시간을 따른다. 물리 계산만 큰 시간 간격을 제한한다.
             now += dt;
-            step(dt);
+            step(Math.min(.05, dt));
             draw();
             if (busy() && !document.hidden) raf = requestAnimationFrame(frame);
             else if (!busy() && !lost) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); applyCamera(); }
