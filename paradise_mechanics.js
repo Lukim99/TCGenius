@@ -345,14 +345,16 @@ function modifyHit(user, stats, extra, hit) {
     }
 }
 function afterHit(user, stats, extra, hit) {
-    if (!active(user) || hit.finalDamage <= 0) return;
+    // Shield contact is a landed hit too; keep finalDamage as actual HP damage.
+    const landedDamage = Math.max(0, Number(hit.finalDamage || 0)) || Math.max(0, Number(extra.enemyShieldAbsorbed || 0));
+    if (!active(user) || landedDamage <= 0) return;
     const s = state(user), e = expedition(user), run = user.paradise, dot = isDot(extra), manual = direct(extra);
     if (!dot && !manual) return;
     const kind = dot ? 'dot' : extra.isBasic ? 'basic' : 'skill';
     s.damageKinds = [...new Set([...(s.damageKinds || []), kind])];
     if (dot) {
         const n = count(s, 'dotHits');
-        if (has(user, 'feverPitch') && n % 3 === 0) s.feverDamage = Math.min(stats.atk * 5, hit.finalDamage * 3);
+        if (has(user, 'feverPitch') && n % 3 === 0) s.feverDamage = Math.min(stats.atk * 5, landedDamage * 3);
         if (has(user, 'dotSabbatical') && n === 8) {
             skillEntries(user).filter(skill => !ultimate(user, skill.name)).forEach(skill => reduce(user, skill.name, Infinity));
             s.guard = true; notice(extra, '여덟 번째 안식 · 일반 스킬 초기화');
@@ -362,7 +364,7 @@ function afterHit(user, stats, extra, hit) {
         if (has(user, 'coagulation') && n % 4 === 0) shield(user, 'coagulation', stats.hp * .08, 6);
         if (has(user, 'anesthetic') && n % 3 === 0) s.anesthetic = true;
         if (has(user, 'putrefaction') && n % 4 === 0) reduceLongest(user, 3000);
-        if (has(user, 'rustPendulum')) s.rustDamage = Math.min(stats.atk * 5, Number(s.rustDamage || 0) + hit.finalDamage * .30);
+        if (has(user, 'rustPendulum')) s.rustDamage = Math.min(stats.atk * 5, Number(s.rustDamage || 0) + landedDamage * .30);
         if (has(user, 'malignantHarmony') && extra.dotTypes >= 2 && !s.harmonyUsed && run.enemy.hp > 0) {
             s.harmonyUsed = true; addDot(user, 'harmony', '악성 합창', stats.atk * .50 * (1 + Number(stats.dotDamage || 0)), 5);
         }
@@ -397,7 +399,7 @@ function afterHit(user, stats, extra, hit) {
     if (run.enemy.hp > 0) {
         const dotScale = 1 + Number(stats.dotDamage || 0);
         if (extra.isBasic && has(user, 'venomNeedle')) addDot(user, 'needle', '독 묻은 바늘', stats.atk * .30 * dotScale, 3);
-        if (extra.isSkill && has(user, 'cinderScript')) addDot(user, 'cinder', '불씨 필사본', hit.finalDamage * .05, 4, 2000, true);
+        if (extra.isSkill && has(user, 'cinderScript')) addDot(user, 'cinder', '불씨 필사본', landedDamage * .05, 4, 2000, true);
         if (has(user, 'sourRain') && s.lastKind && s.lastKind !== kind) addDot(user, 'acid', '산성 교차로', stats.atk * .35 * dotScale, 3);
         if (has(user, 'delayedWound') && count(s, 'woundAttacks') % 3 === 0) addDot(user, 'wound', '늦게 도착한 상처', stats.atk * 1.50 * dotScale, 1);
         if (has(user, 'bleedLedger') && hit.criticalCount) {
@@ -425,11 +427,13 @@ function afterHit(user, stats, extra, hit) {
     if (has(user, 'comboEncore') && extra.isBasic && !combos) s.encoreReady = true;
     if (has(user, 'comboMeter') && crossed(6)) s.meterReady = true;
     if (has(user, 'comboRelay') && combos) reduceLongest(user, Math.min(3000, combos * 500));
-    if (has(user, 'comboSheath') && extra.isBasic && !combos) s.sheathDamage = Math.min(stats.atk * 5, Number(s.sheathDamage || 0) + hit.finalDamage * .50);
+    if (has(user, 'comboSheath') && extra.isBasic && !combos) s.sheathDamage = Math.min(stats.atk * 5, Number(s.sheathDamage || 0) + landedDamage * .50);
     if (has(user, 'comboWard') && crossed(3)) shield(user, 'comboWard', stats.hp * .10, 8);
     if (has(user, 'comboBleed') && combos && run.enemy.hp > 0) {
         const last = (hit.hitDetails || []).filter(detail => detail.isComboHit).at(-1);
-        if (last) addDot(user, 'comboBleed', '마지막 칼날', last.damage * .20, 3, 2000, true);
+        const blockedLast = (hit.shieldedHitDetails || []).filter(detail => detail.isComboHit).at(-1);
+        const damage = last?.damage || blockedLast?.damage;
+        if (damage > 0) addDot(user, 'comboBleed', '마지막 칼날', damage * .20, 3, 2000, true);
     }
     if (has(user, 'comboEscrow') && crossed(5)) s.freeAny = true;
     if (has(user, 'comboBalance')) { if (extra.isBasic && !combos) corridor().heal(user, .03); if (crossed(3)) corridor().heal(user, 0, .05); }

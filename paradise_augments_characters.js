@@ -131,7 +131,7 @@ function modifyHit(user, extra, hit) {
     if (has(user, 'lastSentence') && s.lastSentence) { add(s.lastSentence, '마지막 문장'); s.lastSentence = 0; }
 }
 function afterHit(user, stats, extra, hit) {
-    if (!active(user) || !direct(extra) || hit.finalDamage <= 0) return;
+    if (!active(user) || !direct(extra) || (hit.finalDamage <= 0 && !(extra.enemyShieldAbsorbed > 0))) return;
     const s = state(user), now = Date.now(), name = extra.skillName;
     if (extra.isBasic) {
         if (has(user, 'emergencyComeback') && s.kinoEncoreHits != null && ++s.kinoEncoreHits >= 3) {

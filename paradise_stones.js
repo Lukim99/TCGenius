@@ -385,7 +385,7 @@ function prepareHit(user, stats, extra, hit) {
     }
 }
 function afterHit(user, stats, extra, hit) {
-    if (!active(user) || !manual(extra) || hit.finalDamage <= 0) return;
+    if (!active(user) || !manual(extra) || (hit.finalDamage <= 0 && !(extra.enemyShieldAbsorbed > 0))) return;
     const s = state(user);
     if (extra.stoneBurn) mechanics().addDot(user, 'stoneBurn', '돌의 화상', stats.atk * extra.stoneBurn * (1 + Number(stats.dotDamage || 0)), 3, 2000);
     if (extra.stoneDust) mechanics().addDot(user, 'stoneDust', '달가루', stats.atk * .20 * (1 + Number(stats.dotDamage || 0)), 3, 2000);

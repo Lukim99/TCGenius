@@ -132,6 +132,67 @@ test('유리 금고의 흡수량은 하얀 피해 사건과 체력바에 반영�
     assert.equal(user.paradise.phase, 'relic'); assert.ok(corridor.view(user).run.relicChoices.every(r => r.rarity === 'normal'));
 });
 
+test('유리 금고: 전부 흡수된 연타가 타격별로 표시되고 후속 증강이 발동한다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('comboSavings', 'comboRelay', 'comboBleed');
+    route(user, 'glassVault'); durableEnemy(user);
+    const enemy = user.paradise.enemy;
+    const initialHp = enemy.hp, initialShield = corridor.view(user).run.enemy.shield;
+    const until = Date.now() + 30000;
+    user.field.skillCooldowns['자인'] = until;
+    const attack = hit(user, { comboHitCount: 3, disableCritical: true });
+    const blocked = attack.hits.filter(detail => detail.type === 'absorbed');
+    assert.equal(attack.damage, 0);
+    assert.equal(enemy.hp, initialHp);
+    assert.equal(blocked.length, 3);
+    assert.ok(blocked.every(detail => detail.damage > 0));
+    assert.equal(initialShield - corridor.view(user).run.enemy.shield, blocked.reduce((sum, detail) => sum + detail.damage, 0));
+    assert.equal(s(user).savedCombos, 2);
+    assert.equal(user.field.skillCooldowns['자인'], until - 1000);
+    assert.ok(mechanics.dots(user).some(tick => tick.key === 'comboBleed' && tick.damage > 0));
+});
+
+test('유리 금고: 연타 도중 보호막이 깨지면 흡수량과 실제 HP 피해를 구분한다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const input = { comboHitCount: 3, disableCritical: true };
+    const normal = hit(fresh(), input);
+    const user = fresh(); route(user, 'glassVault'); durableEnemy(user);
+    const enemy = user.paradise.enemy;
+    const amount = normal.hits[0].damage + 1;
+    shields.grant(enemy, { source: 'route:glassVault', caster: '', amount });
+    const initialHp = enemy.hp;
+    const attack = hit(user, input);
+    const blocked = attack.hits.filter(detail => detail.type === 'absorbed');
+    assert.deepEqual(blocked.map(detail => detail.damage), [amount - 1, 1]);
+    assert.equal(attack.damage, normal.damage - amount);
+    assert.equal(enemy.hp, initialHp - attack.damage);
+    assert.equal(corridor.view(user).run.enemy.shield, 0);
+    assert.ok(Math.abs(hit(user).damage - hit(user).damage * 3) <= 3);
+});
+
+test('갈림길 없는 적 보호막도 고정 다단 스킬을 타격별로 흡수하지만 연타로 집계하지 않는다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('comboSavings');
+    const initialHp = user.paradise.enemy.hp;
+    const amount = 10000;
+    shields.grant(user.paradise.enemy, { source: 'test', caster: '', amount });
+    const attack = hit(user, { isBasic: false, isSkill: true, hitCount: 3, disableCritical: true });
+    const blocked = attack.hits.filter(detail => detail.type === 'absorbed');
+    assert.equal(blocked.length, 3);
+    assert.equal(attack.damage, 0);
+    assert.equal(user.paradise.enemy.hp, initialHp);
+    assert.equal(amount - corridor.view(user).run.enemy.shield, blocked.reduce((sum, detail) => sum + detail.damage, 0));
+    assert.equal(s(user).savedCombos || 0, 0);
+});
+
+test('타격 피해와 보호막 흡수가 모두 0이면 연타 증강을 충전하지 않는다', t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('comboSavings');
+    route(user, 'thirdSeal'); durableEnemy(user);
+    assert.equal(hit(user, { comboHitCount: 3 }).damage, 0);
+    assert.equal(s(user).savedCombos || 0, 0);
+});
+
 test('유리 성벽, 피의 연료, 마지막 불빛은 HP와 보호막을 전투 안에서만 사용한다', t => {
     t.mock.method(Math, 'random', () => .99);
     let user = fresh(); route(user, 'wardDuel'); durableEnemy(user);

@@ -262,3 +262,20 @@ test('지옥, 종료 상태, 소환 공격은 천상 직접 공격 효과를 작
     assert.equal(attack(u).hit.finalDamage, 100); u.paradise.mode = 'heaven'; u.paradise.status = 'ended';
     assert.equal(attack(u).hit.finalDamage, 100);
 });
+
+test('보호막 명중도 직접 공격과 지속 피해의 후속 특성을 발동한다', () => {
+    const u = user('singleShell', 'coldApplause', 'pairedDrops');
+    const hit = { finalDamage: 0, criticalCount: 1, comboHitCount: 1 };
+    for (let i = 0; i < 3; i++) traits.afterHit(u, u.stats, { isBasic: true, enemyShieldAbsorbed: 100 }, hit);
+    assert.equal(state(u).shells, 3);
+    assert.equal(state(u).coldReady, true);
+    for (let i = 0; i < 2; i++) traits.afterHit(u, u.stats, { dotAttack: true, enemyShieldAbsorbed: 100 }, hit);
+    assert.equal(state(u).pairedDamage, 200);
+});
+
+test('피해도 보호막 흡수도 없는 공격은 후속 특성을 발동하지 않는다', () => {
+    const u = user('singleShell', 'coldApplause');
+    traits.afterHit(u, u.stats, { isBasic: true, enemyShieldAbsorbed: 0 }, { finalDamage: 0, criticalCount: 1, comboHitCount: 1 });
+    assert.equal(state(u).shells, undefined);
+    assert.equal(state(u).critStreak, undefined);
+});

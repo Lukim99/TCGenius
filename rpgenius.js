@@ -17,6 +17,7 @@ const paradiseFeatures = require('./paradise_features');
 const paradisePower = require('./paradise_power');
 const paradiseStones = require('./paradise_stones');
 const paradiseRoutes = require('./paradise_routes');
+const paradiseShieldHits = require('./paradise_shield_hits');
 const shopCatalog = require('./shop_catalog');
 const pointUsage = require('./point_usage');
 const { measureWork, waitFor, instrumentDynamo } = require('./paradise_timing');
@@ -7944,7 +7945,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         combatShields.expire(enemy, Date.now());
         if (combatShields.summary(enemy, Date.now()).amount > 0) {
             const result = combatShields.absorb(enemy, hit.finalDamage);
-            hit.finalDamage = result.damage;
+            paradiseShieldHits.applyAbsorption(hit, result);
             extra.routeShieldAbsorbed = result.absorbed;
         }
     }
@@ -7957,6 +7958,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         if (result.dodged) { hit.criticalCount = 0; hit.hitCount = 0; }
         if (result.reflectedDamage) resources.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, resources.hp, Math.max(0, resources.hp - result.reflectedDamage), Date.now()), stats.hp);
     }
+    extra.enemyShieldAbsorbed = Number(extra.routeShieldAbsorbed || 0) + mirrorAbsorbed.filter(detail => detail.type === 'absorbed').reduce((sum, detail) => sum + Number(detail.damage || 0), 0);
     const defeatedByReflection = resources.hp <= 0;
     paradise.afterAttack(user, extra, hit);
     applyNmmStackGain(user, extra, hit); applyTenthAtkCounter(user, extra, hit);
@@ -7967,7 +7969,6 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     randoCharacters.onHit(stats, field, hit.hitCount, extra, enemy.hp === 0 ? 1 : 0, Date.now());
     paradiseCharacters.afterHit(user, stats, extra, hit);
     paradiseMechanics.afterHit(user, stats, extra, hit);
-    extra.enemyShieldAbsorbed = Number(extra.routeShieldAbsorbed || 0) + mirrorAbsorbed.filter(detail => detail.type === 'absorbed').reduce((sum, detail) => sum + Number(detail.damage || 0), 0);
     if (!defeatedByReflection) paradiseFeatures.call('afterHit', user, stats, extra, hit);
     if (run.effects.focus) run.focus = Math.min(.50, Number(run.focus || 0) + .05 * Number(hit.criticalCount || 0));
     const lines = ['⚔️ ' + enemy.name + '에게 ' + comma(hit.finalDamage) + ' 피해' + (hit.criticalCount ? ' · 치명타 ' + hit.criticalCount + '회' : '')];
@@ -8005,18 +8006,20 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     // 전투 연출에는 회복과 섞인 HP 차이가 아니라 엔진이 판정한 타격을 전달한다.
     const hits = (hit.hitDetails || []).flatMap(detail => {
         const fixed = Math.min(detail.damage, Math.max(0, Number(detail.fixedDamage || 0)));
-        return [{ damage: detail.damage - fixed, critical: !!detail.isCritical, destiny: !!detail.isDestinyDamage, label: detail.label },
+        return [...(detail.shieldAbsorbed > 0 ? [{ damage: detail.shieldAbsorbed, type: 'absorbed', critical: !!detail.isCritical, label: detail.label }] : []),
+            { damage: detail.damage - fixed, critical: !!detail.isCritical, destiny: !!detail.isDestinyDamage, label: detail.label },
             ...(fixed > 0 ? [{ damage: fixed, fixed: true, label: detail.label || '고정 피해' }] : [])].filter(part => part.damage > 0);
     });
     // 거울의 회피/방어가 최종 피해를 바꾼 경우 타격별 숫자에도 같은 판정을 반영한다.
-    const detailTotal = hits.reduce((sum, detail) => sum + detail.damage, 0);
+    const hpHits = hits.filter(detail => detail.type !== 'absorbed');
+    const detailTotal = hpHits.reduce((sum, detail) => sum + detail.damage, 0);
     if (detailTotal && detailTotal !== hit.finalDamage) {
         let remaining = hit.finalDamage;
-        hits.forEach((detail, index) => { detail.damage = index === hits.length - 1 ? remaining : Math.min(remaining, Math.round(detail.damage * hit.finalDamage / detailTotal)); remaining -= detail.damage; });
+        hpHits.forEach((detail, index) => { detail.damage = index === hpHits.length - 1 ? remaining : Math.min(remaining, Math.round(detail.damage * hit.finalDamage / detailTotal)); remaining -= detail.damage; });
     }
     if (!hits.length && hit.finalDamage > 0) hits.push({ damage: hit.finalDamage, critical: !!hit.criticalCount });
     hits.push(...mirrorAbsorbed);
-    if (extra.routeShieldAbsorbed > 0) hits.push({ damage: extra.routeShieldAbsorbed, type: 'absorbed' });
+    if (extra.routeShieldAbsorbed > 0 && !hit.shieldedHitDetails) hits.push({ damage: extra.routeShieldAbsorbed, type: 'absorbed' });
     run.combatSequence = Number(run.combatSequence || 0) + 1;
     const event = combatEffects.annotateEvent({
         id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId: enemy.id,

@@ -227,23 +227,24 @@ function modifyHit(user, stats, extra, hit) {
 function afterHit(user, stats, extra, hit) {
     if (!active(user)) return;
     const s = battle(user), e = expedition(user), run = user.paradise;
-    if (hit.finalDamage > 0) s.lastDamageDirect = direct(extra);
+    const landedDamage = Math.max(0, Number(hit.finalDamage || 0)) || Math.max(0, Number(extra.enemyShieldAbsorbed || 0));
+    if (landedDamage > 0) s.lastDamageDirect = direct(extra);
     if (extra.dotAttack) {
-        if (!(hit.finalDamage > 0)) return;
+        if (!(landedDamage > 0)) return;
         if (has(user, 'softPoisonWard') && Number(s.poisonTicks || 0) < 3) {
-            count(s, 'poisonTicks'); count(s, 'poisonDamage', hit.finalDamage);
+            count(s, 'poisonTicks'); count(s, 'poisonDamage', landedDamage);
             if (s.poisonTicks === 3) shield(user, 'poisonWard', Math.min(stats.hp * .20, s.poisonDamage), 8);
         }
         if (has(user, 'pairedDrops') && Number(s.pairedUses || 0) < 3 && !s.pairedDamage) {
-            if (s.lastDrop === hit.finalDamage) { s.pairedDamage = Math.min(stats.atk * 3, hit.finalDamage * 2); count(s, 'pairedUses'); delete s.lastDrop; }
-            else s.lastDrop = hit.finalDamage;
+            if (s.lastDrop === landedDamage) { s.pairedDamage = Math.min(stats.atk * 3, landedDamage * 2); count(s, 'pairedUses'); delete s.lastDrop; }
+            else s.lastDrop = landedDamage;
         }
         return;
     }
     if (!direct(extra)) return;
     const absorbed = Number(extra.enemyShieldAbsorbed ?? extra.routeShieldAbsorbed ?? 0);
     if (has(user, 'wardCustoms') && absorbed > 0 && !extra.traitCustomsPaid) s.customsDamage = Math.min(stats.atk * 3, Number(s.customsDamage || 0) + absorbed * .50);
-    if (!(hit.finalDamage > 0)) return;
+    if (!(landedDamage > 0)) return;
     s.lastDirect = kind(extra);
     if (has(user, 'singleShell') && extra.isBasic && Number(hit.comboHitCount || 1) === 1 && Number(s.shells || 0) < 4) { count(s, 'shells'); count(s, 'shellDamage', stats.atk * .25); }
     if (has(user, 'coldApplause')) {

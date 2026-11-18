@@ -294,7 +294,7 @@ function addBoo(user, extra) {
     }
 }
 function afterHit(user, stats, extra, hit) {
-    if (!combat(user) || !direct(extra) || hit.finalDamage <= 0 || corridor().getResources(user).hp <= 0) return;
+    if (!combat(user) || !direct(extra) || (hit.finalDamage <= 0 && !(extra.enemyShieldAbsorbed > 0)) || corridor().getResources(user).hp <= 0) return;
     const s = state(user), k = kind(extra), enemy = user.paradise.enemy;
     count(s, k === 'basic' ? 'basicHits' : 'skillHits'); count(s, 'directHits');
     s.actionHistory = [...(s.actionHistory || []), k].slice(-3);

@@ -1046,11 +1046,12 @@ function attackMultiplier(user, extra) {
 function afterAttack(user, extra, hit) {
     if (!active(user) || extra.summonAttack || extra.dotAttack || extra.isBotAutoAttack) return;
     const run = user.paradise, effects = sumEffects(run);
+    const landed = hit.finalDamage > 0 || extra.enemyShieldAbsorbed > 0;
     if (extra.isBasic && effects.basicGuard) run.battle.basicGuardReady = true;
     if (effects.missedFortune) run.battle.missedFortuneReady = Number(hit.criticalCount || 0) === 0;
-    const mp = (extra.isBasic && hit.finalDamage > 0 ? Number(effects.basicMp || 0) : 0) + Math.min(.05, Number(hit.criticalCount || 0) * Number(effects.criticalMp || 0));
+    const mp = (extra.isBasic && landed ? Number(effects.basicMp || 0) : 0) + Math.min(.05, Number(hit.criticalCount || 0) * Number(effects.criticalMp || 0));
     if (mp) heal(user, 0, mp);
-    if (hit.finalDamage > 0) {
+    if (landed) {
         const battle = run.battle;
         battle.criticalHits = Number(battle.criticalHits || 0) + Number(hit.criticalCount || 0);
         if (effects.sparkJar && !hit.criticalCount) battle.sparks = Math.min(3, Number(battle.sparks || 0) + 1);

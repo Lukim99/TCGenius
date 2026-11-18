@@ -2,6 +2,7 @@
 
 const { RELICS } = require('./paradise_content');
 const shields = require('./combat_shields');
+const shieldHits = require('./paradise_shield_hits');
 const cardContracts = require('./paradise_contracts');
 const rpg = () => require('./rpgenius');
 const corridor = () => require('./paradise');
@@ -152,7 +153,7 @@ function modifyHit(user, stats, extra, hit, random = Math.random) {
     }
     if (shields.summary(run.enemy, Date.now()).amount > 0) {
         const result = shields.absorb(run.enemy, hit.finalDamage);
-        scale(hit.finalDamage > 0 ? result.damage / hit.finalDamage : 0);
+        shieldHits.applyAbsorption(hit, result);
         extra.routeShieldAbsorbed = result.absorbed;
         if (s.id === 'glassVault' && result.broken.length) { s.shattered = true; notify(extra, '유리 금고, 보호막 파괴'); }
     }
