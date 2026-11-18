@@ -5162,7 +5162,7 @@ server.get('/card-image', requireUser, async (req, res) => {
         return res.sendFile(coverPath);
     }
     if (typeof req.query.star != 'undefined') {
-        const buffer = await cardComposite.composeCardImageAsync({
+        const card = {
             name,
             star: Number(req.query.star),
             type: String(req.query.type || '일반'),
@@ -5171,10 +5171,21 @@ server.get('/card-image', requireUser, async (req, res) => {
             square: req.query.square === '1',
             specter: req.query.specter === '1',
             awakeningSpecter: req.query.awakeningSpecter === '1'
-        });
+        };
+        const etag = cardComposite.getCardImageEtag(card);
+        if (!etag) return res.status(404).end();
+        res.set('ETag', etag);
+        // 이미 보유한 그림은 합성 대기열에 넣지 않는다. '*'는 실제 합성 가능 여부까지 확인한다.
+        if (String(req.get('If-None-Match') || '').trim() !== '*' && req.fresh) {
+            return res.set('Cache-Control', 'private, max-age=86400').status(304).end();
+        }
+        res.removeHeader('ETag');
+        const buffer = await cardComposite.composeCardImageAsync(card);
         if (!buffer) return res.status(404).end();
         res.set('Content-Type', 'image/png');
         res.set('Cache-Control', 'private, max-age=86400');
+        // 대기 중 자산이 바뀌면 이 응답은 Express의 실제 PNG 바이트 ETag를 사용한다.
+        if (cardComposite.getCardImageEtag(card) === etag) res.set('ETag', etag);
         return res.send(buffer);
     }
     // 구형 URL 호환 (PVP 스냅샷 등에 저장된 name+file 링크)
@@ -6129,9 +6140,8 @@ function getMaxExpForLevel(level) {
     return typeof value == 'number' ? value : 0;
 }
 
-function getCardImageUrl(card, user, square = false) {
-    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
-    const data = card && characterCards[card.id];
+function getCardImageUrl(card, user, square = false, characterData) {
+    const data = characterData || (card && readJson(CHARACTER_CARDS_PATH, [])[card.id]);
     if (!data) return null;
     const type = ['전직', '각성'].includes(card.type) ? card.type : '일반';
     const prestige = type === '전직' ? (user && user.jobPrestige === true) : (user && user.prestige === true);
@@ -6153,8 +6163,8 @@ function getCardImageUrl(card, user, square = false) {
     return '/card-image?' + params.join('&');
 }
 
-function getCardIconUrl(card, user) {
-    return getCardImageUrl(card, user, true);
+function getCardIconUrl(card, user, characterData) {
+    return getCardImageUrl(card, user, true, characterData);
 }
 
 function getCharacterCoverImageUrl(data) {
@@ -6240,6 +6250,7 @@ function buildPetSetEffectForUser(data, activeSets) {
 
 function buildInventoryPets(user) {
     const activeSets = rpgenius.getActivePetSetEffects(user);
+    const version = inventoryVersion(user, 'pet');
     const result = [];
     let number = 1;
     const add = (pet, equipped, meta) => {
@@ -6250,7 +6261,7 @@ function buildInventoryPets(user) {
         result.push({
             type: 'pet',
             typeLabel: '펫',
-            version: inventoryVersion(user, 'pet'),
+            version,
             extractable: !equipped && !!rpgenius.PET_EXTRACT_YIELD[data.rarity],
             id: Number(pet.id),
             number: itemNumber,
@@ -6321,8 +6332,8 @@ function buildSlotEffectInfo(card, data) {
 }
 
 function buildSkillInfo(card, user, context) {
-    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
-    const skills = readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
+    const characterCards = context?.characterCards || readJson(CHARACTER_CARDS_PATH, []);
+    const skills = context?.skills || readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
     const data = card && characterCards[card.id];
     if (!data || !Array.isArray(data.skills)) return [];
     const stats = context?.stats || rpgenius.calculateUserStats(user);
@@ -6345,12 +6356,12 @@ function buildSkillInfo(card, user, context) {
 }
 
 function serializeCard(card, user, context) {
-    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const characterCards = context?.characterCards || readJson(CHARACTER_CARDS_PATH, []);
     const data = card && characterCards[card.id];
     if (!data) return null;
     let classInfo = null;
     if (data.class) {
-        const skills = readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
+        const skills = context?.skills || readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
         const stats = context?.stats || (user ? rpgenius.calculateUserStats(user) : {});
         const slotEffects = context?.slotEffects || (user ? rpgenius.calculateCardSlotEffects(user) : {});
         const star = Number(card && card.star || 0);
@@ -6421,8 +6432,8 @@ function serializeCard(card, user, context) {
         skin: card.skin || '',
         name: data.name,
         formatted: rpgenius.formatUserCard(card),
-        imageUrl: getCardImageUrl(card, user),
-        iconUrl: getCardIconUrl(card, user),
+        imageUrl: getCardImageUrl(card, user, false, data),
+        iconUrl: getCardIconUrl(card, user, data),
         slotEffect: buildSlotEffectInfo(card, data),
         skills: buildSkillInfo(card, user, context),
         classInfo,
@@ -6481,6 +6492,7 @@ function isBulkUsableInventoryItem(item) {
 
 function buildInventoryItems(user) {
     const items = rpgenius.getDataCache('Item', []);
+    const version = inventoryVersion(user, 'items');
     return (user.inventory && Array.isArray(user.inventory.item) ? user.inventory.item : [])
         .map(inv => {
             const data = items[inv.id];
@@ -6488,7 +6500,7 @@ function buildInventoryItems(user) {
             const assets = getItemDisplayAssets(data);
             return {
                 id: Number(inv.id), name: data.name, type: data.type, desc: data.desc || '', count: Number(inv.count || 0),
-                version: inventoryVersion(user, 'items'), sellPrice: Number(data.sellPrice || 0),
+                version, sellPrice: Number(data.sellPrice || 0),
                 noTrade: data.no_trade === true, usable: isUsableInventoryItem(data), bulkUsable: isBulkUsableInventoryItem(data),
                 useKind: getItemUseResultKind(data),
                 iconUrl: assets.iconUrl, frameUrl: assets.frameUrl
@@ -6498,10 +6510,14 @@ function buildInventoryItems(user) {
 }
 
 function buildInventoryCards(user) {
-    return (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [])
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    const version = inventoryVersion(user, 'cards');
+    const context = cards.length ? { stats: rpgenius.calculateUserStats(user), slotEffects: rpgenius.calculateCardSlotEffects(user),
+        characterCards: readJson(CHARACTER_CARDS_PATH, []), skills: readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []) } : undefined;
+    return cards
         .map((card, i) => {
-            const serialized = serializeCard(card, user);
-            return serialized ? Object.assign(serialized, { number: i + 1, version: inventoryVersion(user, 'cards'), salePrice: rpgenius.getCardSalePrice(card) }) : null;
+            const serialized = serializeCard(card, user, context);
+            return serialized ? Object.assign(serialized, { number: i + 1, version, salePrice: rpgenius.getCardSalePrice(card) }) : null;
         })
         .filter(Boolean);
 }
@@ -6517,8 +6533,11 @@ function buildFishingCards(user) {
 
 function buildCombineCards(user) {
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    const version = inventoryVersion(user, 'cards');
+    const context = cards.length ? { stats: rpgenius.calculateUserStats(user), slotEffects: rpgenius.calculateCardSlotEffects(user),
+        characterCards: readJson(CHARACTER_CARDS_PATH, []), skills: readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []) } : undefined;
     return cards.map((card, i) => {
-        const s = serializeCard(card, user);
+        const s = serializeCard(card, user, context);
         if (!s) return null;
         const star = Number(card.star || 0);
         return {
@@ -6533,7 +6552,7 @@ function buildCombineCards(user) {
             iconUrl: s.iconUrl,
             locked: card.locked === true,
             special: !!(card.skin || card.isSpecter),
-            version: inventoryVersion(user, 'cards'),
+            version,
             combinable: !!rpgenius.getCardCombineInfo(star)
         };
     }).filter(Boolean).sort((a, b) => b.star - a.star || a.id - b.id);

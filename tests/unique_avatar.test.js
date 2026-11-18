@@ -256,7 +256,7 @@ test('new Glencheck and Dealer avatar layers are served for each card tier and p
     }
 });
 
-test('worker-composed card images preserve authentication, PNG bytes and browser cache validation', async () => {
+test('worker-composed card images preserve authentication, PNG bytes and browser cache validation', async t => {
     const spec = { name: '키노', star: 11, type: '각성', square: true, specter: true };
     const url = base + '/card-image?' + new URLSearchParams({ ...spec, square: '1', specter: '1' });
     assert.equal((await fetch(url)).status, 401);
@@ -268,9 +268,77 @@ test('worker-composed card images preserve authentication, PNG bytes and browser
     assert.deepEqual(bytes, require('../card_composite').composeCardImage(spec));
     const etag = response.headers.get('etag');
     assert.ok(etag);
-    const cached = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': etag, 'Cache-Control': 'max-age=0' } });
-    assert.equal(cached.status, 304);
-    assert.equal((await cached.arrayBuffer()).byteLength, 0);
+    const compositor = require('../card_composite');
+    const compose = t.mock.method(compositor, 'composeCardImageAsync');
+    for (const tag of [etag, etag.slice(2), 'W/"other", ' + etag]) {
+        const cached = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': tag, 'Cache-Control': 'max-age=0' } });
+        assert.equal(cached.status, 304);
+        assert.equal((await cached.arrayBuffer()).byteLength, 0);
+        assert.equal(cached.headers.get('etag'), etag);
+    }
+    const head = await fetch(url, { method: 'HEAD', headers: { Cookie: cookie, 'If-None-Match': etag, 'Cache-Control': 'max-age=0' } });
+    assert.equal(head.status, 304);
+    assert.equal(compose.mock.callCount(), 0, '일치하는 재검증은 worker를 기다리지 않는다');
+    const legacy = require('etag')(bytes, { weak: true });
+    const refreshed = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': legacy, 'Cache-Control': 'max-age=0' } });
+    assert.equal(refreshed.status, 200);
+    assert.deepEqual(Buffer.from(await refreshed.arrayBuffer()), bytes);
+    assert.equal(refreshed.headers.get('etag'), etag);
+    const noCache = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': etag, 'Cache-Control': 'no-cache' } });
+    assert.equal(noCache.status, 200);
+    await noCache.arrayBuffer();
+    const wildcard = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': '*', 'Cache-Control': 'max-age=0' } });
+    assert.equal(wildcard.status, 304);
+    assert.equal(compose.mock.callCount(), 3, '레거시 태그·no-cache·별표는 실제 합성 경로를 유지한다');
+});
+
+test('matching image validators bypass queued work and asset changes during work use a byte validator', async t => {
+    const compositor = require('../card_composite');
+    const spec = { name: '키노', star: 10, type: '전직', square: true };
+    const url = base + '/card-image?' + new URLSearchParams({ ...spec, square: '1' });
+    const bytes = compositor.composeCardImage(spec), etag = compositor.getCardImageEtag(spec);
+    let release, entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    const compose = t.mock.method(compositor, 'composeCardImageAsync', () => {
+        entered();
+        return new Promise(resolve => { release = resolve; });
+    });
+    const pending = fetch(url, { headers: { Cookie: cookie, 'Cache-Control': 'no-cache' } });
+    await started;
+    try {
+        const cached = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': etag, 'Cache-Control': 'max-age=0' }, signal: AbortSignal.timeout(2000) });
+        assert.equal(cached.status, 304);
+        assert.equal(compose.mock.callCount(), 1, '앞선 이미지가 끝나기 전에 조건부 요청을 완료한다');
+    } finally {
+        release(bytes);
+        await (await pending).arrayBuffer();
+    }
+    const art = compositor.resolveCardLayers(spec).character, originalStat = fs.statSync;
+    let changedMetadata = false;
+    t.mock.method(fs, 'statSync', (file, ...args) => {
+        const stat = originalStat(file, ...args);
+        return file === art && changedMetadata ? { ...stat, mtimeMs: stat.mtimeMs + 2000 } : stat;
+    });
+    changedMetadata = true;
+    const nextTag = compositor.getCardImageEtag(spec);
+    changedMetadata = false;
+    assert.notEqual(nextTag, etag);
+    compose.mock.mockImplementation(async () => { changedMetadata = true; return bytes; });
+    const changed = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': nextTag, 'Cache-Control': 'max-age=0' } });
+    assert.equal(changed.status, 200);
+    assert.equal(changed.headers.get('etag'), require('etag')(bytes, { weak: true }));
+    assert.deepEqual(Buffer.from(await changed.arrayBuffer()), bytes);
+    compose.mock.mockImplementation(async () => null);
+    const missing = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': '*', 'Cache-Control': 'max-age=0' } });
+    assert.equal(missing.status, 404);
+    assert.equal(missing.headers.get('etag'), null);
+    assert.equal(missing.headers.get('cache-control'), null);
+    compose.mock.mockImplementation(async () => { throw new Error('isolated card worker failure'); });
+    const failed = await fetch(url, { headers: { Cookie: cookie, 'Cache-Control': 'no-cache' } });
+    assert.equal(failed.status, 500);
+    assert.equal(failed.headers.get('etag'), null);
+    assert.equal(failed.headers.get('cache-control'), null);
+    await failed.arrayBuffer();
 });
 
 test('avatar gallery serves distinct card, portrait and available cutscene media with currency icons', async () => {

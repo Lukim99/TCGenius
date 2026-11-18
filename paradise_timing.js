@@ -162,13 +162,18 @@ function httpTiming(req, res, next) {
     const record = event => {
         if (recorded) return;
         recorded = true;
-        if (String(res.getHeader('Content-Type') || '').startsWith('text/event-stream')) return;
+        const contentType = String(res.getHeader('Content-Type') || '').split(';', 1)[0].trim().toLowerCase();
+        if (contentType === 'text/event-stream') return;
         const runtime = elapsed(started);
         if (runtime.ms < 1000) return;
+        const media = /^(image|video|audio)\//.exec(contentType)?.[1];
+        const responseBytes = Number(res.getHeader('Content-Length'));
         console.warn('[http timing]', JSON.stringify({
             method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(req.method) ? req.method : 'other',
             route: typeof req.route?.path === 'string' ? req.route.path : '(unmatched)',
-            event, status: res.statusCode, trace: res[httpTrace], ...runtime
+            event, status: res.statusCode, trace: res[httpTrace], ...runtime,
+            responseType: media || (contentType === 'application/json' ? 'json' : contentType === 'text/html' ? 'html' : 'other'),
+            responseBytes: Number.isSafeInteger(responseBytes) && responseBytes >= 0 ? responseBytes : undefined
         }));
     };
     res.once('finish', () => record('finish'));

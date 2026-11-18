@@ -708,6 +708,91 @@ test('장비 300개 목록은 같은 버전을 한 번만 계산하고 보유·�
     assert.equal(databaseWrites, count);
 });
 
+for (const kind of ['items', 'cards', 'pet']) test(`${kind} 250개 목록은 같은 버전과 카드 능력치를 한 번 계산하고 원본을 보존한다`, async t => {
+    const items = rpg.getDataCache('Item', []);
+    const entries = kind === 'items' ? items.map((item, id) => item ? { id, count: 3 } : null).filter(Boolean).slice(0, 250)
+        : kind === 'cards' ? Array.from({ length: 250 }, (_, i) => ({ id: i % 3, star: 4 + i % 4, type: i % 2 ? '전직' : '일반', locked: i % 3 === 0 }))
+        : Array.from({ length: 250 }, (_, i) => ({ id: 0, level: i % 3, tradeCount: 1 }));
+    assert.equal(entries.length, 250);
+    const key = kind === 'items' ? 'item' : kind === 'cards' ? 'card' : 'pet';
+    const user = await reset({ inventory: { item: [], card: [], equipment: [], pet: [], [key]: entries } });
+    const expectedVersion = inventoryVersion(user, kind), snapshot = JSON.stringify(user.inventory), count = databaseWrites;
+    const crypto = require('node:crypto'), createHash = crypto.createHash, calculateStats = rpg.calculateUserStats, readFile = fs.readFileSync;
+    let versionHashes = 0, statCalculations = 0, definitionReads = {};
+    t.mock.method(crypto, 'createHash', (algorithm, ...args) => { if (algorithm === 'sha256') versionHashes++; return createHash(algorithm, ...args); });
+    t.mock.method(rpg, 'calculateUserStats', (...args) => { statCalculations++; return calculateStats(...args); });
+    t.mock.method(fs, 'readFileSync', (file, ...args) => {
+        const name = path.basename(String(file));
+        if (name === 'CharacterCards.json' || name === 'Skills.json') definitionReads[name] = (definitionReads[name] || 0) + 1;
+        return readFile(file, ...args);
+    });
+    for (const route of kind === 'cards' ? ['/api/inventory/cards', '/api/combine/cards'] : ['/api/inventory/' + kind]) {
+        versionHashes = 0; statCalculations = 0; definitionReads = {};
+        const response = await request(route), rows = response.data[kind];
+        assert.equal(response.status, 200, JSON.stringify(response.data));
+        assert.equal(rows.length, 250);
+        assert.ok(rows.every(entry => entry.version === expectedVersion));
+        assert.equal(versionHashes, 1);
+        if (kind === 'cards') {
+            assert.equal(statCalculations, 1);
+            assert.equal(definitionReads['Skills.json'], 1);
+            // 기존 formatUserCard의 행별 읽기 외에 목록·스킬·이미지 URL에서 같은 정의를 다시 읽지 않는다.
+            assert.ok(definitionReads['CharacterCards.json'] <= entries.length + 10);
+            if (route === '/api/combine/cards') assert.deepEqual(rows.map(entry => [entry.number, entry.locked]).sort((a, b) => a[0] - b[0]), entries.map((entry, i) => [i + 1, entry.locked]));
+            else assert.ok(rows.every(entry => entry.name && entry.skills.length && entry.classInfo.skills.length && entry.salePrice > 0));
+        }
+        const current = await rpg.getRPGUserByName(fixture.name);
+        assert.equal(JSON.stringify(current.inventory), snapshot);
+        assert.equal(databaseWrites, count);
+    }
+});
+
+test('아이템·펫 목록 변경 후 이전 버전으로 판매·추출을 미리 볼 수 없다', async () => {
+    const items = rpg.getDataCache('Item', []), id = items.findIndex(item => item && Number(item.sellPrice) > 0);
+    assert.ok(id >= 0);
+    for (const kind of ['items', 'pet']) {
+        const user = await reset({ inventory: { item: [{ id, count: 3 }], card: [], equipment: [], pet: [{ id: 0, level: 0, tradeCount: 1 }] } });
+        const version = (await request('/api/inventory/' + kind)).data[kind][0].version;
+        if (kind === 'items') user.inventory.item[0].count++;
+        else user.inventory.pet[0].level++;
+        await user.save();
+        const snapshot = JSON.stringify(user.inventory), count = databaseWrites;
+        const body = kind === 'items' ? { action: 'items-sell', id, count: 1, version } : { action: 'pets-extract', numbers: [1], version };
+        assert.equal((await request('/api/inventory/actions/preview', body)).status, 409);
+        assert.equal(JSON.stringify((await rpg.getRPGUserByName(fixture.name)).inventory), snapshot);
+        assert.equal(databaseWrites, count);
+    }
+});
+
+test('카드 목록은 일반·전직·스펙터 스킬의 비용과 쿨타임을 요청마다 갱신한다', async () => {
+    const characters = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'CharacterCards.json'), 'utf8'));
+    const skills = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'Skills.json'), 'utf8'));
+    const user = await reset({ field: { training: { overrides: { mpReduce: .25, skillCooldown: 2 } } },
+        inventory: { item: [], card: [{ id: 0, star: 4, type: '일반' }, { id: 1, star: 7, type: '전직', specter: '빅뱅 스펙터' }], equipment: [], pet: [] } });
+    const snapshot = JSON.stringify(user.inventory), expectedVersion = inventoryVersion(user, 'cards');
+    for (const [mpReduce, skillCooldown] of [[.25, 2], [-.5, -1]]) {
+        user.field.training.overrides = { mpReduce, skillCooldown };
+        await user.save();
+        const count = databaseWrites, response = await request('/api/inventory/cards');
+        assert.equal(response.status, 200);
+        for (const card of response.data.cards) {
+            assert.equal(card.version, expectedVersion);
+            assert.equal(card.name, characters[card.id].name);
+            const pairs = [...card.skills.map((skill, index) => [skill, skills[characters[card.id].skills[index]]]),
+                ...card.classInfo.skills.map((skill, index) => [skill, skills[characters[card.id].class.skills[index]]])];
+            if (card.specter) pairs.push([card.specter.skill, rpg.getSpecterSkill(rpg.findSpecterByName(card.specter.name))]);
+            for (const [actual, definition] of pairs) {
+                assert.equal(actual.name, definition.name);
+                assert.equal(actual.mpCost, Math.max(0, Math.round(Number(definition.mp_cost || 0) * (1 + mpReduce))));
+                assert.equal(actual.cooltimeText, rpg.formatCooltime(Math.max(0, Number(definition.cooltime || 0) + skillCooldown)));
+                assert.ok(actual.descLines.length);
+            }
+        }
+        assert.equal(JSON.stringify((await rpg.getRPGUserByName(fixture.name)).inventory), snapshot);
+        assert.equal(databaseWrites, count);
+    }
+});
+
 test('장비 잠금·해제, 잠긴 장비와 장착 장비 제외, 다중 분해를 검증한다', async () => {
     await reset();
     let equipment = (await request('/api/inventory/equipment')).data.equipment;

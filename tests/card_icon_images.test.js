@@ -79,7 +79,28 @@ test('비동기 합성은 타이머를 실행시키며 동시 요청에도 기�
     assert.equal(await compositor.composeCardImageAsync({ name: '../키노', star: 0, square: true }), null);
 });
 
-test('단일 작업 스레드는 mtime 변경을 반영하고 종료·오류 뒤 다음 요청에서 복구한다', async t => {
+test('카드 ETag는 이미지 읽기 없이 출력 변형을 구분하고 잘못된 요청에는 null을 반환한다', t => {
+    const spec = { name: '키노', star: 10, type: '전직', square: true };
+    const readMock = t.mock.method(fs, 'readFileSync', () => { throw new Error('ETag must not read image contents'); });
+    try {
+        const tag = compositor.getCardImageEtag(spec);
+        assert.match(tag, /^W\/"card-[a-f0-9]{64}"$/);
+        assert.equal(compositor.getCardImageEtag(spec), tag);
+        assert.equal(compositor.getCardImageEtag({ ...spec, skin: '미제공 스킨', prestige: true }), tag);
+        const variants = [spec, { ...spec, square: false }, { ...spec, type: '각성' }, { ...spec, star: 11 },
+            { ...spec, specter: true }, { ...spec, awakeningSpecter: true }, { ...spec, specter: true, awakeningSpecter: true }];
+        const tags = variants.map(value => compositor.getCardImageEtag(value));
+        assert.ok(tags.every(Boolean));
+        assert.equal(new Set(tags).size, variants.length);
+        for (const invalid of [null, { ...spec, name: '../키노' }, { ...spec, name: 'missing-card-etag-fixture' }, { ...spec, star: 12 }]) {
+            assert.equal(compositor.getCardImageEtag(invalid), null);
+        }
+    } finally {
+        readMock.mock.restore();
+    }
+});
+
+test('단일 작업 스레드와 ETag는 파일·렌더러 변경을 반영하고 종료·오류 뒤 복구한다', async t => {
     // 원본 에셋을 변경하지 않고 같은 모듈과 레이어를 임시 디렉터리에 복사한다.
     const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rpgenius-card-worker-'));
     assert.equal(path.dirname(fixtureRoot), path.resolve(os.tmpdir()));
@@ -102,6 +123,9 @@ test('단일 작업 스레드는 mtime 변경을 반영하고 종료·오류 뒤
     const art = path.join(artDir, '일반 fixture.png');
     fs.copyFileSync(source.character, art);
     fs.copyFileSync(source.border, path.join(frameDir, path.basename(source.border)));
+    const gemDir = path.join(fixtureRoot, 'public/assets/specter-gems');
+    fs.mkdirSync(gemDir, { recursive: true });
+    for (const name of ['job.png', 'awakening.png']) fs.copyFileSync(path.join(__dirname, '../public/assets/specter-gems', name), path.join(gemDir, name));
     const OriginalWorker = workerThreads.Worker;
     const workerMock = t.mock.method(workerThreads, 'Worker', class extends OriginalWorker {
         constructor(...args) {
@@ -112,15 +136,35 @@ test('단일 작업 스레드는 mtime 변경을 반영하고 종료·오류 뒤
     const isolated = require(modulePath);
     workerMock.mock.restore();
     const spec = { name: 'fixture', type: '일반', star: 10, square: true };
+    const firstTag = isolated.getCardImageEtag(spec);
+    assert.match(firstTag, /^W\/"card-[a-f0-9]{64}"$/);
     const [first, repeated] = await Promise.all([isolated.composeCardImageAsync(spec), isolated.composeCardImageAsync(spec)]);
     assert.equal(workers.length, 1, '동시 요청은 작업 스레드를 공유한다');
     assert.deepEqual(first, repeated);
     assert.deepEqual(first, isolated.composeCardImage(spec));
+    assert.equal(isolated.getCardImageEtag(spec), firstTag);
+
+    // 소수 mtime, 크기, ctime 각각의 변화가 같은 메타데이터 키에 반영된다.
+    const actualStat = fs.statSync, stat = actualStat(art);
+    let metadata = { ...stat, mtimeMs: Math.floor(stat.mtimeMs) + 0.125 };
+    const statMock = t.mock.method(fs, 'statSync', (file, ...args) => file === art ? metadata : actualStat(file, ...args));
+    try {
+        let previous = isolated.getCardImageEtag(spec);
+        for (const update of [{ mtimeMs: Math.floor(stat.mtimeMs) + 0.75 }, { size: stat.size + 1 }, { ctimeMs: stat.ctimeMs + 1 }]) {
+            metadata = { ...metadata, ...update };
+            const next = isolated.getCardImageEtag(spec);
+            assert.notEqual(next, previous);
+            previous = next;
+        }
+    } finally {
+        statMock.mock.restore();
+    }
 
     const originalMtime = fs.statSync(art).mtimeMs;
     const replacement = compositor.resolveCardLayers({ name: '키노', type: '전직', star: 10, square: true });
     fs.copyFileSync(replacement.character, art);
     fs.utimesSync(art, new Date(), new Date(originalMtime + 2000));
+    assert.notEqual(isolated.getCardImageEtag(spec), firstTag);
     const changed = await isolated.composeCardImageAsync(spec);
     assert.notDeepEqual(changed, first, '에셋 변경 시 이전 PNG를 반환하면 안 된다');
     assert.deepEqual(changed, isolated.composeCardImage(spec));
@@ -140,4 +184,26 @@ test('단일 작업 스레드는 mtime 변경을 반영하고 종료·오류 뒤
     fs.copyFileSync(path.join(__dirname, '../card_composite_worker.js'), workerPath);
     assert.deepEqual(await isolated.composeCardImageAsync(spec), changed);
     assert.equal(workers.length, 3, '실패한 스레드는 다음 요청에서 다시 생성한다');
+
+    // mtime을 보존한 보석 교체도 ETag와 이미지를 함께 갱신해야 한다.
+    const marked = { ...spec, specter: true };
+    const oldMarkedTag = isolated.getCardImageEtag(marked);
+    const oldMarked = await isolated.composeCardImageAsync(marked);
+    const jobGem = path.join(gemDir, 'job.png'), gemStat = fs.statSync(jobGem);
+    fs.copyFileSync(path.join(gemDir, 'awakening.png'), jobGem);
+    fs.utimesSync(jobGem, gemStat.atimeMs / 1000, gemStat.mtimeMs / 1000);
+    assert.notEqual(isolated.getCardImageEtag(marked), oldMarkedTag);
+    const newMarked = await isolated.composeCardImageAsync(marked);
+    assert.notDeepEqual(newMarked, oldMarked);
+    assert.deepEqual(newMarked, isolated.composeCardImage(marked));
+
+    const oldRendererTag = isolated.getCardImageEtag(spec);
+    fs.appendFileSync(modulePath, '\n// renderer version fixture\n');
+    assert.equal(isolated.getCardImageEtag(spec), oldRendererTag, '소스 버전은 import 시 한 번 결정한다');
+    delete require.cache[modulePath];
+    const reloaded = require(modulePath);
+    assert.notEqual(reloaded.getCardImageEtag(spec), oldRendererTag, '렌더러 내용이 바뀌면 별도 버전 상수 수정 없이 ETag가 바뀐다');
+    assert.deepEqual(reloaded.composeCardImage(spec), changed);
+    fs.unlinkSync(art);
+    assert.equal(isolated.getCardImageEtag(spec), null);
 });

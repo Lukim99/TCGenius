@@ -4,7 +4,9 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { createHash } = require('node:crypto');
 const { Worker } = require('node:worker_threads');
+const RENDERER_VERSION = createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
 
 const SPLIT_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage', '카드분리');
 const CHARACTER_DIR = path.join(SPLIT_IMAGE_PATH, '캐릭터');
@@ -121,7 +123,7 @@ function encodePng(width, height, rgba) {
     const chunks = [
         Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
         pngChunk('IHDR', ihdr),
-        pngChunk('IDAT', zlib.deflateSync(filtered, { level: 9 })),
+        pngChunk('IDAT', zlib.deflateSync(filtered, { level: 4 })),
         pngChunk('IEND', Buffer.alloc(0))
     ];
     return Buffer.concat(chunks);
@@ -228,14 +230,40 @@ function canCompose(card) {
 // ===== 합성 + LRU 캐시 =====
 
 const CACHE_MAX = 60;
-const composeCache = new Map(); // key: 레이어 경로+mtime → PNG Buffer
+const composeCache = new Map(); // key: 렌더러+레이어 메타데이터+보석 배치 → PNG Buffer
 const gemCache = new Map();
+
+function fileVersion(file) {
+    const stat = fs.statSync(file);
+    return [file, stat.mtimeMs, stat.size, stat.ctimeMs];
+}
+
+function getCardImageInput(card) {
+    try {
+        const layers = resolveCardLayers(card);
+        if (!layers) return null;
+        const files = [layers.background, layers.character, layers.border].filter(Boolean);
+        const gems = [];
+        if (card.specter) gems.push({ file: path.join(SPECTER_GEM_DIR, 'job.png'), y: 20 });
+        if (card.awakeningSpecter) gems.push({ file: path.join(SPECTER_GEM_DIR, 'awakening.png'), y: 94 });
+        const key = JSON.stringify({ renderer: RENDERER_VERSION, layers: files.map(fileVersion),
+            square: card.square === true, gems: gems.map(gem => [fileVersion(gem.file), gem.y]) });
+        return { files, gems, key };
+    } catch (e) {
+        return null;
+    }
+}
+
+function getCardImageEtag(card) {
+    const input = getCardImageInput(card);
+    return input ? 'W/"card-' + createHash('sha256').update(input.key).digest('hex') + '"' : null;
+}
 
 // imagegen 원본을 면적 평균으로 축소해 작은 카드에서도 보석 윤곽을 유지한다.
 function getSpecterGem(file) {
-    const mtime = fs.statSync(file).mtimeMs;
+    const version = JSON.stringify(fileVersion(file));
     const cached = gemCache.get(file);
-    if (cached && cached.mtime === mtime) return cached.rgba;
+    if (cached && cached.version === version) return cached.rgba;
     const source = decodePng(fs.readFileSync(file));
     const size = 64, sums = new Float64Array(size * size * 4), counts = new Uint32Array(size * size);
     for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) {
@@ -253,23 +281,14 @@ function getSpecterGem(file) {
         for (let c = 0; c < 3; c++) rgba[offset + c] = Math.round(sums[offset + c] / alpha);
         rgba[offset + 3] = Math.round(alpha / counts[i]);
     }
-    gemCache.set(file, { mtime, rgba });
+    gemCache.set(file, { version, rgba });
     return rgba;
 }
 
 function composeCardImage(card) {
-    const layers = resolveCardLayers(card);
-    if (!layers) return null;
-    const files = [layers.background, layers.character, layers.border].filter(Boolean);
-    const gems = [];
-    if (card.specter) gems.push({ file: path.join(SPECTER_GEM_DIR, 'job.png'), y: 20 });
-    if (card.awakeningSpecter) gems.push({ file: path.join(SPECTER_GEM_DIR, 'awakening.png'), y: 94 });
-    let key;
-    try {
-        key = files.concat(gems.map(gem => gem.file)).map(file => file + '@' + fs.statSync(file).mtimeMs).join('|');
-    } catch (e) {
-        return null;
-    }
+    const input = getCardImageInput(card);
+    if (!input) return null;
+    const { files, gems, key } = input;
     const cached = composeCache.get(key);
     if (cached) {
         composeCache.delete(key);
@@ -353,4 +372,4 @@ function getCoverPath(name, kind) {
     return fs.existsSync(filePath) ? filePath : null;
 }
 
-module.exports = { resolveCardLayers, canCompose, composeCardImage, composeCardImageAsync, getCoverPath, decodePng };
+module.exports = { resolveCardLayers, canCompose, composeCardImage, composeCardImageAsync, getCardImageEtag, getCoverPath, decodePng };
