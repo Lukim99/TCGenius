@@ -4,14 +4,34 @@
     {
       "name": "combat-fx-lab",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["scripts/combat-fx-lab/server.js"],
+      "runtimeArgs": [
+        "scripts/combat-fx-lab/server.js"
+      ],
       "port": 4173
     },
     {
       "name": "market-stage-lab",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["scripts/market-stage-lab/server.js"],
+      "runtimeArgs": [
+        "scripts/market-stage-lab/server.js"
+      ],
       "port": 4174
+    },
+    {
+      "name": "paradise-lab",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/paradise-lab/server.js"
+      ],
+      "port": 4175
+    },
+    {
+      "name": "augment-lab",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/augment-lab/server.js"
+      ],
+      "port": 4176
     }
   ]
 }

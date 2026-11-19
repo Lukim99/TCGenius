@@ -32,8 +32,8 @@ function fresh(...ids) {
     battle(user);
     return user;
 }
-function battle(user) {
-    corridor.startCombat(user, 'normal', null, () => .99);
+function battle(user, kind = 'normal') {
+    corridor.startCombat(user, kind, null, () => .99);
     Object.assign(user.paradise.enemy, { hp: 1e12, maxHp: 1e12, atk: 0, def: 0, pnt: 0, crit: 0, cmb: 0 });
 }
 function s(user) { return user.paradise.battle.stones; }
@@ -100,19 +100,6 @@ function powerUser() {
     rpg.calculateCombatPower(user);
     return user;
 }
-test('초반 첫 실버 선택에는 돌 던지기를 제시하고 강제 분류 및 중복 금지는 유지한다', () => {
-    const user = powerUser();
-    corridor.offerAugments(user, () => .99, 'silver');
-    assert.ok(user.paradise.choices.includes('stoneThrow'));
-    assert.equal(new Set(user.paradise.choices).size, 3);
-    assert.ok(user.paradise.choices.every(id => corridor.AUGMENTS.find(a => a.id === id).rarity === 'silver'));
-    user.paradise.stoneIntroShown = false; user.paradise.augmentCategory = 'dot';
-    corridor.offerAugments(user, () => .99, 'silver');
-    assert.ok(!user.paradise.choices.includes('stoneThrow'));
-    delete user.paradise.augmentCategory; user.paradise.acquired.stoneThrow = 1;
-    corridor.offerAugments(user, () => .99, 'silver');
-    assert.ok(!user.paradise.choices.includes('stoneThrow'));
-});
 
 test('저공격력 돌 빌드의 피해량으로 100층 일반 몬스터를 8회 이하 투척으로 처치한다', t => {
     t.mock.method(Math, 'random', () => .99);
@@ -417,12 +404,12 @@ test('돌로 이룬 정산과 과잉 피해는 한도를 지키며 비활성 탐
     t.mock.method(Math, 'random', () => .99);
     const user = fresh('stoneBankShot', 'stoneOverkill', 'stoneLuckyReceipt');
     for (let i = 0; i < 8; i++) {
-        user.paradise.enemy.kind = 'elite';
+        // 영수증은 엘리트 승리에서 정산한다. 엘리트는 한 마리라 처치가 곧 승리다.
+        battle(user, 'elite');
         await cast(user); await cast(user); await cast(user);
         user.paradise.enemy.hp = 1; await cast(user);
-        assert.equal(user.paradise.status, 'active');
+        assert.equal(user.paradise.status, 'active'); assert.notEqual(user.paradise.phase, 'combat');
         assert.ok(user.paradise.stoneState.carriedDamage <= rpg.calculateUserStats(user).atk * 3);
-        battle(user);
     }
     assert.equal(user.paradise.stoneState.stoneLuckyReceipt, .15);
     user.paradise.mode = 'hell';

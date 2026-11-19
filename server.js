@@ -1160,10 +1160,16 @@ server.get('/api/dex/potential', requireUser, (req, res) => {
 
 server.get('/api/dex/augments', requireUser, (req, res) => {
     const { AUGMENTS, RELICS } = require('./paradise_content');
-    res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous, stoneBranch, stoneRequires, stoneRequiresAny, stoneExcludes, isStoneEntry }) => ({
-        id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous,
-        stoneBranch, stoneRequires, stoneRequiresAny, stoneExcludes, isStoneEntry
-    })), relics: RELICS.map(({ id, name, desc, rarity, rarityLabel, iconUrl }) => ({ id, name, desc, rarity, rarityLabel, iconUrl })),
+    const { SKILLS } = require('./paradise_prism');
+    // text는 {종류|말} 강조 표기가 든 문장, lines와 desc는 표기를 뺀 같은 문장이다. skill은 증강이 주는 스킬의 쿨타임(ms)과 MP.
+    res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous, stoneBranch, stoneRequires, stoneRequiresAny, stoneExcludes, isStoneEntry, text, note, lines, iconUrl, skill }) => {
+        const granted = skill ? SKILLS.find(entry => entry.id === id) || SKILLS.find(entry => entry.name === skill) : null;
+        return {
+            id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous: !!dangerous,
+            stoneBranch, stoneRequires, stoneRequiresAny, stoneExcludes, isStoneEntry, text, note, lines, iconUrl,
+            skill: skill ? { name: skill, cooldown: granted?.cooldown || 0, mp: granted?.mp || 0 } : undefined
+        };
+    }), relics: RELICS.map(({ id, name, desc, rarity, rarityLabel, iconUrl }) => ({ id, name, desc, rarity, rarityLabel, iconUrl })),
     traits: require('./paradise_progression').TRAITS, stoneBranches: require('./paradise_augments_stones').BRANCHES });
 });
 
@@ -9949,7 +9955,7 @@ function renderHFieldApp(sess) {
   <canvas id="hfHud"></canvas>
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};</script>
-<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/damage-numbers.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
@@ -9971,7 +9977,7 @@ function renderGeneralFieldApp(sess, mode = 'regular') {
   <canvas id="hfHud"></canvas>
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};window.FIELD_MODE=${JSON.stringify(mode)};</script>
-<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/damage-numbers.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
@@ -10008,7 +10014,7 @@ function renderWorldBossApp(sess) {
   <button id="wbRewardClose" class="wb-skill-select" type="button" autofocus>확인</button>
 </dialog>
 <script>window.WORLD_BOSS_ME=${JSON.stringify(sess.name)};</script>
-<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/damage-numbers.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
@@ -10029,7 +10035,7 @@ function renderPvpApp(sess, opponent) {
   <canvas id="pvpHud"></canvas>
 </main>
 <script>window.PVP_ME=${JSON.stringify(sess.name)};window.PVP_OPPONENT=${JSON.stringify(opponent || '')};</script>
-<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/damage-numbers.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>

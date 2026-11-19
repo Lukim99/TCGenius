@@ -8,10 +8,11 @@
     const ratio = (n, max) => clamp(Number(n) / Math.max(1, Number(max)), 0, 1);
     const asset = name => '/rpg-ui?file=%EB%82%99%EC%9B%90%2F' + (name === 'hell' ? 'hell-hd-v2' : name) + '.webp';
     const FONT = 'ParadiseSans,Pretendard,"Apple SD Gothic Neo","Malgun Gothic",sans-serif';
-    const colors = { silver: '#c9d7de', gold: '#e8c272', prismatic: '#c4a2f2', cursed: '#e0707f' };
-    const metals = { silver: ['#f4f8fa', '#7f8d96', '#e2e9ec', '#66737b'], gold: ['#fff0c2', '#b4842f', '#f2d184', '#86601f'], prismatic: ['#ffd9f3', '#8fd3ff', '#c4a3ff', '#ffe0a3', '#97eed2'], cursed: ['#ffb8c1', '#84243a', '#df6b7d', '#561522'], ember: ['#ffd2a0', '#8a2f14', '#f08048', '#4f1a0c'], iron: ['#e6ddd0', '#6d625a', '#c4b8aa', '#4a403a'] };
-    const glowTint = { silver: [.75, .86, .92], gold: [1, .8, .45], prismatic: [.75, .62, 1], cursed: [1, .36, .42] };
-    const tier = { silver: '실버 증강', gold: '골드 증강', prismatic: '프리즘 증강', cursed: '저주 증강' };
+    const colors = { silver: '#c9d7de', gold: '#e8c272', prismatic: '#c4a2f2', cursed: '#e0707f', stat: '#e8c272', heal: '#8fe0d2', reward: '#f0b860' };
+    const metals = { silver: ['#f4f8fa', '#7f8d96', '#e2e9ec', '#66737b'], gold: ['#fff0c2', '#b4842f', '#f2d184', '#86601f'], prismatic: ['#ffd9f3', '#8fd3ff', '#c4a3ff', '#ffe0a3', '#97eed2'], cursed: ['#ffb8c1', '#84243a', '#df6b7d', '#561522'], ember: ['#ffd2a0', '#8a2f14', '#f08048', '#4f1a0c'], iron: ['#e6ddd0', '#6d625a', '#c4b8aa', '#4a403a'], stat: ['#fff0c2', '#b4842f', '#f2d184', '#86601f'], heal: ['#e2fff7', '#2f8f7a', '#a6eedb', '#1e5c4e'], reward: ['#fff1c9', '#b06a1c', '#f6c56a', '#74400e'] };
+    const glowTint = { silver: [.75, .86, .92], gold: [1, .8, .45], prismatic: [.75, .62, 1], cursed: [1, .36, .42], stat: [1, .8, .45], heal: [.5, 1, .85], reward: [1, .7, .35] };
+    const tier = { silver: '실버 증강', gold: '골드 증강', prismatic: '프리즘 증강', cursed: '저주 증강', stat: '스탯 증가', heal: '체력 회복', reward: '보상 획득' };
+    const augmentIcon = name => '/static/assets/paradise/augments/' + name + '.webp';
     const POWER_WARNING = '위험!';
     const relicInk = { normal: '#c9d4da', advanced: '#f0c66a', special: '#cf9dff' }, relicGlow = { normal: [.72, .82, .88], advanced: [1, .78, .4], special: [.78, .58, 1] }, relicMetal = { normal: 'silver', advanced: 'gold', special: 'prismatic' };
     const routeLook = { normal: { metal: 'silver', ink: '#c9d7de', glow: [.6, .8, .92], sigil: 'blade' }, elite: { metal: 'cursed', ink: '#ee8f95', glow: [1, .34, .32], sigil: 'devil' }, event: { metal: 'prismatic', ink: '#c9a8f4', glow: [.7, .56, 1], sigil: 'mystery' } };
@@ -26,7 +27,6 @@
     let hellKey = null, fall = null, landing = null, lastDropKey = '', chestPick = null, chestPage = 0;
     let lobbyScroll = 0, lobbyHeight = 0, transition = null;
     let outcomeReveal = null, rewardReveal = null, heavenEntry = null, noticeDetail = '';
-    const mechanicChanges = new Map();
     const now = () => Date.now() + offset;
     const rand = n => { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); };
     const ctx = hudCanvas.getContext('2d');
@@ -103,6 +103,66 @@
         if (rows.length > maxLines) { let last = rows[maxLines - 1]; while (last && c.measureText(last + '…').width > width) last = last.slice(0, -1); rows[maxLines - 1] = last + '…'; }
         return rows.slice(0, maxLines);
     }
+    // 모든 줄이 정해진 높이에 들어가는 가장 큰 글자 크기를 찾는다. 줄이지 않고 말줄임(…)으로 자르는 일이 없게 한다.
+    function fitRows(c, lines, width, height, max, min, weight = 500, gap = 1.45) {
+        let best = null;
+        for (let size = max; size >= min - .01; size -= .5) {
+            const rows = []; lines.forEach((value, index) => wrap(c, value, width, size, 99, weight).forEach((row, i) => rows.push({ row, lead: i === 0, index })));
+            best = { size, rows, lh: size * gap };
+            if (rows.length * size * gap <= height) break;
+        }
+        return best;
+    }
+    // 증강 설명의 강조 표기 {종류|말}: d 피해, h 회복, c 치명타, s 방어와 보호막, k 핵심어, w 대가와 조건(paradise_augments_prism.js).
+    const RICH = { d: '#ff9e6e', h: '#8fe3a2', c: '#ffd36c', s: '#8fd0ff', k: '#d7bcff', w: '#ff8d8d' }, RICH_TEXT = '#d9dee2', RICH_NOTE = '#8c95a2';
+    const plainRich = value => String(value || '').replace(/\{[dhcskw]\|([^}]*)\}/g, '$1');
+    function richTokens(value) {
+        const source = displayText(value || ''), out = [], pattern = /\{([dhcskw])\|([^}]*)\}/g; let last = 0, m;
+        while ((m = pattern.exec(source))) { if (m.index > last) out.push({ text: source.slice(last, m.index), tone: null }); out.push({ text: m[2], tone: m[1] }); last = pattern.lastIndex; }
+        if (last < source.length) out.push({ text: source.slice(last), tone: null });
+        return out;
+    }
+    // 띄어쓰기 단위로 줄을 나눈다. 강조한 말과 바로 붙은 조사는 한 덩어리로 묶어 같은 줄에 둔다.
+    function richRows(c, value, width, size, quiet = false) {
+        const units = []; let unit = null, space = false;
+        for (const token of richTokens(value)) for (const part of token.text.split(/(\s+)/)) {
+            if (!part) continue;
+            if (/^\s+$/.test(part)) { space = true; unit = null; continue; }
+            if (!unit) { unit = { pieces: [], space: space && units.length > 0 }; units.push(unit); space = false; }
+            unit.pieces.push({ text: part, tone: quiet ? null : token.tone });
+        }
+        const measure = piece => { c.font = `${piece.tone ? 700 : 500} ${size}px ${FONT}`; return c.measureText(piece.text).width; };
+        c.font = `500 ${size}px ${FONT}`; const spaceW = c.measureText(' ').width, rows = []; let row = { pieces: [], width: 0 };
+        const push = piece => { row.pieces.push(piece); row.width += piece.w; };
+        for (const { pieces: raw, space: gap } of units) {
+            const pieces = raw.map(piece => ({ ...piece, w: measure(piece) })), w = pieces.reduce((sum, piece) => sum + piece.w, 0);
+            if (row.pieces.length && row.width + (gap ? spaceW : 0) + w > width) { rows.push(row); row = { pieces: [], width: 0 }; }
+            else if (row.pieces.length && gap) push({ text: ' ', tone: null, w: spaceW });
+            if (w <= width) { pieces.forEach(push); continue; }
+            for (const piece of pieces) for (const char of piece.text) { const cw = measure({ text: char, tone: piece.tone }); if (row.pieces.length && row.width + cw > width) { rows.push(row); row = { pieces: [], width: 0 }; } push({ text: char, tone: piece.tone, w: cw }); }
+        }
+        if (row.pieces.length) rows.push(row);
+        return rows;
+    }
+    // 문단들과 흐린 보충 한 줄이 정해진 높이에 들어가는 가장 큰 글자 크기. 말줄임 없이 글자를 줄인다.
+    function fitRich(c, value, note, width, height, max, min) {
+        const paragraphs = String(value || '').split('\n').filter(Boolean); let best = null;
+        for (let size = max; size >= min - .01; size -= .5) {
+            const lh = size * 1.5, noteSize = Math.max(min - 1, size - 1.5), rows = [];
+            paragraphs.forEach((text, i) => { if (i) rows.push({ gap: true }); rows.push(...richRows(c, text, width, size)); });
+            const notes = note ? richRows(c, note, width, noteSize, true) : [];
+            const total = rows.reduce((sum, row) => sum + (row.gap ? size * .5 : lh), 0) + (notes.length ? size * .55 + notes.length * noteSize * 1.45 : 0);
+            best = { size, lh, rows, noteSize, notes, total };
+            if (total <= height) break;
+        }
+        return best;
+    }
+    function drawRich(c, fit, x, y, align = 'center') {
+        const lineAt = (row, size, ry, color) => { let left = align === 'center' ? x - row.width / 2 : x; for (const piece of row.pieces) { text(c, piece.text, left, ry, size, piece.tone ? RICH[piece.tone] : color, 'left', piece.tone ? 700 : 500, undefined, false); left += piece.w; } };
+        for (const row of fit.rows) { if (row.gap) { y += fit.size * .5; continue; } lineAt(row, fit.size, y + fit.size * .5, RICH_TEXT); y += fit.lh; }
+        if (fit.notes.length) { y += fit.size * .55; for (const row of fit.notes) { lineAt(row, fit.noteSize, y + fit.noteSize * .5, RICH_NOTE); y += fit.noteSize * 1.45; } }
+        return y;
+    }
     function paragraph(c, value, x, y, width, size = 14, color = '#c9d2d4', lineHeight = size * 1.55, maxLines = 8, align = 'left', weight = 500) { const lines = wrap(c, value, width, size, maxLines, weight); lines.forEach((line, i) => text(c, line, x, y + i * lineHeight, size, color, align, weight)); return lines.length * lineHeight; }
     function line(c, x, y, xx, yy, color = '#ffffff22', width = 1) { c.beginPath(); c.moveTo(x, y); c.lineTo(xx, yy); c.strokeStyle = color; c.lineWidth = width; c.stroke(); }
     function panel(c, x, y, w, h, { alpha = .82, edge, r = 12 } = {}) { rr(c, x, y, w, h, r); c.fillStyle = `rgba(11,16,22,${alpha})`; c.fill(); let stroke = edge; if (!stroke) { stroke = c.createLinearGradient(0, y, 0, y + h); stroke.addColorStop(0, 'rgba(255,255,255,.18)'); stroke.addColorStop(1, 'rgba(255,255,255,.05)'); } c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
@@ -148,34 +208,50 @@
     function paintCard(choice, icon, w, h) {
         const dpr = Math.min(devicePixelRatio || 1, 2), canvas = document.createElement('canvas'); canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); const c = canvas.getContext('2d'); c.scale(dpr, dpr);
         const color = colors[choice.rarity] || colors.gold, warn = choice.powerWarning, top = 8, cx = w / 2, edge = metal(c, choice.rarity, 0, 0, w, h);
-        const pad = Math.round(w * .08), tw = w - pad * 2, nameSize = clamp(Math.round(w * .074), 20, 25), names = wrap(c, choice.name, tw, nameSize, 2, 700);
-        const bodySize = clamp(Math.round(w * .5) / 10, 14.5, 16.5), lh = bodySize * 1.5;
-        const textHeight = names.length * nameSize * 1.22 + wrap(c, choice.desc, tw, bodySize, 30).length * lh + 112 + (warn ? 44 : 0);
-        const artH = Math.round(Math.max(48, Math.min(w * .66, h * .44, h - textHeight))), cy = top + artH * .55;
+        const pad = Math.round(w * .08), tw = w - pad * 2;
+        let nameSize = clamp(Math.round(w * .074), 20, 25), names = wrap(c, choice.name, tw, nameSize, 99, 700);
+        while (names.length > 2 && nameSize > 14) { nameSize -= 1; names = wrap(c, choice.name, tw, nameSize, 99, 700); }
+        const lines = choice.lines?.length ? choice.lines : String(choice.desc || '').split('\n').filter(Boolean), list = lines.length > 1;
+        const bodyMax = clamp(Math.round(w * .5) / 10, 14.5, 16.5), valueSize = choice.value ? clamp(Math.round(w * .13), 26, 40) : 0, footH = 50, warnH = warn ? 44 : 0;
+        const rich = !!choice.text, bodyWidth = list && !rich ? tw - 14 : tw;
+        const bodyHeight = rich ? fitRich(c, choice.text, choice.note, bodyWidth, 9999, bodyMax, bodyMax).total : lines.reduce((sum, value) => sum + wrap(c, value, bodyWidth, bodyMax, 99).length, 0) * bodyMax * 1.45;
+        const textHeight = names.length * nameSize * 1.22 + (valueSize ? valueSize + 8 : 0) + bodyHeight + 46 + footH + warnH;
+        const artH = Math.round(Math.max(48, Math.min(w * .66, h * .42, h - textHeight))), cy = top + artH * .55;
         const outline = () => chamfer(c, 2, top, w - 4, h - top - 2, 16);
         outline(); const bg = c.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, choice.rarity === 'cursed' ? '#2a161c' : '#1a2430'); bg.addColorStop(.5, '#0e141b'); bg.addColorStop(1, '#090d12'); c.fillStyle = bg; c.fill();
-        c.save(); c.clip(); const light = c.createRadialGradient(cx, cy, 0, cx, cy, w * .62); light.addColorStop(0, color + '4a'); light.addColorStop(.45, color + '12'); light.addColorStop(1, color + '00'); c.fillStyle = light; c.fillRect(0, 0, w, artH + 60); c.restore();
-        // 메달리온: 어두운 원판 + 금속 테두리. 장비 아이콘은 투명 여백을 잘라 원판을 꽉 채운다.
+        c.save(); c.clip(); const light = c.createRadialGradient(cx, cy, 0, cx, cy, w * .62); light.addColorStop(0, color + '4a'); light.addColorStop(.45, color + '12'); light.addColorStop(1, color + '00'); c.fillStyle = light; c.fillRect(0, 0, w, artH + 60);
+        // 프리즘 카드는 위에서 비스듬히 흐르는 무지개 박막을 한 겹 더 입힌다.
+        if (choice.rarity === 'prismatic') { const film = c.createLinearGradient(0, 0, w, artH * 1.2); ['#ff8fd855', '#8fd3ff3a', '#c4a3ff30', '#ffe0a333', '#97eed23a'].forEach((stop, i) => film.addColorStop(i / 4, stop)); c.globalCompositeOperation = 'screen'; c.globalAlpha = .35; c.fillStyle = film; c.fillRect(0, top, w, artH + 30); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
+        c.restore();
+        // 메달리온: 어두운 원판 + 금속 테두리. 아이콘은 투명 여백을 잘라 원판을 꽉 채운다.
         const r = Math.min(w * .3, artH * .44), disc = c.createRadialGradient(cx, cy - r * .2, 0, cx, cy, r); disc.addColorStop(0, color + '3a'); disc.addColorStop(.7, '#0d131add'); disc.addColorStop(1, '#080c11'); c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fillStyle = disc; c.fill(); c.strokeStyle = edge; c.lineWidth = 1.5; c.stroke();
         c.beginPath(); c.arc(cx, cy, r - 5, 0, Math.PI * 2); c.strokeStyle = 'rgba(255,255,255,.07)'; c.lineWidth = 1; c.stroke();
         if (icon?.ready) { const [sx, sy, sw, sh] = trimmed(icon), box = r * 1.5, k = box / Math.max(sw, sh), dw = sw * k, dh = sh * k; c.save(); c.beginPath(); c.arc(cx, cy, r - 2, 0, Math.PI * 2); c.clip(); c.shadowColor = 'rgba(0,0,0,.7)'; c.shadowBlur = 14; c.shadowOffsetY = 4; c.drawImage(icon.image, sx, sy, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh); c.restore(); }
-        else sigil(c, choice.id, cx, cy, r * 1.15, color, choice.category);
+        else sigil(c, choice.sigil || choice.id, cx, cy, r * 1.15, color, choice.sigil ? null : choice.category);
         outline(); c.strokeStyle = edge; c.lineWidth = 2.5; c.stroke();
         chamfer(c, 8, top + 6, w - 16, h - top - 14, 12); c.strokeStyle = 'rgba(255,255,255,.07)'; c.lineWidth = 1; c.stroke();
         path(c, [[cx, 0], [cx + 9, top], [cx, top * 2], [cx - 9, top]]); c.fillStyle = metal(c, choice.rarity, cx - 9, 0, 18, 16); c.fill(); c.strokeStyle = '#0b0f14'; c.lineWidth = 1.5; c.stroke();
         let y = top + artH + 10 + nameSize * .6;
         names.forEach((name, i) => text(c, name, cx, y + i * nameSize * 1.22, nameSize, '#f5efe2', 'center', 700));
-        y += (names.length - 1) * nameSize * 1.22 + nameSize * .6 + 12; line(c, cx - 14, y, cx + 14, y, color + 'bb', 2); y += 18;
-        const tag = choice.equipment ? '장착 장비 전용' : choice.dangerous ? '위험 계약, 뒤틀림 +10' : '', footTop = h - 2 - 50, warnTop = footTop - (warn ? 44 : 0);
-        const maxLines = Math.max(2, Math.floor((warnTop - 6 - y) / lh));
-        paragraph(c, choice.desc, cx, y + bodySize * .5, tw, bodySize, '#d6dce0', lh, maxLines, 'center');
+        y += (names.length - 1) * nameSize * 1.22 + nameSize * .6 + 10;
+        if (choice.value) { text(c, choice.value, cx, y + valueSize * .45, valueSize, color, 'center', 800, tw); y += valueSize + 8; }
+        line(c, cx - 14, y, cx + 14, y, color + 'bb', 2); y += 16;
+        const footTop = h - 2 - footH, warnTop = footTop - warnH;
+        if (rich) drawRich(c, fitRich(c, choice.text, choice.note, bodyWidth, warnTop - 8 - y, bodyMax, 10.5), cx, y);
+        const fit = rich ? { rows: [] } : fitRows(c, lines, bodyWidth, warnTop - 8 - y, bodyMax, 10.5);
+        fit.rows.forEach(({ row, lead }, i) => {
+            const ry = y + fit.size * .5 + i * fit.lh;
+            if (!list) { text(c, row, cx, ry, fit.size, '#d6dce0', 'center'); return; }
+            if (lead) { path(c, [[pad + 3, ry - 3.5], [pad + 6.5, ry], [pad + 3, ry + 3.5], [pad - .5, ry]]); c.fillStyle = color; c.fill(); }
+            text(c, row, pad + 14, ry, fit.size, lead ? '#e4e8ea' : '#cdd4d8', 'left');
+        });
         if (warn) drawWarning(c, pad - 6, warnTop, w - (pad - 6) * 2, 32);
-        // 하단 띠: 카드 외곽에 맞춰 잘린 어두운 바탕 + 금속 구분선, 층 이동과 조건을 한 줄로.
+        // 하단 띠: 카드 외곽에 맞춰 잘린 어두운 바탕 + 금속 구분선, 층 이동이나 증강 표시와 조건을 한 줄로.
         c.save(); outline(); c.clip(); c.fillStyle = 'rgba(0,0,0,.32)'; c.fillRect(0, footTop, w, h); c.restore();
         c.save(); c.globalAlpha = .55; line(c, 4, footTop, w - 4, footTop, edge, 1); c.restore();
-        const floors = choice.starting ? '시작 증강' : `${choice.floors > 0 ? '+' : ''}${choice.floors}층`, fy = footTop + 25, floorColor = choice.floors < 0 ? '#8fe0d2' : color;
-        if (tag) { text(c, floors, pad, fy, 22, floorColor, 'left', 800); const fw = c.measureText(floors).width; text(c, tag, w - pad, fy + 1, 13, choice.dangerous ? '#e9a0a6' : '#a7b2b8', 'right', 500, tw - fw - 14); }
-        else text(c, floors, cx, fy, 22, floorColor, 'center', 800);
+        const foot = choice.footer ?? (choice.starting ? '시작 증강' : `${choice.floors > 0 ? '+' : ''}${choice.floors}층`), fy = footTop + 25, footColor = choice.footColor || (choice.floors < 0 ? '#8fe0d2' : color), footSize = choice.footSize || 22, tag = choice.tag || '';
+        if (tag) { c.font = `800 ${footSize}px ${FONT}`; const fw = Math.min(c.measureText(foot).width, tw * .55); text(c, foot, pad, fy, footSize, footColor, 'left', 800, tw * .55); text(c, tag, w - pad, fy + 1, 13, '#a7b2b8', 'right', 500, tw - fw - 12); }
+        else text(c, foot, cx, fy, footSize, footColor, 'center', 800, tw);
         return canvas;
     }
 
@@ -228,7 +304,7 @@
         if (!run || run.mode === 'hell') return null;
         if (run.outcome === 'collapsed') return `collapse@${run.id}`;
         if (run.status !== 'active') return null;
-        return run.phase === 'combat' ? `c${run.enemy?.id}@${run.floor}` : ['event', 'puzzle'].includes(run.phase) ? `e${run.event?.id}@${run.floor}` : run.phase === 'route' ? `r${run.floor}` : '';
+        return run.phase === 'combat' ? `c${run.encounterKey || run.enemy?.id}@${run.floor}` : ['event', 'puzzle'].includes(run.phase) ? `e${run.event?.id}@${run.floor}` : run.phase === 'route' ? `r${run.floor}` : '';
     }
     function accept(next) {
         if (transition?.next) { const queued = transition.next; transition.next = null; apply(queued); }
@@ -247,15 +323,16 @@
         battle.prepare(next.player?.card);
         const run = next.run;
         const previous=battleState(state), upcoming=battleState(next), events=run?.combatEvents||[];
-        const latest=previous&&events.filter(e=>e.enemyId===previous.target.id).at(-1);
+        // 처치 사건 뒤에 같은 응답의 맞공격 사건(검무 사이의 원펀치 룰)이 붙어 올 수 있다. 처치나 패배 사건을 먼저 찾는다.
+        const mine=previous?events.filter(e=>e.enemyId===previous.target.id):[],latest=mine.findLast(e=>e.cleared||e.defeated)||mine.at(-1);
         const leaving=previous&&(!upcoming||upcoming.target.id!==previous.target.id);
         if(previous&&leaving&&latest&&(latest.cleared||latest.defeated)) {
             heldBattle={...previous,serverNow:next.serverTime,player:{...previous.player,...next.player},target:{...previous.target,hp:latest.targetHp}};
             const duration=battle.update(heldBattle,events,next.runId);
             if(duration)battleUntil=performance.now()+duration;
         } else if(upcoming) battle.update(upcoming,events,next.runId);
-        const key = JSON.stringify([run?.id, run?.phase, run?.event?.id, run?.enemy?.id, run?.offerId || run?.choices?.map(c => c.id), run?.altarUsed, run?.chests?.map(c => c.id + (c.opened ? '!' : '')), run?.routes?.map(r => r.id), run?.relicChoices?.map(r => r.id), run?.relicPicksRemaining]);
-        if (key !== sceneKey) { sceneKey = key; sceneAt = Math.max(performance.now(),battleUntil, transition ? transition.at + (reduced ? 0 : FADE_OUT + FADE_HOLD) : 0); selection = null; focused = 1; hover = -1; keyboardCard = -1; hoverLevels.fill(0); fall = null; chestPick = null; chestPage = 0; renderer.clearCards(); if (run?.phase === 'augment') setTimeout(()=>{if(state?.run?.phase==='augment')sound('reveal');},Math.max(0,battleUntil-performance.now())); if (run?.altarUsed && run.phase === 'altar') sound('reveal'); }
+        const key = JSON.stringify([run?.id, run?.phase, run?.event?.id, run?.enemy?.id, run?.offerId || run?.choices?.map(c => c.id), run?.boon?.id, run?.altarUsed, run?.chests?.map(c => c.id + (c.opened ? '!' : '')), run?.routes?.map(r => r.id), run?.relicChoices?.map(r => r.id), run?.relicPicksRemaining]);
+        if (key !== sceneKey) { sceneKey = key; sceneAt = Math.max(performance.now(),battleUntil, transition ? transition.at + (reduced ? 0 : FADE_OUT + FADE_HOLD) : 0); selection = null; focused = 1; hover = -1; keyboardCard = -1; hoverLevels.fill(0); fall = null; chestPick = null; chestPage = 0; renderer.clearCards(); if (['augment', 'boon'].includes(run?.phase)) setTimeout(()=>{if(['augment', 'boon'].includes(state?.run?.phase))sound('reveal');},Math.max(0,battleUntil-performance.now())); if (run?.altarUsed && run.phase === 'altar') sound('reveal'); }
         // 낙하 결과는 서버 응답 뒤에만 착지 연출로 보여준다.
         const drop = run?.mode === 'hell' ? run.lastDrop : null, dropKey = drop ? [run.id, drop.from, drop.to].join() : '';
         if (drop && state && dropKey !== lastDropKey) { landing = { drop, at: performance.now() }; sound('land'); fall = null; }
@@ -317,6 +394,7 @@
     function pickRoute(route, index) { if (!route || busy || pending || selection || heavenEntry || transition) return; selection = { index, started: performance.now(), duration: 380 }; sound('select'); mutate('route', { choice: route.id }); }
     function pickRelic(relic, index) { if (!relic || busy || pending || selection || heavenEntry || transition) return; selection = { index, started: performance.now(), duration: 420 }; sound('select'); mutate('relic', { choice: relic.id }); }
     function choose(choice, index) { if (!choice || busy || pending || selection || heavenEntry || transition) return; selection = { index, started: performance.now(), duration: 430 }; sound('select'); mutate('augment', { choice: choice.id }); }
+    function chooseBoon(card, index) { if (!card || busy || pending || selection || heavenEntry || transition) return; selection = { index, started: performance.now(), duration: 430 }; sound('select'); mutate('boon', card.index != null ? { index: card.index } : { choice: card.id }); }
 
     function syncPuzzle() {
         const event = state?.run?.phase === 'puzzle' ? state.run.event : null;
@@ -364,6 +442,18 @@
         } else if (run) {
             text(ctx, run.floor, 64, 28, 24, '#f5ecd6', 'left', 800); const fw = ctx.measureText(String(run.floor)).width;
             text(ctx, '층', 66 + fw, 31, 13, '#d4c59e', 'left', 600); text(ctx, '/ 999', 84 + fw, 31, 12, '#8e9aa1');
+            if (run.status === 'active' && run.augmentIn == null && run.augmentMax && run.augmentCount >= run.augmentMax) {
+                // 증강을 다 모았다: 마름모 대신 개수만(더는 증강이 제시되지 않는다).
+                const gx = 84 + fw + ctx.measureText('/ 999').width + 14, label = `증강 ${run.augmentCount}/${run.augmentMax}`;
+                text(ctx, label, gx - 4, 31, 12, '#c4b2e8', 'left', 600);
+                register(gx - 6, 20, 70, 20, `증강을 ${run.augmentMax}개 모두 얻었습니다`, () => {}, true);
+            } else if (run.status === 'active' && run.augmentIn != null) {
+                // 증강은 네 번째 전투마다: 채워진 마름모가 지난 전투, 넷이 차면 증강.
+                const gx = 84 + fw + ctx.measureText('/ 999').width + 14, filled = 4 - run.augmentIn;
+                for (let i = 0; i < 4; i++) { const dx = gx + i * 11; path(ctx, [[dx, 25], [dx + 4, 30], [dx, 35], [dx - 4, 30]]); if (i < filled) { ctx.fillStyle = metal(ctx, 'prismatic', dx - 4, 25, 8, 10); ctx.fill(); } else { ctx.strokeStyle = 'rgba(196,162,242,.5)'; ctx.lineWidth = 1; ctx.stroke(); } }
+                if (!mobile) text(ctx, run.augmentIn ? `증강까지 ${run.augmentIn}전투` : '증강 준비', gx + 44, 31, 12, '#c4b2e8', 'left', 600);
+                register(gx - 6, 20, 52, 20, run.augmentIn ? `다음 증강까지 ${run.augmentIn}전투` : '이번 전투 뒤 증강', () => {}, true);
+            }
             const bw = mobile ? 104 : 150; bar(64, 45, bw, 5, run.distortion, 100, run.distortion >= 75 ? '#e0646b' : '#a07ad6'); text(ctx, `뒤틀림 ${run.distortion}`, 72 + bw, 48, 12, run.distortion >= 75 ? '#f0a0a4' : '#b4bcc4', 'left', 600);
         } else text(ctx, '낙원', 64, 34, 22, '#f2e6c8', 'left', 800);
         const rankW = mobile ? 56 : 88, rankX = w - 60 - rankW;
@@ -389,7 +479,7 @@
         }
         if (message && t < messageUntil && !overlay) {
             if (mobile) { compactNotice(message, w, h, t, messageUntil, '#e4cb8f', 2, () => { message = ''; }); return; }
-            const width = Math.min(w - 32, 560), bottom = run?.phase === 'combat' ? (mobile ? 256 : 230) : run?.phase === 'puzzle' ? 172 : run?.phase === 'augment' && mobile ? 178 : 110;
+            const width = Math.min(w - 32, 560), bottom = run?.phase === 'combat' ? (mobile ? 256 : 230) : run?.phase === 'puzzle' ? 172 : ['augment', 'boon'].includes(run?.phase) && mobile ? 178 : 110;
             // 지옥의 비전투 장면은 하단에 행동 버튼이 몰려 있어 알림을 상단에 띄운다.
             const ty = hell && run.phase !== 'combat' ? 62 : h - bottom;
             const rows=wrap(ctx,message,width-32,14,12), height=rows.length*21+24, top=Math.max(64,ty-height+40);
@@ -428,7 +518,7 @@
         const width = Math.min(w - 32, 344), x = (w - width) / 2, fontSize = 12, textWidth = width - 54;
         const all = wrap(ctx, value, textWidth, fontSize, 200), rows = wrap(ctx, value, textWidth, fontSize, maxLines);
         const more = all.length > maxLines, height = rows.length * 18 + 20 + (more ? 18 : 0);
-        const bottom = state.run?.phase === 'combat' ? h - 214 : state.run?.phase === 'augment' ? h - 176 : h - 126;
+        const bottom = state.run?.phase === 'combat' ? h - 214 : ['augment', 'boon'].includes(state.run?.phase) ? h - 176 : h - 126;
         const y = Math.max(68, bottom - height);
         ctx.save(); ctx.globalAlpha = reduced ? 1 : clamp((until - t) / 250, 0, 1);
         panel(ctx, x, y, width, height, { alpha: .86, edge: color + '55', r: 6 });
@@ -530,7 +620,7 @@
     function sceneBackground(w, h, t) {
         if (state?.run?.mode === 'hell' || state && !state.run && overlay === 'hell') return hellBackground(w, h, t);
         const scene = activeScene === 'ended' && state.run?.outcome === 'collapsed' ? 'collapse' : activeScene, event = ['casino', 'forge', 'mirror', 'chests', 'judge', 'well', 'puzzle', 'riftTrader', 'collapse'].includes(scene);
-        const bg = renderer.image(asset(event ? scene : scene === 'lobby' ? 'paradise' : 'corridor')), dim = scene === 'augment' || scene === 'relic' || overlay ? .5 : scene === 'lobby' ? .6 : scene === 'route' ? .62 : activeScene === 'ended' ? .55 : scene === 'combat' ? .9 : 1;
+        const bg = renderer.image(asset(event ? scene : scene === 'lobby' ? 'paradise' : 'corridor')), dim = scene === 'augment' || scene === 'boon' || scene === 'relic' || overlay ? .5 : scene === 'lobby' ? .6 : scene === 'route' ? .62 : activeScene === 'ended' ? .55 : scene === 'combat' ? .9 : 1;
         const drift = reduced ? 0 : Math.sin(t / 11000) * 8;
         renderer.cover(bg, -12 + drift, -8, w + 24, h + 16, [dim, dim, dim, 1]);
         const particleColor = scene === 'riftTrader' ? [.66, .48, .87] : scene === 'forge' ? [1, .45, .10] : scene === 'well' || scene === 'collapse' ? [1, .12, .18] : scene === 'casino' || scene === 'chests' ? [1, .77, .29] : [.44, .83, .83];
@@ -609,12 +699,12 @@
         const cardW = Math.min(clamp(h - 290, 210, 540) * .6, (w - 200) / 3), cardH = cardW / .6;
         return { mobile: false, cardW, cardH, y: Math.max(164, h / 2 - cardH / 2 + 8) };
     }
-    function cardLayouts(w, h, t) {
+    function cardLayouts(w, h, t, list = state.run.choices) {
         const { mobile, cardW, cardH, y } = cardGeometry(w, h);
-        focused=clamp(focused,0,Math.max(0,state.run.choices.length-1));
-        return state.run.choices.map((choice, i) => {
+        focused=clamp(focused,0,Math.max(0,list.length-1));
+        return list.map((choice, i) => {
             const delta = i - focused, scale = mobile && delta ? .88 : 1;
-            let x = mobile ? w / 2 - cardW / 2 + delta * cardW * .84 : w / 2 + (i - (state.run.choices.length-1)/2) * (cardW + 28) - cardW / 2;
+            let x = mobile ? w / 2 - cardW / 2 + delta * cardW * .84 : w / 2 + (i - (list.length-1)/2) * (cardW + 28) - cardW / 2;
             const progress = reduced ? 1 : clamp((t - sceneAt - i * 90) / 280, 0, 1), ease = 1 - Math.pow(1 - progress, 3);
             const slotX=x, slotY=y+(mobile&&delta?cardH*.06:0);
             let width = cardW * scale, height = cardH * scale, yy = y + (1 - ease) * 12 + (mobile && delta ? cardH * .06 : 0);
@@ -634,34 +724,61 @@
                 hitButton(w/2-120,h*.5,240,48,'귀환하고 정산',()=>{overlay='retire';},{primary:true});
                 return;
             }
-            if(state.run.continueWarning)drawWarning(ctx,w/2-120,h*.5-40,240,30);
-            hitButton(w/2-120,h*.5,240,48,'5층 올라가기',()=>mutate('continue'),{primary:true});
+            hitButton(w/2-120,h*.5,240,48,'다음으로',()=>mutate('continue'),{primary:true});
             return;
         }
-        text(ctx, state.run.stoneEntryOffer ? '첫 돌 강화' : '증강 선택', w / 2, mobile ? 82 : geo.y - 46, mobile ? 18 : 24, '#f5ecd6', 'center', 700);
+        const cards = state.run.choices.map(choice => ({ ...choice, footer: choice.starting ? '시작 증강' : '프리즘 증강', footSize: 17, tag: choice.skill ? '스킬 ' + choice.skill : '' }));
+        cardChooser(w, h, t, cards, { title: state.run.startingAugment ? '시작 증강 선택' : '증강 선택', subtitle: state.run.startingAugment ? '' : '네 번째 전투마다 주어지는 프리즘 증강', pick: choose, reroll: true, label: '이 증강 선택' });
+    }
+    // 성장 선택: 스탯 증가, 체력 회복, 보상 획득 중 하나. 스탯과 보상은 후보 세 개를 다시 고른다. 층 이동은 여기서 정해진다.
+    function boonCards(boon) {
+        // 스탯과 보상은 후보마다 층 수가 달라 처음 화면에는 범위([최소, 최대])가 온다.
+        const floors = n => Array.isArray(n) ? (n[0] === n[1] ? floors(n[0]) : `${n[0] > 0 ? '+' : ''}${n[0]}~${n[1]}층`) : n ? `${n > 0 ? '+' : ''}${n}층` : '층 유지', footColor = n => !Array.isArray(n) && n < 0 ? '#8fe0d2' : null;
+        // 설명은 증강 카드처럼 강조 표기가 든 문장(text)으로 쓰고, 화면 읽기용 lines는 표기를 뺀 같은 문장이다.
+        const says = (text, note) => ({ text, note: note || null, lines: [plainRich(text), ...(note ? [note] : [])] });
+        if (boon.stage === 'pick') return [
+            { id: 'stat', name: '스탯 증가', rarity: 'stat', sigil: 'blade', iconUrl: augmentIcon('boon-stat'), ...says('무작위 스탯 {k|세 개} 중 하나를 골라 올립니다.', '이번 탐험 동안 유지됩니다.'), footer: floors(boon.floors.stat), footColor: footColor(boon.floors.stat), powerWarning: boon.powerWarning.stat },
+            { id: 'heal', name: '체력 회복', rarity: 'heal', sigil: 'pilgrim', iconUrl: augmentIcon('boon-heal'), ...says(`HP와 MP를 {h|${boon.healPercent}%} 회복합니다.`, '많이 비어 있을수록 더 높이 오릅니다.'), footer: floors(boon.floors.heal), footColor: footColor(boon.floors.heal), powerWarning: boon.powerWarning.heal },
+            { id: 'reward', name: '보상 획득', rarity: 'reward', sigil: 'contract', iconUrl: augmentIcon('boon-reward'), ...says('후보 세 개 중 하나를 골라 탐험 종료 보상을 {k|3~10%} 늘리거나 {k|5~9성} 카드를 받습니다.'), footer: floors(boon.floors.reward), footColor: footColor(boon.floors.reward), powerWarning: boon.powerWarning.reward }
+        ];
+        return (boon.options || []).map((option, index) => boon.stage === 'stat'
+            ? { id: 'stat:' + index, index, name: option.label, value: option.value, rarity: 'stat', sigil: 'blade', iconUrl: augmentIcon('boon-stat'), ...says('이번 탐험 동안 유지됩니다.'), footer: floors(option.floors), footColor: footColor(option.floors), tag: option.impact === 'high' ? '희귀 스탯' : '', powerWarning: option.powerWarning }
+            : { id: 'reward:' + index, index, name: option.label, value: option.value, rarity: 'reward', sigil: 'contract', iconUrl: augmentIcon(option.kind === 'card' ? 'reward-card' : 'reward-bonus'),
+                ...says(option.kind === 'card' ? `탐험을 마치고 귀환하면 {k|${option.value} ${option.type} 카드}를 받습니다.` : `귀환할 때 받는 종료 보상이 {k|${option.value}} 늘어납니다.`), footer: floors(option.floors), footColor: footColor(option.floors), tag: option.kind === 'card' && option.star >= 8 ? '희귀 계약' : '', powerWarning: option.powerWarning });
+    }
+    function boonScene(w, h, t) {
+        const boon = state.run.boon; if (!boon) return;
+        const titles = { pick: ['성장 선택', '하나를 고르면 그만큼 층을 이동합니다'], stat: ['스탯 선택', '올릴 스탯 하나를 고르세요'], reward: ['보상 선택', '받을 보상 하나를 고르세요'] }[boon.stage] || ['성장 선택', ''];
+        cardChooser(w, h, t, boonCards(boon), { title: titles[0], subtitle: titles[1], pick: chooseBoon, reroll: false, label: '이 선택' });
+    }
+    function cardChooser(w, h, t, list, { title, subtitle, pick, reroll, label }) {
+        const geo = cardGeometry(w, h), mobile = geo.mobile, count = list.length;
+        text(ctx, title, w / 2, mobile ? 82 : geo.y - 52, mobile ? 18 : 24, '#f5ecd6', 'center', 700);
+        if (subtitle && !mobile) text(ctx, subtitle, w / 2, geo.y - 24, 13, '#b8b0c8', 'center', 500, w - 40);
         const dt=Math.min(50,t-hoverTime); hoverTime=t;
-        const slots=cardLayouts(w,h,t);
+        const slots=cardLayouts(w,h,t,list);
         const active=inputMode==='keyboard'?keyboardCard:slots.findIndex(r=>inside(r.slotX,r.slotY,r.slotW,r.slotH));
         if(active!==hover&&active>=0&&t-sceneAt>460)sound('hover');
         hover=active;
         hoverLevels.forEach((level,i)=>{const target=i===active?1:0;hoverLevels[i]=level+(target-level)*Math.min(1,dt/(target?70:95));});
-        const layouts = cardLayouts(w, h, t), order = mobile ? [...layouts].sort((a, b) => Number(a.i === focused) - Number(b.i === focused)) : layouts;
+        const layouts = cardLayouts(w, h, t, list), order = mobile ? [...layouts].sort((a, b) => Number(a.i === focused) - Number(b.i === focused)) : layouts;
         for (const card of order) {
             if (card.hover && !selection) renderer.quad(renderer.glow, card.x - card.w * .2, card.y - card.h * .08, card.w * 1.4, card.h * 1.16, [...(glowTint[card.choice.rarity] || glowTint.gold), .16]);
             const amount=hoverLevels[card.i], brightness=mobile?1:hover<0?1:card.i===hover?1+.06*amount:.92;
             renderer.quad(renderer.card(card.choice, geo.cardW, geo.cardH), card.x, card.y, card.w, card.h, [brightness, brightness, brightness, card.alpha]);
             if(amount>.01&&!mobile){ctx.save();ctx.globalAlpha=amount*.55;chamfer(ctx,card.x+1,card.y+1,card.w-2,card.h-2,12);ctx.strokeStyle=colors[card.choice.rarity]||colors.gold;ctx.lineWidth=2;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=14;ctx.stroke();ctx.restore();}
-            register(Math.max(0, card.slotX), card.slotY, Math.min(w, card.slotX + card.slotW) - Math.max(0, card.slotX), card.slotH, `${tier[card.choice.rarity] || '증강'} ${card.choice.name}, ${card.choice.desc}, ${card.choice.starting ? '시작 증강' : `${card.choice.floors > 0 ? '+' : ''}${card.choice.floors}층`}${warnLabel(card.choice.powerWarning)}`, () => mobile && focused !== card.i ? (focused = card.i, sound('tap')) : choose(card.choice, card.i), !!selection || t-sceneAt<460);
-            if (!mobile) hitButton(card.slotX + card.slotW / 2 - 48, geo.y + geo.cardH + 12, 96, 36, `${card.choice.name} 새로고침`, () => mutate('reroll', { choice: card.choice.id }), { glyph: card.choice.canReroll ? '↻  1' : '↻  0', size: 18, disabled: !card.choice.canReroll || !!selection || t-sceneAt<460 });
+            const described = [tier[card.choice.rarity] || '', card.choice.name, card.choice.value || '', (card.choice.lines || [card.choice.desc]).join(' '), card.choice.footer || '', card.choice.tag || ''].filter(Boolean).join(', ');
+            register(Math.max(0, card.slotX), card.slotY, Math.min(w, card.slotX + card.slotW) - Math.max(0, card.slotX), card.slotH, described + warnLabel(card.choice.powerWarning), () => mobile && focused !== card.i ? (focused = card.i, sound('tap')) : pick(card.choice, card.i), !!selection || t-sceneAt<460);
+            if (reroll && !mobile) hitButton(card.slotX + card.slotW / 2 - 48, geo.y + geo.cardH + 12, 96, 36, `${card.choice.name} 새로고침`, () => mutate('reroll', { choice: card.choice.id }), { glyph: card.choice.canReroll ? '↻  1' : '↻  0', size: 18, disabled: !card.choice.canReroll || !!selection || t-sceneAt<460 });
         }
         if (mobile) {
             const dotsY = geo.y + geo.cardH + 18;
-            if(count>1)hitButton(w / 2 - 86, dotsY - 18, 40, 36, '이전 증강', () => { focused = (focused + count - 1) % count; }, { glyph: '‹', size: 20 });
+            if(count>1)hitButton(w / 2 - 86, dotsY - 18, 40, 36, '이전 카드', () => { focused = (focused + count - 1) % count; }, { glyph: '‹', size: 20 });
             for (let i = 0; i < count; i++) { ctx.beginPath(); ctx.arc(w / 2 + (i - (count-1)/2) * 16, dotsY, i === focused ? 4 : 3, 0, Math.PI * 2); ctx.fillStyle = i === focused ? '#f0d58e' : 'rgba(255,255,255,.3)'; ctx.fill(); }
-            if(count>1)hitButton(w / 2 + 46, dotsY - 18, 40, 36, '다음 증강', () => { focused = (focused + 1) % count; }, { glyph: '›', size: 20 });
-            const choice = state.run.choices[focused];
-            hitButton(w / 2 - 134, h - 116, 66, 48, `${choice.name} 새로고침`, () => mutate('reroll', { choice: choice.id }), { glyph: choice.canReroll ? '↻ 1' : '↻ 0', size: 18, disabled: !choice.canReroll || !!selection });
-            hitButton(w / 2 - 58, h - 116, 192, 48, '이 증강 선택', () => choose(choice, focused), { primary: true, size: 16, disabled: !!selection });
+            if(count>1)hitButton(w / 2 + 46, dotsY - 18, 40, 36, '다음 카드', () => { focused = (focused + 1) % count; }, { glyph: '›', size: 20 });
+            const choice = list[focused];
+            if (reroll) hitButton(w / 2 - 134, h - 116, 66, 48, `${choice.name} 새로고침`, () => mutate('reroll', { choice: choice.id }), { glyph: choice.canReroll ? '↻ 1' : '↻ 0', size: 18, disabled: !choice.canReroll || !!selection });
+            hitButton(reroll ? w / 2 - 58 : w / 2 - 96, h - 116, reroll ? 192 : 192, 48, label, () => pick(choice, focused), { primary: true, size: 16, disabled: !!selection });
         }
         if (selection) { const p = clamp((t - selection.started) / 430, 0, 1); ctx.fillStyle = `rgba(255,232,180,${Math.sin(p * Math.PI) * .1})`; ctx.fillRect(0, 0, w, h); }
     }
@@ -678,27 +795,188 @@
         if(!current)return;
         battle.update(current, [], state.runId, true);
         for(const r of battle.draw(t, locked)) register(r.x,r.y,r.w,r.h,r.label,r.action,locked);
-        gimmickBadge(w);
-        mechanicChips(w, h, t);
+        gimmickRect = null; gimmickBadge(w);
+        augmentStatus(w, h, t);
     }
-    function mechanicChips(w, h, t) {
-        const all = state.run.mechanicStatus || []; if (!all.length) return;
-        const mobile = w < 650, limit = mobile ? 3 : 4, shown = all.slice(0, limit), more = all.length > shown.length;
-        const gap = 5, cw = Math.min(mobile ? 92 : 110, (w - 24 - (more ? 34 : 0) - gap * (shown.length - 1)) / shown.length), width = shown.length * (cw + gap) - gap + (more ? 34 : 0), x = (w - width) / 2;
-        const y = h - (mobile ? 160 : 154) - ((state.battle?.skills.length || 0) > (mobile ? 4 : 7) ? 33 : 0);
-        const detail = all.map(item => `${item.label}: ${item.value}${item.max != null ? ' / ' + item.max : ''}`).join('\n');
-        shown.forEach((item, index) => {
-            const key = state.run.id + ':' + item.label, value = String(item.value), previous = mechanicChanges.get(key);
-            if (!previous || previous.value !== value) mechanicChanges.set(key, { value, at: t });
-            const flash = reduced ? 0 : Math.max(0, 1 - (t - mechanicChanges.get(key).at) / 140), bx = x + index * (cw + gap), ready = item.max != null && Number(item.value) >= Number(item.max);
-            panel(ctx, bx, y, cw, 22, { alpha: .82, edge: ready ? '#c5b488aa' : '#59616c66', r: 3 });
-            const shortLabel = item.label === '다음 피해 카드' ? '다음 패' : item.label.replace('손가락 ', ''), shortValue = value.replace(/일반 공격/g, '평').replace(/스킬/g, '스'), wideValue = shortValue.length > 5;
-            text(ctx, shortLabel, bx + 7, y + 11, 10, '#aeb8c5', 'left', 600, cw * (wideValue ? .35 : .57), false);
-            text(ctx, shortValue, bx + cw - 7, y + 11, 11 + flash * 1.5, flash > .3 ? '#ffffff' : '#ecd5a5', 'right', 700, cw * (wideValue ? .55 : .36), false);
-            register(bx, y, cw, 22, detail.replace(/\n/g, ', '), () => { noticeDetail = detail; overlay = 'notice'; });
-        });
-        if (more) hitButton(x + width - 30, y, 30, 22, '전투 상태 더 보기', () => { noticeDetail = detail; overlay = 'notice'; }, { glyph: '+' + (all.length - shown.length), size: 10 });
-        if (mechanicChanges.size > 60) for (const key of mechanicChanges.keys()) if (!key.startsWith(state.run.id + ':')) mechanicChanges.delete(key);
+    // ---- 전투 중 증강 상태 ----
+    // 증강 그림(프리즘 문장)이 곧 표시다. 둘레의 눈금은 중첩, 줄어드는 테두리는 남은 시간, 빛나는 테두리는 준비됨, 흐린 그림은 아직 쓸 일이 없음.
+    // 내 상태는 내 정보 카드 곁(데스크톱은 오른쪽, 모바일은 아래), 적에게 걸린 상태는 적 체력 막대 아래(자리는 hfield의 hudRects).
+    // 마우스를 올리거나 누르면(4초) 이름과 지금 상태, 증강 설명이 뜬다. 증강이 아닌 천상 기능(돌, 예전 증강)의 상태는 글자 패로 내 상태 뒤에 붙는다.
+    const STATUS_TONE = {
+        transcendDeath: '#fff0c2', angelDescent: '#ffe6a0', duelChallenge: '#ff9b78', conqueror: '#f6c453', fruition: '#ffb04a',
+        manualShift: '#82d2ff', soulReaper: '#78ffc0', seasons: '#e8f2ff',
+        armorShred: '#eaa86a', deepeningBleed: '#ff4d5e', painfulWound: '#e5426a'
+    };
+    // 둘레를 도는 빛은 내가 바로 써먹을 수 있는 순간에만 낸다(결실과 변속의 다음 공격 확정 치명타).
+    const STATUS_GLINT = new Set(['fruition', 'manualShift']);
+    const SEASON_TONE = { spring: '#ffb6d3', summer: '#ffc75c', autumn: '#ff8c42', winter: '#a6e0ff' };
+    // 계절 그림은 왼쪽 위부터 시계 방향으로 봄, 여름, 가을, 겨울이다. 지금 계절이 맨 위로 오게 바퀴를 돌린다.
+    const SEASON_ORDER = ['spring', 'summer', 'autumn', 'winter'];
+    const statusAnim = new Map(), canHover = matchMedia('(hover: hover)').matches;
+    let statusPin = null, seasonWheel = null, gimmickRect = null;
+    const toneOf = item => item.id === 'seasons' ? SEASON_TONE[item.season] || STATUS_TONE.seasons : STATUS_TONE[item.id] || '#e9d7a8';
+    const alphaHex = a => Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
+    const statusPlateText = item => `${item.label} ${item.value}${item.max != null ? ' / ' + item.max : ''}`;
+    function wheelAngle(t) { const p = reduced ? 1 : Math.min(1, (t - seasonWheel.at) / 650), e = 1 - Math.pow(1 - p, 3); return seasonWheel.from + (seasonWheel.angle - seasonWheel.from) * e; }
+    function seasonAngle(season, t) {
+        const index = Math.max(0, SEASON_ORDER.indexOf(season)), rest = Math.PI / 4 - index * Math.PI / 2;
+        if (!seasonWheel || seasonWheel.run !== state.run.id) seasonWheel = { run: state.run.id, index, angle: rest, from: rest, at: -1e9 };
+        if (seasonWheel.index !== index) {
+            // 바퀴는 늘 한 방향으로 한 칸(90도)씩 돈다.
+            const from = wheelAngle(t), steps = (index - seasonWheel.index + 4) % 4;
+            Object.assign(seasonWheel, { from, angle: seasonWheel.angle - steps * Math.PI / 2, index, at: t });
+        }
+        return wheelAngle(t);
+    }
+    // 한 줄에 놓을 자리. anchor는 dir 1이면 줄의 왼쪽 끝, -1이면 오른쪽 끝. 자리가 모자라면 문장을 minSize까지 줄이고,
+    // 그래도 넘치면 마지막 칸을 '+N'으로 바꾼다.
+    function statusRow(items, plates, anchor, y, dir, room, size, gap, side, minSize = size) {
+        ctx.font = `700 ${size > 30 ? 12 : 11}px ${FONT}`;
+        const plateWidths = plates.map(item => Math.min(160, ctx.measureText(statusPlateText(item)).width + 22)), plateTotal = plateWidths.reduce((sum, width) => sum + width + gap, 0);
+        if (items.length && items.length * (size + gap) - gap + plateTotal > room) size = Math.max(minSize, Math.floor((room - plateTotal + gap) / items.length - gap));
+        const list = [...items.map(item => ({ item, kind: 'socket', w: size })), ...plates.map((item, i) => ({ item, kind: 'plate', w: plateWidths[i] }))];
+        let count = list.length, used = list.reduce((sum, entry) => sum + entry.w + gap, -gap);
+        if (used > room) { used = size; count = 0; for (const entry of list) { if (used + gap + entry.w > room) break; used += gap + entry.w; count++; } }
+        const out = []; let cursor = anchor;
+        for (const entry of list.slice(0, count)) { out.push({ ...entry, x: dir > 0 ? cursor : cursor - entry.w, y, size, side }); cursor += dir * (entry.w + gap); }
+        if (count < list.length) out.push({ kind: 'more', x: dir > 0 ? cursor : cursor - size, y, size, w: size, side, hidden: list.slice(count).map(entry => entry.item) });
+        return out;
+    }
+    function augmentStatus(w, h, t) {
+        const all = state.run.mechanicStatus || [];
+        if (!all.length) { statusPin = null; return; }
+        const rects = battle.hudRects ? battle.hudRects() : {}, mobile = w < 650 || h < 520, landscape = h < 520 && w >= 650;
+        const effects = new Map((state.run.effects || []).map(a => [a.id, a])), known = item => !!item.id && effects.has(item.id);
+        const mine = all.filter(item => known(item) && item.side !== 'enemy'), foes = all.filter(item => known(item) && item.side === 'enemy'), plates = all.filter(item => !known(item));
+        const card = rects.player, bar = rects.target, placed = [], sideCard = landscape && !!card;
+        // 내 상태: 데스크톱은 카드 오른쪽(위쪽 맞춤), 세로 모바일은 카드 아래, 가로 모바일은 오른쪽 위 카드의 왼쪽(아래쪽 맞춤).
+        if (mine.length || plates.length) {
+            const size = mobile ? 30 : 36, gap = mobile ? 7 : 9, min = mobile ? 24 : 28;
+            if (card && !mobile) { const left = card.x + card.w + 14; placed.push(...statusRow(mine, plates, left, card.y + 6, 1, Math.min(w * .66, w - 24) - left, size, gap, 'self', min)); }
+            else if (sideCard) placed.push(...statusRow(mine, plates, card.x - 12, card.y + card.h - size, -1, card.x - 12 - w * .3, size, gap, 'self', min));
+            else if (card) placed.push(...statusRow(mine, plates, card.x, card.y + card.h + 10, 1, w - 12 - card.x, size, gap, 'self', min));
+            else placed.push(...statusRow(mine, plates, 16, h - 250, 1, w - 32, size, gap, 'self', min));
+        }
+        // 적에게 걸린 상태: 적 머리 위, 체력 막대 아래 오른쪽 끝에 맞춘다. 세로 모바일은 막대 아래 왼쪽에 카드가 있어 화면 오른쪽 끝에서 두 줄까지,
+        // 가로 모바일은 오른쪽 위 카드의 왼쪽 끝에서 쌓는다. 봉인 배지와 겹치면 그 밑으로 비킨다.
+        if (foes.length) {
+            const size = mobile ? 28 : 32, gap = mobile ? 6 : 8, portrait = mobile && !landscape;
+            const right = sideCard ? card.x - 12 : portrait || !bar ? w - 12 : bar.x + bar.w;
+            const room = portrait ? right - (card ? card.x + card.w + 10 : 12) : sideCard ? right - (bar ? bar.x : 12) : bar ? bar.w * .6 : w - 32;
+            let y = bar ? bar.y + bar.h + (mobile ? 7 : 10) : 150;
+            const extent = Math.min(room, foes.length * (size + gap) - gap);
+            if (gimmickRect && right - extent < gimmickRect.x + gimmickRect.w && right > gimmickRect.x && y < gimmickRect.y + gimmickRect.h && y + size > gimmickRect.y) y = gimmickRect.y + gimmickRect.h + 6;
+            // 순서는 서버가 준 그대로, 줄마다 오른쪽 끝에 맞춘다(넘치면 끝이 '+N').
+            const perRow = Math.max(1, Math.floor((room + gap) / (size + gap))), rows = portrait ? 2 : 1;
+            for (let i = 0, start = 0; i < rows && start < foes.length; i++) {
+                const chunk = i === rows - 1 ? foes.slice(start) : foes.slice(start, start + perRow);
+                const row = statusRow(chunk, [], 0, y + i * (size + 18), 1, room, size, gap, 'enemy'), end = Math.max(0, ...row.map(entry => entry.x + entry.w));
+                for (const entry of row) entry.x += right - end;
+                placed.push(...row); start += chunk.length;
+            }
+        }
+        const summary = () => all.map(item => `${effects.get(item.id)?.name || item.label}: ${item.state || statusPlateText(item)}`).join('\n');
+        let detail = null;
+        for (const entry of placed) {
+            if (entry.kind === 'socket') {
+                const item = entry.item, effect = effects.get(item.id), r = entry.size / 2, cx = entry.x + r, cy = entry.y + r, key = state.run.id + ':' + item.id;
+                const pinned = !!statusPin && statusPin.key === key && performance.now() - statusPin.at < 4000, hovered = canHover && !overlay && inside(entry.x, entry.y, entry.size, entry.size);
+                statusSocket(cx, cy, r, item, effect, t, key, hovered || pinned);
+                register(entry.x, entry.y, entry.size, entry.size, `${effect.name}, ${item.state || statusPlateText(item)}`, () => { statusPin = pinned ? null : { key, at: performance.now() }; });
+                if (hovered || pinned) detail = { item, effect, cx, cy, r, side: entry.side };
+            } else if (entry.kind === 'plate') {
+                statusPlate(entry);
+                register(entry.x, entry.y, entry.w, entry.size, statusPlateText(entry.item), () => { noticeDetail = summary(); overlay = 'notice'; overlayPage = 0; });
+            } else {
+                const r = entry.size / 2, cx = entry.x + r, cy = entry.y + r;
+                ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(12,10,18,.86)'; ctx.fill(); ctx.strokeStyle = 'rgba(214,190,140,.45)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+                text(ctx, '+' + entry.hidden.length, cx, cy + .5, entry.size > 30 ? 13 : 11, '#f1e2bd', 'center', 750, undefined, false);
+                register(entry.x, entry.y, entry.size, entry.size, '전투 상태 더 보기', () => { noticeDetail = summary(); overlay = 'notice'; overlayPage = 0; });
+            }
+        }
+        if (detail && !overlay) statusDetail(w, h, detail, mobile);
+        if (statusAnim.size > 80) for (const key of statusAnim.keys()) if (!key.startsWith(state.run.id + ':')) statusAnim.delete(key);
+    }
+    // 증강 문장 하나: 받침(어두운 원), 둘레(눈금, 남은 시간, 비율), 그림, 숫자(중첩, 남은 초), 아래 패(방어 감소, 예정 피해).
+    function statusSocket(cx, cy, r, item, effect, t, key, focus) {
+        const tone = toneOf(item), stamp = String(item.value) + (item.ready ? '!' : '') + (item.dim ? '-' : '');
+        let anim = statusAnim.get(key);
+        if (!anim) statusAnim.set(key, anim = { stamp, born: t, changed: -1e9 });
+        else if (anim.stamp !== stamp) { anim.stamp = stamp; anim.changed = t; }
+        const born = reduced ? 1 : Math.min(1, (t - anim.born) / 240), pop = reduced ? 0 : Math.max(0, 1 - (t - anim.changed) / 340);
+        const left = item.until && item.total ? Math.max(0, item.until - now()) : null, timer = left != null && item.id !== 'painfulWound';
+        const lit = !item.dim, scale = (.72 + .28 * (1 - Math.pow(1 - born, 3))) * (1 + .17 * pop * pop) * (focus ? 1.07 : 1);
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(scale, scale);
+        // 받침: 전장 위에서도 그림이 읽히게 가운데가 짙은 원.
+        const base = ctx.createRadialGradient(0, -r * .25, r * .1, 0, 0, r);
+        base.addColorStop(0, 'rgba(26,20,36,.95)'); base.addColorStop(1, 'rgba(8,7,13,.78)');
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fillStyle = base; ctx.fill();
+        ctx.lineCap = 'round';
+        const ring = (from, to, color, width) => { ctx.beginPath(); ctx.arc(0, 0, r - 1, from, to); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke(); };
+        const top = -Math.PI / 2, full = Math.PI * 2;
+        ring(0, full, 'rgba(150,136,176,.32)', 2);
+        if (timer) {
+            const frac = Math.min(1, left / item.total), hurry = left < 3000 && !reduced ? .55 + .45 * Math.abs(Math.sin(t / 140)) : 1;
+            ring(top, top + full * frac, tone + alphaHex(hurry), 2.8);
+        } else if (item.percent != null && item.max) ring(top, top + full * Math.min(1, item.percent / item.max), tone, 2.8);
+        else if (typeof item.value === 'number' && item.max) {
+            const n = item.max, slot = full / n, gapAngle = n > 6 ? .16 : .3;
+            for (let i = 0; i < n; i++) ring(top + i * slot + gapAngle / 2, top + (i + 1) * slot - gapAngle / 2, i < item.value ? tone : 'rgba(255,255,255,.13)', i < item.value ? 2.8 : 2);
+        } else if (item.ready) ring(0, full, tone, 2.6);
+        else if (lit) ring(0, full, tone + '99', 2);
+        // 준비됨: 증강 색으로 번지는 테두리. 바로 써먹을 순간이면 둘레를 도는 빛 한 줄기. 상처가 벌어지는 동안에도 붉게 번진다.
+        if (item.ready && lit || item.id === 'painfulWound' && left) {
+            ctx.save(); ctx.shadowColor = tone; ctx.shadowBlur = reduced ? 10 : 9 + 5 * (.5 + .5 * Math.sin(t / 420)); ring(0, full, tone + 'cc', 1.6); ctx.restore();
+            if (STATUS_GLINT.has(item.id) && !reduced) { const a = t / 520; ring(a, a + .6, 'rgba(255,255,255,.9)', 2.4); }
+        }
+        if (pop > 0) ring(0, full, `rgba(255,255,255,${(pop * .8).toFixed(3)})`, 2 + pop * 2);
+        // 그림: 받침보다 조금 크게 앉혀 수정이 홈에 박힌 것처럼.
+        ctx.globalAlpha = lit ? 1 : .42;
+        const art = r * 2.08;
+        if (item.id === 'seasons') { ctx.save(); ctx.rotate(seasonAngle(item.season, t)); iconAt(effect.iconUrl, -art / 2, -art / 2, art); ctx.restore(); }
+        else iconAt(effect.iconUrl, -art / 2, -art / 2, art);
+        ctx.globalAlpha = 1; ctx.restore();
+        // 숫자: 정복자와 영혼은 쌓인 수, 시간이 있는 것은 남은 초(마지막 기회는 남은 횟수).
+        const count = item.id === 'transcendDeath' ? item.value : timer ? Math.ceil(left / 1000) : ['conqueror', 'soulReaper'].includes(item.id) && Number(item.value) > 0 ? item.value : null;
+        if (count != null) {
+            const size = r > 15 ? 12 : 11, nx = cx + r * .72, ny = cy + r * .7;
+            ctx.save(); ctx.font = `800 ${size}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgba(8,6,12,.96)'; ctx.lineWidth = 3.4; ctx.strokeText(String(count), nx, ny); ctx.fillStyle = '#fff6e2'; ctx.fillText(String(count), nx, ny); ctx.restore();
+        }
+        // 아래 패: 방어 감소 비율, 적의 다음 공격 예정 피해.
+        if (item.id === 'armorShred') {
+            const label = String(item.value), size = r > 15 ? 11 : 10;
+            ctx.save(); ctx.font = `750 ${size}px ${FONT}`; const pw = ctx.measureText(label).width + 12, ph = size + 6, px = cx - pw / 2, py = cy + r + 3;
+            chamfer(ctx, px, py, pw, ph, 3); ctx.fillStyle = 'rgba(10,8,14,.9)'; ctx.fill(); ctx.strokeStyle = tone + '77'; ctx.lineWidth = 1; ctx.stroke(); ctx.restore();
+            text(ctx, label, cx, py + ph / 2 + .5, size, '#ffe0bd', 'center', 750, undefined, false);
+        }
+    }
+    // 증강이 아닌 천상 기능(돌, 예전 증강)의 상태: 같은 결의 작은 글자 패.
+    function statusPlate(entry) {
+        const item = entry.item, ph = Math.round(entry.size * .74), py = entry.y + (entry.size - ph) / 2, ready = item.max != null && Number(item.value) >= Number(item.max);
+        ctx.save(); chamfer(ctx, entry.x, py, entry.w, ph, 5); ctx.fillStyle = 'rgba(10,9,15,.86)'; ctx.fill(); ctx.strokeStyle = ready ? 'rgba(236,206,140,.75)' : 'rgba(214,190,140,.32)'; ctx.lineWidth = 1; ctx.stroke(); ctx.restore();
+        text(ctx, statusPlateText(item), entry.x + entry.w / 2, py + ph / 2 + .5, entry.size > 30 ? 12 : 11, ready ? '#ffe7b0' : '#e4d6b8', 'center', 650, entry.w - 12, false);
+    }
+    // 자세히: 증강 그림과 이름, 지금 상태 한 줄(증강 색), 그리고 증강 설명. 내 상태(데스크톱)는 위로, 나머지는 아래로 띄운다.
+    function statusDetail(w, h, d, mobile) {
+        const { item, effect, cx, cy, r } = d, tone = toneOf(item), tw = Math.min(300, w - 24), pad = 12, inner = tw - pad * 2;
+        const fit = effect.text ? fitRich(ctx, effect.text, effect.note || null, inner, 9999, 12, 12) : null;
+        const left = item.until && item.total && item.id !== 'painfulWound' ? Math.max(0, Math.ceil((item.until - now()) / 1000)) : null;
+        const lines = wrap(ctx, (item.state || statusPlateText(item)) + (left != null ? `, ${left}초 남음` : ''), inner, 12, 2, 650);
+        const th = pad + 24 + lines.length * 17 + (fit ? 8 + fit.total : 0) + pad - 2;
+        // 아래로 띄울 때는 문장 밑의 숫자 패(방어 감소, 예정 피해)를 가리지 않게 한 칸 더 내린다.
+        let ty = d.side === 'self' && !mobile ? cy - r - 12 - th : cy + r + 24;
+        if (ty + th > h - 10) ty = cy - r - 12 - th;
+        ty = Math.max(10, ty);
+        const tx = Math.max(12, Math.min(w - tw - 12, cx - tw / 2));
+        ctx.save();
+        chamfer(ctx, tx, ty, tw, th, 7); ctx.fillStyle = 'rgba(9,8,14,.96)'; ctx.fill(); ctx.strokeStyle = tone + '66'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = tone; ctx.fillRect(tx + 16, ty, tw - 32, 1.5);
+        ctx.restore();
+        iconAt(effect.iconUrl, tx + pad - 3, ty + pad - 4, 28);
+        text(ctx, effect.name, tx + pad + 30, ty + pad + 10, 14, '#f7eedb', 'left', 700, inner - 30);
+        lines.forEach((line, i) => text(ctx, line, tx + pad, ty + pad + 34 + i * 17, 12, tone, 'left', 650, inner));
+        if (fit) drawRich(ctx, fit, tx + pad, ty + pad + 26 + lines.length * 17 + 8, 'left');
     }
     // 진행 중인 봉인: 우측 상단 헤더 아래 이름과 진행도만. 데스크톱은 hover 툴팁, 누르면 알림 창에서 전체 내용.
     function gimmickBadge(w) {
@@ -706,6 +984,7 @@
         const ink = (sealTones[g.tone] || sealTones.amber)[0], mobile = w < 700, by = mobile ? 132 : state.run.relics.length ? 184 : 142, bh = mobile ? 22 : 26;
         ctx.font = `700 12px ${FONT}`; const nw = ctx.measureText(g.name).width; ctx.font = `600 12px ${FONT}`; const pw = g.progress ? ctx.measureText(g.progress).width + 10 : 0;
         const bw = Math.min(mobile ? w * .55 : 280, 40 + nw + pw), bx = w - 16 - bw, hovered = inside(bx, by, bw, bh);
+        gimmickRect = { x: bx, y: by, w: bw, h: bh };
         chamfer(ctx, bx, by, bw, bh, 6); ctx.fillStyle = 'rgba(8,11,16,.8)'; ctx.fill(); ctx.strokeStyle = ink + (hovered ? 'aa' : '55'); ctx.lineWidth = 1; ctx.stroke();
         sigil(ctx, sealSigil[g.sigil] || g.sigil, bx + 15, by + bh / 2, 15, ink);
         if (g.progress) text(ctx, g.progress, bx + bw - 10, by + bh / 2 + .5, 12, ink, 'right', 600, undefined, false);
@@ -769,7 +1048,7 @@
         const run = state.run, mobile = w < 700, defeated = run.outcome === 'defeated', summit = run.completed || run.outcome === 'cleared';
         const tone = defeated || run.outcome === 'collapsed' ? { ink: '#e8949a', glow: [1, .32, .36], metal: 'cursed' } : run.outcome === 'timedOut' ? { ink: '#9fd8d0', glow: [.5, .86, .84], metal: 'silver' }
             : summit || run.outcome === 'cleared' ? { ink: '#f0d18a', glow: [1, .78, .42], metal: 'gold' } : { ink: '#c9d7de', glow: [.7, .84, .92], metal: 'silver' };
-        const title = summit ? '999층 정복' : { cleared: '회랑 정복', defeated: '전투 패배', timedOut: '시간 종료', collapsed: '천상 붕괴' }[run.outcome] || '탐험 종료';
+        const title = summit ? '999층 정복' : run.forcedReturn ? '자동 귀환' : { cleared: '회랑 정복', defeated: '전투 패배', timedOut: '시간 종료', collapsed: '천상 붕괴' }[run.outcome] || '탐험 종료';
         const floor = run.highestFloor ?? run.clearedFloor ?? 0, starred = run.contracts.filter(c => c.star);
         const items = run.claimed ? (run.rewardSummary || []) : run.canClaim || run.canReturn
             ? [...(run.rewards || []).map(r => ({ name: r.name || r.type, count: r.count, iconUrl: r.iconUrl, kind: r.type === '골드' ? 'gold' : 'item' })), ...(defeated ? [] : starred.map(c => ({ name: c.name, contract: true })))] : [];
@@ -1254,20 +1533,24 @@
             const list = groups[inventoryTab], pagesOfRows = [[]], available = bh - 194;
             let used = 0;
             for (const item of list) {
-                const icon = inventoryTab === 'relics', width = bw - 48 - (icon ? 76 : 0), lines = wrap(ctx, item.desc, width, 14, 12), height = Math.max(icon ? 92 : 72, 45 + lines.length * 20);
+                const icon = inventoryTab === 'relics' || inventoryTab === 'augments' && !!item.iconUrl, width = bw - 48 - (icon ? 76 : 0);
+                // 개편 증강은 카드와 같은 강조 문장(text)으로, 나머지는 설명을 그대로 줄바꿈한다.
+                const rich = item.text ? fitRich(ctx, item.text, item.note, width, 9999, 14, 14) : null, lines = rich ? [] : wrap(ctx, item.desc, width, 14, 99);
+                const height = Math.max(icon ? 92 : 72, 45 + (rich ? rich.total : lines.length * 20));
                 if (used && used + height > available) { pagesOfRows.push([]); used = 0; }
-                pagesOfRows.at(-1).push({ item, icon, width, lines, height }); used += height;
+                pagesOfRows.at(-1).push({ item, icon, width, lines, rich, height }); used += height;
             }
             const pages = pagesOfRows.length; overlayPage = clamp(overlayPage, 0, pages - 1);
             let yy = y + 139;
-            for (const { item, icon, width, lines, height } of pagesOfRows[overlayPage]) {
+            for (const { item, icon, width, lines, rich, height } of pagesOfRows[overlayPage]) {
                 const tx = x + 24 + (icon ? 76 : 0);
                 if (icon) { ctx.save(); ctx.globalAlpha = item.spent ? .4 : 1; ctx.shadowColor = relicInk[item.rarity] || relicInk.normal; ctx.shadowBlur = 8; iconAt(item.iconUrl, x + 22, yy - 5, 60); ctx.restore(); }
                 if (item.relic) {
                     text(ctx, item.name, tx, yy, 15, item.spent ? '#aeb6ba' : '#f3ead6', 'left', 700, width - 150);
                     const nx = tx + Math.min(ctx.measureText(item.name).width, width - 150) + 12, bw = tierMark(ctx, item, nx, yy);
                     if (item.spent) text(ctx, '소모됨', nx + bw + 10, yy, 12, '#97a3a8', 'left', 600);
-                } else text(ctx, item.name, tx, yy, 15, item.ink || colors[item.rarity] || '#f0dca8', 'left', 700, width);
+                } else text(ctx, item.name + (item.legacy ? '  (이전 증강)' : ''), tx, yy, 15, item.ink || colors[item.rarity] || '#f0dca8', 'left', 700, width);
+                if (rich) drawRich(ctx, rich, tx, yy + 18, 'left');
                 lines.forEach((value, i) => text(ctx, value, tx, yy + 25 + i * 20, 14, '#c3cdd0'));
                 line(ctx, x + 24, yy + height - 24, x + bw - 24, yy + height - 24, 'rgba(255,255,255,.07)');
                 yy += height;
@@ -1328,7 +1611,7 @@
             const run = state.run, hell = run?.mode === 'hell';
             // 패배·포기 후에도 status='ended'인 채로 상자 선택이 이어지므로 phase를 먼저 본다.
             if(inCombat)combat(w,h,t); else if (hell && run.phase === 'chests') chestScene(w, h, t); else if (hell && (run.status === 'ended' || run.phase === 'ended')) hellEnded(w, h, t); else if (hell && run.phase === 'descent') descentScene(w, h, t); else if (hell && run.phase === 'altar') altarScene(w, h, t);
-            else if (!state.run) lobby(w, h, t); else if (state.run.phase === 'augment') augments(w, h, t); else if (state.run.phase === 'combat') combat(w, h, t); else if (state.run.phase === 'event') eventScene(w, h, t); else if (state.run.phase === 'puzzle') puzzleScene(w, h); else if (state.run.phase === 'route') routeScene(w, h, t); else if (state.run.phase === 'relic') relicScene(w, h, t); else ended(w, h, t);
+            else if (!state.run) lobby(w, h, t); else if (state.run.phase === 'augment') augments(w, h, t); else if (state.run.phase === 'boon') boonScene(w, h, t); else if (state.run.phase === 'combat') combat(w, h, t); else if (state.run.phase === 'event') eventScene(w, h, t); else if (state.run.phase === 'puzzle') puzzleScene(w, h); else if (state.run.phase === 'route') routeScene(w, h, t); else if (state.run.phase === 'relic') relicScene(w, h, t); else ended(w, h, t);
             // 연출 중에는 장면 행동을 받지 않는다.
             if (hell || fall || landing) { if (landing) regions.forEach(r => { r.disabled = true; }); dropFx(w, h, t); }
             if (transitionFx(w, h, t)) regions.forEach(r => { r.disabled = true; });
@@ -1349,10 +1632,11 @@
     addEventListener('pointermove', event => { if(Math.hypot(pointer.x-event.clientX,pointer.y-event.clientY)>4)inputMode='pointer';pointer.x=event.clientX;pointer.y=event.clientY; });
     addEventListener('pointerdown',()=>{inputMode='pointer';audio.unlock();});
     document.addEventListener('pointerleave',()=>{pointer={x:-1000,y:-1000};});
-    let touchX = 0; addEventListener('touchstart', event => { touchX = event.changedTouches[0].clientX; }, { passive: true }); addEventListener('touchend', event => { if(rewardReveal)return; if (state?.run?.phase === 'augment' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !selection) focused = clamp(focused + (event.changedTouches[0].clientX < touchX ? 1 : -1), 0, Math.max(0,state.run.choices.length-1)); else if (state?.run?.phase === 'chests' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !chestPick) chestPage += event.changedTouches[0].clientX < touchX ? 1 : -1; }, { passive: true });
+    let touchX = 0; addEventListener('touchstart', event => { touchX = event.changedTouches[0].clientX; }, { passive: true }); addEventListener('touchend', event => { if(rewardReveal)return; if (['augment', 'boon'].includes(state?.run?.phase) && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !selection) focused = clamp(focused + (event.changedTouches[0].clientX < touchX ? 1 : -1), 0, Math.max(0,(state.run.phase === 'boon' ? boonCards(state.run.boon).length : state.run.choices.length)-1)); else if (state?.run?.phase === 'chests' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !chestPick) chestPage += event.changedTouches[0].clientX < touchX ? 1 : -1; }, { passive: true });
     addEventListener('keydown', event => { inputMode='keyboard';audio.unlock();if (event.target instanceof HTMLInputElement || busy || pending || heavenEntry || transition || performance.now()<battleUntil) return;
         if(rewardReveal){if(event.key==='Escape'){event.preventDefault();rewardReveal=null;}return;}
         if (event.key === 'Escape') { overlay = null; syncPuzzle(); } if (state?.run?.phase === 'augment' && /^[123]$/.test(event.key)) { const i = Number(event.key) - 1; if (innerWidth < 700) focused = i; else choose(state.run.choices[i], i); }
+        if (!overlay && state?.run?.phase === 'boon' && state.run.boon && /^[123]$/.test(event.key)) { const i = Number(event.key) - 1, cards = boonCards(state.run.boon); if (innerWidth < 700) focused = i; else chooseBoon(cards[i], i); }
         if (!overlay && state?.run?.phase === 'route' && /^[12]$/.test(event.key)) { const i = Number(event.key) - 1; pickRoute(state.run.routes?.[i], i); }
         if (!overlay && state?.run?.phase === 'relic' && /^[123]$/.test(event.key)) { const i = Number(event.key) - 1; focused = i; pickRelic(state.run.relicChoices?.[i], i); }
         if(state?.run?.phase==='combat'&&!overlay)battle.key(event);

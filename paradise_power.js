@@ -37,6 +37,8 @@ function hit(user, stats, slots, raw, extra) {
 function dotDamage(user, stats, slots) {
     let total = 0;
     for (const dot of mechanics().dots(user)) {
+        // 고통스러운 상처는 적의 최대 HP에 비례해 잠깐 걸리므로 전투력 환산에서 뺀다.
+        if (dot.key === 'prism:wound') continue;
         const extra = { dotAttack: true, paradiseDot: true, precalculatedDamage: dot.precalculated, random: context(user).random, powerPreview: true, hitCount: 1 };
         const dotStats = { ...stats };
         mechanics().prepareAttack(user, dotStats, extra);

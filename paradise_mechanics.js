@@ -58,7 +58,8 @@ function dots(user, now = Date.now()) {
             get consumed() { return consumedDots.has(dot); },
             extend: ms => { dot[endKey] += ms; }, remove: () => { consumedDots.add(dot); remove(); } });
     };
-    for (const [key, dot] of Object.entries(s.dots || {}))
+    // 소환수 공격(천상 증강의 기병, 떠다니는 검, 천사)은 지속 피해가 아니다.
+    for (const [key, dot] of Object.entries(s.dots || {})) if (!dot.summon)
         add(key, dot, dot.damage, 'until', 'nextAt', dot.interval, () => { if (s.dots[key] === dot) delete s.dots[key]; });
     for (const key of ['burn', 'hellfire']) {
         const dot = user.field.equipmentState?.[key];
@@ -79,10 +80,11 @@ function consumeDots(user) {
     return Math.round(amount);
 }
 function extendDots(user, ms) { dots(user).forEach(dot => dot.extend(ms)); }
-function addDot(user, key, label, damage, ticks, interval = 2000, precalculated = false) {
+// options: element(틱의 속성), summon(지속 피해가 아닌 소환수 공격), prism(천상 증강 소환수: 피해를 틱마다 계산)
+function addDot(user, key, label, damage, ticks, interval = 2000, precalculated = false, options = {}) {
     if (!active(user) || damage <= 0) return;
     const s = state(user), now = Date.now();
-    (s.dots ||= {})[key] = { label, damage: Math.round(damage), interval, nextAt: now + interval, until: now + interval * ticks, precalculated };
+    (s.dots ||= {})[key] = { label, damage: Math.round(damage), interval, nextAt: now + interval, until: now + interval * ticks, precalculated, ...options };
     rpg().ensureFieldEquipmentDotTimer(user);
 }
 function hasTicks(user) { return active(user) && Object.keys(user.paradise.battle.mechanics?.dots || {}).length > 0; }
@@ -91,7 +93,7 @@ function takeTicks(user, now) {
     const s = state(user), pending = [];
     for (const [key, dot] of Object.entries(s.dots)) {
         while (dot.nextAt <= now && dot.nextAt <= dot.until) {
-            pending.push({ label: dot.label, rawDamage: dot.damage, precalculated: dot.precalculated, paradiseDot: true });
+            pending.push({ label: dot.label, rawDamage: dot.prism ? require('./paradise_prism').tickDamage(user, dot) : dot.damage, precalculated: dot.precalculated, paradiseDot: !dot.summon, summon: !!dot.summon, ...('element' in dot ? { element: dot.element } : {}) });
             dot.nextAt += dot.interval;
         }
         if (dot.nextAt > dot.until) delete s.dots[key];
@@ -151,7 +153,7 @@ function freeSkill(user, name) {
 }
 function payment(user, stats, cost, name) {
     if (!active(user)) return { cost, hpCost: 0 };
-    if (freeSkill(user, name)) return { cost: 0, hpCost: 0 };
+    if (freeSkill(user, name) || require('./paradise_prism').freeSkill(user, name)) return { cost: 0, hpCost: 0 };
     const mp = Number(corridor().getResources(user).mp || 0), shortfall = Math.max(0, cost - mp);
     if (!stats.kino && has(user, 'bloodMana') && shortfall > 0 && corridor().getResources(user).hp > shortfall * 2)
         return { cost: mp, hpCost: shortfall * 2 };

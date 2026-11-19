@@ -13,7 +13,7 @@ const dot = extra => !!extra.paradiseDot;
 const g = (id, name, rule, reward, options = {}) => ({ id, name, rule, reward, kinds: ['normal', 'elite'], tone: 'amber', sigil: 'sword', ...options });
 const GIMMICKS = [
     g('bloodSeal', '피로 봉인한 계약', '적의 HP가 35%, 공격력이 25% 증가합니다.', '6성 일반 카드 계약을 획득합니다.', { enemy: { hp: 1.35, atk: 1.25 }, prize: { star: 6, type: '일반' }, tone: 'crimson' }),
-    g('twinHunt', '둘을 위한 칼날', '공격력이 50% 증가합니다. 적 두 마리와 연속으로 싸웁니다.', '모두 쓰러뜨리면 종료 보상이 5%p 증가합니다.', { effects: { atk: .50 }, sequence: 2, prize: { bonus: .05 } }),
+    g('twinHunt', '둘을 위한 칼날', '공격력이 50% 증가합니다. 두 번의 전투를 연속으로 치릅니다.', '모두 쓰러뜨리면 종료 보상이 5%p 증가합니다.', { effects: { atk: .50 }, sequence: 2, prize: { bonus: .05 } }),
     g('gildedElite', '황금 사냥감', '엘리트의 HP와 공격력이 20% 증가합니다.', '고급 유물 세 개 중 하나를 선택합니다.', { kinds: ['elite'], enemy: { hp: 1.20, atk: 1.20 }, prize: { relic: 'advanced' } }),
     g('ashOnly', '재만 남는 길', '적의 HP가 절반이 되며 지속 피해만 받습니다. 직접 공격하면 1초마다 공격력의 40%만큼 5회 피해를 입히는 불씨를 남깁니다.', '지속 피해 증강 중 하나를 선택합니다.', { enemy: { hp: .50 }, category: 'dot', tone: 'crimson', sigil: 'flame' }),
     g('silentArena', '침묵의 검투장', '스킬을 봉인합니다. 일반 공격 피해가 2배가 됩니다.', '연격 증강 중 하나를 선택합니다.', { effects: { basicDamage: 1 }, category: 'combo' }),
@@ -51,7 +51,7 @@ function combat(user) { return user.paradise?.phase === 'combat' ? context(user)
 function eligible(user, kind) {
     const run = user.paradise, available = corridor().availableAugments(user);
     return GIMMICKS.filter(gimmick => gimmick.kinds.includes(kind)
-        && (!gimmick.category || ['silver', 'gold', 'prismatic', 'cursed'].some(rarity => available.filter(a => a.category === gimmick.category && a.rarity === rarity).length >= 3))
+        && (!gimmick.category || available.filter(a => a.category === gimmick.category).length >= 3)
         && (!gimmick.ultimate || rpg().getUltimateSkills(user).length > 0)
         && (!gimmick.prize?.relic || RELICS.filter(r => !r.special && r.rarity === gimmick.prize.relic && !run.relics.includes(r.id)).length >= 3)
         && (gimmick.id !== 'eventClock' || corridor().remainingTime(run) > 60000)

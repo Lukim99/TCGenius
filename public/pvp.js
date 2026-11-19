@@ -438,7 +438,7 @@
 
     class Hud {
         constructor(canvas) {
-            this.canvas=canvas;this.ctx=canvas.getContext('2d');this.regions=[];this.images=new Map();this.flashUntil=0;this.flashDuration=1;this.shakeUntil=0;this.banner=null;this.bannerSub='';this.bannerUntil=0;this.damagePops=[];this.countTick=0;this.resultStarted=0;this.frame=requestAnimationFrame(()=>this.draw());
+            this.canvas=canvas;this.ctx=canvas.getContext('2d');this.regions=[];this.images=new Map();this.flashUntil=0;this.flashDuration=1;this.shakeUntil=0;this.banner=null;this.bannerSub='';this.bannerUntil=0;this.pops=DamageNumbers.create({reducedMotion});this.countTick=0;this.resultStarted=0;this.frame=requestAnimationFrame(()=>this.draw());
             canvas.addEventListener('pointerdown',event=>{audio.unlock();this.pointer={x:event.clientX,y:event.clientY,id:event.pointerId};canvas.setPointerCapture(event.pointerId);});
             canvas.addEventListener('pointerup',event=>{if(!this.pointer||this.pointer.id!==event.pointerId)return;const hit=this.regions.slice().reverse().find(r=>event.clientX>=r.x&&event.clientX<=r.x+r.w&&event.clientY>=r.y&&event.clientY<=r.y+r.h);this.pointer=null;if(hit&&!busy)hit.action();});
             canvas.addEventListener('pointercancel',()=>{this.pointer=null;});
@@ -604,23 +604,9 @@
             c.restore();
             this.text('전투 준비',w/2,h*.42+(narrow?62:84),narrow?11:13,800,'center','#e8b04b');
         }
-        addPop(pop){this.damagePops.push(Object.assign({start:performance.now()+(Number(pop&&pop.delay)||0),side:'opp',y:combatPopY(),size:30,color:'#ffe06e',label:'',sub:''},pop));}
-        damageLayer(w,h){
-            const time=performance.now(),narrow=w<700;
-            this.damagePops=this.damagePops.filter(pop=>{
-                const p=(time-pop.start)/950;
-                if(p<0)return true;
-                if(p>=1)return false;
-                const ease=1-Math.pow(1-clamp(p,0,1),3),x=w*sideX(pop.side,narrow),y=h*pop.y-(pop.dot?(reducedMotion?p*18:Math.sin(p*Math.PI)*30+p*10):ease*62),
-                    alpha=clamp(Math.min(p*8,(1-p)*3.4),0,1),scale=pop.dot?(reducedMotion?1:.9+Math.sin(p*Math.PI)*.1):.7+Math.sin(Math.min(1,p)*Math.PI)*.36;
-                this.ctx.save();this.ctx.globalAlpha=alpha;this.ctx.translate(x,y);this.ctx.scale(scale,scale);
-                if(pop.label)this.text(pop.label,0,-26,narrow?10:12,900,'center','#ffb0a8');
-                this.text(pop.text,0,0,narrow?pop.size*.76:pop.size,900,'center',pop.color);
-                if(pop.sub)this.text(pop.sub,0,pop.dot?17:25,pop.dot?(narrow?8:9):(narrow?9:11),800,'center','#efe4cd');
-                this.ctx.restore();
-                return true;
-            });
-        }
+        // 수치의 모양과 움직임은 공용 DamageNumbers가 정한다. 여기서는 어느 쪽 머리 위인지만 정한다.
+        addPop(pop){this.pops.add(Object.assign({x:sideX(pop.side||'opp',innerWidth<700),y:combatPopY()},pop));}
+        damageLayer(w,h){this.pops.draw(this.ctx,w,h);}
         bannerLayer(w,h){
             if(!this.banner||this.bannerUntil<=performance.now())return;
             const remain=this.bannerUntil-performance.now(),age=1-clamp(remain/1250,0,1),alpha=clamp(Math.min(age*5,remain/220),0,1),narrow=w<700,c=this.ctx,cx=w/2,y=h*(narrow?.3:.33),bw=Math.max(60,Math.min(w-40,narrow?310:460));
@@ -793,15 +779,15 @@
         if (action === 'shield') {
             const amount = Number(event.shield || event.heal || 0);
             if (renderer) renderer.playEffectAssets(actor,event.effectIds,{role:'actor'});
-            if (amount > 0) hud.addPop({ side: actor, text: '+' + number(amount) + ' 보호막', color: '#eaf2ff', size: 22, y: recoveryPopY() });
+            if (amount > 0) hud.addPop({ side: actor, kind: 'guard', amount, y: recoveryPopY() });
             return;
         }
         if (action === 'heal') {
             if (renderer) renderer.playEffectAssets(actor,event.effectIds,{role:'actor'});
-            if (Number(event.heal || 0) > 0) hud.addPop({ side: actor, text: 'HP +' + number(event.heal), color: '#63f29b', size: 22, y: recoveryPopY() });
+            if (Number(event.heal || 0) > 0) hud.addPop({ side: actor, kind: 'heal', amount: event.heal, y: recoveryPopY() });
             return;
         }
-        if (event.dodged) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','회피')],{role:'target'});hud.addPop({ side: target, text: '회피', color: '#cdd6e2', size: 26 }); return; }
+        if (event.dodged) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','회피')],{role:'target'});hud.addPop({ side: target, kind: 'miss' }); return; }
         const damage = Number(event.damage || 0), critical = Number(event.criticalCount || 0) > 0;
         if (action === 'summon' || action === 'dot') {
             const tickHits = Array.isArray(event.hits) && event.hits.length ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0) : (damage > 0 ? [{ damage }] : []);
@@ -814,11 +800,9 @@
                 const land = () => {
                 if (index === 0) hpHold[target] = null;
                 hud.addPop({
-                    side: target,
-                    dot: action === 'dot', text: shieldAbsorb ? '(-' + number(hit.damage) + ')' : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
-                    color: shieldAbsorb || effectCatalog.damageStyle(event,hit).fixed ? '#ffffff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : '#ffd88a',
-                    size: action === 'dot' ? 23 : shieldAbsorb || summonAbsorb ? 22 : 24,
-                    sub: shieldAbsorb ? '' : hit.label || (index === 0 ? event.skillName || (action === 'dot' ? '지속 피해' : '소환수') : '')
+                    side: target, kind: summonAbsorb ? 'proxy' : 'damage', amount: Number(hit.damage),
+                    dot: action === 'dot', minor: true, shield: shieldAbsorb, fixed: effectCatalog.damageStyle(event,hit).fixed, received: target === 'me',
+                    label: hit.label || (index === 0 ? event.skillName || (action === 'dot' ? '지속 피해' : '소환수') : '')
                 });
                 if (!shieldAbsorb && !summonAbsorb) { hud.impact(false); audio.hit(); }
                 };
@@ -827,7 +811,7 @@
                 };
                 if (index === 0) tickLead = present(); else setTimeout(present, tickLead + index * 95);
             });
-            if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, text: 'HP +' + number(event.targetHeal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: tickHits.length * 95 }); }
+            if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, kind: 'heal', amount: event.targetHeal, y: recoveryPopY(), delay: tickHits.length * 95 }); }
             return spacing;
         }
         if (renderer && !(action === 'skill' && skillAudience === 'actor')) renderer.lunge(actor, action);
@@ -837,6 +821,9 @@
         const hitAt = index => !index || !hitTimes ? hitLead + index * 95 : index < hitTimes.length ? hitTimes[index] : hitTimes[hitTimes.length - 1] + (index - hitTimes.length + 1) * 95;
         if (damage > 0 || hits.length > 0) {
             const displayedHits = hits.length ? hits : [{ damage, critical }];
+            // 3타 이상이면 합계를 함께 센다(막힌 타격은 빼고 센다).
+            const summed = displayedHits.filter(hit => hit.type !== 'absorbed' && hit.type !== 'summonAbsorbed').length, chain = summed >= 3 ? { size: summed } : null;
+            const targetMax = Number(view && view[target] && view[target].maxHp || 0);
             displayedHits.forEach((hit, index) => {
                 const present = () => {
                 const hitCritical = !!hit.critical;
@@ -848,9 +835,9 @@
                 const land = () => {
                 if (index === 0) hpHold[target] = null;
                 hud.addPop({
-                    side: target, text: shieldAbsorb ? '(-' + number(hit.damage) + ')' : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
-                    color: shieldAbsorb || effectCatalog.damageStyle(event,hit).fixed ? '#ffffff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : hitCritical ? '#ff5d4d' : '#ffe06e',
-                    size: shieldAbsorb || summonAbsorb ? 24 : target === 'me' ? 28 : hitCritical ? 46 : 34, label: hitCritical && !shieldAbsorb ? '치명타' : '', sub: shieldAbsorb ? '' : hit.label || (index === 0 ? event.skillName || '' : '')
+                    side: target, kind: summonAbsorb ? 'proxy' : 'damage', amount: Number(hit.damage),
+                    shield: shieldAbsorb, fixed: effectCatalog.damageStyle(event,hit).fixed, received: target === 'me', critical: hitCritical, destiny: !!hit.destiny,
+                    label: hit.label || (index === 0 ? event.skillName || '' : ''), ratio: targetMax > 0 ? Number(hit.damage) / targetMax : null, chain
                 });
                 if (!shieldAbsorb && !summonAbsorb) {
                     audio.hit();
@@ -866,11 +853,11 @@
         } else if (action === 'skill' && (cut || !(renderer && renderer.fx))) audio.play('skill', .68);
         const after = hits.length ? hitAt(hits.length - 1) : hitLead;
         const reflectedHits = Array.isArray(event.reflectedHits) ? event.reflectedHits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
-        reflectedHits.forEach((hit, index) => setTimeout(() => { if(renderer)renderer.combatEffect(actor,{action:'dot',skillName:'가시 반사',effectElement:'암',effectIds:hit.effectIds},hit,target);hud.addPop({ side: actor, text: '-' + number(hit.damage), color: '#d7a2ff', size: 22, y: combatPopY(), sub: hit.label || '가시 반사' }); }, after + (index + 1) * 95));
-        if (reflectedHits.length === 0 && Number(event.selfDamage || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','자해')],{role:'target'});hud.addPop({ side: actor, text: '-' + number(event.selfDamage), color: '#ff8f87', size: 22, y: combatPopY(), delay: 120 + after }); }
-        if (Number(event.heal || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: actor, text: 'HP +' + number(event.heal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: 120 + after }); }
-        if (Number(event.mpRecovery || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','MP 회복')],{role:'actor'});hud.addPop({ side: actor, text: 'MP +' + number(event.mpRecovery), color: '#72c7ff', size: 21, y: recoveryPopY()+.04, delay: 150 + after }); }
-        if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, text: 'HP +' + number(event.targetHeal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: 120 + after }); }
+        reflectedHits.forEach((hit, index) => setTimeout(() => { if(renderer)renderer.combatEffect(actor,{action:'dot',skillName:'가시 반사',effectElement:'암',effectIds:hit.effectIds},hit,target);hud.addPop({ side: actor, kind: 'reflect', amount: hit.damage, label: hit.label || '가시 반사' }); }, after + (index + 1) * 95));
+        if (reflectedHits.length === 0 && Number(event.selfDamage || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','자해')],{role:'target'});hud.addPop({ side: actor, received: true, minor: true, amount: event.selfDamage, delay: 120 + after }); }
+        if (Number(event.heal || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: actor, kind: 'heal', amount: event.heal, y: recoveryPopY(), delay: 120 + after }); }
+        if (Number(event.mpRecovery || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','MP 회복')],{role:'actor'});hud.addPop({ side: actor, kind: 'mana', amount: event.mpRecovery, y: recoveryPopY()+.04, delay: 150 + after }); }
+        if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, kind: 'heal', amount: event.targetHeal, y: recoveryPopY(), delay: 120 + after }); }
         // 장면이 시전자를 직접 움직이는 스킬은 기본 돌진을 쉬게 하고, 장면이 끝날 때까지 다음 사건을 기다리게 한다.
         if (action === 'skill' && renderer && renderer.fx) renderer.anim[actor].castUntil = performance.now() + cast;
         return Math.max(spacing, action === 'skill' ? cast : 0);

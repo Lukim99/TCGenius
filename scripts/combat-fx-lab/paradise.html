@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>천상 증강 연출 실험실</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#02040a;color:#eceef2;font:12px Pretendard,-apple-system,"Segoe UI",sans-serif}
+#paBattle{position:fixed;inset:0}#paBattle canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}#hfHud{z-index:1}
+#panel{position:fixed;top:0;right:0;bottom:0;width:290px;z-index:10;background:rgba(14,16,20,.9);border-left:1px solid #2a2e37;overflow:auto;padding:8px 10px 30px;box-sizing:border-box}
+body.no-panel #panel{display:none}
+#panel h3{margin:12px 0 5px;font-size:11px;color:#9aa3b2;font-weight:600}
+#panel button{background:#1f232b;color:#eceef2;border:1px solid #3a404c;border-radius:6px;padding:4px 7px;margin:0 3px 3px 0;font:inherit;cursor:pointer}
+#panel button.on{background:#e8b04b;color:#1f1503;border-color:#e8b04b}
+#panel label{display:flex;align-items:center;gap:6px;margin:2px 0}#panel label span{flex:0 0 96px;color:#c5cad3}#panel input[type=range]{flex:1}
+#toggle{position:fixed;top:8px;right:298px;z-index:11;background:#1f232b;color:#eceef2;border:1px solid #3a404c;border-radius:6px;padding:4px 8px;cursor:pointer}
+body.no-panel #toggle{right:8px}
+</style></head><body>
+<div id="paBattle"><canvas id="hfCanvas"></canvas><canvas id="hfHud"></canvas></div>
+<aside id="panel"></aside><button id="toggle">패널</button>
+<script>
+window.FIELD_MODE = 'paradise';
+window.ParadiseAudio = { muted: new URLSearchParams(location.search).get('mute') === '1', playUrl() {} };
+</script>
+<script src="/static/damage-numbers.js"></script><script src="/static/combat-effects.js"></script>
+<script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
+<script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
+<script src="/static/combat-fx-augments.js"></script>
+<script>(() => { const create = CombatFX.create; CombatFX.create = options => (window.__fx = create(Object.assign({ preserve: true }, options))); })();</script>
+<script src="/static/hfield.js"></script>
+<script>
+// 실제 public/hfield.js를 천상(내장) 방식으로 돌리고, 서버가 보낼 사건과 지속 상태를 손으로 만들어 넣는다.
+(function () {
+    const query = new URLSearchParams(location.search), ui = file => '/rpg-ui?file=' + encodeURIComponent(file), battle = window.ParadiseBattle;
+    const A = CombatFX.augments, errors = [], warn = console.warn;
+    console.warn = (...args) => { errors.push(args.map(String).join(' ')); warn.apply(console, args); };
+    window.addEventListener('error', event => errors.push(String(event.message)));
+    A.art.forEach(A.loadArt);
+    let seq = 1, hp = 62000, foeHp = 4200000;
+    const auras = new Map(), enemy = query.get('enemy') || '필드/hfield-buta.png';
+    const state = () => ({
+        serverNow: Date.now(), inField: true, phase: 'elite', nextActionAt: 0, combatLog: [], paradiseRelics: false,
+        player: { name: '실험실', level: 99, hp, maxHp: 90000, mp: 5000, maxMp: 5000, cardName: '이익태', cardFormatted: '전직 이익태', cardStar: 10, cardType: '전직', cardImageUrl: null, spriteUrl: ui('필드/캐릭터/' + (query.get('card') || '이익태__전직') + '.png') },
+        target: { id: 'lab-enemy', name: '회랑의 심판자', kind: 'boss', hp: foeHp, maxHp: 5000000, sprite: ui(enemy), wave: { index: 1, total: 2 } },
+        skills: ['운명', '명계의 부름', '검무', '변속', '간파'].map(name => ({ name, mpCost: 0, cooldownEnd: 0 })),
+        augmentAuras: list,
+        activeField: { backgroundUrl: '/static/assets/paradise/corridor.webp', monster: { spriteUrl: ui(enemy) } }
+    });
+    let list = [], current = null;
+    const push = events => { current = state(); battle.update(current, (events || []).map(event => CombatEffects.annotateEvent(Object.assign({ id: 'lab-' + seq++, at: Date.now(), enemyId: 'lab-enemy' }, event))), 'lab'); };
+    const setAura = (id, data) => { if (data) auras.set(id, Object.assign({ id }, data)); else auras.delete(id); list = Array.from(auras.values()); push([]); };
+    let shots = [];
+    function frame(time) { battle.update(current, [], 'lab', true); battle.draw(time, false); if (shots.length) shots.splice(0).forEach(snap); requestAnimationFrame(frame); }
+    // 검수용: 전투 화면, 연출, HUD를 겹쳐 한 장으로 만든다. box는 화면 비율 [x0, y0, x1, y1]. ?shots=주소가 있으면 그 주소로 PNG를 보낸다.
+    function snap(job) {
+        const layers = [document.getElementById('hfCanvas'), document.querySelector('.cfx-canvas'), document.getElementById('hfHud')], [x0, y0, x1, y1] = job.box || [0, 0, 1, 1], base = layers[0];
+        const out = document.createElement('canvas'), w = (x1 - x0) * base.width, h = (y1 - y0) * base.height, k = Math.min(job.scale || 1, 1600 / w);
+        out.width = Math.round(w * k); out.height = Math.round(h * k);
+        const g = out.getContext('2d');
+        layers.forEach(layer => { if (layer && layer.width) g.drawImage(layer, x0 * layer.width, y0 * layer.height, (x1 - x0) * layer.width, (y1 - y0) * layer.height, 0, 0, out.width, out.height); });
+        if (job.raw) return job.done(out);
+        out.toBlob(blob => { const to = query.get('shots'); if (to) fetch(to + '?name=' + encodeURIComponent(job.name), { method: 'POST', body: blob }).then(() => job.done(job.name), () => job.done('failed')); else job.done(URL.createObjectURL(blob)); }, 'image/png');
+    }
+    push([]); push([]); requestAnimationFrame(frame);
+
+    // 사건 만들기.
+    const dmg = () => 20000 + Math.floor(Math.random() * 30000);
+    const attack = (ids, o) => { const hits = Array.from({ length: (o && o.hits) || 1 }, (_, i) => ({ damage: dmg(), critical: !!(o && o.crit) && i === 0 })); return Object.assign({ action: 'basic', hits, damage: hits.reduce((sum, hit) => sum + hit.damage, 0), criticalCount: o && o.crit ? 1 : 0, triggeredEffectIds: ids }, o && o.more); };
+    const tick = (ids, label, dot) => { const damage = dmg(); return { action: 'tick', dot: !!dot, skillName: label, hits: [{ damage, label }], damage, triggeredEffectIds: ids }; };
+    const foe = (ids, o) => { const damage = o && o.none ? 0 : 9000 + Math.floor(Math.random() * 6000); return Object.assign({ actor: 'enemy', action: 'basic', receivedHits: damage ? [{ damage }] : [], received: damage, hits: [], damage: 0, triggeredEffectIds: ids }, o && o.more); };
+    const cue = (ids, target) => ({ action: 'augment', effectTarget: target, hits: [], damage: 0, triggeredEffectIds: ids });
+    const skill = (name, hits, ids) => { const list = Array.from({ length: hits }, () => ({ damage: dmg() })); return { action: 'skill', skillName: name, hits: list, damage: list.reduce((sum, hit) => sum + hit.damage, 0), triggeredEffectIds: ids || [] }; };
+    const id = name => 'augment:' + name;
+    const EVENTS = {
+        'fruition': () => [attack([id('fruition')], { crit: true })],
+        'conqueror.max': () => [attack([id('conqueror.max')])],
+        'conqueror.cavalry': () => [tick([id('conqueror.cavalry')], '정복자의 기병')],
+        'holyLightning': () => [attack([id('holyLightning')], { hits: 2 })],
+        'dotCritical': () => [tick([id('dotCritical'), id('eternalFlame')], '꺼지지 않는 불꽃', true)],
+        'eternalFlame.ignite': () => [cue([id('eternalFlame.ignite')], 'target')],
+        'eternalFlame': () => [tick([id('eternalFlame')], '꺼지지 않는 불꽃', true)],
+        'replay': () => [skill('정권', 1, [id('replay')])],
+        'timeOfChoice.mark': () => [skill('정권', 1, [id('timeOfChoice.mark')])],
+        'timeOfChoice.burst': () => [attack([id('timeOfChoice.burst')], { hits: 2 })],
+        'timeOfChoice.heal': () => [skill('정권', 1, [id('timeOfChoice.heal')])],
+        'flyingSword.summon': () => [attack([id('flyingSword.summon')])],
+        'flyingSword': () => [tick([id('flyingSword')], '떠다니는 검')],
+        'duelChallenge': () => [attack([id('duelChallenge')]), foe([id('duelChallenge.counter')], { more: { counter: true } })],
+        'duelChallenge.crit': () => [attack([id('duelChallenge.crit')], { crit: true })],
+        'onePunch': () => [attack([id('onePunch')]), foe([id('onePunch.counter')], { more: { counter: true } })],
+        'seasons.spring': () => [skill('정권', 1, [id('seasons.spring')])],
+        'seasons.summer': () => [skill('정권', 1, [id('seasons.summer')])],
+        'seasons.autumn': () => [skill('정권', 1, [id('seasons.autumn')])],
+        'seasons.winter': () => [skill('정권', 1, [id('seasons.winter')])],
+        'seasons.burn': () => [tick([id('seasons.burn')], '여름의 열기', true)],
+        'manualShift.crit': () => [attack([id('manualShift.crit')], { crit: true })],
+        'deepeningBleed.apply': () => [attack([id('deepeningBleed.apply')])],
+        'deepeningBleed': () => [tick([id('deepeningBleed')], '행동성 출혈', true)],
+        'soulReaper.harvest': () => [attack([id('soulReaper.harvest')])],
+        'readIntent.parry': () => [foe([id('readIntent.parry')], { none: true })],
+        'timeRewind': () => [foe([id('timeRewind')])],
+        'demonHunter': () => [attack([id('demonHunter')], { hits: 2 })],
+        'angelDescent.descend': () => [foe([id('angelDescent.descend')])],
+        'angelDescent': () => [tick([id('angelDescent')], '천사')],
+        'angelDescent.guard': () => [foe([id('angelDescent.guard')], { none: true })],
+        'transcendDeath.trigger': () => [foe([id('transcendDeath.trigger')])],
+        'transcendDeath.revive': () => [attack([id('transcendDeath.revive')])],
+        'transcendDeath.fail': () => [Object.assign(cue([id('transcendDeath.fail')], 'actor'), { actor: 'player', defeated: true })],
+        'comboStaircase.3': () => [attack([id('comboStaircase.3')], { hits: 3 })],
+        'painfulWound.apply': () => [attack([id('painfulWound.apply')], { crit: true })],
+        'painfulWound': () => [tick([id('painfulWound')], '고통스러운 상처', true)],
+        'shieldSiphon': () => [attack([id('shieldSiphon')], { hits: 2 })],
+        'armorShred.max': () => [attack([id('armorShred.max')])],
+        'thornArmor': () => [foe([id('thornArmor')], { more: { reflectedHits: [{ damage: 3300, label: '가시 갑옷', fixed: true }] } })],
+        'hundredFlowers.bloom': () => [attack([id('hundredFlowers.bloom')], { hits: 7 })],
+        'deathWish.awaken': () => [foe([id('deathWish.awaken')])],
+        'fatalDestiny.execute': () => [skill('운명', 1, [id('fatalDestiny.execute')])],
+        '스킬 운명': () => [skill('운명', 1)], '스킬 명계의 부름': () => [skill('명계의 부름', 1)], '스킬 검무': () => [skill('검무', 8)],
+        '스킬 변속': () => [{ action: 'skill', skillName: '변속', hits: [], damage: 0 }], '스킬 간파': () => [{ action: 'skill', skillName: '간파', hits: [], damage: 0 }],
+        '계절만 봄': () => [cue([id('seasons.spring')], 'actor')], '계절만 여름': () => [cue([id('seasons.summer')], 'actor')], '계절만 가을': () => [cue([id('seasons.autumn')], 'actor')], '계절만 겨울': () => [cue([id('seasons.winter')], 'actor')],
+        '여럿이 한 번에': () => [attack([id('fruition'), id('holyLightning'), id('demonHunter'), id('onePunch')], { crit: true, hits: 3 })]
+    };
+    const play = name => { push(EVENTS[name]()); return name; };
+
+    // 지속 상태 조작: 숫자는 슬라이더, 켜고 끄는 것은 버튼.
+    const now = () => Date.now();
+    const AURAS = {
+        conqueror: { stacks: [0, 10, 0], max: 10 }, fatalDestiny: { stacks: [0, 7, 0] }, seasons: { season: ['', 'spring', 'summer', 'autumn', 'winter'] },
+        manualShift: { stacks: [0, 3, 0], max: 3, armed: false }, soulReaper: { souls: [0, 12, 0] },
+        readIntent: { count: [0, 2, 0], foresight: [null, { damage: 18420, critical: false, avoided: false }, { damage: 41270, critical: true, avoided: false }, { damage: 12000, critical: false, avoided: true }], parry: false },
+        timeOfChoice: { marked: false }, flyingSword: { swords: [0, 3, 0], ready: false }, deathWish: { active: false }, eternalFlame: { burning: false }, deepeningBleed: { left: [0, 5, 0] },
+        angelDescent: { until: 'window:10000', used: false }, transcendDeath: { until: 'window:10000', attacksLeft: [0, 2, 2] }, hundredFlowers: { flowers: [0, 8, 0] }, armorShred: { percent: [0, 30, 0] },
+        painfulWound: { until: 'window:10000', crits: [0, 4, 0] }, comboStaircase: { step: [1, 3, 1] }, fruition: { count: [0, 2, 0] }, holyLightning: { count: [0, 2, 0] }, demonHunter: { count: [0, 2, 0] },
+        timeRewind: { used: false, guardUntil: 'window:6000' }, duelChallenge: { stage: ['ready', 'armed', 'done'] }, thornArmor: {}, haste: {}, onePunch: {}, dotCritical: {}, shieldSiphon: {}, replay: { skill: '정권' }, dualIdentity: { cardName: '수나타' }
+    };
+    const NAMES = { conqueror: '정복자', fatalDestiny: '치명적인 운명', seasons: '주문의 계절', manualShift: '수동변속', soulReaper: '영혼 수확자', readIntent: '읽어 낸 살의', timeOfChoice: '선택의 시간', flyingSword: '이기어검술', deathWish: '죽을 각오로', eternalFlame: '꺼지지 않는 불꽃', deepeningBleed: '움직일수록 깊게', angelDescent: '천사강림', transcendDeath: '죽음 초월', hundredFlowers: '백화요란', armorShred: '갑옷 깎아내기', painfulWound: '고통스러운 상처', comboStaircase: '오르는 검무', fruition: '결실', holyLightning: '신성한 번개', demonHunter: '악마 사냥꾼', timeRewind: '되감기', duelChallenge: '결투 신청', thornArmor: '가시 갑옷', haste: '가속', onePunch: '원펀치 룰', dotCritical: '취약', shieldSiphon: '보호막 흡수', replay: '리플레이', dualIdentity: '두 정체성' };
+    const initial = spec => { const out = {}; for (const [key, value] of Object.entries(spec)) out[key] = Array.isArray(value) ? (typeof value[0] === 'number' ? value[2] : value[0]) : typeof value === 'string' && value.startsWith('window:') ? 0 : value; return out; };
+    const panel = document.getElementById('panel'), el = (tag, text, parent) => { const node = document.createElement(tag); if (text) node.textContent = text; (parent || panel).append(node); return node; };
+    el('h3', '발동 장면');
+    Object.keys(EVENTS).forEach(name => { el('button', name).onclick = () => play(name); });
+    el('h3', '지속 상태');
+    for (const [name, spec] of Object.entries(AURAS)) {
+        const head = el('button', NAMES[name]); let data = null;
+        const rows = el('div'); rows.style.display = 'none';
+        head.onclick = () => { data = data ? null : initial(spec); head.classList.toggle('on', !!data); rows.style.display = data ? 'block' : 'none'; setAura(name, data); };
+        for (const [key, value] of Object.entries(spec)) {
+            if (Array.isArray(value) && typeof value[0] === 'number') { const row = el('label', '', rows); el('span', key, row); const input = el('input', '', row); input.type = 'range'; input.min = value[0]; input.max = value[1]; input.value = value[2]; input.oninput = () => { data = Object.assign({}, data, { [key]: Number(input.value) }); setAura(name, data); }; }
+            else if (Array.isArray(value)) value.forEach((option, index) => { el('button', key + ' ' + (option && typeof option === 'object' ? index : option || '없음'), rows).onclick = () => { data = Object.assign({}, data, { [key]: option }); setAura(name, data); }; });
+            else if (typeof value === 'boolean') { const button = el('button', key, rows); button.onclick = () => { data = Object.assign({}, data, { [key]: !data[key] }); button.classList.toggle('on', data[key]); setAura(name, data); }; }
+            else if (typeof value === 'string' && value.startsWith('window:')) el('button', key + ' 시작', rows).onclick = () => { data = Object.assign({}, data, { [key]: now() + Number(value.slice(7)) }); setAura(name, data); };
+        }
+    }
+    document.getElementById('toggle').onclick = () => document.body.classList.toggle('no-panel');
+    if (query.get('ui') === '0') { document.body.classList.add('no-panel'); document.getElementById('toggle').style.display = 'none'; }
+    // 자동 검증용: plab.play(이름), plab.aura(id, 상태), plab.freeze(초), plab.errors
+    window.plab = { play, aura: setAura, errors, events: Object.keys(EVENTS), auras: AURAS, initial: name => initial(AURAS[name]), hp: value => { hp = value; push([]); }, freeze: seconds => window.__fx.freezeAfter(seconds), shot: (name, box, scale) => new Promise(done => shots.push({ name, box, scale, done })),
+        // 검수용 타일: jobs = [[사건 이름, [초, ...], 준비 함수], ...]. 사건마다 그 순간들을 찍어 한 장에 모아 보낸다.
+        sheet: async (name, jobs, box, cols) => {
+            const tiles = [], wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+            for (const [event, times, pre] of jobs) { if (pre) { pre(); await wait(900); } let last = 0; if (event) play(event); for (const time of times) { await wait((time - last) * 1000); last = time; tiles.push([await new Promise(done => shots.push({ box, scale: .62, raw: true, done })), event + ' ' + time]); } await wait(700); }
+            const n = cols || 6, tw = tiles[0][0].width, th = tiles[0][0].height, out = document.createElement('canvas'); out.width = tw * n; out.height = th * Math.ceil(tiles.length / n);
+            const g = out.getContext('2d'); g.font = '15px sans-serif';
+            tiles.forEach(([tile, label], i) => { const x = (i % n) * tw, y = Math.floor(i / n) * th; g.drawImage(tile, x, y); g.fillStyle = '#000'; g.fillRect(x, y, g.measureText(label).width + 8, 20); g.fillStyle = '#ff0'; g.fillText(label, x + 4, y + 15); });
+            return new Promise(done => out.toBlob(blob => fetch(query.get('shots') + '?name=' + name, { method: 'POST', body: blob }).then(() => done(name + ' ' + tiles.length + ' errors=' + JSON.stringify(errors)))));
+        },
+        // 사건을 내고 seconds 뒤의 화면을 찍는다.
+        film: async (event, times, box, scale) => { const out = []; let last = 0; play(event); for (const time of times) { await new Promise(resolve => setTimeout(resolve, (time - last) * 1000)); last = time; out.push(await window.plab.shot(event.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Math.round(time * 100), box, scale)); } return out.join(); } };
+})();
+</script>
+</body></html>

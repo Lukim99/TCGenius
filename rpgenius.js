@@ -18,6 +18,7 @@ const paradisePower = require('./paradise_power');
 const paradiseStones = require('./paradise_stones');
 const paradiseRoutes = require('./paradise_routes');
 const paradiseShieldHits = require('./paradise_shield_hits');
+const paradisePrism = require('./paradise_prism');
 const shopCatalog = require('./shop_catalog');
 const pointUsage = require('./point_usage');
 const { measureWork, waitFor, instrumentDynamo } = require('./paradise_timing');
@@ -594,7 +595,8 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
         if (!user.field) break;
         const effectContext = getFieldCombatContext(user);
         if (effectContext.error || getFieldCombatTargetKey(user, effectContext) !== tickTargetKey) break;
-        const extra = { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, isBotAutoAttack: true, attackElement: effect.label === '카스 살포' ? effect.element : effect.element || (effect.precalculated ? '암' : '화'), precalculatedDamage: !!effect.precalculated, skillName: effect.label === '카스 살포' ? effect.label : null };
+        const extra = { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, isBotAutoAttack: true, attackElement: effect.label === '카스 살포' || effect.element === null ? effect.element : effect.element || (effect.precalculated ? '암' : '화'), precalculatedDamage: !!effect.precalculated, skillName: effect.label === '카스 살포' ? effect.label : null };
+        if (effect.summon) { extra.paradiseSummon = true; extra.skillName = effect.label; }
         if (effect.paradiseDot || ['카스 살포', '화상', '겁화'].includes(effect.label)) { extra.paradiseDot = true; extra.skillName = effect.label; }
         const tickBefore = captureFieldTickState(user);
         let tickDamage;
@@ -5234,6 +5236,32 @@ function getMainCardSkills(user) {
     return result;
 }
 
+// 천상 두 가지 정체성으로 빌린 스킬(메인 카드에는 없고 빌린 카드에만 있는 스킬)이면 그 카드를 돌려준다.
+function getParadiseBorrowedCard(user, skillName) {
+    const hacked = paradise.active(user) && user.paradise.mode !== 'hell' && user.paradise.phase === 'combat' ? user.paradise.battle?.hackCard : null;
+    if (!hacked || !skillName) return null;
+    const cards = readJson(CHARACTER_CARDS_PATH, []), skills = readJson(SKILLS_PATH, []), own = cards[user.main_card?.id], card = cards[hacked.id];
+    const names = list => (list || []).map(index => skills[index]?.name);
+    if (!card || names(own?.skills).includes(skillName) || names(own?.class?.skills).includes(skillName) || !names(card.skills).includes(skillName)) return null;
+    return { id: Number(hacked.id), name: card.name };
+}
+// 빌린 스킬의 비용 기준. 정신력을 쓰는 키노와 MP를 쓰는 카드가 서로의 스킬을 빌리면 단위를 바꾼다:
+// 키노가 빌린 MP 스킬은 MP 비용의 절반을 정신력으로(최대 정신력의 80%까지), 다른 카드가 빌린 키노 스킬은 정신력 비용의 두 배를 MP로 낸다.
+function getParadiseBorrowedCostSkill(user, stats, skill) {
+    if (!skill || !getParadiseBorrowedCard(user, skill.name)) return skill;
+    if (stats.kino && skill.mental_cost == null) return { ...skill, mental_cost: Math.min(Math.floor(Number(stats.mental || 100) * .8), Math.ceil(Number(skill.mp_cost || 0) / 2)) };
+    if (!stats.kino && skill.mental_cost != null && !Number(skill.mp_cost || 0)) return { ...skill, mp_cost: Number(skill.mental_cost) * 2 };
+    return skill;
+}
+// 천상 화면의 빌린 스킬 단추: 빌려 온 카드 이름과 내가 실제로 내는 비용.
+function getParadiseBorrowedSkillView(user, stats, skillName) {
+    const card = getParadiseBorrowedCard(user, skillName);
+    if (!card) return null;
+    const skill = getParadiseBorrowedCostSkill(user, stats, readJson(SKILLS_PATH, []).find(entry => entry && entry.name === skillName)), slots = calculateCardSlotEffects(user);
+    const mpCost = stats.kino ? randoCharacters.mentalCost(stats, skill) : Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slots.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0))));
+    return { sourceCard: card.name, mpCost, resourceLabel: stats.kino ? '정신력' : 'MP' };
+}
+
 function findUsableSkill(user, skillName) {
     return getMainCardSkills(user).find(data => data.skill.name == skillName);
 }
@@ -6042,7 +6070,8 @@ function getActiveDailyDungeonEffect(user, now) {
 
 function getFieldActionCooldownMs(user, now) {
     const base = getActiveDailyDungeonEffects(user, now).some(effect => effect.type == 'punch') ? 1000 : randomInt(2000, 3000);
-    return Math.max(500, base - ilionCards.actionReduction({ ilion: Number(user.main_card?.id) === ilionCards.CARD_ID }, user.field, now) - Number(calculateCardSlotEffects(user).actionCooldownFlat || 0) * 1000);
+    // 천상 결투 신청의 가속(10초) 동안에는 다 줄인 행동 쿨타임이 다시 절반이 된다.
+    return Math.round(Math.max(500, base - ilionCards.actionReduction({ ilion: Number(user.main_card?.id) === ilionCards.CARD_ID }, user.field, now) - Number(calculateCardSlotEffects(user).actionCooldownFlat || 0) * 1000 - paradisePrism.actionReduction(user)) * paradisePrism.actionMultiplier(user, now));
 }
 
 function setNextFieldActionAt(user) {
@@ -7804,6 +7833,7 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     if (!extra.dotAttack && !extra.summonAttack) received = paradiseRoutes.incoming(user, received);
     if (receivedHits > 0 && run.mode !== 'hell' && !extra.dotAttack && !extra.summonAttack) (run.battle.mechanics ||= {}).enemyActionAt = at;
     received = Math.round(received * paradise.incomingMultiplier(user, received) * (received > 0 ? paradiseMechanics.incomingMultiplier(user) : 1) * paradiseFeatures.incomingMultiplier(user, received));
+    received = Math.round(received * paradisePrism.incoming(user, received, extra, at));
     if (field.iktaeBot && field.iktaeBot.hp > 0 && at < Number(field.iktaeBot.expired_at || 0)) {
         const absorbed = Math.round(received * .30);
         received -= absorbed; field.iktaeBot.hp -= absorbed;
@@ -7817,11 +7847,13 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
     received = applyFieldShieldAbsorption(user, received, lines);
     extra.shieldAbsorbed = beforeShield - received;
     paradiseCharacters.onDamage(user, stats, beforeShield - received, received);
+    const prismThorns = !extra.dotAttack && !extra.summonAttack ? paradisePrism.thorns(user, stats, beforeShield) : 0;
     const beforeHp = Number(resources.hp);
-    resources.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - received), at), stats.hp);
+    resources.hp = paradise.survive(user, paradisePrism.rewind(user, stats, beforeHp, resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - received), at), at), stats.hp);
     const lostHp = Math.max(0, beforeHp - resources.hp);
     run.battle.comeback += lostHp / Math.max(1, stats.hp);
     paradise.onDamageTaken(user, lostHp);
+    paradisePrism.afterDamage(user, stats, at);
     paradiseRoutes.onDamage(user, stats, lostHp);
     const mechanicNotice = {};
     paradiseMechanics.onDamage(user, stats, beforeShield - received, lostHp, shieldBefore, mechanicNotice);
@@ -7840,6 +7872,13 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
         paradiseRoutes.afterHit(user, stats, routeNotice);
         if (routeNotice.notice) lines.push(routeNotice.notice);
     }
+    if (prismThorns > 0 && resources.hp > 0) {
+        if (enemy.mirror) enemy.hp = require('./pvp').corridorMirrorReflection(enemy.mirror, prismThorns, at);
+        else enemy.hp = Math.max(0, enemy.hp - prismThorns);
+        if (field.elite) field.elite.hp = enemy.hp;
+        extra.reflectedHits = [...(extra.reflectedHits || []), { damage: prismThorns, label: '가시 갑옷', fixed: true }];
+        lines.push('가시 갑옷 반사 ' + comma(prismThorns));
+    }
     applyDamageTakenSlotRecovery(user, stats.hp, received, slots, stats, lines);
     tryLowHpEquipmentEffects(user, stats.hp, lines);
     return received;
@@ -7850,32 +7889,60 @@ function advanceParadiseCombat(user, at = Date.now()) {
     if (!paradise.active(user) || run.mode === 'hell' || run.phase !== 'combat' || paradise.isTimedOut(user, at)) return false;
     if (run.enemy?.mirror) return advanceParadiseMirror(user, at);
     const enemy = run.enemy, field = user.field, resources = paradise.getResources(user);
-    // 시각을 저장하므로 새로고침하거나 공격해도 몬스터의 공격 주기가 밀리지 않는다.
-    const interval = paradise.enemyAttackInterval(enemy.kind);
-    field.nextEnemyAttackAt ||= Number(field.enteredAt || at) + interval;
     let changed = false;
+    const prismTick = paradisePrism.advance(user, at);
+    if (prismTick?.defeated) {
+        paradise.finish(user, 'defeated');
+        run.combatSequence = Number(run.combatSequence || 0) + 1;
+        run.combatEvents = [...(run.combatEvents || []), combatEffects.annotateEvent({ id: run.id + ':' + run.combatSequence, at, enemyId: enemy.id, actor: 'player', action: 'augment', effectTarget: 'actor',
+            hits: [], damage: 0, receivedHits: [], received: 0, targetHp: enemy.hp, defeated: true, triggeredEffectIds: paradisePrism.drainCues(user) })].slice(-12);
+        return true;
+    }
+    if (prismTick) changed = true;
+    // 시각을 저장하므로 새로고침하거나 공격해도 몬스터의 공격 주기가 밀리지 않는다.
+    const interval = paradise.enemyAttackInterval(enemy.kind) + paradisePrism.enemyIntervalBonus(user);
+    field.nextEnemyAttackAt ||= Number(field.enteredAt || at) + interval;
     while (field.nextEnemyAttackAt <= at && paradise.active(user) && run.phase === 'combat' && run.enemy === enemy) {
         const time = field.nextEnemyAttackAt;
-        field.nextEnemyAttackAt += interval;
+        // 결투 신청의 가속 동안에는 적의 공격 주기도 절반이다(그 공격의 시각으로 따진다).
+        field.nextEnemyAttackAt += Math.round(interval * paradisePrism.enemyIntervalMultiplier(user, time));
         const stats = calculateUserStats(user), slots = calculateCardSlotEffects(user), lines = [];
-        const avoided = Math.random() < Number(stats.avd || 0);
-        const hit = avoided ? null : calculateMonsterAttackHitResult(enemy, stats, slots, {});
+        // 읽어 낸 살의: 미리 계산해 보여 준 공격이 그대로 들어온다.
+        const planned = paradisePrism.takeForesight(user);
+        const avoided = planned ? !!planned.avoided : Math.random() < Number(stats.avd || 0);
+        const hit = avoided ? null : planned ? { finalDamage: planned.finalDamage, hitCount: planned.hitCount, criticalCount: planned.criticalCount } : calculateMonsterAttackHitResult(enemy, stats, slots, {});
         const incomingExtra = {};
         const received = receiveParadiseDamage(user, hit?.finalDamage || 0, hit?.hitCount || 0, stats, slots, lines, time, incomingExtra);
         if (avoided) lines.unshift('💨 공격을 회피했습니다.');
+        paradisePrism.afterEnemyAttack(user, { avoided, planned: !!planned }, () => {
+            const next = calculateUserStats(user), dodge = Math.random() < Number(next.avd || 0), roll = dodge ? null : calculateMonsterAttackHitResult(enemy, next, calculateCardSlotEffects(user), {});
+            return { avoided: dodge, finalDamage: Number(roll?.finalDamage || 0), hitCount: Number(roll?.hitCount || 0), criticalCount: Number(roll?.criticalCount || 0) };
+        });
         const defeated = resources.hp <= 0, cleared = enemy.hp <= 0 && !defeated;
-        run.combatSequence = Number(run.combatSequence || 0) + 1;
-        run.combatEvents = [...(run.combatEvents || []), combatEffects.annotateEvent({
-            id: run.id + ':' + run.combatSequence, at: time, enemyId: enemy.id, actor: 'enemy', action: 'basic',
-            hits: [], damage: 0, received, receivedHits: avoided ? [{ avoided: true, damage: 0 }] : [{ damage: received, critical: !!hit?.criticalCount }, ...(incomingExtra.shieldAbsorbed > 0 ? [{ damage: incomingExtra.shieldAbsorbed, type: 'absorbed' }] : [])],
-            targetHp: enemy.hp, defeated, cleared
-        })].slice(-12);
         run.combatLog = [...lines, ...(run.combatLog || [])].slice(0, 18);
         changed = true;
         if (defeated) paradise.finish(user, 'defeated');
         else if (cleared) paradise.victory(user);
+        run.combatSequence = Number(run.combatSequence || 0) + 1;
+        run.combatEvents = [...(run.combatEvents || []), combatEffects.annotateEvent({
+            id: run.id + ':' + run.combatSequence, at: time, enemyId: enemy.id, actor: 'enemy', action: 'basic',
+            hits: [], damage: 0, received, receivedHits: avoided ? [{ avoided: true, damage: 0 }] : [{ damage: received, critical: !!hit?.criticalCount }, ...(incomingExtra.shieldAbsorbed > 0 ? [{ damage: incomingExtra.shieldAbsorbed, type: 'absorbed' }] : [])],
+            ...(incomingExtra.reflectedHits ? { reflectedHits: incomingExtra.reflectedHits } : {}), triggeredEffectIds: paradisePrism.drainCues(user),
+            targetHp: enemy.hp, defeated, cleared, ...paradiseWaveInfo(run, enemy)
+        })].slice(-12);
+        // 움직일수록 깊게: 적이 행동할 때마다 출혈이 한 번 터진다.
+        const bleed = !defeated && !cleared ? paradisePrism.onEnemyAction(user) : 0;
+        if (bleed > 0) buildParadiseHuntResult(user, bleed, paradiseBleedExtra());
     }
     return changed;
+}
+
+// 처치한 적 다음에 같은 전투의 다음 적이 나왔으면 그 순번을 사건에 싣는다(2마리 전투의 '다음 적 2 / 2').
+function paradiseWaveInfo(run, enemy) {
+    return run.enemy !== enemy && run.phase === 'combat' && run.enemy?.wave ? { nextWave: run.enemy.wave.index, waveTotal: run.enemy.wave.total } : {};
+}
+function paradiseBleedExtra() {
+    return { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, isBotAutoAttack: true, paradiseDot: true, skillName: '행동성 출혈', attackElement: null };
 }
 
 function advanceParadiseMirror(user, at = Date.now()) {
@@ -7928,6 +7995,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     paradiseMechanics.prepareAttack(user, stats, extra);
     paradiseFeatures.call('prepareAttack', user, stats, extra);
     paradiseRoutes.prepareAttack(user, extra);
+    paradisePrism.prepareAttack(user, stats, extra);
     const attackExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     const hit = calculateAttackHitResult(raw, Math.max(0, Number(targetStats.def || 0) - Number(stats.atkDefReduce || 0)), Number(extra.pnt ?? stats.pnt ?? 0) + Number(extra.pntBonus || 0), stats, slots, attackExtra, getCombatStats(targetStats));
     const multiplier = paradise.attackMultiplier(user, extra);
@@ -7940,6 +8008,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     paradiseMechanics.modifyHit(user, stats, extra, hit);
     paradiseFeatures.call('modifyHit', user, stats, extra, hit);
     paradiseRoutes.modifyHit(user, stats, extra, hit);
+    paradisePrism.modifyHit(user, stats, extra, hit);
     // 증강이 부여한 적 보호막도 갈림길 기믹 유무와 관계없이 소모한다.
     if (!enemy.mirror && extra.routeShieldAbsorbed == null) {
         combatShields.expire(enemy, Date.now());
@@ -7969,12 +8038,14 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     randoCharacters.onHit(stats, field, hit.hitCount, extra, enemy.hp === 0 ? 1 : 0, Date.now());
     paradiseCharacters.afterHit(user, stats, extra, hit);
     paradiseMechanics.afterHit(user, stats, extra, hit);
+    paradisePrism.afterHit(user, stats, extra, hit);
     if (!defeatedByReflection) paradiseFeatures.call('afterHit', user, stats, extra, hit);
     if (run.effects.focus) run.focus = Math.min(.50, Number(run.focus || 0) + .05 * Number(hit.criticalCount || 0));
     const lines = ['⚔️ ' + enemy.name + '에게 ' + comma(hit.finalDamage) + ' 피해' + (hit.criticalCount ? ' · 치명타 ' + hit.criticalCount + '회' : '')];
     if (extra.notice) lines.push(extra.notice);
     if (extra.mpCost != null) lines.push((extra.resourceLabel || 'MP') + ' ' + comma(extra.mpCost) + ' 소모');
     const manual = !extra.summonAttack && !extra.dotAttack && !extra.isBotAutoAttack;
+    let playerCues = [], counterEvent = null, counterBleed = 0;
     if (manual) {
         applyAttackPotentialRecovery(user, stats, lines);
         if (extra.lifeStealFromPreMitigation) applyFlatSkillRecovery(user, stats.hp, raw * Number(extra.lifeStealFromPreMitigation), stats, lines);
@@ -7991,6 +8062,21 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
             received = receiveParadiseDamage(user, received, receivedHits, stats, slots, lines, Date.now(), incomingExtra);
             if (received > 0) presentationHits.push({ damage: received, critical: false });
             if (incomingExtra.shieldAbsorbed > 0) presentationHits.push({ damage: incomingExtra.shieldAbsorbed, type: 'absorbed' });
+        }
+        // 결투 신청(첫 일반 스킬)과 원펀치 룰(일반 공격): 그 직후 적이 즉시 반격한다. 반격은 플레이어 사건 다음의 적 사건으로 보인다.
+        const reply = paradisePrism.counter(user, extra);
+        if (reply) {
+            playerCues = paradisePrism.drainCues(user);
+            const replyStats = calculateUserStats(user), dodge = Math.random() < Number(replyStats.avd || 0);
+            const incoming = dodge ? null : calculateMonsterAttackHitResult(targetStats, replyStats, slots, { receivedDamageMul: reply.mul });
+            const replyExtra = { counter: true };
+            const received = receiveParadiseDamage(user, incoming?.finalDamage || 0, incoming?.hitCount || 0, replyStats, slots, lines, Date.now(), replyExtra);
+            if (dodge) lines.push('💨 반격을 회피했습니다.');
+            if (reply.resetTimer) field.nextEnemyAttackAt = Date.now() + Math.round((paradise.enemyAttackInterval(enemy.kind) + paradisePrism.enemyIntervalBonus(user)) * paradisePrism.enemyIntervalMultiplier(user));
+            paradisePrism.afterCounter(user);
+            counterEvent = { received, receivedHits: dodge ? [{ avoided: true, damage: 0 }] : [{ damage: received, critical: !!incoming?.criticalCount }, ...(replyExtra.shieldAbsorbed > 0 ? [{ damage: replyExtra.shieldAbsorbed, type: 'absorbed' }] : [])],
+                reflectedHits: replyExtra.reflectedHits, triggeredEffectIds: [...reply.cues, ...paradisePrism.drainCues(user)] };
+            if (enemy.hp > 0 && resources.hp > 0) counterBleed = paradisePrism.onEnemyAction(user);
         }
     }
     if (run.effects.noHealing) {
@@ -8023,17 +8109,25 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     run.combatSequence = Number(run.combatSequence || 0) + 1;
     const event = combatEffects.annotateEvent({
         id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId: enemy.id,
-        action: manual ? extra.isBasic ? 'basic' : 'skill' : 'tick', skillName: extra.skillName || null,
+        action: manual ? extra.isBasic && !extra.prismSkill ? 'basic' : 'skill' : 'tick', skillName: extra.skillName || null,
         uniqueCutscene: manual && !extra.isBasic && extra.skillName ? getUniqueAvatarCutscene(user, extra.skillName) : null,
         ...(extra.stoneCast ? { stoneBranch: extra.stoneBranch || 'shared' } : {}),
         dot: !!extra.paradiseDot || !!extra.dotAttack && !extra.isBotAutoAttack,
-        triggeredEffectIds: extra.triggeredEffectIds || [], effectElement: extra.attackElement || null,
+        triggeredEffectIds: [...(extra.triggeredEffectIds || []), ...playerCues, ...paradisePrism.drainCues(user)], effectElement: extra.attackElement || null,
         receivedEffectElement: enemy.element || null, hits, damage: hit.finalDamage,
         receivedHits: presentationHits, received: presentationHits.filter(detail => detail.type !== 'absorbed').reduce((sum, detail) => sum + detail.damage, 0),
         criticalCount: hit.criticalCount || 0, targetHp: enemy.hp,
-        cleared: enemy.hp <= 0 && !defeated, defeated
+        cleared: enemy.hp <= 0 && !defeated, defeated, ...paradiseWaveInfo(run, enemy)
     });
-    run.combatEvents = [...(run.combatEvents || []), event].slice(-12);
+    // 검무처럼 한 행동이 여러 번 때리면 사건을 모아 두었다가 한 번에 묶어 보낸다(extra.eventSink).
+    const record = item => { if (extra.eventSink) extra.eventSink.push(item); else run.combatEvents = [...(run.combatEvents || []), item].slice(-12); };
+    record(event);
+    if (counterEvent) {
+        run.combatSequence++;
+        record(combatEffects.annotateEvent({ id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId: enemy.id, actor: 'enemy', action: 'basic', counter: true,
+            hits: [], damage: 0, ...counterEvent, targetHp: enemy.hp, defeated, cleared: false }));
+    }
+    if (counterBleed > 0 && paradise.active(user) && run.phase === 'combat' && run.enemy === enemy) buildParadiseHuntResult(user, counterBleed, Object.assign(paradiseBleedExtra(), extra.eventSink ? { eventSink: extra.eventSink } : {}));
     return lines.join('\n');
 }
 
@@ -8155,8 +8249,8 @@ function useSkillInField(user, skillName, channel) {
     if (user.field.paradise) {
         const beforeHp = Number(resources.hp);
         const stone = paradiseStones.skill(user);
-        const gainedSkill = stone?.name === skillName ? stone : paradiseMechanics.skills(user).find(skill => skill.name === skillName);
-        const result = gainedSkill ? executeParadiseSkillInField(user, gainedSkill) : executeMainCardSkillInField(user, skillName);
+        const gainedSkill = stone?.name === skillName ? stone : paradiseMechanics.skills(user).find(skill => skill.name === skillName) || paradisePrism.skills(user).find(skill => skill.name === skillName);
+        const result = gainedSkill?.replay ? replayParadiseSkill(user, gainedSkill) : gainedSkill ? executeParadiseSkillInField(user, gainedSkill) : executeMainCardSkillInField(user, skillName);
         if (paradise.active(user) && user.paradise.effects.noHealing) {
             resources.hp = Math.min(resources.hp, beforeHp);
             if (user.field.paradiseMpCeiling != null) resources.mp = Math.min(resources.mp, user.field.paradiseMpCeiling);
@@ -8166,8 +8260,30 @@ function useSkillInField(user, skillName, channel) {
     return executeMainCardSkillInField(user, skillName);
 }
 
+// 리플레이: 마지막 일반 스킬을 자원 소모 없이 다시 쓴다. 다시 쓴 스킬의 원래 쿨타임은 그대로 둔다.
+function replayParadiseSkill(user, skill) {
+    const now = Date.now(), field = user.field, cooldowns = field.skillCooldowns ||= {};
+    if (now < Number(field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다.';
+    if (now < Number(cooldowns[skill.name] || 0)) return '❌ 스킬 쿨타임입니다.';
+    const target = paradisePrism.replayTarget(user);
+    if (!target) return '❌ 다시 쓸 일반 스킬이 없습니다.';
+    const run = user.paradise, battleState = run.battle.prism ||= {}, expedition = run.prism ||= {}, saved = cooldowns[target];
+    cooldowns[target] = 0; battleState.replayFree = target; expedition.replaying = true;
+    (run.prismCues ||= []).push('augment:replay');
+    const gained = paradisePrism.skills(user).find(entry => entry.name === target) || paradiseMechanics.skills(user).find(entry => entry.name === target);
+    let result;
+    try { result = gained ? executeParadiseSkillInField(user, gained) : executeMainCardSkillInField(user, target); }
+    finally { delete battleState.replayFree; delete expedition.replaying; }
+    cooldowns[target] = saved;
+    if (String(result).startsWith('❌')) { run.prismCues = (run.prismCues || []).filter(id => id !== 'augment:replay'); return result; }
+    cooldowns[skill.name] = Date.now() + skill.cooldown * getSkillCooldownRate(calculateUserStats(user)) * paradise.cooldownMultiplier(user);
+    return '리플레이, ' + target + '\n' + result;
+}
+
 function executeParadiseSkillInField(user, skill) {
+    if (skill.prism && skill.utility) { const outcome = paradisePrism.useUtility(user, skill); return outcome.error ? '❌ ' + outcome.error : outcome.message; }
     const now = Date.now(), resources = paradise.getResources(user), field = user.field;
+    if (skill.prism && paradisePrism.disabledReason(user, skill)) return '❌ ' + paradisePrism.disabledReason(user, skill);
     if (now < Number(field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다.';
     if (now < Number(field.skillCooldowns[skill.name] || 0)) return '❌ 스킬 쿨타임입니다.';
     if (skill.id === 'skillRupture' && !paradiseMechanics.dots(user).length) return '❌ 폭발시킬 지속 피해가 없습니다.';
@@ -8178,7 +8294,7 @@ function executeParadiseSkillInField(user, skill) {
     const stone = skill.id === 'stoneThrow';
     const synthetic = { name: skill.name, mp_cost: 0, cooltime: skill.cooldown, element: skill.element };
     const equipmentSkill = stone ? prepareTranscendSkillEffects(user, synthetic, stats) : null;
-    const payment = paradiseMechanics.payment(user, stats, stone ? 0 : Math.ceil(maxResource * skill.ratio), skill.name);
+    const payment = paradiseMechanics.payment(user, stats, skill.prism ? paradisePrism.skillCost(user, skill, stats) : stone ? 0 : Math.ceil(maxResource * skill.ratio), skill.name);
     if (stats.kino) {
         if (!randoCharacters.spendMental(stats, field, payment.cost, now)) return '❌ 정신력이 부족합니다.';
     } else {
@@ -8198,13 +8314,68 @@ function executeParadiseSkillInField(user, skill) {
     if (stone) paradiseCharacters.onSkill(user, synthetic, stats, extra);
     paradiseMechanics.onSkill(user, skill.name, stats, extra);
     paradiseFeatures.call('onSkill', user, skill.name, stats, extra);
-    const damage = stone ? paradiseStones.cast(user, stats, extra) : paradiseMechanics.activeSkill(user, skill, stats, extra);
+    const damage = stone ? paradiseStones.cast(user, stats, extra) : skill.prism ? paradisePrism.activeSkill(user, skill, stats, extra) : paradiseMechanics.activeSkill(user, skill, stats, extra);
     if (stone) commitFieldSkillCooldown(user, synthetic, stats, equipmentSkill, now);
     else {
         field.skillCooldowns[skill.name] = now + skill.cooldown * getSkillCooldownRate(stats) * paradise.cooldownMultiplier(user);
         paradiseFeatures.call('afterCooldown', user, skill.name);
     }
+    if (skill.prism && skill.id === 'swordDance') return swordDanceInField(user, context, extra);
     return applyFieldDamageAction(user, context, damage, extra, 'skill', synthetic);
+}
+
+// 검무: 공격력의 50%로 일반 공격 8번(고정). 한 타 한 타가 일반 공격이자 직접 공격이라 증강과 장비의 일반 공격 효과가 타마다 붙는다. 연격은 없다.
+// 화면에는 검무 한 번(그 사이의 모든 타격)과 그사이 적의 반격 한 번으로 묶어 보낸다. 적이 쓰러지거나 전투가 끝나면 남은 타는 멈춘다.
+function swordDanceInField(user, context, skillExtra) {
+    const run = user.paradise, sink = [], results = [], logBefore = run.combatLog || [];
+    const stats = calculateUserStats(user), slots = calculateCardSlotEffects(user);
+    const raw = Math.round(Number(stats.atk || 0) * .50 * (1 + Number(stats.afterBasic || 0) + Number(slots.basicDamageBonus || 0)));
+    const target = run.enemy?.name || '적';
+    for (let strike = 1; strike <= 8; strike++) {
+        if (!paradise.active(user) || run.phase !== 'combat' || !run.enemy || run.enemy.hp <= 0) break;
+        const enemy = run.enemy;
+        // 검무는 8회 고정이라 한 타는 늘 1회 타격이다(hitCount 1). 연격과 연격 수를 바꾸는 효과(한 칸씩 오르는 검무 등)는 붙지 않는다.
+        const extra = { skillName: '검무', danceStrike: strike, hitCount: 1, eventSink: sink, ...(strike === 1 ? { mpCost: skillExtra.mpCost, resourceLabel: skillExtra.resourceLabel } : {}) };
+        const result = applyFieldDamageAction(user, context, raw, extra, 'basic', null);
+        results.push(String(result || ''));
+        // 이 타 직후의 증강 지속 상태(정복자 중첩, 갑옷 균열, 꽃 등). 적을 쓰러뜨린 타는 다음 적의 상태라 넣지 않는다.
+        const hit = sink.findLast(item => item.actor !== 'enemy' && item.action === 'basic');
+        if (hit && !('danceAuras' in hit)) hit.danceAuras = run.enemy === enemy && !hit.cleared ? paradisePrism.view(user) : null;
+        if (String(result).startsWith('❌') || run.enemy !== enemy) break;
+    }
+    paradisePrism.afterAction(user);
+    const strikes = sink.filter(item => item.actor !== 'enemy' && item.action === 'basic'), replies = sink.filter(item => item.actor === 'enemy');
+    const rest = sink.filter(item => !strikes.includes(item) && !replies.includes(item)), merged = [];
+    const sum = (list, key) => list.reduce((total, item) => total + Number(item[key] || 0), 0), union = (list, key) => [...new Set(list.flatMap(item => item[key] || []))];
+    // 맞공격이 몇 번째 타 뒤에 왔는지(화면이 그 타에 맞춰 보인다).
+    const replyStrike = new Map(); let current = 0;
+    for (const item of sink) { if (strikes.includes(item)) current = strikes.indexOf(item) + 1; else if (replies.includes(item)) replyStrike.set(item, current); }
+    if (strikes.length) {
+        const last = strikes.at(-1), { effectIds, danceAuras, ...base } = last;
+        run.combatSequence = Number(run.combatSequence || 0) + 1;
+        merged.push(combatEffects.annotateEvent({ ...base, id: run.id + ':' + run.combatSequence, enemyId: strikes[0].enemyId, action: 'skill', skillName: '검무',
+            hits: strikes.flatMap((item, index) => (item.hits || []).map(({ effectIds: _, ...hit }) => ({ ...hit, strike: index + 1 }))),
+            damage: sum(strikes, 'damage'), criticalCount: sum(strikes, 'criticalCount'), triggeredEffectIds: union(strikes, 'triggeredEffectIds'),
+            receivedHits: strikes.flatMap(item => item.receivedHits || []), received: sum(strikes, 'received'),
+            // 타마다 터진 신호와 그 타 직후의 지속 상태. 화면은 strikeInterval(ms)마다 한 타씩 차례로 보인다.
+            strikeInterval: 100, strikes: strikes.map(item => ({ cues: item.triggeredEffectIds || [], auras: item.danceAuras ?? null })),
+            cleared: strikes.some(item => item.cleared), defeated: strikes.some(item => item.defeated) }));
+    }
+    if (replies.length) {
+        run.combatSequence = Number(run.combatSequence || 0) + 1;
+        const reflected = replies.flatMap(item => item.reflectedHits || []);
+        merged.push(combatEffects.annotateEvent({ id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId: replies[0].enemyId, actor: 'enemy', action: 'basic', counter: true, hits: [], damage: 0,
+            receivedHits: replies.flatMap(item => (item.receivedHits || []).map(({ effectIds: _, ...hit }) => ({ ...hit, strike: replyStrike.get(item) || 0 }))), received: sum(replies, 'received'),
+            ...(reflected.length ? { reflectedHits: reflected.map(({ effectIds: _, ...hit }) => hit) } : {}),
+            triggeredEffectIds: union(replies, 'triggeredEffectIds'), targetHp: replies.at(-1).targetHp, defeated: replies.some(item => item.defeated), cleared: false }));
+    }
+    run.combatEvents = [...(run.combatEvents || []), ...merged, ...rest].slice(-12);
+    if (!strikes.length) return results.find(text => text.startsWith('❌')) || '❌ 검무를 쓸 수 없습니다.';
+    const damage = sum(strikes, 'damage'), crits = sum(strikes, 'criticalCount');
+    const detail = [...new Set(results.flatMap(text => text.split('\n')).filter(line => line && !line.startsWith('⚔️ ') && !line.startsWith('❌')))];
+    const lines = ['⚔️ ' + target + '에게 검무 ' + strikes.length + '타, ' + comma(damage) + ' 피해' + (crits ? ' · 치명타 ' + crits + '회' : ''), ...detail];
+    run.combatLog = [...lines, ...logBefore].slice(0, 18);
+    return lines.join('\n');
 }
 
 function executeSelfDestructInField(user) {
@@ -8483,7 +8654,8 @@ function executeMainCardSkillInField(user, skillName) {
         ? { mpCostMul: 1, extra: {}, cooldownFlatReduction: 0, notices: [], state: JSON.parse(JSON.stringify(getEquipmentCombatState(user))) }
         : prepareTranscendSkillEffects(user, skillData.skill, stats);
     if (paradiseCharacters.freeSkill(user, skillData.skill.name)) equipmentSkill.noMp = true;
-    const originalMpCost = stats.kino ? randoCharacters.mentalCost(stats, skillData.skill) : equipmentSkill.noMp ? 0 : Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * Number(equipmentSkill.mpCostMul || 1) * ilionCards.mpMultiplier(stats, user.field, skillData.skill.name, now)));
+    const costSkill = getParadiseBorrowedCostSkill(user, stats, skillData.skill);
+    const originalMpCost = stats.kino ? randoCharacters.mentalCost(stats, costSkill) : equipmentSkill.noMp ? 0 : Math.max(0, Math.round(Number(costSkill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * Number(equipmentSkill.mpCostMul || 1) * ilionCards.mpMultiplier(stats, user.field, skillData.skill.name, now)));
     const mechanicPayment = paradiseMechanics.payment(user, stats, originalMpCost, skillData.skill.name), mpCost = mechanicPayment.cost;
     if (stats.kino) {
         if (user.field.kino.exhausted) return '❌ 정신력이 30까지 회복될 때까지 전투불능 상태입니다.';
@@ -17988,10 +18160,15 @@ module.exports = {
     getElementDamageMultiplier,
     getComboHitCount,
     getDamageAfterReducedDefense,
+    getTotalDefenseReductionRate,
     getDamageAfterDestinyDefense,
     applyCriticalDamage,
+    getParadiseBorrowedSkillView,
+    runFieldEquipmentDotTick,
     applyDamageVariance,
     calculateAttackHitResult,
+    calculateMonsterAttackHitResult,
+    getCombatStats,
     getSkillValue,
     getMainCardSkills,
     getUltimateSkills,

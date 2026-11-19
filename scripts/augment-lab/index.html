@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>증강 연출 실험실</title>
+<link rel="stylesheet" href="/lab/lab.css"></head><body>
+<header class="top">
+    <strong class="brand">증강 연출 실험실</strong>
+    <div class="seg" id="modes" role="tablist" aria-label="보기 방식"><button data-mode="gallery" class="on" role="tab">연출 보기</button><button data-mode="live" role="tab">실전</button></div>
+    <div class="spacer"></div>
+    <div class="seg" id="sizes" aria-label="화면 크기"><button data-size="desktop" class="on">데스크톱</button><button data-size="mobile">모바일</button></div>
+    <button id="tour">30종 차례로 보기</button>
+    <button id="errors" class="errors" hidden></button>
+    <span class="vol"><button id="mute">소리 켬</button><input id="volume" type="range" min="0" max="1" step="0.05" aria-label="음량"></span>
+</header>
+<div class="mobile-pick"><select id="mobilePick" aria-label="증강 고르기"></select></div>
+<main class="lab">
+    <aside class="list" aria-label="증강 목록">
+        <input id="search" type="search" placeholder="증강 이름이나 설명으로 찾기" autocomplete="off">
+        <div class="chips" id="filters"></div>
+        <ol id="augments"></ol>
+        <h3>새로 넣은 효과음</h3>
+        <ul class="sounds" id="newSounds"></ul>
+    </aside>
+    <section class="stage" id="stageBox">
+        <iframe id="stage" title="연출 무대" allow="autoplay"></iframe>
+        <iframe id="live" title="실전 천상 화면" allow="autoplay" hidden></iframe>
+        <div class="caption" id="caption" hidden></div>
+        <div class="loading" id="loading">무대를 준비하는 중</div>
+    </section>
+    <aside class="detail" id="detail" aria-live="polite"></aside>
+</main>
+<script src="/lab/lab.js"></script>
+<script src="/lab/demos/critical.js"></script>
+<script src="/lab/demos/basic.js"></script>
+<script src="/lab/demos/combo.js"></script>
+<script src="/lab/demos/dot-skill.js"></script>
+<script src="/lab/demos/defense.js"></script>
+<script>AugLab.start();</script>
+</body></html>

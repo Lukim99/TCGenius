@@ -9,6 +9,7 @@ const combatFx = require('../public/combat-fx');
 require('../public/combat-fx-kit');
 require('../public/combat-fx-scenes');
 require('../public/combat-fx-skills');
+require('../public/combat-fx-augments');
 
 // 이미지 자산은 git 밖(S3 동기화 폴더)에 있다. 다른 작업 사본에서는 RPG_UI_DIR로 그 폴더를 가리킨다.
 const UI_ROOT = process.env.RPG_UI_DIR || path.join(ROOT, 'DB', 'RPGenius', 'ui');
@@ -19,6 +20,8 @@ const imagePath = effectId => path.join(UI_ROOT, combatEffects.assetPath(effectI
 // 이펙트 그림마다 장면이 있어야 한다. 스킬, 소환수, 속성과 전투 공통 이펙트는 원형에 맡기지 않고 따로 연출한다.
 const effectIds = [];
 for (const [kind, dir] of Object.entries(combatEffects.DIRS)) {
+    // 천상 증강(augment)은 이펙트 그림 폴더가 없다. 장면은 combat_fx_augments.test.js가 본다.
+    if (kind === 'augment') continue;
     for (const file of fs.readdirSync(path.join(EFFECT_ROOT, dir))) {
         if (!file.endsWith('.png')) continue;
         const name = path.basename(file, '.png');
@@ -45,12 +48,14 @@ for (const effectId of effectIds) {
 }
 
 // 장면이 부르는 소리는 모두 파일로 있어야 하고, 쓰지 않는 파일은 남기지 않는다.
-const source = ['combat-fx-scenes.js', 'combat-fx-skills.js', 'combat-fx-kit.js'].map(file => fs.readFileSync(path.join(ROOT, 'public', file), 'utf8')).join(String.fromCharCode(10));
+const source = ['combat-fx-scenes.js', 'combat-fx-skills.js', 'combat-fx-kit.js', 'combat-fx-augments.js'].map(file => fs.readFileSync(path.join(ROOT, 'public', file), 'utf8')).join(String.fromCharCode(10));
 // 장면이 쓰는 절차 셰이더는 등록되어 있어야 한다.
 for (const match of source.matchAll(/S\.(field|trail|lens)\('([a-z:]+)'/g)) { const name = (match[1] === 'field' ? '' : match[1] + ':') + match[2]; assert.ok(combatFx.shaders().has(name), '셰이더 ' + name); }
 for (const match of source.matchAll(/shader: '([a-z:]+)'/g)) assert.ok(combatFx.shaders().has(match[1]), '셰이더 ' + match[1]);
 const sounds = new Set(combatFx.commonSounds);
 effectIds.forEach(effectId => (combatFx.resolve(effectId).sounds || []).forEach(name => sounds.add(name)));
+// 천상 증강의 장면(그림 파일이 없는 이펙트)이 미리 받는 소리.
+combatFx.augments.scenes.concat(combatFx.augments.skills.map(name => 'skill:' + name)).forEach(effectId => (combatFx.resolve(effectId).sounds || []).forEach(name => sounds.add(name)));
 for (const match of source.matchAll(/S\.(?:sfx|hit)\(\s*'([a-z_]+)'/g)) sounds.add(match[1]);
 for (const match of source.matchAll(/sound: '([a-z_]+)'/g)) sounds.add(match[1]);
 const files = new Set(fs.readdirSync(SOUND_ROOT).filter(name => name.endsWith('.mp3')).map(name => path.basename(name, '.mp3')));

@@ -11,7 +11,7 @@ function fixture({ advance = false, viewFailOnce = false, saveFailOnce = false, 
     const commits = [], routes = new Map();
     let tail = Promise.resolve();
     const corridor = {
-        active: () => true, advanceTime: () => false, rebalanceEnemy: () => false, normalizeAugmentOffer: () => false, normalizeRelicOffer: () => false,
+        active: () => true, forceReturnOutdated: () => false, advanceTime: () => false, rebalanceEnemy: () => false, normalizeAugmentOffer: () => false, normalizeRelicOffer: () => false,
         rerollAugment() { counts.mutations++; return { message: 'done' }; },
         view() {
             if (viewFailOnce) { viewFailOnce = false; throw Error('presentation failed'); }

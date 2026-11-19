@@ -49,28 +49,15 @@ assert.ok(client.includes('drawSheet(') && client.includes('animation.hitFrame')
 assert.ok(!client.includes('darkBarrage') && !server.includes('darkBarrage'), '제거한 5연격 모션과 이펙트를 로드하지 않습니다.');
 assert.ok(client.includes('effectCatalog.effectIdsFor') && client.includes("uiAsset('boss fight.mp3')"), '공용 전투 이펙트와 배경음악을 사용해야 합니다.');
 
-// Compare actual popup drawing with PVP at several ages and viewport sizes.
-// Only arena anchors differ; typography, scale, easing and opacity must match.
+// 수치는 PVP와 같은 공용 DamageNumbers로 그린다. 화면마다 다른 것은 기준점뿐이다.
 const pvpClient = read(path.join('public', 'pvp.js'));
-const popupMethod = source => source.slice(source.indexOf('        damageLayer(w,h){'), source.indexOf('        bannerLayer(w,h){'));
-function popupTrace(source, width, elapsed) {
-    const trace = [];
-    const hud = new Function('performance', 'clamp', 'sideX', 'reducedMotion', 'return ({' + popupMethod(source) + '});')(
-        { now: () => elapsed }, (n, a, b) => Math.max(a, Math.min(b, n)), () => .5, false
-    );
-    hud.ctx = {
-        save() {}, restore() {},
-        set globalAlpha(value) { trace.push(['alpha', value]); },
-        translate(...values) { trace.push(['translate', ...values]); },
-        scale(...values) { trace.push(['scale', ...values]); }
-    };
-    hud.text = (...values) => trace.push(['text', ...values]);
-    hud.damagePops = [{ start: 0, side: 'target', y: .6, text: '1,200', label: '치명타', sub: '정권', size: 46, color: '#ff5d4d' }];
-    hud.damageLayer(width, 844);
-    return { trace, remaining: hud.damagePops.length };
+for (const source of [client, pvpClient]) {
+    assert.ok(source.includes('DamageNumbers.create({reducedMotion})') && source.includes('damageLayer(w,h){this.pops.draw(this.ctx,w,h);}'), '월드보스와 PVP의 수치는 공용 DamageNumbers가 그려야 합니다.');
+    assert.ok(!source.includes('damagePops'), '화면마다 따로 그리던 수치 코드는 남기지 않습니다.');
 }
-for (const width of [390, 1280]) for (const elapsed of [0, 95, 250, 900, 950]) {
-    assert.deepStrictEqual(popupTrace(client, width, elapsed), popupTrace(pvpClient, width, elapsed), '월드보스 팝은 PVP와 같은 방식으로 그려야 합니다.');
+{
+    const page = server.slice(0, server.indexOf('<script src="/static/worldboss.js">'));
+    assert.ok(page.lastIndexOf('/static/damage-numbers.js') > page.lastIndexOf('<!doctype html>'), '월드보스 페이지는 worldboss.js보다 먼저 damage-numbers.js를 실어야 합니다.');
 }
 assert.ok(client.includes("presentHit(event,hit,'target',i),i*95") && client.includes("audio.play('crit',.82)"), '타격별 팝·이펙트·효과음은 PVP의 95ms 타이밍을 사용합니다.');
 

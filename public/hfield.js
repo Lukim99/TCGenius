@@ -13,6 +13,12 @@
     const dailyMode = window.FIELD_MODE === 'daily';
     const trainingMode = window.FIELD_MODE === 'training';
     const regularMode = window.FIELD_MODE === 'regular' || dailyMode || trainingMode || embedded;
+    // 천상의 2마리 전투에서 첫 적이 쓰러지는 시간과 다음 적이 등장하는 시간(ms).
+    const WAVE_FALL = 480, WAVE_ENTER = 420;
+    // 쓰러지는 시간: 0 다음 적이 남은 처치, 1 전투의 마지막 적, 2 혼자 싸우는 큰 적(엘리트, 보스, 심판자 등)의 마지막. 마지막 적은 한 박자 멎었다가 빛으로 부서진다.
+    const FALL_MS = [WAVE_FALL, 760, 1000], FALL_BEAT = [.28, .26, .3], GRAND_KINDS = ['elite', 'boss', 'judge', 'mirror', 'moonDuel', 'rift', 'final'];
+    // 그때의 효과음은 증강 장면집의 표(CombatFX.augments.wave)에서 고른다. 소리를 바꿀 때는 그 표만 바꾼다.
+    const waveSfx = () => window.CombatFX && window.CombatFX.augments && window.CombatFX.augments.wave || {};
     const apiBase = trainingMode ? '/api/training' : dailyMode ? '/api/daily-dungeon' : regularMode ? '/api/field' : '/api/hfield';
     const ASSETS = {
         background: uiAsset(regularMode ? '필드/뉴비즈.png' : '필드/부타게임H.png'),
@@ -256,12 +262,106 @@
             if (!this.fx) return;
             const inField = !!(next && next.inField);
             combatFx.companions(this.fx, 'me', inField && next.player && next.player.summons || [], { src: this.playerEffectPoint('actor'), dst: this.fxTarget || this.targetEffectPoint(next || {}, null, false) });
+            // 천상 증강의 지속 상태(중첩, 소환수, 계절, 표식)를 곁에 그린다. 매 프레임 불리므로 바뀐 것이 없으면 바로 돌아온다.
+            // 타마다 상태가 실려 온 사건(검무)은 춤이 끝날 때까지 그 타까지의 상태를 보인다.
+            if (this.auraHold && performance.now() >= this.auraHold.until) this.auraHold = null;
+            if (embedded && combatFx.augmentAuras) combatFx.augmentAuras(this.fx, inField && (this.auraHold ? this.auraHold.auras : next.augmentAuras) || null, this.augmentView || (this.augmentView = { clock: () => Date.now() + clockOffset, fig: () => this.augmentFigures() }));
             const names = inField ? (next.skills || []).map(skill => skill.name).join('|') : '';
             if (!names || names === this.fxSkills) return;
             this.fxSkills = names;
             const ids = ['combat:기본 공격', 'combat:치명타', 'combat:HP 회복', 'combat:MP 회복'];
             (next.skills || []).forEach(skill => ids.push(...effectCatalog.skillEffects(skill.name)));
-            this.fx.preload(ids, combatFx.commonSounds);
+            this.fx.preload(ids, embedded ? combatFx.commonSounds.concat(Object.values(waveSfx())) : combatFx.commonSounds);
+        }
+        // 천상 전투 화면에서 플레이어와 적의 몸이 차지하는 범위(화면 비율). 증강 연출이 머리 위, 발밑 같은 자리를 여기서 잡는다.
+        augmentFigures() {
+            const narrow = innerWidth < 700, me = this.fit('player', narrow ? .47 : .68, narrow ? .48 : .36), foe = this.paradiseTargetLayout(this.holdState || this.state || {});
+            return { me: { x: narrow ? .24 : .25, top: .90 - me.height, bottom: .90, w: me.width }, foe: { x: foe.x, top: foe.bottom - foe.height, bottom: foe.bottom, w: foe.width } };
+        }
+        // 한 사건의 증강 장면은 한 번만 재생한다(타수마다 같은 신호가 다시 실려 오기 때문이다).
+        freshAugments(effectIds, event) {
+            const ids = effectIds || [];
+            if (!embedded || !event || event.id == null || !ids.some(id => String(id).startsWith('augment:'))) return ids;
+            const played = this.augmentPlayed || (this.augmentPlayed = new Map());
+            if (!played.has(event.id)) { if (played.size > 16) played.delete(played.keys().next().value); played.set(event.id, new Set()); }
+            const seen = played.get(event.id);
+            return ids.filter(id => { if (!String(id).startsWith('augment:')) return true; if (seen.has(id)) return false; seen.add(id); return true; });
+        }
+        // 다른 연출에 실리지 못한 증강 신호(피해 없는 사건, 막아 낸 공격)를 재생한다.
+        augmentRest(x, y, event, role) {
+            if (!embedded || !this.fx || !event) return null;
+            const ids = (event.triggeredEffectIds || []).filter(id => String(id).startsWith('augment:'));
+            return ids.length ? this.playFx(x, y, ids, { role, event }) : null;
+        }
+        // 공격이 없는 순간의 증강 신호(action: 'augment'). 돌진도 수치도 없이 장면만 낸다.
+        augmentCue(event, previous) {
+            const actor = event.effectTarget === 'actor', point = actor ? this.playerEffectPoint('actor') : this.targetEffectPoint(previous, event, false);
+            if (!actor) this.fxTarget = point;
+            return this.augmentRest(point.x, point.y, event, actor ? 'actor' : 'target');
+        }
+        // 타마다 신호가 실려 온 사건에서 사건 전체에 묶인 증강 신호를 덜어 낸다. 증강 장면은 stageStrikes가 타마다 낸다.
+        withoutAugments(event) {
+            const plain = ids => Array.isArray(ids) ? ids.filter(id => !String(id).startsWith('augment:')) : ids;
+            return Object.assign({}, event, { triggeredEffectIds: [], effectIds: plain(event.effectIds), hits: (event.hits || []).map(hit => hit && hit.effectIds ? Object.assign({}, hit, { effectIds: plain(hit.effectIds) }) : hit) });
+        }
+        // 타(strike)마다 그 타의 증강 장면과 지속 상태를 그 타가 닿는 시각에 낸다. 장면은 자기 타격점이 그 시각에 오도록 앞당겨 시작하고,
+        // 0.1초 간격으로 겹치므로 모두 가벼운 곁장면(minor)으로 낸다. 춤이 끝나면 지속 상태 표시는 평소 상태로 돌아간다.
+        stageStrikes(event, previous, strikeAt, point) {
+            const strikes = event.strikes;
+            this.auraHold = { until: performance.now() + strikeAt(strikes.length) + 160, auras: previous && previous.augmentAuras || null };
+            strikes.forEach((strike, index) => {
+                const at = strikeAt(index + 1);
+                (strike && strike.cues || []).filter(id => String(id).startsWith('augment:')).forEach(id => {
+                    const own = combatFx && combatFx.resolve && combatFx.resolve(id);
+                    this.later(() => this.playFx(point.x, point.y, [id], { role: 'target', event, strike: true }), Math.max(0, at - (own && own.impact || 0) * 1000));
+                });
+                if (strike && strike.auras) this.later(() => { if (this.auraHold) this.auraHold.auras = strike.auras; }, at);
+            });
+        }
+        // 천상의 2마리 전투: 쓰러진 적은 흰 빛으로 번져 위로 흩어지고, 다음 적은 그 빛 속에서 걸어 나온다.
+        waveShift(soft) { this.fallAt = 0; this.fallKind = 0; this.fallBurst = false; this.fallBroke = false; this.auraHold = null; this.enterWait = !!soft; this.enterAt = 0; }
+        waveSound(key, options) { const name = waveSfx()[key]; if (name && this.fx && this.fx.sound) this.fx.sound(name, options); }
+        enemyStage(time, fit, texture) {
+            const out = this.stageOut || (this.stageOut = {});
+            out.x = 0; out.sx = 1; out.sy = 1; out.alpha = 1; out.flash = 0; out.rot = 0;
+            if (this.fallAt && time >= this.fallAt) {
+                const kind = this.fallKind || 0, beat = FALL_BEAT[kind], p = clamp((time - this.fallAt) / FALL_MS[kind], 0, 1), reel = Math.sin(Math.min(1, p / beat) * Math.PI / 2), rise = clamp((p - beat) / (1 - beat), 0, 1);
+                if (!this.fallBurst) {
+                    this.fallBurst = true;
+                    this.waveSound('fall', { vol: .5, rate: 1.15 });
+                    const top = fit.bottom - fit.height;
+                    for (let i = 0; i < (reducedMotion ? 6 : kind ? 12 : 28); i++) { const s = .008 + Math.random() * .014; this.particle({ x: fit.x + (Math.random() - .5) * fit.width * .7, y: top + (.1 + Math.random() * .85) * fit.height, vx: (Math.random() - .5) * .04, vy: -.07 - Math.random() * .2, life: .45 + Math.random() * .5, maxLife: .95, width: s, height: s, gravity: -.08, color: i % 3 ? [1, .93, .74, .85] : [.76, .88, 1, .85], mode: 1, delay: .12 + Math.random() * .3 }); }
+                    this.particle({ x: fit.x, y: fit.bottom - .012, life: .55, maxLife: .55, width: fit.width * .8, height: .05, grow: .7, gravity: 0, color: [1, .9, .64, .5], mode: 4, delay: .1 });
+                }
+                // 마지막 적: 멎은 한 박자가 지나면 흰 윤곽이 터지듯 부풀며 빛기둥과 빛조각으로 부서진다. 큰 적일수록 크게.
+                if (kind && p >= beat && !this.fallBroke) {
+                    this.fallBroke = true;
+                    this.waveSound('end', { vol: kind > 1 ? .75 : .6 }); if (kind > 1) this.waveSound('endGrand', { vol: .5, rate: .85 });
+                    const cy = fit.bottom - fit.height * .5;
+                    this.particle({ x: fit.x, y: cy - fit.height * .1, life: .5, maxLife: .5, width: fit.width * (kind > 1 ? .5 : .36), height: fit.height * (kind > 1 ? 2 : 1.5), grow: .25, gravity: 0, color: [1, .95, .8, .75], mode: 5 });
+                    for (let i = 0; i < kind; i++) this.particle({ x: fit.x, y: fit.bottom - .012, life: .6, maxLife: .6, width: fit.width * (.9 + i * .5), height: .055 + i * .03, grow: 1 + i * .5, gravity: 0, color: i ? [.76, .88, 1, .5] : [1, .9, .64, .6], mode: 4, delay: i * .1 });
+                    if (!reducedMotion) for (let i = 0; i < (kind > 1 ? 48 : 30); i++) { const a = Math.random() * Math.PI * 2, v = .08 + Math.random() * (kind > 1 ? .34 : .24), streak = i % 4 === 0, s = .007 + Math.random() * .013; this.particle({ x: fit.x + Math.cos(a) * fit.width * .18, y: cy + Math.sin(a) * fit.height * .28, vx: Math.cos(a) * v, vy: Math.sin(a) * v - .1, life: .5 + Math.random() * .6, maxLife: 1.1, width: streak ? .04 + Math.random() * .04 : s, height: streak ? .004 : s, rotation: streak ? a : 0, gravity: -.06, color: i % 3 ? [1, .93, .74, .9] : [.76, .88, 1, .9], mode: streak ? 2 : 1 }); }
+                }
+                out.flash = clamp(p / .1, 0, 1) * (kind ? 1 : .9); out.alpha = kind ? (1 - rise) * (1 - rise) : 1 - rise * rise;
+                if (!reducedMotion) {
+                    if (kind) { out.x = p < beat ? Math.sin(time * .11) * .004 * reel : 0; out.sy = 1 + rise * (.16 + kind * .06); out.sx = 1 + rise * (.05 + kind * .05); }
+                    else { out.x = .014 * reel; out.rot = -.045 * reel; out.sy = 1 + rise * .13; out.sx = 1 - rise * .2; }
+                }
+            } else if (this.enterWait) {
+                // 다음 적의 그림이 준비된 순간부터 등장한다.
+                if (texture && (texture.ready || texture.failed)) { this.enterWait = false; this.enterAt = time; this.enterDust = false; this.enterLanded = false; this.waveSound('arrive', { vol: .45, rate: 1.1 }); } else out.alpha = 0;
+            }
+            if (this.enterAt) {
+                const p = clamp((time - this.enterAt) / WAVE_ENTER, 0, 1), ease = 1 - Math.pow(1 - p, 3), land = Math.sin(clamp((p - .5) / .5, 0, 1) * Math.PI);
+                if (p >= 1) this.enterAt = 0;
+                out.alpha = clamp(p * 2.6, 0, 1); out.flash = (1 - p) * (1 - p) * .85;
+                if (p > .5 && !this.enterLanded) { this.enterLanded = true; this.waveSound('land', { vol: .6 }); }
+                if (!reducedMotion) {
+                    out.x = (1 - ease) * .12; out.sy = 1 - land * .05; out.sx = 1 + land * .035;
+                    if (p > .5 && !this.enterDust) { this.enterDust = true; for (let i = 0; i < 10; i++) { const s = .012 + Math.random() * .016, dir = i % 2 ? 1 : -1; this.particle({ x: fit.x + dir * fit.width * (.12 + Math.random() * .25), y: fit.bottom - .012, vx: dir * (.04 + Math.random() * .09), vy: -.02 - Math.random() * .04, life: .4 + Math.random() * .25, maxLife: .65, width: s, height: s * .7, grow: 1.4, gravity: 0, color: [.86, .8, .68, .3], mode: 1 }); } }
+                }
+            }
+            return out;
         }
         // 장면이 시전자와 대상에게 시키는 몸짓(돌진, 넉백, 번쩍임)을 읽는다. 장면이 없으면 제자리다.
         poseOf(tag) {
@@ -281,7 +381,9 @@
             // 발밑 위치: 플레이어는 몸 중심에서 .19, 보스와 엘리트는 .28, 잡몹은 .2만큼 아래다(화면 단위).
             const display = this.holdState || this.state || {}, foeHalf = regularMode && display.phase === 'normal' ? .2 : .28, toFoe = dst === foe || role === 'target' && !onPlayer;
             const mine = role === 'actor' ? onPlayer : !onPlayer;
-            return this.fx.play(effectIds, { role, src, dst, srcHalf: toFoe ? .19 : foeHalf, dstHalf: toFoe ? foeHalf : .19, scale: toFoe && foeHalf === .2 ? .72 : 1, event: opts.event, hit: opts.hit, after: this.fxAfter, tags: mine ? { a: 'me', t: 'foe' } : { a: 'foe', t: 'me' } });
+            if (!opts.strike) effectIds = this.freshAugments(effectIds, opts.event);
+            const augments = embedded ? effectIds.filter(id => String(id).startsWith('augment:')).length : 0;
+            return this.fx.play(effectIds, { limit: augments ? 3 + Math.min(3, augments) : undefined, role, src, dst, srcHalf: toFoe ? .19 : foeHalf, dstHalf: toFoe ? foeHalf : .19, scale: toFoe && foeHalf === .2 ? .72 : 1, event: opts.event, hit: opts.hit, minor: !!opts.strike, cool: opts.strike ? 0 : undefined, after: this.fxAfter, tags: mine ? { a: 'me', t: 'foe' } : { a: 'foe', t: 'me' } });
         }
         hitWindow(time) { return time >= (this.targetHitFrom || 0) && time < this.targetHitUntil; }
         previewField(field) {
@@ -671,6 +773,7 @@
                 const at = index => times && index < times.length ? times[index] : (times ? times[times.length - 1] : lead) + (index - (times ? times.length - 1 : 0)) * 95;
                 hits.slice(1).forEach((hit, index) => this.later(() => this.receiveHit(hit, event), at(index + 1)));
             } else if (event.action === 'skill' && audience !== 'actor') note(this.castEffect(target.x, target.y, event, 'target'));
+            note(this.augmentRest(target.x, target.y, event, 'target'));
             this.fxAfter = 0;
             if (this.fx && event.action === 'skill') this.castUntil = now + cast;
             return { delay: lead, cast };
@@ -678,6 +781,9 @@
         animate(event, previous) {
             // 궁극기는 컷씬이 먼저 나오고, 컷씬이 접힌 뒤에 이 사건의 장면을 시작한다.
             const cut = ultimateCutscene?.play(event, previous?.player?.cardName || this.state?.player?.cardName) || 0;
+            // 타마다 신호와 상태가 실려 온 사건(검무): 증강 장면은 사건 전체가 아니라 그 타의 시각에 낸다.
+            const dance = embedded && Array.isArray(event.strikes) && event.strikes.length ? event : null;
+            if (dance) event = this.withoutAugments(event);
             this.fxAfter = this.fx && cut > 0 ? Math.max(0, cut - 70) : 0;
             const now = performance.now();
             const flight = embedded && event.skillName === '돌 던지기' && !reducedMotion ? 280 : 0;
@@ -690,7 +796,11 @@
             let lead = 0, sound = false, cast = 0, hitTimes = null;
             const note = played => { if (played) { lead = Math.max(lead, played.delay); sound = sound || played.sound; cast = Math.max(cast, played.cast || 0); if (played.hits) hitTimes = played.hits; } };
             // 타수마다 수치와 피격 반응을 낼 시각(ms). 여러 번 때리는 장면은 장면이 정한 시각을 따르고, 그 밖의 줄은 타격 뒤에 잇따른다.
-            const hitAt = index => !index || !hitTimes ? lead + index * 95 : index < hitTimes.length ? hitTimes[index] : hitTimes[hitTimes.length - 1] + (index - hitTimes.length + 1) * 95;
+            // 타가 나뉜 사건은 타(strike)의 시각을 따른다: 장면이 정한 시각이 있으면 그것, 없으면 서버가 알려 준 간격이다. 한 타에 딸린 추가 타격은 바로 뒤에 붙는다.
+            const strikeAt = k => hitTimes && hitTimes[k - 1] != null ? hitTimes[k - 1] : lead + (k - 1) * (Number(dance.strikeInterval) || 100);
+            const strikeOf = index => Number(outgoingHits[index] && outgoingHits[index].strike) || 1;
+            const hitAt = dance ? index => strikeAt(strikeOf(index)) + outgoingHits.slice(0, index).filter(hit => (Number(hit.strike) || 1) === strikeOf(index)).length * 45
+                : index => !index || !hitTimes ? lead + index * 95 : index < hitTimes.length ? hitTimes[index] : hitTimes[hitTimes.length - 1] + (index - hitTimes.length + 1) * 95;
             const strikes = event.damage > 0 || outgoingHits.length > 0 || Number(event.killedCount || 0) > 0, aims = event.action === 'skill' && (skillAudience === 'target' || skillAudience === 'both');
             const target = strikes || aims ? this.targetEffectPoint(previous, event, true) : null;
             if (target) this.fxTarget = target;
@@ -711,6 +821,7 @@
                     this.later(() => this.tickHit(previous, Object.assign({},event,{hits:[presentationHit],damage:hit.damage,killedCount:0,eliteEncountered:false,eliteDefeated:false})), flight + hitAt(index + 1));
                 });
             } else if (aims) note(this.castEffect(target.x,target.y,event,'target'));
+            if (dance) this.stageStrikes(dance, previous, strikeAt, target || this.targetEffectPoint(previous, event, false));
             if (regularMode) {
                 if (event.eliteEncountered) this.startEliteIntro(event.killedCount);
                 else if (event.eliteDefeated) this.startMobReturn();
@@ -725,10 +836,13 @@
                 for(let i=0;i<18;i++) this.particle({x:pillar.x,y:pillar.y,vx:(Math.random()-.5)*.28,vy:-.1-Math.random()*.2,life:.7+Math.random()*.6,maxLife:1.3,width:.008+Math.random()*.018,height:.012+Math.random()*.025,spin:(Math.random()-.5)*8,color:[.32,.15,.09,1],mode:3});
             }
             if (event.cleared && previous) { this.holdState = JSON.parse(JSON.stringify(previous)); if (!regularMode && this.holdState.target) this.holdState.target.pillars = [false, false]; }
+            if (embedded) { const point = this.fxTarget || this.targetEffectPoint(previous, event, false); this.augmentRest(point.x, point.y, event, 'target'); }
             this.fxAfter = 0;
             // 장면이 시전자를 직접 움직이는 스킬은 기본 돌진을 쉬게 한다. 기본 돌진은 타격 순간에 닿도록 늦춘다.
+            // 적이 도중에 쓰러져 타가 줄면 춤도 그만큼 일찍 끝난다.
+            if (dance && cast) cast = Math.min(cast, strikeAt(dance.strikes.length) + 430);
             if (this.fx && event.action === 'skill') this.castUntil = now + cast; else if (lead > 150) this.attackAt = now + lead - 150;
-            return { delay: lead, sound: !!this.fx && sound, cut: !!this.fx && cut > 0, cast: event.action === 'skill' ? cast : 0, times: outgoingHits.map((hit, index) => hitAt(index)), receivedAt: receivedDelay };
+            return { delay: lead, sound: !!this.fx && sound, cut: !!this.fx && cut > 0, cast: event.action === 'skill' ? cast : 0, times: outgoingHits.map((hit, index) => hitAt(index)), receivedAt: receivedDelay, strikeTimes: dance ? dance.strikes.map((strike, index) => strikeAt(index + 1)) : null };
         }
         timeBurst(type) {
             const colors = { fever: [1,.25,.04,1], punch: [.1,.8,1,1], hit: [1,.75,.15,1], lucky: [.25,1,.45,1] };
@@ -758,8 +872,8 @@
                 if (embedded) {
                     const enemyProgress=clamp((time-(this.enemyAttackAt??-10000))/(this.enemyAttackKind==='skill'?620:430),0,1);
                     const enemyLunge=reducedMotion||this.enemyAttackKind==='buff'?0:Math.sin(enemyProgress*Math.PI)*.12;
-                    const target=display.target||{},sprite=target.sprite,fit=this.paradiseTargetLayout(display),hit=time<this.targetHitUntil,x=fit.x-(pf.on||time<this.castUntil?0:enemyLunge)+pf.x+(hit&&!reducedMotion?Math.sin(time*.12)*.006:0);
-                    const opts={flash:Math.max(hit?.65:0,pf.flash*.85),color:[1,1,1,pf.alpha],rotation:pf.rot,uv:['mirror','moonDuel'].includes(target.kind)?[1,0,-1,1]:[0,0,1,1]},fy=fit.bottom-fit.height*pf.sy/2+pf.y,fw=fit.width*pf.sx,fh=fit.height*pf.sy;
+                    const target=display.target||{},sprite=target.sprite,fit=this.paradiseTargetLayout(display),hit=this.hitWindow(time),es=this.enemyStage(time,fit,typeof sprite==='string'?this.textures.dummy:this.textures.monsterAtlas),x=es.x+fit.x-(pf.on||time<this.castUntil?0:enemyLunge)+pf.x+(hit&&!reducedMotion?Math.sin(time*.12)*.006:0);
+                    const opts={flash:Math.max(hit?(this.fx?.42:.65):0,pf.flash*.85,es.flash),color:[1,1,1,pf.alpha*es.alpha],rotation:pf.rot+es.rot,uv:['mirror','moonDuel'].includes(target.kind)?[1,0,-1,1]:[0,0,1,1]},fy=fit.bottom-fit.height*pf.sy*es.sy/2+pf.y,fw=fit.width*pf.sx*es.sx,fh=fit.height*pf.sy*es.sy;
                     if(typeof sprite==='string')this.draw(this.textures.dummy,x,fy,fw,fh,opts);
                     else if(sprite)this.draw(this.textures.monsterAtlas,x,fy,fw,fh,{...opts,uv:this.monsterUv(sprite,sprite.column===1)});
                 } else if (trainingMode) {
@@ -791,7 +905,7 @@
 
     class Hud {
         constructor(canvas) {
-            this.canvas=canvas;this.ctx=canvas.getContext('2d');this.regions=[];this.images=new Map();this.flashUntil=0;this.flashDuration=1;this.shakeUntil=0;this.banner=null;this.bannerSub='';this.bannerUntil=0;this.damagePops=[];this.rewardStarted=0;this.bossLagHp=null;this.bossKey='';this.entryTransition=null;this.consumableMenu=false;this.consumablePage=0;this.fieldPage=0;if(!embedded)this.frame=requestAnimationFrame(()=>this.draw());
+            this.canvas=canvas;this.ctx=canvas.getContext('2d');this.regions=[];this.images=new Map();this.flashUntil=0;this.flashDuration=1;this.shakeUntil=0;this.banner=null;this.bannerSub='';this.bannerUntil=0;this.pops=DamageNumbers.create({reducedMotion});this.rewardStarted=0;this.bossLagHp=null;this.bossKey='';this.entryTransition=null;this.consumableMenu=false;this.consumablePage=0;this.fieldPage=0;if(!embedded)this.frame=requestAnimationFrame(()=>this.draw());
             canvas.addEventListener('pointerdown',event=>{audio.unlock();this.pointer={x:event.clientX,y:event.clientY,id:event.pointerId};canvas.setPointerCapture(event.pointerId);});
             canvas.addEventListener('pointerup',event=>{if(!this.pointer||this.pointer.id!==event.pointerId)return;const hit=this.regions.slice().reverse().find(r=>event.clientX>=r.x&&event.clientX<=r.x+r.w&&event.clientY>=r.y&&event.clientY<=r.y+r.h);this.pointer=null;if(hit&&!busy)hit.action();});
             canvas.addEventListener('pointercancel',()=>{this.pointer=null;});
@@ -814,6 +928,8 @@
             c.fillStyle=g;c.fill();c.strokeStyle=disabled?'rgba(100,105,115,.48)':kind==='attack'?'rgba(255,170,155,.85)':kind==='gold'?'rgba(255,225,154,.9)':'rgba(232,176,75,.58)';c.lineWidth=1;c.stroke();
             if(!disabled)this.line(x+8,y+1,x+w*.55,y+1,kind==='attack'?'rgba(255,210,190,.72)':'rgba(232,176,75,.75)',2);
             if(o.key)this.text(o.key,x+7,y+9,8,800,'left',disabled?'#656a74':'#b9ad92');
+            // 다른 카드에서 빌려 온 스킬(천상 두 가지 정체성)은 그 카드 이름을 오른쪽 위에 작게 붙인다.
+            if(o.tag)this.text(o.tag,x+w-6,y+9,8,800,'right',disabled?'#6f6880':'#c9a8ff',w-22);
             const labelX=x+w*(Number(o.labelRatio)||.5),labelY=y+h*(Number(o.labelYRatio)||(o.sub?.42:.51)),labelSize=kind==='gold'?19:kind==='attack'?18:Math.min(13,Math.max(10,w*.16)),labelColor=disabled?'#747982':kind==='gold'?'#261704':'#f4f1e8';
             if(kind==='gold'||kind==='attack')this.gameText(o.label,labelX,labelY,labelSize,'center',labelColor,w-12);else this.text(o.label,labelX,labelY,labelSize,900,'center',labelColor,w-12);
             if(o.sub)this.text(o.sub,labelX,y+h*.72,9,700,'center',disabled?'#626771':kind==='gold'?'#3e290c':'#9da5b3',w-10);
@@ -836,15 +952,20 @@
             const target=held?Object.assign({},real,{hp:Math.max(Number(real.hp||0),this.targetHold.hp)}):real;
             if(this.bossKey!==key){this.bossKey=key;this.bossLagHp=Number(target.hp||0);}
             this.bossLagHp+=(Number(target.hp||0)-this.bossLagHp)*.055;
-            const meta=embedded?({normal:'',elite:'엘리트',boss:'보스',judge:'심판자',mirror:'거울',moonDuel:'월야섬',rift:'균열',final:'수문장'}[target.kind]||''):trainingMode?({normal:'일반',elite:'엘리트',boss:'보스'}[target.kind]+' · 방어력 '+number(target.def)):state.phase==='pillar'?'결계 기둥 '+(target.pillars||[]).filter(Boolean).length+' / 2':regularMode?'엘리트 몬스터':'';
+            const meta=embedded?[({normal:'',elite:'엘리트',boss:'보스',judge:'심판자',mirror:'거울',moonDuel:'월야섬',rift:'균열',final:'수문장'}[target.kind]||''),target.wave?target.wave.index+' / '+target.wave.total:''].filter(Boolean).join('  '):trainingMode?({normal:'일반',elite:'엘리트',boss:'보스'}[target.kind]+' · 방어력 '+number(target.def)):state.phase==='pillar'?'결계 기둥 '+(target.pillars||[]).filter(Boolean).length+' / 2':regularMode?'엘리트 몬스터':'';
+            // 천상의 다음 적: 이전 이름이 밀려 올라가며 새 이름으로 바뀌고, 체력 막대가 차오른다.
+            const swapAge=embedded&&this.waveSwap?(performance.now()-this.waveSwap.at)/WAVE_ENTER:1,swap=swapAge<1?1-Math.pow(1-clamp(swapAge,0,1),3):1;
+            if(swap<1){const c=this.ctx;c.save();c.globalAlpha=clamp(1-swapAge*2.6,0,1);this.text(this.waveSwap.name,w/2,y+9-swap*12,narrow?16:20,900,'center','#f7f2e8');c.globalAlpha=clamp(swapAge*2.2-.35,0,1);this.text(target.name||'엘리트',w/2,y+9+(1-swap)*12,narrow?16:20,900,'center','#f7f2e8');if(meta)this.text(meta,w/2,y+27,9,800,'center','#ffe3a0');c.restore();this.bossLagHp=Number(target.hp||0)*swap;}
+            else{
             this.text(target.name||'엘리트',w/2,y+9,narrow?16:20,900,'center','#f7f2e8');
             if(meta)this.text(meta,w/2,y+27,9,800,'center',regularMode?'#ff8b78':'#e8b04b');
-            const by=y+(meta?38:28),bh=narrow?15:19;
+            }
+            const by=y+(meta?38:28),bh=narrow?15:19;this.bossRect={x,y:by,w:bw,h:bh};
             const guard=effectCatalog.shieldAmount(target,Date.now()+clockOffset);
-            this.bar(x,by,bw,bh,target.hp,target.maxHp,'#b92d2d',this.bossLagHp,guard);
-            this.text(number(target.hp)+(guard>0?' +'+number(guard):'')+' / '+number(target.maxHp),w/2,by+bh/2,narrow?9:11,800,'center','#fff');
+            this.bar(x,by,bw,bh,target.hp*swap,target.maxHp,'#b92d2d',this.bossLagHp,guard);
+            this.text(number(swap<1?Math.round(target.hp*swap):target.hp)+(guard>0?' +'+number(guard):'')+' / '+number(target.maxHp),w/2,by+bh/2,narrow?9:11,800,'center','#fff');
         }
-        playerHud(w,h){if(!state||!state.inField)return;const mobile=w<650||h<520,landscape=h<520&&w>=650,pw=mobile?Math.min(238,w*.61):304,orderHeight=state.player.attackOrder?28:0,ph=(mobile?84:94)+orderHeight,x=landscape?w-pw-12:mobile?12:24,y=mobile?(embedded?156:72):h-178-orderHeight-(embedded?50:0);this.panel(x,y,pw,ph,'rgba(232,176,75,.58)');const portrait=this.image(state.player.cardImageUrl),ps=mobile?50:58,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX;this.ctx.save();this.cutPath(px,py,ps,ps,6);this.ctx.clip();if(portrait)this.ctx.drawImage(portrait,px,py,ps,ps);else{this.ctx.fillStyle='#11141b';this.ctx.fillRect(px,py,ps,ps);}this.ctx.restore();this.cutPath(px,py,ps,ps,6);this.ctx.strokeStyle='rgba(232,176,75,.72)';this.ctx.stroke();this.text(state.player.name,infoX,y+16,mobile?13:15,900,'left','#fff5df',infoW-40);this.text('Lv.'+number(state.player.level),infoRight,y+16,8,800,'right','#e8c784');const cardLabel=state.player.cardFormatted||[state.player.cardSkin,state.player.cardName].filter(Boolean).join(' ');this.text(cardLabel,infoX,y+34,mobile?8:10,700,'left','#aeb4bf',infoW);const hpTextY=y+(mobile?48:52),hpBarY=y+(mobile?54:59),mpTextY=y+(mobile?65:71),mpBarY=y+(mobile?71:78);const guard=window.CombatEffects.shieldAmount(state.player,Date.now()+clockOffset);this.text('HP',infoX,hpTextY,8,800,'left','#bbb1a0');this.text(number(state.player.hp)+(guard>0?' +'+number(guard):''),infoRight,hpTextY,8,800,'right','#e9e5dc');this.bar(infoX,hpBarY,infoW,6,state.player.hp,state.player.maxHp,'#b92d2d',null,guard);this.text(state.player.resourceLabel||'MP',infoX,mpTextY,8,800,'left','#bbb1a0');this.text(number(state.player.resource??state.player.mp),infoRight,mpTextY,8,800,'right','#e9e5dc');this.bar(infoX,mpBarY,infoW,6,state.player.resource??state.player.mp,state.player.maxResource??state.player.maxMp,state.player.resourceLabel?'#8b5cf6':'#147fc4');if(effectCatalog&&state.player.attackOrder)effectCatalog.drawAttackOrder(this,state.player.attackOrder,x+8,y+ph-25,pw-16);if(state.player.mode||state.player.incapacitated||state.player.berserk)this.text(state.player.mode?state.player.mode+' 모드':state.player.incapacitated?'전투불능 · 정신력 30 회복 대기':'폭주',x+8,y+ph+14,10,800,'left','#d8b4fe',pw-16);if(effectCatalog&&state.player.ilionDeck)effectCatalog.drawCardDeck(this,state.player.ilionDeck,state.player.ilionDeckLimit||2,x,mobile?y+ph+8:y-(29+Math.max(1,state.player.ilionDeck.length)*19)-8,pw,Date.now()+clockOffset);}
+        playerHud(w,h){if(!state||!state.inField)return;const mobile=w<650||h<520,landscape=h<520&&w>=650,pw=mobile?Math.min(238,w*.61):304,orderHeight=state.player.attackOrder?28:0,ph=(mobile?84:94)+orderHeight,x=landscape?w-pw-12:mobile?12:24,y=mobile?(embedded?156:72):h-178-orderHeight-(embedded?50:0);this.playerRect={x,y,w:pw,h:ph};this.panel(x,y,pw,ph,'rgba(232,176,75,.58)');const portrait=this.image(state.player.cardImageUrl),ps=mobile?50:58,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX;this.ctx.save();this.cutPath(px,py,ps,ps,6);this.ctx.clip();if(portrait)this.ctx.drawImage(portrait,px,py,ps,ps);else{this.ctx.fillStyle='#11141b';this.ctx.fillRect(px,py,ps,ps);}this.ctx.restore();this.cutPath(px,py,ps,ps,6);this.ctx.strokeStyle='rgba(232,176,75,.72)';this.ctx.stroke();this.text(state.player.name,infoX,y+16,mobile?13:15,900,'left','#fff5df',infoW-40);this.text('Lv.'+number(state.player.level),infoRight,y+16,8,800,'right','#e8c784');const cardLabel=state.player.cardFormatted||[state.player.cardSkin,state.player.cardName].filter(Boolean).join(' ');this.text(cardLabel,infoX,y+34,mobile?8:10,700,'left','#aeb4bf',infoW);const hpTextY=y+(mobile?48:52),hpBarY=y+(mobile?54:59),mpTextY=y+(mobile?65:71),mpBarY=y+(mobile?71:78);const guard=window.CombatEffects.shieldAmount(state.player,Date.now()+clockOffset);this.text('HP',infoX,hpTextY,8,800,'left','#bbb1a0');this.text(number(state.player.hp)+(guard>0?' +'+number(guard):''),infoRight,hpTextY,8,800,'right','#e9e5dc');this.bar(infoX,hpBarY,infoW,6,state.player.hp,state.player.maxHp,'#b92d2d',null,guard);this.text(state.player.resourceLabel||'MP',infoX,mpTextY,8,800,'left','#bbb1a0');this.text(number(state.player.resource??state.player.mp),infoRight,mpTextY,8,800,'right','#e9e5dc');this.bar(infoX,mpBarY,infoW,6,state.player.resource??state.player.mp,state.player.maxResource??state.player.maxMp,state.player.resourceLabel?'#8b5cf6':'#147fc4');if(effectCatalog&&state.player.attackOrder)effectCatalog.drawAttackOrder(this,state.player.attackOrder,x+8,y+ph-25,pw-16);if(state.player.mode||state.player.incapacitated||state.player.berserk)this.text(state.player.mode?state.player.mode+' 모드':state.player.incapacitated?'전투불능 · 정신력 30 회복 대기':'폭주',x+8,y+ph+14,10,800,'left','#d8b4fe',pw-16);if(effectCatalog&&state.player.ilionDeck)effectCatalog.drawCardDeck(this,state.player.ilionDeck,state.player.ilionDeckLimit||2,x,mobile?y+ph+8:y-(29+Math.max(1,state.player.ilionDeck.length)*19)-8,pw,Date.now()+clockOffset);}
         combatLog(w,h){if(!state||!state.inField||!logs.length)return;const narrow=w<650,lines=logs.slice(-4),x=narrow?12:26,base=h-(narrow?201:196)-(embedded?50:0)-(w>=650&&h>=520&&state.player.attackOrder?28:0)-(w>=650&&h>=520&&state.player.ilionDeck?37+Math.max(1,state.player.ilionDeck.length)*19:0),lineH=narrow?14:16;lines.forEach((entry,index)=>{const alpha=.42+(index+1)/lines.length*.58,col=entry.tone==='bad'?'224,101,92':entry.tone==='good'?'240,197,110':'220,224,230';this.text(entry.text,x,base-(lines.length-1-index)*lineH,narrow?9:10,entry.tone==='good'?800:650,'left','rgba('+col+','+alpha+')',Math.min(narrow?w-24:460,w*.48));});}
         actions(w,h){
             if(!state||!state.inField)return;
@@ -856,7 +977,7 @@
             skills.forEach((skill,index)=>{
                 const left=Math.max(actionLeft,(Number(skill.cooldownEnd||0)-now)/1000),mpLow=Number(state.player.resource??state.player.mp)<Number(skill.mpCost||0),disabled=busy||left>0||mpLow||state.player.incapacitated||!!skill.disabledReason;
                 const sub=skill.disabledReason?(skill.disabledReason.includes('봉인')?'봉인':skill.disabledReason):skill.hpCost?'HP '+number(skill.hpCost):Number(skill.mpCost||0)+' '+(skill.resourceLabel||state.player.resourceLabel||'MP');
-                this.actionButton(x+index*(sw+gap),y,sw,ah,{label:skill.name.slice(0,6),sub,key:String(index+1),disabled,cooldown:Math.max(0,left),action:()=>useSkill(skill.name)});
+                this.actionButton(x+index*(sw+gap),y,sw,ah,{label:skill.name.slice(0,6),sub,key:String(index+1),tag:skill.sourceCard||'',disabled,cooldown:Math.max(0,left),action:()=>useSkill(skill.name)});
             });
             const ax=x+usedW-attackW;
             this.actionButton(ax,y,attackW,ah,{label:'공격',sub:narrow?'J':'SPACE / J',key:'J',kind:'attack',disabled:busy||actionLeft>0||state.player.incapacitated||now<Number(state.player.basicUntil||0),cooldown:Math.max(actionLeft,(Number(state.player.basicUntil||0)-now)/1000),action:()=>attack()});
@@ -1002,15 +1123,20 @@
             const x=target?.x??(phase==='pillar'?(narrow?(pillarIndex?.78:.61):(pillarIndex?.81:.65)):regularMode&&phase==='normal'?.72:(narrow?.75:.74));
             const y=target?.y??(phase==='pillar'?(narrow?.58:.46):regularMode&&phase==='normal'?(narrow?.62:.42):(narrow?.56:.42));
             const hits=Array.isArray(event.hits)?event.hits.filter(hit=>Number(hit&&hit.damage||0)>0):[],receivedHits=Array.isArray(event.receivedHits)?event.receivedHits.filter(hit=>Number(hit&&hit.damage||0)>0):[],at=index=>times&&times[index]!=null?times[index]:index*95,receivedAt=now+(receivedAfter!=null?receivedAfter:Math.max(80,at(Math.max(0,hits.length-1))+175));
-            if(hits.length)hits.forEach((hit,index)=>this.damagePops.push({...effectCatalog.damageStyle(event,hit),damage:Number(hit.damage),critical:!!hit.critical,destiny:!!hit.destiny,skill:hit.label||(index===0?event.skillName||'':''),start:now+at(index),x,y,received:false}));
-            else if(Number(event.damage||0)>0)this.damagePops.push({...effectCatalog.damageStyle(event,{}),damage:Number(event.damage),critical:Number(event.criticalCount||0)>0,skill:event.skillName||'',start:now,x,y,received:false});
-            if(regularMode&&Number(event.killedCount||0)>0)this.damagePops.push({kills:Number(event.killedCount),start:now+Math.max(120,hits.length*95),x:regularMode&&phase==='normal'?.72:x,y:narrow?.68:.54});
+            // 타가 나뉜 사건(검무)은 수치가 한자리에 겹치지 않도록 타마다 한 줄씩 아래로 엇갈려 쌓고, 딸린 추가 타격(번개 등)은 같은 줄의 양옆으로 뺀다.
+            const spread=narrow?2.4:1,fan=embedded&&Array.isArray(event.strikes)?(hit,index)=>{const k=(Number(hit.strike)||1)-1;const row=y-.075+k*.03;return hit.label?{x:x+(index%2?.14:-.14)*(narrow?1.5:1),y:row}:{x:x+(k%2?.045:-.045)*spread,y:row};}:null;
+            // 수치의 모양과 움직임은 공용 DamageNumbers가 정한다. 여기서는 자리와 시각, 뜻만 넘긴다. ratio: 대상 최대 HP에 견준 크기, chain: 3타 이상일 때 합계를 세는 묶음.
+            const targetMax=Number(previous&&previous.target&&previous.target.maxHp||0),playerMax=Number(previous&&previous.player&&previous.player.maxHp||0),ratio=(damage,max)=>max>0?Number(damage)/max:null;
+            const summed=hits.filter(hit=>{const style=effectCatalog.damageStyle(event,hit);return !style.shield&&!style.dot;}).length,chain=summed>=3?{size:summed,x,y:fan?y-.075:y}:null;
+            if(hits.length)hits.forEach((hit,index)=>this.pops.add({...effectCatalog.damageStyle(event,hit),amount:Number(hit.damage),critical:!!hit.critical,destiny:!!hit.destiny,label:hit.label||(index===0?event.skillName||'':''),start:now+at(index),x,y,...(fan?fan(hit,index):null),ratio:ratio(hit.damage,targetMax),chain}));
+            else if(Number(event.damage||0)>0)this.pops.add({...effectCatalog.damageStyle(event,{}),amount:Number(event.damage),critical:Number(event.criticalCount||0)>0,label:event.skillName||'',start:now,x,y,ratio:ratio(event.damage,targetMax)});
+            if(regularMode&&Number(event.killedCount||0)>0)this.pops.add({kind:'kill',amount:Number(event.killedCount),start:now+Math.max(120,hits.length*95),x:regularMode&&phase==='normal'?.72:x,y:narrow?.68:.54});
             const receivedX=narrow?.24:.25,receivedY=embedded?renderer.playerEffectPoint('target').y:narrow?.68:.55;
-            if(receivedHits.length)receivedHits.forEach((hit,index)=>this.damagePops.push({...effectCatalog.damageStyle(event,hit),damage:Number(hit.damage),critical:!!hit.critical,destiny:!!hit.destiny,skill:hit.label||(event.actor==='enemy'&&index===0?event.skillName||'':''),start:receivedAt+index*95,x:receivedX,y:receivedY,received:true}));
-            else if(Number(event.received||0)>0)this.damagePops.push({...effectCatalog.damageStyle(event,{}),damage:Number(event.received),critical:false,start:receivedAt,x:receivedX,y:receivedY,received:true});
+            if(receivedHits.length)receivedHits.forEach((hit,index)=>this.pops.add({...effectCatalog.damageStyle(event,hit),amount:Number(hit.damage),critical:!!hit.critical,destiny:!!hit.destiny,label:hit.label||(event.actor==='enemy'&&index===0?event.skillName||'':''),start:receivedAt+index*95,x:receivedX,y:receivedY,received:true,ratio:ratio(hit.damage,playerMax)}));
+            else if(Number(event.received||0)>0)this.pops.add({...effectCatalog.damageStyle(event,{}),amount:Number(event.received),start:receivedAt,x:receivedX,y:receivedY,received:true,ratio:ratio(event.received,playerMax)});
         }
-        addRecovery(event){const now=performance.now(),narrow=innerWidth<700,hp=Number(event&&event.recoveredHp||0),mp=Number(event&&event.recoveredMp||0),x=narrow?.24:.25;if(hp>0)this.damagePops.push({damage:hp,recovery:true,resource:'HP',start:now,x,y:narrow?.68:.56});if(mp>0)this.damagePops.push({damage:mp,recovery:true,resource:'MP',start:now+(hp>0?120:0),x,y:narrow?.72:.61});}
-        damageLayer(w,h){const now=performance.now();this.damagePops=this.damagePops.filter(pop=>{const p=(now-pop.start)/950;if(p<0)return true;if(p>=1)return false;const ease=1-Math.pow(1-clamp(p,0,1),3),x=w*pop.x,y=h*pop.y-(pop.dot?(reducedMotion?p*18:Math.sin(p*Math.PI)*30+p*10):ease*(pop.received?45:pop.recovery?60:82)),alpha=clamp(Math.min(p*8,(1-p)*3.4),0,1),scale=pop.dot?(reducedMotion?1:.9+Math.sin(p*Math.PI)*.1):.7+Math.sin(Math.min(1,p)*Math.PI)*.36;this.ctx.save();this.ctx.globalAlpha=alpha;this.ctx.translate(x,y);this.ctx.scale(scale,scale);if(pop.kills)this.gameText('+'+number(pop.kills)+' 처치',0,0,w<650?20:27,'center','#ffcf68');else if(pop.recovery)this.text(pop.resource+' +'+number(pop.damage),0,0,w<650?22:28,900,'center',pop.resource==='HP'?'#63f29b':'#65b9ff');else{if(!pop.shield&&(pop.critical||pop.destiny))this.text((pop.destiny?'운명'+(pop.critical?' · ':''):'')+(pop.critical?'치명타':''),0,-26,w<650?10:12,900,'center',pop.destiny?'#d6a8ff':'#ffb0a8');this.text((pop.shield?'(-':pop.received?'-':'')+number(pop.damage)+(pop.shield?')':''),0,0,pop.dot?(w<650?18:23):pop.shield?(w<650?24:30):pop.received?(w<650?24:30):pop.critical?(w<650?39:53):(w<650?30:40),900,'center',pop.shield||pop.fixed?'#ffffff':pop.destiny?'#c388ff':pop.received?'#ff8f87':pop.critical?'#ff5d4d':'#ffe06e');if(pop.skill&&!pop.shield)this.text(pop.skill,0,pop.dot?17:25,pop.dot?(w<650?8:9):(w<650?9:11),800,'center','#efe4cd');}this.ctx.restore();return true;});}
+        addRecovery(event){const now=performance.now(),narrow=innerWidth<700,hp=Number(event&&event.recoveredHp||0),mp=Number(event&&event.recoveredMp||0),x=narrow?.24:.25;if(hp>0)this.pops.add({kind:'heal',amount:hp,start:now,x,y:narrow?.68:.56});if(mp>0)this.pops.add({kind:'mana',amount:mp,start:now+(hp>0?120:0),x,y:narrow?.72:.61});}
+        damageLayer(w,h){this.pops.draw(this.ctx,w,h);}
         dialogLayer(w,h){if(!dialog)return;this.regions=[];const c=this.ctx;c.fillStyle='rgba(0,0,0,.78)';c.fillRect(0,0,w,h);const narrow=w<650,bw=Math.min(w-28,narrow?350:440),bh=narrow?224:246,x=(w-bw)/2,y=(h-bh)/2;this.panel(x,y,bw,bh,'rgba(232,176,75,.65)',true);this.text(dialog.title,w/2,y+42,narrow?21:25,900,'center','#fff7e8');this.line(x+38,y+67,x+bw-38,y+67,'rgba(232,176,75,.34)',1);const lines=cleanText(dialog.message).split('\n').map(cleanText).filter(line=>line&&!line.startsWith('/RPGenius')).slice(0,5);lines.forEach((line,index)=>this.text(line,w/2,y+94+index*18,narrow?10:12,650,'center','#c9c8c5',bw-34));const gap=8,buttonW=(bw-52-gap)/2,by=y+bh-60;this.actionButton(x+26,by,buttonW,40,{label:'취소',disabled:false,action:dialog.cancel});this.actionButton(x+26+buttonW+gap,by,buttonW,40,{label:dialog.okLabel,kind:'attack',disabled:false,action:dialog.ok});}
         fragmentLayer(w,h){
             if(!regularMode||!state||!state.pendingFragment)return;
@@ -1071,6 +1197,7 @@
                 if(!embedded){if(!trainingMode)this.consumableLauncher(w,h);this.trainingControls(w,h);this.dailyEffects(w,h);this.lobby(w,h);}
             }
             if(!embedded)this.topControls(w);
+            if(embedded&&combatFx&&combatFx.augmentHud&&state&&state.inField&&renderer)combatFx.augmentHud(renderer.fx,c,w,h,performance.now());
             this.damageLayer(w,h);this.bannerLayer(w,h);
             if(!embedded){this.consumableLayer(w,h);this.dialogLayer(w,h);this.rewardLayer(w,h);this.fragmentLayer(w,h);this.trainingSettingsLayer(w,h);this.loading(w,h);this.entryTransitionLayer(w,h);}
             if(this.flashUntil>performance.now()){const left=this.flashUntil-performance.now();c.fillStyle='rgba(255,255,255,'+clamp(left/this.flashDuration,0,.34)+')';c.fillRect(0,0,w,h);}
@@ -1093,40 +1220,82 @@
     // 낙원은 필드 전투의 같은 렌더러/HUD를 사용하고 탐험 전이는 부모 화면이 관리한다.
     if (embedded) {
         const seen = new Set();
-        let runId = null, enemyId = null, initialized = false;
+        let runId = null, enemyId = null, initialized = false, waveFrom = null, strikeTimes = null;
         window.ParadiseBattle = {
             onAction: null,
+            // 마지막으로 그린 내 정보 카드와 적 체력 막대의 자리(화면 좌표). 낙원 화면이 증강 상태를 그 곁에 놓는다.
+            hudRects() { return { player: hud.playerRect || null, target: hud.bossRect || null }; },
             prepare(card) { if (['전직', '각성'].includes(card?.type)) ultimateCutscene?.prepare(card.classInfo?.skills, card.name); },
             update(next, events, id, quiet = false) {
                 const previous = state;
                 if (runId !== id) { seen.clear(); initialized = false; runId = id; hud.skillPage = 0; ultimateCutscene?.reset(); }
                 if (enemyId !== next?.target?.id) {
-                    renderer.releaseHold(); renderer.particles=[]; renderer.effectSprites=[]; hud.damagePops=[];
+                    // 2마리 전투의 첫 적을 쓰러뜨린 뒤라면 막타의 수치와 연출을 지우지 않고, 다음 적을 등장 연출로 맞는다.
+                    const soft = initialized && waveFrom != null && waveFrom === enemyId && !!next?.target;
+                    renderer.releaseHold(); renderer.waveShift(soft);
+                    if (soft) hud.waveSwap = { at: performance.now(), name: previous?.target?.name || '' };
+                    else { renderer.particles=[]; renderer.effectSprites=[]; hud.pops.clear(); hud.waveSwap=null; }
+                    waveFrom = null; strikeTimes = null;
                     renderer.enemyAttackAt=-10000;
                     hud.bossKey=''; logs=[]; enemyId=next?.target?.id;
                 }
-                state=next;
                 if (!quiet) clockOffset=Number(next?.serverNow||Date.now())-Date.now();
+                // 죽음을 초월하는 자의 마지막 기회 동안에는 HP를 0으로 보인다.
+                if (next?.player && combatFx?.augments?.lastStand(next.augmentAuras, Date.now()+clockOffset)) next={...next,player:{...next.player,hp:0}};
+                state=next;
                 renderer.setState(next);
-                let duration=0;
+                let duration=0,landed=0;
                 for(const event of events||[]) {
                     if(seen.has(event.id))continue;
                     seen.add(event.id);
                     if(!initialized||quiet||document.hidden||Date.now()+clockOffset-event.at>5000||event.enemyId!==next?.target?.id)continue;
                     const before=previous||next;
+                    // 공격이 없는 순간의 증강 신호: 장면만 낸다.
+                    if(event.action==='augment'){renderer.augmentCue(event,before);if(event.defeated){hud.showBanner('전투 종료');audio.play('fail');duration=Math.max(duration,1200);}continue;}
+                    // 맞공격(결투 신청, 원펀치 룰)은 같은 응답에 함께 온다. 플레이어의 타격이 닿은 뒤에 보인다.
+                    // 검무 사이사이의 맞공격: 받은 타격마다 자기 타(strike)의 바로 뒤에 보인다. 맞공격의 증강 장면은 첫 타격에 한 번만 낸다.
+                    if(event.actor==='enemy'&&event.counter&&strikeTimes&&(event.receivedHits||[]).some(hit=>hit&&hit.strike)){
+                        const times=strikeTimes,foe=renderer.targetEffectPoint(before,event,false),me=renderer.playerEffectPoint('target');let end=0;
+                        (event.receivedHits||[]).filter(hit=>Number(hit&&hit.damage||0)>0).forEach((hit,index)=>{
+                            const k=Math.max(1,Number(hit.strike)||1),at=(times[Math.min(k,times.length)-1]||0)+60;end=Math.max(end,at);
+                            hud.pops.add({...effectCatalog.damageStyle(event,hit),amount:Number(hit.damage),critical:!!hit.critical,destiny:!!hit.destiny,label:index?'':hit.label||event.skillName||'',start:performance.now()+at,x:foe.x-(innerWidth<700?.3:.2)+(k%2?-.03:.03),y:me.y-.075+(k-1)*.03,received:true});
+                            renderer.later(()=>{renderer.playerHitFrom=performance.now();renderer.playerHitUntil=renderer.playerHitFrom+(hit.critical?240:170);audio.hit();},at);
+                        });
+                        renderer.later(()=>renderer.augmentRest(me.x,me.y,event,'target'),Math.max(0,(times[0]||0)-60));
+                        duration=Math.max(duration,end+500);landed=0;strikeTimes=null;continue;
+                    }
+                    if(event.actor==='enemy'&&event.counter&&landed>0){
+                        const wait=landed;
+                        renderer.later(()=>{const staged=renderer.animateEnemy(event,before),lead=staged?staged.delay||0:0;renderer.later(()=>{hud.addDamage(event,before);if(event.received>0)audio.hit();},Math.max(0,lead-80));},wait);
+                        duration=Math.max(duration,wait+900);landed=0;continue;
+                    }
                     let staged=null,tickLead=0;
                     if(event.actor==='enemy')staged=renderer.animateEnemy(event,before);else if(event.action==='tick')tickLead=renderer.tickHit(before,event)||0;else staged=renderer.animate(event,before);
                     // 수치는 연출이 닿는 순간에 띄우고, 그때까지 대상의 체력 표시를 붙들어 둔다.
                     const lead=staged?staged.delay||0:tickLead,enemy=event.actor==='enemy';
+                    if(!enemy&&event.action!=='tick')strikeTimes=staged&&staged.strikeTimes||null;
                     if(lead>0&&!enemy){hud.holdTarget(lead,before?.target?.hp);renderer.later(()=>hud.addDamage(event,before,staged&&staged.times?staged.times.map(time=>time-lead):null,staged&&staged.receivedAt!=null?staged.receivedAt-lead:null),lead);}
                     else if(lead>80&&enemy)renderer.later(()=>hud.addDamage(event,before),lead-80);
                     else hud.addDamage(event,before);
+                    // 타가 나뉜 사건은 대상의 체력 표시도 타마다 내려간다.
+                    if(!enemy&&strikeTimes&&staged&&staged.strikeTimes&&before?.target){const times=staged.strikeTimes;let hp=Number(before.target.hp||0);times.forEach((at,index)=>{hp-=(event.hits||[]).reduce((sum,hit)=>sum+((Number(hit&&hit.strike)||1)===index+1?Number(hit.damage||0):0),0);const value=hp;if(index<times.length-1)renderer.later(()=>hud.holdTarget(times[index+1]-at+40,value),at+1);});}
+                    if(!enemy&&event.action!=='tick')landed=Math.max(lead,staged&&staged.times&&staged.times.length?staged.times[staged.times.length-1]:0)+150;
+                    // 가시 갑옷이 되돌려 준 고정 피해는 적의 몸 위에 뜬다.
+                    if(enemy&&Array.isArray(event.reflectedHits)){const point=renderer.targetEffectPoint(before,event,false);event.reflectedHits.filter(hit=>Number(hit&&hit.damage||0)>0).forEach((hit,index)=>hud.pops.add({fixed:true,amount:Number(hit.damage),label:hit.label||'',start:performance.now()+lead+140+index*95,x:point.x,y:point.y}));if(event.reflectedHits.length){renderer.targetHitFrom=performance.now()+lead+140;renderer.targetHitUntil=renderer.targetHitFrom+260;}}
                     if(staged&&staged.cast)duration=Math.max(duration,staged.cast+150);
                     if(event.action==='skill')audio.play('skill',.68);else if(event.damage>0)audio.hit();
                     if(event.criticalCount){audio.play('crit',.82);hud.impact(true);}else if(event.damage>0)hud.impact(false);
                     if(event.received>0)renderer.later(()=>audio.hit(),90);
-                    if(event.cleared||event.defeated){hud.showBanner(event.cleared?'전투 승리':'전투 종료');audio.play(event.cleared?'clear':'fail');}
-                    duration=Math.max(duration,Math.min(2200,850+((event.hits||[]).length+(event.receivedHits||[]).length)*95));
+                    const wave=event.cleared&&event.nextWave;
+                    if(event.cleared||event.defeated){
+                        const announce=()=>{hud.showBanner(wave?'적 처치':event.cleared?'전투 승리':'전투 종료',wave?'다음 적 '+event.nextWave+' / '+event.waveTotal:'');audio.play(event.cleared?'clear':'fail');};
+                        // 2마리 전투의 첫 적: 막타가 닿은 뒤에 쓰러지고 그때 배너가 뜬다. 화면은 쓰러지는 동안만 붙들고, 다음 적의 등장은 입력을 막지 않는다.
+                        if(wave){const fall=(enemy?lead:event.action==='tick'?tickLead:Math.max(0,landed-150))+110;waveFrom=enemyId;renderer.fallAt=performance.now()+fall;renderer.fallKind=0;renderer.fallBurst=false;renderer.later(announce,fall);duration=Math.max(duration,fall+WAVE_FALL+130);}
+                        // 전투의 마지막 적: 막타가 닿고 한 박자 뒤에 빛으로 부서지고, 부서지는 순간 승리 배너가 뜬다. 다 사라진 뒤에야 화면이 넘어가도록 그만큼 붙든다(쓰러진 적은 장면이 바뀔 때까지 보이지 않는다).
+                        else if(event.cleared){const kind=GRAND_KINDS.includes(before?.target?.kind)?2:1,fall=(enemy?lead:event.action==='tick'?tickLead:Math.max(0,landed-150))+(reducedMotion?110:200),broke=fall+FALL_MS[kind]*FALL_BEAT[kind];renderer.fallAt=performance.now()+fall;renderer.fallKind=kind;renderer.fallBurst=false;renderer.fallBroke=false;renderer.later(announce,broke);if(kind>1)renderer.later(()=>hud.impact(true),broke);duration=Math.max(duration,fall+FALL_MS[kind]+520);}
+                        else announce();
+                    }
+                    if(!wave)duration=Math.max(duration,Math.min(2200,850+((event.hits||[]).length+(event.receivedHits||[]).length)*95));
                     duration=Math.max(duration,(window.UltimateCutscene?.find(event,before.player?.cardName)?.duration||0)+150);
                 }
                 if(seen.size>100){const keep=[...seen].slice(-24);seen.clear();keep.forEach(id=>seen.add(id));}
@@ -1136,7 +1305,7 @@
             },
             draw(time, locked) { busy=locked; renderer.render(time); hud.draw(); return hud.regions; },
             stopCutscene() { ultimateCutscene?.reset(); },
-            reset() { ultimateCutscene?.reset(); renderer.releaseHold(); renderer.particles=[];renderer.effectSprites=[];hud.damagePops=[];renderer.attackAt=-10000;renderer.setState(null);state=null;initialized=false; },
+            reset() { ultimateCutscene?.reset(); renderer.releaseHold(); renderer.waveShift(false); hud.waveSwap=null; waveFrom=null; strikeTimes=null; renderer.particles=[];renderer.effectSprites=[];hud.pops.clear();renderer.attackAt=-10000;renderer.setState(null);state=null;initialized=false; },
             key(event) {
                 if(busy||!state?.inField||event.repeat)return;
                 if(event.code==='Space'||event.code==='KeyJ'){event.preventDefault();attack();}

@@ -7,7 +7,7 @@
 
     const DIRS = Object.freeze({
         skill: '스킬', equipment: '장비', set: '세트', summon: '소환수',
-        element: '속성', combat: '전투'
+        element: '속성', combat: '전투', augment: '증강'
     });
     const ELEMENTS = new Set(['화', '수', '명', '암']);
     const FIXED_MULTI_HIT_SKILLS = new Set(['포커 못 하시네']);
@@ -183,6 +183,7 @@
             const parsed = parseEffectId(effectId) || { kind: '', name: '' };
             const score = parsed.kind == 'skill' ? 100
                 : parsed.kind == 'summon' ? 94
+                : parsed.kind == 'augment' ? 90
                 : parsed.kind == 'equipment' || parsed.kind == 'set' ? 88
                 : parsed.kind == 'combat' ? (generic.test(parsed.name) ? 45 : 72)
                 : parsed.kind == 'element' ? 54 : 0;

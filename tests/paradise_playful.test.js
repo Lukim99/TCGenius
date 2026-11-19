@@ -61,17 +61,20 @@ function takeRoute(user, side, kinds = ['normal', 'normal']) {
     if (user.paradise.phase === 'combat') Object.assign(user.paradise.enemy, { hp: 1e12, maxHp: 1e12, atk: 100, def: 0 });
 }
 
-test('독립 증강 50종은 등급 비율과 기존 동일 등급 선택 계약을 지킨다', () => {
+test('개편 전 독립 증강 50종의 구성을 유지하며 새 증강 제시와 선택에는 나오지 않는다', () => {
     assert.equal(catalog.length, 50); assert.equal(new Set(catalog.map(a => a.id)).size, 50);
     assert.deepEqual(catalog.reduce((out, a) => { out[a.rarity] = (out[a.rarity] || 0) + 1; return out; }, {}), { silver: 18, gold: 20, prismatic: 12 });
     assert.ok(catalog.every(a => a.floors <= 14 && a.desc.endsWith('니다.')));
     assert.ok(catalog.every(a => !a.cardContract && !a.quest));
-    const user = fresh();
-    for (const rarity of ['silver', 'gold', 'prismatic']) {
-        corridor.offerAugments(user, () => .99, rarity);
+    const ids = new Set(catalog.map(a => a.id)), user = fresh();
+    assert.ok(!corridor.AUGMENTS.some(a => ids.has(a.id)));
+    for (let i = 0; i < 10; i++) {
+        corridor.offerAugments(user, () => i / 10);
         assert.equal(user.paradise.choices.length, 3);
-        assert.ok(user.paradise.choices.every(id => corridor.AUGMENTS.find(a => a.id === id).rarity === rarity));
+        assert.ok(user.paradise.choices.every(id => !ids.has(id)));
     }
+    user.paradise.choices = [catalog[0].id];
+    assert.ok(corridor.chooseAugment(user, catalog[0].id).error);
 });
 
 test('간식과 스탬프는 피격 후 공격 종류로 회복 대상을 선택하고 한 번만 완성한다', t => {
@@ -407,7 +410,8 @@ test('지옥과 일반 필드에는 신규 증강의 피해 카드나 보상 효
 test('정밀 마무리 환불은 실제 승리에서만 지급되고 초과 피해가 크면 지급하지 않는다', t => {
     t.mock.method(Math, 'random', () => .99);
     for (const [raw, paid] of [[100, true], [200, false]]) {
-        const user = fresh('refundStamp'), st = stats(user);
+        // 승리 처리가 바로 일어나는 한 마리 전투(엘리트)에서 확인한다.
+        const user = fresh('refundStamp'); battle(user, 'elite'); const st = stats(user);
         res(user).hp = Math.floor(st.hp * .5); res(user).mp = 0;
         Object.assign(user.paradise.enemy, { hp: 100, maxHp: 1000 });
         const hp = res(user).hp; hit(user, {}, raw);

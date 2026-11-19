@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>증강 연출 무대</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#05080c}
+#paBattle{position:fixed;inset:0}#paBattle canvas{position:absolute;inset:0;width:100%;height:100%}#hfCanvas{pointer-events:none}#hfHud{z-index:1}
+</style></head><body>
+<div id="paBattle"><canvas id="hfCanvas"></canvas><canvas id="hfHud"></canvas></div>
+<script>
+window.FIELD_MODE = 'paradise';
+// 소리는 실험실(부모 창)의 오디오로 낸다. 부모 창에서 누른 단추가 곧 사용자 입력이라 자동 재생 차단에 걸리지 않는다.
+(function () {
+    let host = null;
+    try { host = parent !== window && parent.AugLab ? parent : null; } catch (_) {}
+    if (host && host.AudioContext) { window.AudioContext = host.AudioContext; window.webkitAudioContext = host.webkitAudioContext; }
+    window.ParadiseAudio = {
+        get muted() { return host ? !!host.AugLab.muted : false; },
+        playUrl(url, volume) { if (host) host.AugLab.playUrl(url, volume); }
+    };
+})();
+</script>
+<script src="/static/damage-numbers.js"></script><script src="/static/combat-effects.js"></script>
+<script src="/static/combat-fx.js"></script>
+<script src="/static/combat-fx-kit.js"></script>
+<script src="/static/combat-fx-scenes.js"></script>
+<script src="/static/combat-fx-skills.js"></script>
+<script src="/static/combat-fx-augments.js"></script>
+<script>
+// 연출 엔진 인스턴스를 꺼내 두고, 실험실의 음량을 따르게 한다. preserve는 검수용 화면 찍기에 필요하다.
+(function () {
+    const create = CombatFX.create;
+    CombatFX.create = options => (window.__fx = create(Object.assign({ preserve: true, volume: () => { try { return parent.AugLab ? parent.AugLab.volume : .6; } catch (_) { return .6; } } }, options)));
+})();
+</script>
+<script src="/static/hfield.js"></script>
+<script src="/lab/stage.js"></script>
+</body></html>

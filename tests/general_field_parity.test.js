@@ -40,7 +40,7 @@ assert.ok((server.match(/label: labelMatch \? labelMatch\[1\]\.trim\(\) : null/g
 assert.ok((server.match(/receivedHits,/g) || []).length >= 2, '일반/H필드 이벤트 모두 receivedHits를 전달해야 합니다.');
 assert.ok(hfieldClient.includes('event.receivedHits'), '일반/H필드 UI는 받는 타격을 개별로 표시해야 합니다.');
 assert.ok(hfieldClient.includes('receivedDelay + index * 95'), '받는 연격은 타격별 간격을 두고 피격 연출해야 합니다.');
-assert.ok(hfieldClient.includes("skill:hit.label||(index===0?event.skillName||'':'')") && hfieldClient.includes("skill:hit.label||''"), '일반/H필드 UI는 각 추가 피해의 이름을 해당 수치와 함께 표시해야 합니다.');
+assert.ok(hfieldClient.includes("label:hit.label||(index===0?event.skillName||'':'')") && hfieldClient.includes("label:hit.label||''"), '일반/H필드 UI는 각 추가 피해의 이름을 해당 수치와 함께 표시해야 합니다.');
 assert.ok(server.includes('effectElement: getWebFieldAttackElement(user, action, skillName, state.skills)') && server.includes('receivedEffectElement:'), '일반/H필드는 양쪽 공격의 실제 속성을 화면에 전달해야 합니다.');
 assert.ok(hfieldClient.includes('ELEMENT_EFFECT_COLORS') && hfieldClient.includes("effect.kind === 'burn'") && hfieldClient.includes("effect.kind === 'summon'") && hfieldClient.includes("effect.kind === 'equipment'") && hfieldClient.includes("effect.kind === 'skill'"), '일반/H필드는 화상·소환수·장비·스킬 전용 이펙트를 사용해야 합니다.');
 assert.ok(hfieldClient.includes("effect.element === '명'") && hfieldClient.includes("effect.element === '암'") && hfieldClient.includes("effect.element === '수'"), '일반/H필드는 화/수/명/암 속성별 이펙트를 구분해야 합니다.');

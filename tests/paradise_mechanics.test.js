@@ -33,10 +33,22 @@ function fresh(...augments) {
     battle(user);
     return user;
 }
+const DUMMY = { hp: 1e12, maxHp: 1e12, atk: 0, def: 0, pnt: 0, crit: 0, cmb: 0 };
 function battle(user) {
     corridor.startCombat(user, 'normal', null, () => .99);
-    Object.assign(user.paradise.enemy, { hp: 1e12, maxHp: 1e12, atk: 0, def: 0, pnt: 0, crit: 0, cmb: 0 });
+    Object.assign(user.paradise.enemy, DUMMY);
 }
+// 천상 일반 전투는 HP가 절반인 적 두 마리와 연속으로 싸우고, 승리 처리는 두 번째 적을 쓰러뜨릴 때 한 번 한다.
+// 첫 적이면 쓰러뜨려 승리 판정이 일어나는 두 번째 적과 싸우게 한다.
+function lastWave(user) {
+    const seq = user.paradise.sequence;
+    if (!seq?.pair || (seq.wave || 1) % 2 === 0) return;
+    corridor.victory(user, () => .99);
+    Object.assign(user.paradise.enemy, DUMMY);
+}
+function win(user) { lastWave(user); corridor.victory(user, () => .99); }
+const boons = require('../paradise_boons');
+const { LEGACY_AUGMENTS } = require('../paradise_content');
 function hit(user, extra = {}, raw = 100) {
     rpg.buildHuntResult(user, {}, raw, { isBasic: true, comboHitCount: 1, ...extra });
     return user.paradise.combatEvents.at(-1);
@@ -77,16 +89,20 @@ test('재만 남는 길은 고정 피해와 소환수를 막고 불씨와 네이
         assert.ok(mechanics.dots(user).some(d => d.key === key));
     }
     corridor.victory(user, () => .99);
+    assert.equal(user.paradise.routeEncounter.id, 'ashOnly', '두 마리 중 첫 적');
+    corridor.victory(user, () => .99);
     assert.equal(user.paradise.routeEncounter, undefined);
+    assert.equal(user.paradise.phase, 'augment');
     const choices = corridor.view(user).run.choices;
     assert.equal(choices.length, 3); assert.ok(choices.every(a => a.category === 'dot'));
-    assert.equal(new Set(choices.map(a => a.rarity)).size, 1);
     for (const choice of choices) {
         const result = corridor.rerollAugment(user, choice.id, () => .99);
         if (!result.error) assert.ok(corridor.view(user).run.choices.every(a => a.category === 'dot'));
     }
     corridor.chooseAugment(user, user.paradise.choices[0], () => .99);
     assert.equal(user.paradise.augmentCategory, undefined);
+    assert.equal(user.paradise.phase, 'boon', '분류 증강을 고른 뒤 성장 선택으로 층을 정한다');
+    boons.choose(user, { choice: 'heal' }, () => .99);
     corridor.chooseRoute(user, user.paradise.routes[0].id, () => .99); durableEnemy(user);
     assert.ok(hit(user).damage > 0);
     assert.equal(routes.reflection(user, 500), 500);
@@ -109,7 +125,10 @@ test('기믹은 공격 순서, 봉인, 연격과 치명타 판정을 실제 타�
     const blocked = await rpg.useSkillInField(user, rpg.getMainCardSkills(user)[0].skill.name);
     assert.match(blocked, /침묵의 검투장/); assert.ok(hit(user).damage > 150);
     corridor.victory(user, () => .99);
-    assert.equal(routes.skillBlocked(user), null); assert.ok(corridor.view(user).run.choices.every(a => a.category === 'combo'));
+    assert.match(routes.skillBlocked(user), /침묵의 검투장/, '두 번째 적에게도 봉인 유지');
+    corridor.victory(user, () => .99);
+    const offered = corridor.view(user).run.choices;
+    assert.equal(routes.skillBlocked(user), null); assert.equal(offered.length, 3); assert.ok(offered.every(a => a.category === 'combo'));
 });
 
 test('유리 금고의 흡수량은 하얀 피해 사건과 체력바에 반영되며 파괴 후 한 번만 세 배가 된다', t => {
@@ -128,7 +147,7 @@ test('유리 금고의 흡수량은 하얀 피해 사건과 체력바에 반영�
     assert.equal(routes.reflection(user, 100), 0); assert.equal(corridor.view(user).run.enemy.shield, 150);
     assert.equal(routes.reflection(user, 200), 50); assert.equal(corridor.view(user).run.enemy.shield, 0);
     assert.ok(Math.abs(hit(user).damage - normal * 3) <= 3);
-    corridor.victory(user, () => .99);
+    win(user);
     assert.equal(user.paradise.phase, 'relic'); assert.ok(corridor.view(user).run.relicChoices.every(r => r.rarity === 'normal'));
 });
 
@@ -204,13 +223,13 @@ test('유리 성벽, 피의 연료, 마지막 불빛은 HP와 보호막을 전�
     const before = resources(user).hp; assert.ok(hit(user).damage > 150);
     assert.equal(resources(user).hp, before - Math.floor(before * .05));
     resources(user).hp = 1; hit(user); assert.equal(resources(user).hp, 1);
-    corridor.victory(user, () => .99); assert.ok(resources(user).hp > 1);
+    win(user); assert.ok(resources(user).hp > 1);
     user = fresh(); route(user, 'lastLight'); durableEnemy(user);
     const stats = rpg.calculateUserStats(user);
     assert.ok(resources(user).hp <= stats.hp * .30);
     assert.equal(shields.summary(user.field, Date.now()).amount, Math.round(stats.hp * .80));
     assert.ok(hit(user).damage > 150);
-    corridor.victory(user, () => .99); assert.equal(resources(user).hp, stats.hp); assert.equal(resources(user).mp, stats.mp);
+    win(user); assert.equal(resources(user).hp, stats.hp); assert.equal(resources(user).mp, stats.mp);
     assert.deepEqual([user.hp, user.mp], [19, 7]);
 });
 
@@ -261,8 +280,10 @@ test('빌려 온 피날레는 스펙터 궁극기도 인식하며 첫 궁극기�
     assert.equal(routes.incoming(user, 100), 120);
     resources(user).mp = rpg.calculateUserStats(user).mp;
     await skill(user, '빅뱅'); assert.ok(user.field.skillCooldowns['빅뱅'] > Date.now());
-    corridor.victory(user, () => .99);
-    assert.ok(corridor.view(user).run.choices.every(a => a.category === 'ultimate'));
+    win(user);
+    // 새 증강에는 궁극기 분류가 없으므로 분류 보상 대신 성장 선택으로 넘어간다.
+    assert.ok(!corridor.AUGMENTS.some(a => a.category === 'ultimate'));
+    assert.equal(user.paradise.phase, 'boon'); assert.equal(user.paradise.augmentCategory, undefined);
 });
 
 test('수문장의 부활은 처치 보상보다 먼저 한 번 발동하고 확률 타격은 결과를 알려준다', t => {
@@ -272,6 +293,8 @@ test('수문장의 부활은 처치 보상보다 먼저 한 번 발동하고 확
     hit(user, {}, 1e12);
     assert.equal(user.paradise.phase, 'combat'); assert.equal(user.paradise.battlesWon, 0);
     assert.equal(user.paradise.enemy.hp, Math.round(maxHp * .40)); assert.equal(user.paradise.enemy.atk, Math.round(atk * 1.30));
+    hit(user, {}, 1e12); assert.equal(user.paradise.battlesWon, 0); assert.equal(user.paradise.phase, 'combat');
+    assert.deepEqual(user.paradise.enemy.wave, { index: 2, total: 2 });
     hit(user, {}, 1e12); assert.equal(user.paradise.battlesWon, 1); assert.equal(user.paradise.phase, 'relic');
     user = fresh(); route(user, 'coinDuel'); durableEnemy(user);
     hit(user); assert.match(user.paradise.combatLog.join('\n'), /뒷면, 피해 25%/);
@@ -280,37 +303,28 @@ test('수문장의 부활은 처치 보상보다 먼저 한 번 발동하고 확
     assert.equal(high.finalDamage, 250); assert.match(extra.notice, /앞면!/);
 });
 
-test('82개 증강의 분류·고유 ID·문체와 궁극기 보유 조건을 확인한다', t => {
-    let playerPower;
-    t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
+test('개편 전 82개 증강의 분류·고유 ID·문체를 확인하고 새 증강이 재사용하는 두 효과만 고를 수 있으며 궁극기 조건은 스펙터를 인식한다', () => {
     assert.equal(catalog.length, 82);
     assert.deepEqual(Object.fromEntries(['dot', 'combo', 'shield', 'ultimate', 'active', 'passive'].map(key => [key, catalog.filter(a => a.category === key).length])), { dot: 24, combo: 12, shield: 13, ultimate: 8, active: 10, passive: 13 });
-    assert.equal(new Set(corridor.AUGMENTS.map(a => a.id)).size, 465);
+    assert.equal(new Set(catalog.map(a => a.id)).size, 82);
+    // 새 증강 중 '취약'과 '한 칸씩 오르는 검무'는 같은 ID로 기존 효과 구현을 그대로 쓴다.
+    const reused = corridor.AUGMENTS.filter(a => catalog.some(c => c.id === a.id)).map(a => a.id);
+    assert.deepEqual(reused, ['dotCritical', 'comboStaircase']);
     for (const augment of catalog) {
         assert.match(augment.desc, /니다\.$/);
+        assert.ok(LEGACY_AUGMENTS.some(a => a.id === augment.id), augment.id);
         const user = fresh();
-        playerPower = corridor.recommendedPower(user.paradise.floor + augment.floors);
         user.paradise.phase = 'augment'; user.paradise.choices = [augment.id];
-        assert.ok(!corridor.chooseAugment(user, augment.id, () => .99).error, augment.id);
-        assert.ok(!user.paradise.choices.includes(augment.id), '중복 제시 ' + augment.id);
+        assert.equal(!corridor.chooseAugment(user, augment.id, () => .99).error, reused.includes(augment.id), augment.id);
     }
     const user = fresh(); user.main_card.type = '일반';
     assert.equal(rpg.getUltimateSkills(user).length, 0);
     assert.equal(rpg.isUltimateSkillForUser(user, rpg.getMainCardSkills(user).at(-1).skill), false);
-    for (const augment of catalog.filter(a => a.requiresUltimate)) {
-        playerPower = corridor.recommendedPower(user.paradise.floor + augment.floors);
-        for (const a of corridor.AUGMENTS) user.paradise.acquired[a.id] = 1;
-        delete user.paradise.acquired[augment.id]; corridor.offerAugments(user);
-        assert.deepEqual(user.paradise.choices, []);
-        user.paradise.choices = [augment.id]; assert.ok(corridor.chooseAugment(user, augment.id).error);
-        user.main_card.specter = '빅뱅 스펙터';
-        corridor.offerAugments(user); assert.deepEqual(user.paradise.choices, [augment.id]);
-        delete user.main_card.specter;
-    }
-    user.main_card.type = '전직'; user.main_card.specter = '빅뱅 스펙터';
+    user.main_card.specter = '빅뱅 스펙터';
+    assert.deepEqual(rpg.getUltimateSkills(user).map(entry => entry.skill.name), ['빅뱅']);
+    user.main_card.type = '전직';
     assert.deepEqual(rpg.getUltimateSkills(user).map(entry => entry.skill.name), ['유드 알레프', '빅뱅']);
 });
-
 test('지속 피해는 증강 획득 후에만 치명타가 되고 저항·기존 필드 격리를 지킨다', t => {
     t.mock.method(Math, 'random', () => 0);
     const user = fresh(), normal = dot(user);
@@ -406,7 +420,7 @@ test('실패한 연격을 저축하고 다음 최대 연격에 마지막 확정 
 
 test('세 번째 균열은 프리즘이며 다음 직접 공격에만 방어력 50% 무시를 부여한다', () => {
     const user = fresh('comboRupture'), stats = rpg.calculateUserStats(user);
-    assert.equal(corridor.AUGMENTS.find(a => a.id === 'comboRupture').rarity, 'prismatic');
+    assert.equal(catalog.find(a => a.id === 'comboRupture').rarity, 'prismatic');
     s(user).ruptureReady = true;
     const extra = { isBasic: true }; mechanics.prepareAttack(user, stats, extra);
     assert.equal(extra.defReductionBonus, .5);
@@ -521,7 +535,7 @@ test('대단원의 배당은 재접속·다음 전투·계약 상실 후에도 �
     }
     assert.equal(user.paradise.mechanics.ultimatePrizes, 3);
     assert.ok(user.paradise.contracts.every(c => c.star === 7));
-    assert.match(corridor.AUGMENTS.find(a => a.id === 'ultimateDividend').desc, /최대 3장/);
+    assert.match(catalog.find(a => a.id === 'ultimateDividend').desc, /최대 3장/);
     // 패치 전 지급분도 한도에 포함하되 이미 획득한 8성 카드의 등급은 보존한다.
     user.paradise.contracts = Array.from({ length: 3 }, () => ({ star: 8, type: '일반', name: '대단원의 배당 · 8성 일반 카드' }));
     user.paradise.mechanics.ultimateUses = 24; delete user.paradise.mechanics.ultimatePrizes;
@@ -634,7 +648,7 @@ test('향로·등불은 획득 이후 2승마다 발동하고 회복 봉쇄·시
     const stats = rpg.calculateUserStats(user);
     resources(user).hp = resources(user).mp = 1;
     for (let i = 1; i <= 21; i++) {
-        now += 1000; corridor.victory(user, () => .99);
+        now += 1000; win(user);
         if (i === 1) assert.deepEqual([resources(user).hp, resources(user).mp], [1, 1]);
         if (i === 2) {
             assert.equal(resources(user).hp, 1 + Math.round(stats.hp * .10));
@@ -653,7 +667,7 @@ test('룬 깃펜은 서로 다른 일반·습득 스킬로 3승마다 6성 계�
     t.mock.method(Math, 'random', () => .99);
     const user = fresh('skillIgnition', 'skillBulwark'); corridor.grantRelic(user, 'runeQuill');
     for (let i = 0; i < 10; i++) {
-        battle(user);
+        battle(user); lastWave(user);
         resources(user).mp = rpg.calculateUserStats(user).mp;
         await skill(user, '유드 알레프'); await skill(user, '도화선 점화'); await skill(user, '도화선 점화');
         assert.equal(user.paradise.battle.quillSkills.length, 1);
@@ -661,6 +675,18 @@ test('룬 깃펜은 서로 다른 일반·습득 스킬로 3승마다 6성 계�
         corridor.victory(user, () => .99);
         assert.equal(user.paradise.contracts.filter(c => c.star === 6 && c.type === '일반').length, Math.min(Math.floor(i / 3), 2));
     }
+});
+
+test('룬 깃펜은 두 마리 전투의 첫 적에게 쓴 스킬도 그 전투에서 사용한 스킬로 센다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('skillIgnition', 'skillBulwark'); corridor.grantRelic(user, 'runeQuill');
+    for (let i = 0; i < 3; i++) {
+        if (i) battle(user);
+        resources(user).mp = rpg.calculateUserStats(user).mp;
+        await skill(user, '도화선 점화'); await skill(user, '유리 방벽');
+        win(user);
+    }
+    assert.equal(user.paradise.contracts.filter(c => c.star === 6 && c.type === '일반').length, 1);
 });
 
 test('탐험 시간이 끝나면 자동 피해·거울 행동·일반 공격·스킬보다 귀환 정산을 우선한다', async () => {
@@ -747,13 +773,13 @@ test('유리 은행은 잔여 보호막을 정산하고 파괴 도화선·두 �
     hit(user); assert.equal(shields.summary(user.field, Date.now()).amount, Math.round(stats.hp * .40));
     shields.absorb(user.field, 1e9); hit(user); hit(user);
     assert.equal(shields.summary(user.field, Date.now()).amount, 0);
-    for (let i = 0; i < 8; i++) { grantShield(user, stats.hp); corridor.victory(user, () => .99); battle(user); }
+    for (let i = 0; i < 8; i++) { lastWave(user); grantShield(user, stats.hp); corridor.victory(user, () => .99); battle(user); }
     assert.equal(user.paradise.mechanics.shieldEscrow, .25);
 });
 
 test('궁극기 선불·저수지·마지막 막은 실제 MP 소비·재사용·10초 승리를 판정한다', async t => {
     let now = Date.now(); t.mock.method(Date, 'now', () => now); t.mock.method(Math, 'random', () => .99);
-    const user = fresh('ultimateLoan', 'ultimateReservoir', 'ultimateWager');
+    const user = fresh('ultimateLoan', 'ultimateReservoir', 'ultimateWager'); lastWave(user);
     const mp = resources(user).mp; await skill(user, '자인');
     const stored = mp - resources(user).mp; assert.equal(s(user).reservoir, stored);
     await skill(user, '유드 알레프');
@@ -764,7 +790,7 @@ test('궁극기 선불·저수지·마지막 막은 실제 MP 소비·재사용�
     assert.equal(user.field.skillCooldowns['유드 알레프'] - now, cd * 2);
     now += 10000; corridor.victory(user, () => .99);
     assert.equal(user.paradise.mechanics.ultimateWager, .05);
-    battle(user); resources(user).mp = rpg.calculateUserStats(user).mp; await skill(user, '유드 알레프');
+    battle(user); lastWave(user); resources(user).mp = rpg.calculateUserStats(user).mp; await skill(user, '유드 알레프');
     now += 10001; corridor.victory(user, () => .99);
     assert.equal(user.paradise.mechanics.ultimateWager, .05);
 });
@@ -799,7 +825,7 @@ test('자비·영수증·마지막 티켓은 직접 공격과 승리 조건을 �
     dot(user); assert.equal(resources(user).hp, 1);
     hit(user); assert.ok(resources(user).hp > 1); assert.equal(s(user).guard, true);
     for (let i = 0; i < 12; i++) {
-        battle(user); resources(user).mp = rpg.calculateUserStats(user).mp;
+        battle(user); lastWave(user); resources(user).mp = rpg.calculateUserStats(user).mp;
         await skill(user, '자인'); await skill(user, '도화선 점화');
         if (i > 0) user.paradise.battle.hasTakenHpDamage = true;
         resources(user).hp = 1; corridor.victory(user, () => .99);

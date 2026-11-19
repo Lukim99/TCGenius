@@ -98,7 +98,7 @@ const FIELD_PAGE = `<!doctype html>
 <link rel="stylesheet" href="/static/hfield.css"><link rel="stylesheet" href="/static/combat-shortcuts.css"></head><body>
 <main id="hFieldRoot" class="hf-root"><canvas id="hfCanvas"></canvas><canvas id="hfHud"></canvas></main>
 <script>window.HFIELD_ME="실험실";</script>
-<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/damage-numbers.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
@@ -154,7 +154,7 @@ const WB_PAGE = `<!doctype html>
 </main>
 <dialog id="wbRewardDialog"><h2 id="wbRewardTitle"></h2><p id="wbRewardSummary"></p><ul id="wbRewardList"></ul><details id="wbRewardDetails"><summary></summary><p id="wbRewardMessage"></p></details><button id="wbRewardClose" type="button">확인</button></dialog>
 <script>window.WORLD_BOSS_ME="실험실";</script>
-<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/damage-numbers.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
@@ -200,7 +200,7 @@ const PVP_PAGE = `<!doctype html>
 <link rel="stylesheet" href="/static/pvp.css"></head><body>
 <main id="pvpStage" class="pvp-root"><canvas id="pvpCanvas"></canvas><canvas id="pvpHud"></canvas></main>
 <script>window.PVP_ME="실험실";window.PVP_OPPONENT="상대";</script>
-<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js"></script>
+<link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/damage-numbers.js"></script><script src="/static/combat-effects.js"></script>
 <script src="/static/combat-fx.js"></script>
 <script src="/static/combat-fx-kit.js"></script>
 <script src="/static/combat-fx-scenes.js"></script>
@@ -218,6 +218,8 @@ http.createServer((req, res) => {
         if (url.searchParams.get('skills')) mock.skills = url.searchParams.get('skills').split(',');
         res.writeHead(200, { 'Content-Type': TYPES['.html'] }); return res.end(FIELD_PAGE);
     }
+    // 천상 증강: 실제 hfield.js를 낙원 내장 방식으로 돌리고 사건과 지속 상태를 손으로 넣는다.
+    if (url.pathname === '/lab/paradise') return send(res, path.join(__dirname, 'paradise.html'));
     if (url.pathname === '/lab/worldboss') { res.writeHead(200, { 'Content-Type': TYPES['.html'] }); return res.end(WB_PAGE); }
     if (url.pathname === '/api/worldboss' && req.method === 'GET') return json(res, wbState());
     if (url.pathname.startsWith('/api/worldboss/') && req.method === 'POST') return readBody(req, body => json(res, wbAction(url.pathname, body)));

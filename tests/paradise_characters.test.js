@@ -57,9 +57,7 @@ async function basic(user) {
 }
 function lastHit(user) { return user.paradise.combatEvents.at(-1); }
 
-test('17개 캐릭터마다 전용 증강 2개를 제공하며 메인 카드와 실제 보유 스킬로 노출·선택을 검증한다', t => {
-    let playerPower;
-    t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
+test('17개 캐릭터마다 개편 전 전용 증강 2개가 있고 획득 기록은 메인 카드와 실제 보유 스킬로 적용 여부를 정한다', () => {
     assert.equal(characters.length, definitions.length * 2);
     assert.equal(new Set(characters.map(a => a.id)).size, characters.length);
     for (const [id, card] of definitions.entries()) {
@@ -68,27 +66,19 @@ test('17개 캐릭터마다 전용 증강 2개를 제공하며 메인 카드와 
         for (const augment of own) {
             assert.equal(augment.characterName, card.name);
             assert.match(augment.desc, /니다\.$/);
+            // 개편 뒤에는 제시·선택하지 않고, 개편 전에 얻은 기록만 계속 적용한다.
+            assert.ok(!corridor.AUGMENTS.some(a => a.id === augment.id), augment.id);
             const user = fresh(id);
-            playerPower = corridor.recommendedPower(user.paradise.floor + augment.floors);
-            for (const other of corridor.AUGMENTS) if (other.id !== augment.id) user.paradise.acquired[other.id] = 1;
-            user.main_card.id = (id + 1) % definitions.length;
-            corridor.offerAugments(user, () => 0);
-            assert.deepEqual(user.paradise.choices, []);
-            user.paradise.choices = [augment.id];
+            user.paradise.phase = 'augment'; user.paradise.choices = [augment.id];
             assert.ok(corridor.chooseAugment(user, augment.id).error);
-            user.main_card.id = id;
+            assert.equal(characters.has(user, augment.id), false, '획득 전');
+            user.paradise.acquired[augment.id] = 1;
+            assert.equal(characters.has(user, augment.id), true);
             if (augment.requiresSkill != null) {
                 user.main_card.type = '일반';
-                corridor.offerAugments(user, () => 0);
-                assert.deepEqual(user.paradise.choices, []);
+                assert.equal(characters.has(user, augment.id), false, '필요한 스킬이 없는 카드');
                 user.main_card.type = '전직';
             }
-            corridor.offerAugments(user, () => 0);
-            assert.deepEqual(user.paradise.choices, [augment.id]);
-            assert.ok(!corridor.chooseAugment(user, augment.id, () => .99).error);
-            assert.equal(characters.has(user, augment.id), true);
-            corridor.offerAugments(user, () => 0);
-            assert.deepEqual(user.paradise.choices, []);
             user.paradise = structuredClone(user.paradise);
             assert.equal(characters.has(user, augment.id), true, '재접속 저장본');
             user.main_card.id = (id + 1) % definitions.length;
@@ -100,7 +90,6 @@ test('17개 캐릭터마다 전용 증강 2개를 제공하며 메인 카드와 
         }
     }
 });
-
 test('빵귤: 자인 뒤 평타로 자인을 다시 쓰고 세 번째 자인으로 궁극기를 준비한다', async () => {
     const user = fresh(0, 'zainRefrain', 'timeThief');
     user.field.skillCooldowns['유드 알레프'] = Date.now() + 120000;

@@ -54,7 +54,7 @@
         audio.play(gained?'clear':'count',gained?.82:.32);
     }
     document.getElementById('wbRewardClose').onclick=()=>{rewardDialog.close();hudCanvas.focus();};
-    function applyState(next){if(!next)return;const entering=next.inField&&!(state&&state.inField);previousBossHp=state&&state.current?Number(state.current.hp||0):null;state=next;potionShortcuts.refresh();clockOffset=Number(next.serverNow||Date.now())-Date.now();if(!selectedBoss&&next.bosses&&next.bosses.length)selectedBoss=next.bosses[0].name;renderer.applyState(next);if(entering){logs=[];presentationEpoch++;hud.damagePops=[];audio.play('start',.76);hud.showBanner('전투 시작',next.current.name);hud.impact(true);}if(next.inField)audio.playBgm();else{audio.stopBgm();hud.consumableMenu=false;}renderSelection();}
+    function applyState(next){if(!next)return;const entering=next.inField&&!(state&&state.inField);previousBossHp=state&&state.current?Number(state.current.hp||0):null;state=next;potionShortcuts.refresh();clockOffset=Number(next.serverNow||Date.now())-Date.now();if(!selectedBoss&&next.bosses&&next.bosses.length)selectedBoss=next.bosses[0].name;renderer.applyState(next);if(entering){logs=[];presentationEpoch++;hud.pops.clear();audio.play('start',.76);hud.showBanner('전투 시작',next.current.name);hud.impact(true);}if(next.inField)audio.playBgm();else{audio.stopBgm();hud.consumableMenu=false;}renderSelection();}
 
     const selectionLayer=document.getElementById('wbSelection'),skillCards=document.getElementById('wbSkillCards');
     let selectionKey='';
@@ -309,7 +309,7 @@
     }
 
     class Hud{
-        constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d');this.regions=[];this.pointer=null;this.damagePops=[];this.flashUntil=0;this.shakeUntil=0;canvas.addEventListener('pointerdown',e=>{this.pointer={x:e.clientX,y:e.clientY,id:e.pointerId};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointerup',e=>{if(!this.pointer||this.pointer.id!==e.pointerId)return;const hit=this.regions.slice().reverse().find(r=>e.clientX>=r.x&&e.clientX<=r.x+r.w&&e.clientY>=r.y&&e.clientY<=r.y+r.h);this.pointer=null;if(hit&&!busy)hit.fn();});canvas.addEventListener('pointercancel',()=>this.pointer=null);this.frame=requestAnimationFrame(()=>this.draw());}
+        constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d');this.regions=[];this.pointer=null;this.pops=DamageNumbers.create({reducedMotion});this.flashUntil=0;this.shakeUntil=0;canvas.addEventListener('pointerdown',e=>{this.pointer={x:e.clientX,y:e.clientY,id:e.pointerId};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointerup',e=>{if(!this.pointer||this.pointer.id!==e.pointerId)return;const hit=this.regions.slice().reverse().find(r=>e.clientX>=r.x&&e.clientX<=r.x+r.w&&e.clientY>=r.y&&e.clientY<=r.y+r.h);this.pointer=null;if(hit&&!busy)hit.fn();});canvas.addEventListener('pointercancel',()=>this.pointer=null);this.frame=requestAnimationFrame(()=>this.draw());}
         resize(){const dpr=Math.min(2,devicePixelRatio||1),w=innerWidth,h=innerHeight;if(this.canvas.width!==Math.round(w*dpr)||this.canvas.height!==Math.round(h*dpr)){this.canvas.width=Math.round(w*dpr);this.canvas.height=Math.round(h*dpr);this.canvas.style.width=w+'px';this.canvas.style.height=h+'px';}this.ctx.setTransform(dpr,0,0,dpr,0,0);return{w,h};}
         text(v,x,y,s,weight,align,color,max){const c=this.ctx;c.font=(weight||700)+' '+s+'px Pretendard,sans-serif';c.textAlign=align||'left';c.textBaseline='middle';c.fillStyle=color||'#fff';c.fillText(String(v||''),x,y,max);}
         title(v,x,y,s,align,color,max){const c=this.ctx;c.font='400 '+s+'px "Black Han Sans",Pretendard,sans-serif';c.textAlign=align||'center';c.textBaseline='middle';c.fillStyle=color||'#fff';c.fillText(String(v||''),x,y,max);}
@@ -401,23 +401,9 @@
         useConsumableAt(index,w,h){const list=state&&state.consumables||[],item=list[this.consumablePage*this.consumablePageSize(w,h)+index];if(item&&!item.disabled)useConsumable(item.id);}
         consumableLayer(w,h){if(!this.consumableMenu)return;this.regions=[];const c=this.ctx,narrow=w<650,compact=h<520,cols=narrow?(compact?3:2):5,perPage=this.consumablePageSize(w,h),list=state&&state.consumables||[],pages=Math.max(1,Math.ceil(list.length/perPage));this.consumablePage=clamp(this.consumablePage,0,pages-1);const bh=Math.min(h-20,narrow?(compact?310:460):330),bw=Math.min(w-20,narrow?560:760),x=(w-bw)/2,y=(h-bh)/2,gap=8,gridTop=y+62,rows=Math.ceil(perPage/cols),cellW=(bw-32-gap*(cols-1))/cols,cellH=(bh-122-gap*(rows-1))/rows;c.fillStyle='rgba(1,4,7,.84)';c.fillRect(0,0,w,h);this.panel(x,y,bw,bh,'rgba(98,225,157,.68)',true);this.gameText('물약',w/2,y+29,narrow?20:24,'center','#ecfff4');this.text('P',x+12,y+15,8,900,'left','#91cbaa');if(pages>1)this.text((this.consumablePage+1)+' / '+pages,w/2,y+49,9,800,'center','#9da5b3');const pageItems=list.slice(this.consumablePage*perPage,(this.consumablePage+1)*perPage);if(!pageItems.length)this.text('보유 중인 물약이 없습니다.',w/2,y+bh*.48,narrow?11:13,700,'center','#a9afb8');pageItems.forEach((item,index)=>{const col=index%cols,row=Math.floor(index/cols),cx=x+16+col*(cellW+gap),cy=gridTop+row*(cellH+gap),disabled=busy||item.disabled||Number(item.count||0)<1;this.panel(cx,cy,cellW,cellH,disabled?'rgba(95,101,110,.4)':'rgba(98,225,157,.48)',true);const art=Math.min(narrow?42:48,cellH-30),ax=cx+8,ay=cy+(cellH-art)/2,frame=this.image(item.frameUrl),icon=this.image(item.iconUrl);if(frame)c.drawImage(frame,ax,ay,art,art);if(icon)c.drawImage(icon,ax,ay,art,art);const tx=ax+art+8,tw=cellW-art-24,key=index===9?'0':String(index+1);this.text(key,cx+6,cy+8,7,900,'left',disabled?'#676c74':'#a5d8bb');this.text(item.name,tx,cy+cellH*.31,narrow?9:10,900,'left',disabled?'#737983':'#f0f5f1',tw);this.text(item.disabled?'흑막의 저주 · 회복 봉인':item.effect,tx,cy+cellH*.56,narrow?8:9,700,'left',disabled?'#636971':'#87d9aa',tw);this.text('x'+number(item.count),tx,cy+cellH*.78,8,800,'left',disabled?'#62676e':'#d6c28b',tw);if(!disabled)this.region(cx,cy,cellW,cellH,()=>useConsumable(item.id));});const footerY=y+bh-45,buttonW=narrow?68:82;if(pages>1){this.actionButton(x+16,footerY,buttonW,32,{label:'이전',disabled:busy,action:()=>this.changeConsumablePage(-1,w,h)});this.actionButton(x+bw-16-buttonW,footerY,buttonW,32,{label:'다음',disabled:busy,action:()=>this.changeConsumablePage(1,w,h)});}this.actionButton(w/2-42,footerY,84,32,{label:'닫기',disabled:busy,action:()=>this.closeConsumables()});}
         // PVP pop typography, easing, colors and lifetime; anchors follow this arena.
-        addPop(pop){this.damagePops.push(Object.assign({start:performance.now()+(Number(pop&&pop.delay)||0),side:'target',y:combatPopY(),size:30,color:'#ffe06e',label:'',sub:''},pop));}
-        damageLayer(w,h){
-            const time=performance.now(),narrow=w<700;
-            this.damagePops=this.damagePops.filter(pop=>{
-                const p=(time-pop.start)/950;
-                if(p<0)return true;
-                if(p>=1)return false;
-                const ease=1-Math.pow(1-clamp(p,0,1),3),x=w*sideX(pop.side,w<680),y=h*pop.y-(reducedMotion?0:ease*62),
-                    alpha=clamp(Math.min(p*8,(1-p)*3.4),0,1),scale=reducedMotion?1:.7+Math.sin(Math.min(1,p)*Math.PI)*.36;
-                this.ctx.save();this.ctx.globalAlpha=alpha;this.ctx.translate(x,y);this.ctx.scale(scale,scale);
-                if(pop.label)this.text(pop.label,0,-26,narrow?10:12,900,'center','#ffb0a8');
-                this.text(pop.text,0,0,narrow?pop.size*.76:pop.size,900,'center',pop.color);
-                if(pop.sub)this.text(pop.sub,0,25,narrow?9:11,800,'center','#efe4cd');
-                this.ctx.restore();
-                return true;
-            });
-        }
+        // 수치의 모양과 움직임은 공용 DamageNumbers가 정한다(PVP와 같다). 여기서는 어느 쪽 머리 위인지만 정한다.
+        addPop(pop){this.pops.add(Object.assign({x:sideX(pop.side||'target',innerWidth<680),y:combatPopY()},pop));}
+        damageLayer(w,h){this.pops.draw(this.ctx,w,h);}
         bannerLayer(w,h){
             if(!this.banner||this.bannerUntil<=performance.now())return;
             const remain=this.bannerUntil-performance.now(),age=1-clamp(remain/1250,0,1),alpha=clamp(Math.min(age*5,remain/220),0,1),narrow=w<700,c=this.ctx,cx=w/2,y=h*(narrow?.3:.33),bw=Math.max(60,Math.min(w-40,narrow?310:460));
@@ -455,7 +441,7 @@
         const epoch=presentationEpoch;
         setTimeout(()=>{if(epoch===presentationEpoch)callback();},delay);
     }
-    function presentHit(event,hit,side,index){
+    function presentHit(event,hit,side,index,chain){
         const shield=hit.type==='absorbed',summon=hit.type==='summonAbsorbed';
         const tick=side==='target'&&['tick','dot','summon'].includes(event.action),critical=!tick&&!!hit.critical;
         const avoided=!!hit.avoided,received=side==='actor',amount=Number(hit.damage||0);
@@ -463,11 +449,10 @@
         let sub=hit.label||(!index?event.skillName||event.source||(tick?'지속 피해':''):'');
         if(received&&(event.bossAction||event.bossRetaliation))sub=event.bossAction==='darkPulse'?'암흑 파동':'일참';
         const lead=avoided?0:renderer.strike(side,event,hit)||0,land=()=>{
+        const playerMax=Number(state&&state.player&&state.player.maxHp||0);
         hud.addPop({
-            side,text:avoided?'회피':shield?'흡수 '+number(amount):summon?'대행 '+number(amount):(received?'-':'')+number(amount),
-            color:avoided?'#cdd6e2':shield?'#b8d8ff':summon?'#61e7ff':received?'#ff8f87':tick?'#ffd88a':critical?'#ff5d4d':'#ffe06e',
-            size:avoided?26:shield||summon?(tick?22:24):tick?24:received?28:critical?46:34,
-            label:critical?'치명타':'',sub
+            side,kind:avoided?'miss':shield?'absorb':summon?'proxy':'damage',amount,received,minor:tick,critical,
+            fixed:!!(effectCatalog&&effectCatalog.damageStyle(event,hit).fixed),label:avoided?'':sub,ratio:received&&playerMax>0?amount/playerMax:null,chain
         });
         if(amount>0&&!avoided&&!shield&&!summon){audio.hit();if(critical)audio.play('crit',.82);hud.impact(critical);}
         };
@@ -491,21 +476,23 @@
         // Incoming damage starts immediately; never put a wind-up after the HP update.
         // 첫 타격의 장면을 시작해 닿는 시각을 알아내고, 이어지는 타격은 장면이 정한 시각(없으면 95ms 간격)에 낸다.
         const hitAt=i=>!i||!times?lead+i*95:i<times.length?times[i]:times[times.length-1]+(i-times.length+1)*95;
-        if(hits.length){presentHit(event,hits[0],'target',0);note(renderer.lastPlayed);if(lead>0&&previousBossHp!=null)bossHold={until:performance.now()+lead,hp:previousBossHp};}
-        hits.forEach((hit,i)=>{if(i)schedulePresentation(()=>presentHit(event,hit,'target',i),hitAt(i));});
+        // 3타 이상이면 합계를 함께 센다(막히거나 빗나간 타격, 소환수와 지속 피해는 빼고 센다).
+        const summed=['tick','dot','summon'].includes(event.action)?0:hits.filter(hit=>Number(hit.damage||0)>0&&!hit.avoided&&hit.type!=='absorbed'&&hit.type!=='summonAbsorbed').length,chain=summed>=3?{size:summed}:null;
+        if(hits.length){presentHit(event,hits[0],'target',0,chain);note(renderer.lastPlayed);if(lead>0&&previousBossHp!=null)bossHold={until:performance.now()+lead,hp:previousBossHp};}
+        hits.forEach((hit,i)=>{if(i)schedulePresentation(()=>presentHit(event,hit,'target',i,chain),hitAt(i));});
         renderer.fxAfter=0;
         const after=hits.length?hitAt(hits.length-1):0;
         received.forEach((hit,i)=>schedulePresentation(()=>presentHit(event,hit,'actor',i),i*95));
-        if(event.dodged){renderer.playEffects({action:'attack',effectIds:['combat:회피']},'target');hud.addPop({side:'target',text:'회피',color:'#cdd6e2',size:26});}
+        if(event.dodged){renderer.playEffects({action:'attack',effectIds:['combat:회피']},'target');hud.addPop({side:'target',kind:'miss'});}
         if(event.counterDamage)presentHit({action:'attack',skillName:'카운터',effectIds:['skill:카운터']},{damage:event.counterDamage},'target',0);
         const reflected=event.reflectedHits||[];
-        reflected.forEach((hit,i)=>schedulePresentation(()=>{renderer.strike('actor',{action:'dot',effectIds:hit.effectIds},hit);hud.addPop({side:'actor',text:'-'+number(hit.damage),color:'#d7a2ff',size:22,sub:hit.label||'가시 반사'});},after+(i+1)*95));
-        if(!reflected.length&&Number(event.selfDamage)>0)hud.addPop({side:'actor',text:'-'+number(event.selfDamage),color:'#ff8f87',size:22,delay:120+after});
+        reflected.forEach((hit,i)=>schedulePresentation(()=>{renderer.strike('actor',{action:'dot',effectIds:hit.effectIds},hit);hud.addPop({side:'actor',kind:'reflect',amount:hit.damage,label:hit.label||'가시 반사'});},after+(i+1)*95));
+        if(!reflected.length&&Number(event.selfDamage)>0)hud.addPop({side:'actor',received:true,minor:true,amount:event.selfDamage,delay:120+after});
         const hp=Number(event.recoveredHp||event.heal||0),mp=Number(event.recoveredMp||event.mpRecovery||0);
         if(event.action==='shield'){
-            const amount=Number(event.shield||event.heal||0);if(amount>0)hud.addPop({side:'actor',text:'+'+number(amount)+' 보호막',color:'#eaf2ff',size:22,y:recoveryPopY()});
-        }else if(hp>0)hud.addPop({side:'actor',text:'HP +'+number(hp),color:'#63f29b',size:22,y:recoveryPopY(),delay:hits.length?120+after:0});
-        if(mp>0)hud.addPop({side:'actor',text:'MP +'+number(mp),color:'#72c7ff',size:21,y:recoveryPopY()+.04,delay:150+after});
+            const amount=Number(event.shield||event.heal||0);if(amount>0)hud.addPop({side:'actor',kind:'guard',amount,y:recoveryPopY()});
+        }else if(hp>0)hud.addPop({side:'actor',kind:'heal',amount:hp,y:recoveryPopY(),delay:hits.length?120+after:0});
+        if(mp>0)hud.addPop({side:'actor',kind:'mana',amount:mp,y:recoveryPopY()+.04,delay:150+after});
         if(event.action==='consumable'||event.action==='heal')audio.play('potion',.68);
         else if(event.action==='skill'&&(cut||!renderer.fx)||event.curseApplied)audio.play('skill',.68);
         if(event.curseApplied){hud.consumableMenu=false;hud.showBanner('회복 봉인','흑막의 저주');}

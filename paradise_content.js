@@ -11,7 +11,8 @@ const CATEGORIES = {
 const a = (id, name, floors, desc, effect, options = {}) => ({ id, name, floors, desc, effect, rarity: 'gold', category: CATEGORIES[id] || 'basic', ...options });
 const SILVER_EQUIPMENT = new Set(['bloodHat', 'foreshadow', 'foreshadowCrit', 'deepArmor', 'filter', 'blackShoes', 'flowingBlood', 'preview', 'underestimate', 'jinsai', 'fortunePouch', 'gungtaek', 'faultyBattery', 'kingNecklace', 'kingRing', 'blackPants', 'ultimatumArmor', 'ultimatumPants', 'bloodFlow', 'bloodyShoes']);
 const PRISMATIC_EQUIPMENT = new Set(['beginner', 'prism', 'dmc', 'coin', 'quattro', 'baseball', 'firstFist', 'elementBooster', 'skyHat', 'theKingmaker', 'sageRobe', 'conquerorHat', 'judgeDice', 'currentShoes']);
-const AUGMENTS = [
+// 2026-11 개편 전의 증강. 더 이상 제시하지 않는다. 개편 전에 시작한 탐험의 획득 기록과 대장장이 이벤트의 장비 목록을 해석할 때만 쓴다.
+const LEGACY_AUGMENTS = [
     a('lastStand', '최후의 저항', 8, 'HP가 30% 이하일 때 최종 피해가 40% 증가합니다.', { lastStand: 1 }),
     a('firstStrike', '첫 번째 일격', 10, '매 전투 첫 공격의 피해량이 2배로 증가합니다.', { firstStrike: 1 }),
     a('execution', '처형자의 낙인', 12, 'HP가 20% 이하인 적에게 50%의 추가 피해를 입힙니다.', { execution: 1 }),
@@ -199,5 +200,6 @@ const EVENTS = {
     riftTrader: { title: '균열의 거래상', story: '균열 속 상인이 이번 탐험에 쓸 힘을 제안합니다. 대가는 회랑에 쌓이는 뒤틀림입니다.', quote: '네가 강해질수록, 이곳은 조금 더 일그러질 거야.' },
     collapse: { title: '회랑이 붕괴하기 시작합니다!', story: '천상이 갈라지고 발밑의 별들이 추락합니다. 뒤틀린 회랑이 마지막 선택을 요구합니다.', quote: '돌아갈 것인가, 균열 너머로 나아갈 것인가.' }
 };
-const EQUIPMENT_NAMES = AUGMENTS.filter(a => a.equipment).map(a => a.equipment);
-module.exports = { AUGMENTS, RELICS, EVENTS, EQUIPMENT_NAMES };
+const AUGMENTS = require('./paradise_augments_prism');
+const EQUIPMENT_NAMES = LEGACY_AUGMENTS.filter(a => a.equipment).map(a => a.equipment);
+module.exports = { AUGMENTS, LEGACY_AUGMENTS, RELICS, EVENTS, EQUIPMENT_NAMES };

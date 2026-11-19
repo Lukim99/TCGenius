@@ -1,7 +1,18 @@
 const crypto = require('crypto');
 const attackStats = require('./attack_stats');
-const { AUGMENTS, RELICS, EVENTS, EQUIPMENT_NAMES } = require('./paradise_content');
-const EQUIPMENT_AUGMENTS = new Map(AUGMENTS.filter(a => a.equipment).map(a => [a.equipment, a]));
+const { AUGMENTS, LEGACY_AUGMENTS, RELICS, EVENTS, EQUIPMENT_NAMES } = require('./paradise_content');
+// 개편 전 장비 증강의 획득 기록은 진행 중이던 탐험에만 남아 있다.
+const EQUIPMENT_AUGMENTS = new Map(LEGACY_AUGMENTS.filter(a => a.equipment).map(a => [a.equipment, a]));
+const boons = require('./paradise_boons');
+const prism = () => require('./paradise_prism');
+// 증강은 네 번째 전투마다 제시한다. 2마리 연속 전투는 한 번으로 센다.
+const AUGMENT_EVERY = 4;
+// 한 탐험에서 가질 수 있는 증강은 10개까지다(사용자 지시 2026-11-19). 거울과의 거래로 모두 잃으면 다시 얻을 수 있다.
+const AUGMENT_MAX = 10;
+// 탐험 형식 판. 2026-11-19 천상 증강 개편을 배포하며 2로 올렸다. 이보다 옛 판으로 진행 중인 천상 탐험은 다음 접속 때 귀환시킨다
+// (사용자 지시 "천상을 플레이중인 유저가 있다면 강제로 귀환"). 보상은 평소 귀환처럼 정산해 받는다. 지옥 탐험은 건드리지 않는다.
+const RUN_VERSION = 2;
+const heldAugments = run => Object.keys(run.acquired || {}).filter(id => run.acquired[id]).length;
 const wisdom = require('./wisdom_puzzle');
 const rpg = () => require('./rpgenius');
 const TICKET = '천상의 회랑 입장권';
@@ -10,7 +21,7 @@ const MIN_LEVEL = 141;
 const JUDGE_MIN_FLOOR = 150;
 const ADVANCED_RELIC_CHANCE = .08;
 const TIME_LIMIT_MS = 15 * 60 * 1000;
-// 증강·유물·갈림길·이벤트 선택 중 정지한다. 전투와 퍼즐은 계속 흐른다.
+// 증강·성장·유물·갈림길·이벤트 선택 중 정지한다. 전투와 퍼즐은 계속 흐른다.
 const PAUSE_TIMER_OUTSIDE_COMBAT = true;
 const ULTIMATE_START_COOLDOWN_MS = 10000;
 const progression = require('./paradise_progression');
@@ -19,7 +30,7 @@ const cardContracts = require('./paradise_contracts');
 const features = require('./paradise_features');
 const stones = require('./paradise_stones');
 const timeLimit = run => TIME_LIMIT_MS + (progression.has(run, 'extraTime') ? 3 * 60 * 1000 : 0);
-const timerPaused = run => run.phase === 'ended' || PAUSE_TIMER_OUTSIDE_COMBAT && ['augment', 'relic', 'route', 'event'].includes(run.phase);
+const timerPaused = run => run.phase === 'ended' || PAUSE_TIMER_OUTSIDE_COMBAT && ['augment', 'boon', 'relic', 'route', 'event'].includes(run.phase);
 const CP_ANCHORS = [[1, 10000], [10, 100000], [100, 1000000], [200, 10000000], [300, 30000000], [400, 90000000], [500, 200000000], [600, 500000000], [700, 1000000000], [800, 3000000000], [900, 5000000000], [999, 10000000000]];
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const pick = (list, random = Math.random) => list[Math.min(list.length - 1, Math.floor(random() * list.length))];
@@ -155,7 +166,7 @@ function applyStats(user, stats) {
     for (const key of ['hp', 'mp', 'def']) stats[key] = Math.max(key === 'mp' ? 0 : 1, Math.round(Number(stats[key] || 0) * Math.max(.05, 1 + Number(effects[key] || 0) + (key === 'hp' ? hpGrowth : 0))));
     const missingHp = 1 - clamp(Number(resources.hp ?? stats.hp) / stats.hp, 0, 1);
     const attackGrowth = effects.victoryAtkGrowth ? Number(run.attackGrowth || 0) : 0;
-    attackStats.addPercent(stats, Number(effects.atk || 0) + Number(run.compass || 0) + attackGrowth + (effects.risk ? missingHp * .50 : 0) + (effects.calmMind && run.distortion <= 24 ? .20 : 0));
+    attackStats.addPercent(stats, Number(effects.atk || 0) + Number(run.compass || 0) + attackGrowth + (effects.risk ? missingHp * .50 : 0) + (effects.calmMind && run.distortion <= 24 ? .20 : 0), Number(run.boonStats?.atk || 0));
     stats.finalDamage = Number(stats.finalDamage || 0) + Number(effects.final || 0) + (effects.lastStand && Number(resources.hp ?? stats.hp) <= stats.hp * .30 ? .40 : 0) + (effects.eclipse && run.distortion >= 50 ? .30 : 0);
     stats.takenDamage = Number(stats.takenDamage || 0) + Number(effects.taken || 0) + (missingHp >= .65 ? Number(effects.lowHpGuard || 0) : 0) - (effects.eclipse && run.distortion < 50 ? .10 : 0);
     stats.maxCmb = Number(stats.maxCmb || 0) + Number(effects.maxCmb || 0);
@@ -168,6 +179,7 @@ function applyStats(user, stats) {
         stats.crit = stats.fixedCriticalChance = .20;
         stats.critMul += .50;
     }
+    if (run.mode !== 'hell') { boons.applyStats(run, stats); prism().applyStats(user, stats); }
 }
 function heal(user, hp = 0, mp = 0) {
     const resources = getResources(user);
@@ -247,7 +259,7 @@ function chooseRelic(user, id, random = Math.random) {
     const message = grantRelic(user, id, random);
     run.relicPicksRemaining--; run.relicDraftRarities?.shift(); run.relicChoices = [];
     if (!offerRelics(user, random)) {
-        if (run.augmentCategory || !collapseEncounter(user)) offerAugments(user, random);
+        if (run.augmentCategory || !collapseEncounter(user)) nextChoice(user, random);
     }
     return { message };
 }
@@ -255,7 +267,7 @@ function normalizeRelicOffer(user, random = Math.random) {
     const run = user.paradise;
     if (!active(user) || run.mode === 'hell' || run.phase !== 'relic' || !run.relicChoices?.includes('alchemistFlask')) return false;
     run.relicChoices = run.relicChoices.filter(id => id !== 'alchemistFlask');
-    if (!run.relicChoices.length && !offerRelics(user, random)) offerAugments(user, random);
+    if (!run.relicChoices.length && !offerRelics(user, random)) nextChoice(user, random);
     run.revision++; return true;
 }
 function obtainedAugment(run, id) { return !!run.acquired[id] || (run.discardedAugments || []).includes(id); }
@@ -281,83 +293,46 @@ function eligibleAugment(user, choice, equipped = equipmentOptions(user).map(e =
         && stones.eligible(user, choice)
         && (!cardContracts.isCombatReward(choice) || contractChallenge(user, choice, playerPower));
 }
-function augmentRarity(run, pool, random) {
-    const weights = run.distortion >= 50
-        ? run.augmentFromElite ? { silver: 20, gold: 25, prismatic: 35, cursed: 20 } : { silver: 35, gold: 30, prismatic: 15, cursed: 20 }
-        : run.augmentFromElite ? { silver: 25, gold: 30, prismatic: 40, cursed: 5 } : { silver: 40, gold: 35, prismatic: 20, cursed: 5 };
-    const minimum = Math.min(3, Math.max(0, ...Object.keys(weights).map(rarity => pool.filter(a => a.rarity === rarity).length)));
-    const rarities = Object.entries(weights).filter(([rarity]) => pool.filter(a => a.rarity === rarity).length >= minimum && pool.some(a => a.rarity === rarity));
-    if (!rarities.length) return null;
-    let roll = random() * rarities.reduce((sum, [, weight]) => sum + weight, 0);
-    return (rarities.find(([, weight]) => (roll -= weight) < 0) || rarities.at(-1))[0];
-}
-function availableAugments(user, rarity = null, category = null) {
+function availableAugments(user, category = null) {
     const run = user.paradise, equipped = equipmentOptions(user).map(e => e.name), playerPower = rpg().calculateCombatPower(user).total;
-    return AUGMENTS.filter(a => (!rarity || a.rarity === rarity) && (!category || a.category === category) && !obtainedAugment(run, a.id) && eligibleAugment(user, a, equipped, playerPower));
+    return AUGMENTS.filter(a => (!category || a.category === category) && !obtainedAugment(run, a.id) && eligibleAugment(user, a, equipped, playerPower));
 }
-function pickAugment(pool, run, random) {
-    if (run.floor > 100 || !pool.some(a => a.id === 'stoneThrow')) return cardContracts.pick(pool, random);
-    const weight = a => a.id === 'stoneThrow' ? run.floor <= 50 ? 15 : 8 : cardContracts.isCardReward(a) ? cardContracts.WEIGHT : 1;
-    let roll = random() * pool.reduce((sum, a) => sum + weight(a), 0);
-    return pool.find(a => (roll -= weight(a)) < 0) || pool.at(-1);
-}
-function offerAugments(user, random = Math.random, rarity = null) {
+// 증강 세 개를 제시한다. 이미 10개를 가졌거나 남은 증강이 없으면 false를 돌려주고 단계를 바꾸지 않는다(부르는 쪽이 성장 선택지로 넘어간다).
+function offerAugments(user, random = Math.random) {
     const run = user.paradise;
-    const entryOffer = !!run.stoneEntryResume && !run.augmentCategory;
-    if (entryOffer) rarity = 'silver';
-    const eligible = availableAugments(user, rarity, run.augmentCategory).filter(a => !entryOffer || a.isStoneEntry);
-    run.stoneEntryOffer = entryOffer;
-    run.offerRarity = rarity || augmentRarity(run, eligible, random);
-    delete run.augmentFromElite;
-    const pool = eligible.filter(a => a.rarity === run.offerRarity);
-    const choices = [];
-    const firstStone = run.floor <= 50 && !run.stoneIntroShown && pool.find(a => a.id === 'stoneThrow');
-    if (firstStone) { choices.push(firstStone.id); pool.splice(pool.indexOf(firstStone), 1); }
-    while (choices.length < 3 && pool.length) {
-        const stonePool = !choices.length && run.acquired.stoneThrow ? pool.filter(a => a.stoneBranch) : [];
-        const choice = pickAugment(stonePool.length ? stonePool : pool, run, random);
-        choices.push(choice.id); pool.splice(pool.indexOf(choice), 1);
-    }
-    if (!entryOffer) features.call('modifyOffers', user, choices, eligible.filter(a => a.rarity === run.offerRarity), random);
-    if (firstStone && !choices.includes(firstStone.id)) {
-        const replaceAt = choices.findLastIndex(id => !(run.traitState?.offerProtected || []).includes(id));
-        if (replaceAt >= 0) choices[replaceAt] = firstStone.id;
-    }
-    if (choices.includes('stoneThrow')) run.stoneIntroShown = true;
-    // 트리 외 증강도 고를 수 있게 두면서, 진행 가능한 돌 강화 한 칸은 유지한다.
-    if (run.acquired.stoneThrow && !choices.some(id => AUGMENTS.find(a => a.id === id)?.stoneBranch)) {
-        const stonePool = eligible.filter(a => a.rarity === run.offerRarity && a.stoneBranch);
-        const replaceAt = choices.findLastIndex(id => !(run.traitState?.offerProtected || []).includes(id));
-        if (stonePool.length && replaceAt >= 0) choices[replaceAt] = cardContracts.pick(stonePool, random).id;
-    }
+    if (heldAugments(run) >= AUGMENT_MAX) { delete run.augmentCategory; return false; }
+    const eligible = availableAugments(user, run.augmentCategory);
+    if (!eligible.length) { delete run.augmentCategory; return false; }
+    const pool = [...eligible], choices = [];
+    while (choices.length < 3 && pool.length) { const choice = cardContracts.pick(pool, random); choices.push(choice.id); pool.splice(pool.indexOf(choice), 1); }
+    features.call('modifyOffers', user, choices, eligible, random);
+    run.offerRarity = 'prismatic'; run.stoneEntryOffer = false; delete run.augmentFromElite;
     setPhase(user, 'augment'); run.choices = choices; run.event = null;
     run.offerId = crypto.randomUUID(); run.rerolled = choices.map(() => false); run.offerSeen = [...choices];
+    return true;
+}
+// 전투나 이벤트를 마친 뒤의 선택: 네 번째 전투마다 증강을 먼저 고르고, 이어서 성장 선택지(층 이동)로 넘어간다.
+function nextChoice(user, random = Math.random) {
+    const run = user.paradise;
+    if ((run.augmentDue || run.augmentCategory) && offerAugments(user, random)) { run.augmentDue = false; return; }
+    run.augmentDue = false; delete run.augmentCategory;
+    boons.offer(user, random);
+}
+// 증강이나 성장 선택지를 고른 뒤의 공통 처리(천상 특수능력: 생명의 선택, 마력의 선택).
+function afterChoice(user) {
+    const run = user.paradise;
+    heal(user, progression.has(run, 'augmentHp') ? .02 : 0, progression.has(run, 'augmentMp') ? .02 : 0);
 }
 function rerollPool(user, playerPower = rpg().calculateCombatPower(user).total) {
     const run = user.paradise, equipped = equipmentOptions(user).map(e => e.name);
-    return AUGMENTS.filter(a => (!run.stoneEntryOffer || a.isStoneEntry) && (!run.augmentCategory || a.category === run.augmentCategory) && (!run.offerRarity || a.rarity === run.offerRarity) && (run.stoneEntryOffer || !run.startingAugments?.length || a.rarity === run.startingAugments[0]) && !obtainedAugment(run, a.id) && !run.choices.includes(a.id) && !(run.offerSeen || []).includes(a.id) && eligibleAugment(user, a, equipped, playerPower));
+    return AUGMENTS.filter(a => (!run.augmentCategory || a.category === run.augmentCategory) && !obtainedAugment(run, a.id) && !run.choices.includes(a.id) && !(run.offerSeen || []).includes(a.id) && eligibleAugment(user, a, equipped, playerPower));
 }
+// 개편 전 증강이 제시된 채 저장된 탐험은 새 증강(또는 성장 선택지)으로 다시 제시한다.
 function normalizeAugmentOffer(user, random = Math.random) {
     const run = user.paradise;
     if (!active(user) || run.mode === 'hell' || run.phase !== 'augment' || run.completed) return false;
-    const rarities = new Set(run.choices.map(id => AUGMENTS.find(a => a.id === id)?.rarity).filter(Boolean));
-    if (rarities.size <= 1) {
-        const offered = run.choices.map(id => AUGMENTS.find(a => a.id === id));
-        if (!offered.some(a => !a || cardContracts.isCombatReward(a)) && (!run.offerRarity || rarities.has(run.offerRarity))) return false;
-        const playerPower = rpg().calculateCombatPower(user).total;
-        const invalid = offered.map(a => !a || run.offerRarity && a.rarity !== run.offerRarity || cardContracts.isCombatReward(a) && !contractChallenge(user, a, playerPower));
-        if (!invalid.some(Boolean)) return false;
-        const pool = rerollPool(user, playerPower).filter(a => a.rarity === (run.offerRarity || [...rarities][0]));
-        run.rerolled ||= run.choices.map(() => false);
-        run.offerSeen ||= [...run.choices];
-        for (let i = run.choices.length - 1; i >= 0; i--) if (invalid[i]) {
-            const replacement = cardContracts.pick(pool, random);
-            if (replacement) { run.choices[i] = replacement.id; run.offerSeen.push(replacement.id); pool.splice(pool.indexOf(replacement), 1); }
-            else { run.choices.splice(i, 1); run.rerolled.splice(i, 1); }
-        }
-        run.revision++; return true;
-    }
-    offerAugments(user, random, run.startingAugments?.[0] || null);
+    if (!run.choices.some(id => !AUGMENTS.some(a => a.id === id))) return false;
+    if (!offerAugments(user, random)) { run.startingAugments = []; boons.offer(user, random); }
     run.revision++;
     return true;
 }
@@ -367,14 +342,9 @@ function rerollAugment(user, id, random = Math.random) {
     const index = run.choices.indexOf(id);
     if (index < 0) return { error: '현재 제시된 증강을 새로고침해주세요.' };
     if (run.rerolled?.[index]) return { error: '이 선택지는 이미 새로고침했습니다.' };
-    let pool = rerollPool(user).filter(a => a.rarity === (run.offerRarity || AUGMENTS.find(a => a.id === id)?.rarity));
-    const oldChoice = AUGMENTS.find(a => a.id === id);
-    if (oldChoice?.stoneBranch && !run.choices.some(other => other !== id && AUGMENTS.find(a => a.id === other)?.stoneBranch)) {
-        const stonePool = pool.filter(a => a.stoneBranch);
-        if (stonePool.length) pool = stonePool;
-    }
-    const choice = pool.length ? pickAugment(pool, run, random) : null;
+    const pool = rerollPool(user), choice = pool.length ? cardContracts.pick(pool, random) : null;
     if (!choice) return { error: '새로 제시할 수 있는 증강이 없습니다.' };
+    const oldChoice = AUGMENTS.find(a => a.id === id);
     run.rerolled ||= run.choices.map(() => false);
     run.offerSeen ||= [...run.choices];
     run.rerolled[index] = true; run.offerSeen.push(choice.id); run.choices[index] = choice.id;
@@ -387,8 +357,8 @@ function continueExploration(user, random = Math.random) {
     if (run.completed) return { error: '999층을 정복했습니다. 귀환하여 보상을 정산해주세요.' };
     if (run.phase !== 'augment' || run.choices.some(id => AUGMENTS.some(a => a.id === id) && !obtainedAugment(run, id))) return { error: '먼저 증강을 선택해주세요.' };
     delete run.augmentCategory;
-    move(user, 5); offerRoutes(user, random);
-    return { message: '새로운 증강이 없어 5층을 올라갔습니다.' };
+    boons.offer(user, random);
+    return { message: '남은 증강이 없어 성장 선택으로 넘어갑니다.' };
 }
 function enemyPowerMultiplier(kind) {
     return { elite: 1.2, boss: 1.5, judge: 1.5, rift: 1.5, final: 1.5, moonDuel: 1.8 }[kind] || 1;
@@ -474,11 +444,21 @@ function createMonster(user, kind = 'normal', random = Math.random) {
     return enemy;
 }
 function startCombat(user, kind = 'normal', sequence = null, random = Math.random) {
-    const run = user.paradise;
+    const run = user.paradise, heaven = run.mode !== 'hell';
+    // 천상의 일반 전투는 HP가 절반인 적 두 마리와 연속으로 싸운다. 두 마리를 합친 부담은 예전 한 마리와 같다.
+    if (heaven && kind === 'normal' && !sequence) sequence = { kind, remaining: 2, pair: true };
+    if (sequence) { sequence.total ||= sequence.remaining; sequence.wave ||= 1; }
+    const wave = sequence?.wave || 1;
+    // 두 번째 적은 같은 전투의 연속이다: 스킬 쿨타임과 보호막을 이어받고, 전투 시작 효과는 다시 걸지 않는다.
+    const linked = heaven && !!sequence?.pair && wave % 2 === 0 && run.phase === 'combat' && !!user.field?.paradise;
+    const carried = linked ? { skillCooldowns: user.field.skillCooldowns || {}, shieldLayers: user.field.shieldLayers, shield: user.field.shield } : null;
+    if (!linked) run.encounterId = crypto.randomUUID();
     rpg().clearFieldRuntimeTimers(user.name);
     setPhase(user, 'combat'); run.event = null; run.choices = []; run.routes = []; run.sequence = sequence;
     run.lastOutcome = null;
     const enemy = createMonster(user, kind, random);
+    if (heaven && sequence?.pair) { enemy.hp = enemy.maxHp = Math.max(1, Math.round(enemy.hp * .5)); enemy.pairHalf = true; }
+    if (sequence?.total > 1) enemy.wave = { index: wave, total: sequence.total };
     if (sequence?.reward === 'casino') { enemy.name = '잊혀진 도박사'; enemy.portrait = 'gambler'; }
     if (kind === 'mirror') {
         const baseUser = { ...user, field: null, paradise: null, hp: undefined, mp: undefined };
@@ -528,18 +508,28 @@ function startCombat(user, kind = 'normal', sequence = null, random = Math.rando
     }
     if (run.mode !== 'hell' && !enemy.mirror) enemy.recommendedPower = rpg().computeCombatPowerFromStats(enemy).total;
     if (kind === 'elite' && progression.has(run, 'fragileElites') && run.celestial.elites < 2) { enemy.hp = 1; run.celestial.elites++; }
-    run.enemy = enemy; run.battle = { firstAttack: true, firstSkill: true, survived: false, comeback: 0, collapse, insurance: run.insurance === true };
+    // 두 번째 적은 같은 전투이므로 전투 기록(첫 공격, 사용한 스킬, 계약 진행, 전투마다 한 번 효과)을 이어받는다.
+    // 쓰러진 적에게 걸려 있던 지속 피해만 지우고, 소환수(기병, 떠다니는 검, 천사)는 남긴다.
+    if (linked && run.battle) {
+        const dots = run.battle.mechanics?.dots || {};
+        for (const key of Object.keys(dots)) if (!dots[key].summon) delete dots[key];
+        run.enemy = enemy;
+    } else { run.enemy = enemy; run.battle = { firstAttack: true, firstSkill: true, survived: false, comeback: 0, collapse, insurance: run.insurance === true }; }
     if (run.nextHackCard) { run.battle.hackCard = run.nextHackCard; delete run.nextHackCard; }
     run.combatLog = [];
     if (run.mode === 'hell') recordFloor(user);
     run.insurance = false;
     const enteredAt = Date.now();
     user.field = { name: run.mode === 'hell' ? '지옥' : '천상의 회랑', paradise: true, enteredAt, nextActionAt: 0, nextEnemyAttackAt: enteredAt + (run.mode === 'hell' ? 4000 : enemyAttackInterval(kind)), skillCooldowns: {}, equipmentState: {}, elite: kind === 'normal' ? null : { hp: enemy.hp, encounteredAt: enteredAt } };
-    if (run.mode !== 'hell') for (const { skill } of rpg().getUltimateSkills(user)) user.field.skillCooldowns[skill.name] = enteredAt + ULTIMATE_START_COOLDOWN_MS;
-    if (has(run, 'orb')) heal(user, 0, .15);
-    require('./paradise_mechanics').onBattle(user);
-    features.call('onBattle', user, random);
-    routeMechanics.onBattle(user);
+    if (carried) Object.assign(user.field, carried);
+    else if (run.mode !== 'hell') for (const { skill } of rpg().getUltimateSkills(user)) user.field.skillCooldowns[skill.name] = enteredAt + ULTIMATE_START_COOLDOWN_MS;
+    if (!linked) {
+        if (has(run, 'orb')) heal(user, 0, .15);
+        require('./paradise_mechanics').onBattle(user);
+        features.call('onBattle', user, random);
+        routeMechanics.onBattle(user);
+    }
+    if (heaven) prism().onBattle(user, linked);
     log(run, `${enemy.name} 조우`);
 }
 function startEvent(user, random = Math.random, eventId) {
@@ -603,8 +593,8 @@ function chooseRoute(user, id, random = Math.random) {
     features.call('onRoute', user, route);
     if (route.kind === 'event') startEvent(user, random);
     else {
-        const count = routeMechanics.byId.get(route.gimmick)?.sequence;
-        startCombat(user, route.kind, count ? { kind: route.kind, remaining: count } : null, random);
+        const count = routeMechanics.byId.get(route.gimmick)?.sequence, pair = route.kind === 'normal';
+        startCombat(user, route.kind, count || pair ? { kind: route.kind, remaining: (count || 1) * (pair ? 2 : 1), pair } : null, random);
     }
     return { message: route.gimmick ? routeMechanics.describe(route.gimmick).name : '선택한 길로 이동합니다.' };
 }
@@ -620,7 +610,7 @@ function enter(user, random = Math.random) {
     if (id < 0 || rpg().getInventoryItemCount(user, id) < 1) return { error: TICKET + ' 1장이 필요합니다.' };
     const stats = rpg().calculateUserStats(user);
     rpg().removeInventoryItem(user, id, 1);
-    user.paradise = { id: crypto.randomUUID(), revision: 0, status: 'active', phase: 'combat', floor: 1, highestFloor: 0, clearedFloor: 0, distortion: 0, effects: {}, relics: [], temporary: [], equipmentPermanent: {}, history: [], acquired: {}, contracts: [], battlesWon: 0, elitesWon: 0, startedAt: Date.now(), baseRewards: structuredClone(config.baseRewards), receipt: null };
+    user.paradise = { id: crypto.randomUUID(), version: RUN_VERSION, revision: 0, status: 'active', phase: 'combat', floor: 1, highestFloor: 0, clearedFloor: 0, distortion: 0, effects: {}, relics: [], temporary: [], equipmentPermanent: {}, history: [], acquired: {}, contracts: [], battlesWon: 0, elitesWon: 0, startedAt: Date.now(), baseRewards: structuredClone(config.baseRewards), receipt: null };
     user.paradise.resources = { hp: stats.hp, mp: stats.mp };
     user.paradise.celestial = progression.snapshot(user);
     user.paradise.milestoneRewards = structuredClone(config.milestoneRewards || []);
@@ -632,128 +622,32 @@ function enter(user, random = Math.random) {
     user.paradise.resources = { hp: progression.has(user.paradise, 'woundedAscent') ? Math.max(1, Math.round(startingStats.hp * .05)) : startingStats.hp, mp: startingStats.mp };
     features.call('onEnter', user, random);
     startCombat(user, 'normal', null, random);
-    user.paradise.startingAugments = ['silverAugment', 'prismaticAugment'].filter(id => progression.has(user.paradise, id)).map(id => id === 'silverAugment' ? 'silver' : 'prismatic');
-    if (user.paradise.startingAugments.length) offerAugments(user, random, user.paradise.startingAugments[0]);
+    // 은빛 예감은 증강 하나, 깨진 운명은 증강 둘을 고르고 시작한다.
+    user.paradise.startingAugments = [...(progression.has(user.paradise, 'silverAugment') ? ['start'] : []), ...(progression.has(user.paradise, 'prismaticAugment') ? ['start', 'start'] : [])];
+    if (user.paradise.startingAugments.length && !offerAugments(user, random)) user.paradise.startingAugments = [];
     return { message: '입장권 1장을 사용했습니다. 천상에 입장합니다.' };
 }
 function chooseAugment(user, id, random = Math.random) {
-    const resources = getResources(user);
     const run = user.paradise;
-    if (run.completed || run.phase !== 'augment' || !run.choices.includes(id) || obtainedAugment(run, id)) return { error: '현재 제시된 강화 중 하나를 선택해주세요.' };
+    getResources(user);
+    if (run.completed || run.phase !== 'augment' || !run.choices.includes(id) || obtainedAugment(run, id)) return { error: '현재 제시된 증강 중 하나를 선택해주세요.' };
     const choice = AUGMENTS.find(a => a.id === id);
-    if (!choice) return { error: '현재 제시된 증강 중 하나를 선택해주세요.' };
-    let message = choice.name + ' 획득', reveal = null;
-    if (choice.equipment && !equipmentOptions(user).some(e => e.name === choice.equipment)) return { error: '해당 장비가 장착되어 있지 않습니다.' };
-    if (!eligibleAugment(user, choice)) return { error: '이 증강의 장비, 유물 또는 전투 조건을 더 이상 만족하지 않습니다.' };
+    if (!choice || !eligibleAugment(user, choice)) return { error: '현재 제시된 증강 중 하나를 선택해주세요.' };
     delete run.augmentCategory;
-    addEffect(user, choice.effect);
-    switch (choice.special) {
-        case 'rukimHack': {
-            const cards = require('./DB/RPGenius/CharacterCards.json'), skills = require('./DB/RPGenius/Skills.json');
-            const cardId = pick(cards.map((_, i) => i).filter(i => i !== Number(user.main_card.id)), random);
-            run.nextHackCard = { id: cardId, star: user.main_card.star, type: '일반' };
-            message = '해킹 성공!\n' + cards[cardId].name + ', ' + cards[cardId].skills.map(i => skills[i].name).join(', ') + '\n다음 전투에서 사용할 수 있습니다.';
-            reveal = { motif: 'clarity', positive: true, text: message }; break;
-        }
-        case 'future': run.temporary.push({ id, name: choice.name, battles: 3, effects: { atk: .50 }, forceEliteAfter: true }); break;
-        case 'insurance': run.insurance = true; break;
-        case 'forbidden': run.temporary.push({ id, name: choice.name, battles: 1, effects: { taken: .50 }, cooldown: .50 }); break;
-        case 'rewind': heal(user, 1, 1); run.forceElite = true; break;
-        case 'gambler': { const won = random() < .5; addEffect(user, { atk: won ? .30 : -.20 }); message = '회랑의 도박사, ' + (won ? '성공!\n공격력 +30%' : '실패\n공격력 -20%'); break; }
-        case 'cursedTreasure': run.nextEliteAttack = true; break;
-        case 'greed': run.temporary.push({ id, name: choice.name, battles: 3, rewardAfter: .20 }); break;
-        case 'contract': run.contracts.push({ star: 7, type: '일반', name: '7성 일반 카드' }); break;
-        case 'breath': heal(user, 0, .20); break;
-        case 'pilgrim': heal(user, .15, 0); break;
-        case 'clarity': run.distortion = Math.max(0, run.distortion - 10); break;
-        case 'rest': heal(user, .30, .30); break;
-        case 'oneHp': resources.hp = 1; break;
-        case 'relicCard':
-        case 'relicExchange': {
-            const relic = pick(ordinaryRelics(run), random);
-            const reward = grantAdventureReward(user, choice.special === 'relicCard' ? { star: 6, type: '일반' } : { relics: 2 }, random);
-            run.relics = run.relics.filter(id => id !== relic);
-            clampResources(user);
-            message = RELICS.find(r => r.id === relic).name + ' 반납\n' + reward;
-            reveal = { motif: 'contract', positive: true, text: message }; break;
-        }
-        case 'relicCrown': {
-            const relics = ordinaryRelics(run);
-            run.relics = run.relics.filter(id => !relics.includes(id)); clampResources(user);
-            message = '유물 ' + relics.length + '개 반납\n' + grantAdventureReward(user, { star: 8, type: '전직' }, random);
-            reveal = { motif: 'contract', positive: true, text: message }; break;
-        }
-        case 'slotMachine': {
-            const numbers = Array.from({ length: 3 }, () => Math.min(7, 1 + Math.floor(random() * 7)));
-            const same = new Set(numbers).size;
-            const reward = same === 1 ? { star: numbers[0] === 7 ? 8 : 7, type: numbers[0] === 7 ? '각성' : '전직' } : same === 2 ? { star: 6, type: '일반' } : { relics: 2 };
-            message = numbers.join(', ') + '\n' + grantAdventureReward(user, reward, random);
-            reveal = { motif: 'gambler', positive: true, text: message }; break;
-        }
-        case 'doubleContract': {
-            const contract = pick(run.contracts.filter(c => c.star), random), won = random() < .35;
-            if (won) run.contracts.push({ ...contract }); else run.contracts.splice(run.contracts.indexOf(contract), 1);
-            message = (won ? '계약 복제 성공!\n' : '서명이 사라졌습니다.\n') + contract.name + (won ? ' 1장 추가' : ' 계약 상실');
-            reveal = { motif: 'gambler', positive: won, text: message }; break;
-        }
-    }
-    const acquire = choice.acquire;
-    if (acquire) {
-        if (acquire.temporary) run.temporary.push({ id, name: choice.name, ...structuredClone(acquire.temporary) });
-        if (acquire.hpCost) resources.hp = Math.max(1, Math.floor(resources.hp * (1 - acquire.hpCost)));
-        if (acquire.heal) heal(user, ...acquire.heal);
-        if (acquire.distortion) run.distortion = clamp(run.distortion + acquire.distortion, 0, 100);
-        if (acquire.forceElite) run.forceElite = true;
-        if (acquire.relic) {
-            message = choice.name + '\n' + grantRelic(user, null, random) + '\n공격력 -15%';
-            reveal = { motif: 'contract', positive: true, text: message };
-        }
-        if (acquire.outcomes) {
-            let roll = random();
-            const outcome = acquire.outcomes.find(option => (roll -= option.chance) < 0) || acquire.outcomes.at(-1);
-            addEffect(user, outcome.effects);
-            message = choice.name + '\n' + outcome.text;
-            reveal = { motif: 'gambler', positive: outcome.positive, text: message };
-        }
-    }
-    const stoneEntry = run.stoneEntryOffer, stoneResume = run.stoneEntryResume;
     run.acquired[id] = Number(run.acquired[id] || 0) + 1;
+    const detail = prism().onAcquire(user, choice, random);
     features.call('onChoose', user, choice, random);
-    if (choice.quest) {
-        (run.quests ||= []).push({ ...structuredClone(choice.quest), id, name: choice.name, remaining: choice.quest.battles, progress: 0, status: 'active' });
-        if (choice.quest.forceElite) run.forceElite = true;
-        message += '\n계약 시작, ' + choice.desc;
-    }
-    heal(user, progression.has(run, 'augmentHp') ? .02 : 0, progression.has(run, 'augmentMp') ? .02 : 0);
-    if (stoneEntry) {
-        delete run.stoneEntryOffer; delete run.stoneEntryResume;
-        log(run, '돌 던지기 입문, ' + choice.name);
-        if (stoneResume === 'start') {
-            if (run.startingAugments?.length) offerAugments(user, random, run.startingAugments[0]);
-            else startCombat(user, 'normal', null, random);
-        } else offerRoutes(user, random);
-    } else if (run.startingAugments?.length) {
+    afterChoice(user);
+    const message = choice.name + ' 획득' + (detail ? '\n' + detail : '');
+    if (run.startingAugments?.length) {
         log(run, '시작 증강, ' + choice.name); run.startingAugments.shift();
-        if (id === 'stoneThrow') { run.stoneEntryResume = 'start'; offerAugments(user, random, 'silver'); }
-        else if (run.startingAugments.length) offerAugments(user, random, run.startingAugments[0]);
-        else startCombat(user, 'normal', null, random);
+        if (!run.startingAugments.length || !offerAugments(user, random)) { run.startingAugments = []; startCombat(user, 'normal', null, random); }
     } else {
-        const floors = progression.augmentMovement(run, choice.floors);
-        move(user, choice.floors, choice.dangerous, true);
-        log(run, `${choice.name}, ${floors > 0 ? '+' : ''}${floors}층`);
-        if (choice.encounter) (run.pendingAugmentEvents ||= []).push(choice.encounter);
-        if (choice.floors < 0 && progression.has(run, 'halfSteps')) {
-            offerAugments(user, random);
-            message += '\n느린 순례, 증강을 하나 더 선택합니다.';
-        } else if (id === 'stoneThrow') {
-            run.stoneEntryResume = 'routes';
-            if (!forcedEncounter(user, random)) offerAugments(user, random, 'silver');
-        } else offerRoutes(user, random);
+        log(run, '증강 획득, ' + choice.name);
+        boons.offer(user, random);
     }
     run.lastOutcome = message;
-    if (choice.special === 'gambler') reveal = { motif: 'gambler', positive: message.includes('성공'), text: message };
-    if (reveal) log(run, message.replace(/\n/g, ', '));
-    return { message, reveal };
+    return { message, reveal: detail ? { motif: 'clarity', positive: true, text: message } : null };
 }
 function eventChoices(user) {
     const event = user.paradise.event;
@@ -860,7 +754,7 @@ function chooseEvent(user, id, input = {}, random = Math.random) {
     log(run, message); run.lastOutcome = message;
     if (!fighting) {
         if (event.id === 'collapse') nextEncounter(user, random);
-        else if (!routeMechanics.eventComplete(user, random)) { recordFloor(user); if (!offerRelics(user, random)) offerAugments(user, random); }
+        else if (!routeMechanics.eventComplete(user, random)) { recordFloor(user); if (!offerRelics(user, random)) nextChoice(user, random); }
     }
     return { message, reveal: !fighting && (['casino', 'chests'].includes(event.id) || event.id === 'riftTrader' && id !== 'skip') ? { motif: event.id === 'casino' ? 'gambler' : 'contract', positive: outcomePositive, text: message } : null };
 }
@@ -889,7 +783,7 @@ function answerPuzzle(user, answer, random = Math.random) {
         }
     }
     log(run, message); run.lastOutcome = message;
-    if (!routeMechanics.eventComplete(user, random)) { recordFloor(user); if (!offerRelics(user, random)) offerAugments(user, random); }
+    if (!routeMechanics.eventComplete(user, random)) { recordFloor(user); if (!offerRelics(user, random)) nextChoice(user, random); }
     return { message, reveal: { motif: 'clarity', positive: checked.correct, text: message } };
 }
 function grantAdventureReward(user, reward, random = Math.random) {
@@ -919,7 +813,8 @@ function resolveQuests(user, random) {
         quest.progress += quest.condition === 'criticals' ? Number(run.battle.criticalHits || 0) : quest.condition === 'untouched' ? (run.battle.hasTakenHpDamage ? 0 : 1) : 1;
         if (quest.remaining <= 0) {
             const success = quest.progress >= (quest.target || quest.battles);
-            const reward = quest.id === 'duelistContract' ? AUGMENTS.find(a => a.id === quest.id).quest.reward : quest.reward;
+            // 개편 전에 맺은 결투 계약은 옛 증강 목록에서 보상을 찾는다.
+            const reward = quest.id === 'duelistContract' ? LEGACY_AUGMENTS.find(a => a.id === quest.id).quest.reward : quest.reward;
             questResult(run, quest, success, success ? grantAdventureReward(user, reward, random) : '');
         } else if (quest.forceElite) run.forceElite = true;
     }
@@ -967,6 +862,7 @@ function onSkillUsed(user, spent, skillName) {
     if (!active(user)) return;
     const run = user.paradise, effects = sumEffects(run);
     routeMechanics.onSkill(user, skillName);
+    prism().onSkillUsed(user, skillName);
     run.battle.skillsUsed = Number(run.battle.skillsUsed || 0) + 1;
     if (skillName) run.battle.skillNames = [...new Set([...(run.battle.skillNames || []), skillName])];
     if (has(run, 'starlightSpool') && run.battle.skillsUsed === 1) {
@@ -999,7 +895,7 @@ function cooldownMultiplier(user) {
     if (run.battle.firstSkill && has(run, 'clock')) multiplier *= .70;
     if (run.battle.firstSkill && effects.clockHeart) multiplier = 0;
     run.battle.firstSkill = false;
-    return multiplier * routeMechanics.cooldown(user);
+    return multiplier * routeMechanics.cooldown(user) * prism().cooldownMultiplier(user);
 }
 function attackMultiplier(user, extra) {
     const resources = getResources(user);
@@ -1041,7 +937,7 @@ function attackMultiplier(user, extra) {
         }
         battle.attackCount = count + 1; battle.lastAttackType = type;
     }
-    return multiplier;
+    return multiplier * prism().attackMultiplier(user, extra);
 }
 function afterAttack(user, extra, hit) {
     if (!active(user) || extra.summonAttack || extra.dotAttack || extra.isBotAutoAttack) return;
@@ -1119,10 +1015,19 @@ function survive(user, nextHp, maxHp) {
         log(run, '불사조의 담보, ' + RELICS.find(r => r.id === pledge).name + ' 소각');
         return run.effects.noHealing ? 1 : Math.max(1, Math.round(Math.min(maxHp, rpg().calculateUserStats(user).hp) * .30));
     }
-    return 0;
+    return prism().survive(user);
 }
 function victory(user, random = Math.random) {
     if (user.paradise.mode === 'hell') return require('./paradise_hell').victory(user, random);
+    const pairSeq = user.paradise.sequence;
+    prism().onKill(user);
+    // 2마리 전투의 첫 적: 승리 처리(유물, 회복, 전투 횟수)는 두 번째 적을 쓰러뜨린 뒤 한 번만 한다.
+    if (pairSeq?.pair && pairSeq.remaining > 1 && (pairSeq.wave || 1) % 2 === 1) {
+        log(user.paradise, user.paradise.enemy.name + ' 격파');
+        rpg().clearFieldRuntimeTimers(user.name);
+        startCombat(user, pairSeq.kind, { ...pairSeq, remaining: pairSeq.remaining - 1, wave: (pairSeq.wave || 1) + 1 }, random);
+        return;
+    }
     require('./paradise_mechanics').onVictory(user);
     features.call('onVictory', user, random);
     const run = user.paradise, enemy = run.enemy, elite = enemy.kind === 'elite';
@@ -1168,7 +1073,7 @@ function victory(user, random = Math.random) {
     clampResources(user); rpg().clearFieldRuntimeTimers(user.name);
     log(run, enemy.name + ' 격파');
     const seq = run.sequence;
-    if (seq && seq.remaining > 1) { startCombat(user, seq.kind, { ...seq, remaining: seq.remaining - 1 }, random); return; }
+    if (seq && seq.remaining > 1) { startCombat(user, seq.kind, { ...seq, remaining: seq.remaining - 1, wave: (seq.wave || 1) + 1 }, random); return; }
     if (seq) {
         switch (seq.reward) {
             case 'moonDuel':
@@ -1188,6 +1093,8 @@ function victory(user, random = Math.random) {
             case 'well': addEffect(user, { hp: .10 }); break;
         }
     }
+    run.encounterWins = Number(run.encounterWins || 0) + 1;
+    if (run.encounterWins % AUGMENT_EVERY === 0) run.augmentDue = true;
     if (routeMechanics.eventComplete(user, random)) return;
     recordFloor(user);
     run.clearedFloor = Math.max(run.clearedFloor, run.floor);
@@ -1198,18 +1105,18 @@ function victory(user, random = Math.random) {
         return;
     }
     if (offerRelics(user, random)) return;
-    if (run.augmentCategory || !collapseEncounter(user)) offerAugments(user, random);
+    if (run.augmentCategory || !collapseEncounter(user)) nextChoice(user, random);
 }
 function canReturn(user) {
     const run = user.paradise;
-    return !!run && run.mode !== 'hell' && (run.status === 'active' && run.phase === 'augment'
+    return !!run && run.mode !== 'hell' && (run.status === 'active' && ['augment', 'boon'].includes(run.phase)
         || run.status === 'ended' && run.outcome === 'cleared' && !run.claimed && !run.returnedAt);
 }
 function rewardEligible(run) {
     return run.outcome === 'retired' || ['cleared', 'timedOut', 'collapsed'].includes(run.outcome) && !!run.returnedAt
         || run.outcome === 'defeated' && progression.has(run, 'deathInsurance');
 }
-function finish(user, outcome = 'retired') {
+function finish(user, outcome = 'retired', { force = false } = {}) {
     if (user.paradise.mode === 'hell') {
         require('./paradise_hell').finish(user, outcome);
         return { message: '지옥에서 귀환했습니다.' };
@@ -1222,7 +1129,7 @@ function finish(user, outcome = 'retired') {
         if (run.distortion < 100 || !(run.riftDefeated || has(run, 'riftHeart'))) return { error: '아직 천상이 붕괴하지 않았습니다.' };
         run.returnedAt = Date.now();
     } else if (outcome !== 'defeated') {
-        if (!canReturn(user)) return { error: '귀환은 증강 선택 단계에서만 가능합니다.' };
+        if (!force && !canReturn(user)) return { error: '귀환은 전투를 마친 뒤 선택 단계에서만 가능합니다.' };
         run.returnedAt = Date.now();
         outcome = run.completed || run.outcome === 'cleared' ? 'cleared' : 'retired';
     }
@@ -1235,6 +1142,15 @@ function finish(user, outcome = 'retired') {
     user.field = null;
     log(run, outcome === 'cleared' ? '999층 완주, 천상의 끝' : outcome === 'defeated' ? '탐험 종료, 전투 불능' : outcome === 'timedOut' ? '제한 시간 종료, 자동 귀환' : outcome === 'collapsed' ? '천상이 완전히 붕괴하여 강제로 귀환했습니다.' : '귀환, 종료 보상 정산');
     return { message: outcome === 'defeated' ? progression.has(run, 'deathInsurance') ? '마지막 은총으로 천상의 증표 50%를 수령할 수 있습니다. 다른 보상과 계약은 잃었습니다.' : '전투에서 패배하여 탐험 보상과 계약 보상을 잃었습니다.' : '천상에서 귀환했습니다. 종료 보상을 수령해주세요.' };
+}
+// 옛 판으로 진행 중인 천상 탐험을 단계와 상관없이 귀환시킨다(전투 중이어도). 바꿨으면 true.
+function forceReturnOutdated(user) {
+    const run = user.paradise;
+    if (!run || run.mode === 'hell' || run.status !== 'active' || Number(run.version || 0) >= RUN_VERSION) return false;
+    finish(user, 'retired', { force: true });
+    run.forcedReturn = true; run.revision = Number(run.revision || 0) + 1;
+    log(run, '천상 개편으로 진행 중이던 탐험을 귀환 처리했습니다. 정산 보상을 받아주세요.');
+    return true;
 }
 function endingRewardBonus(run) {
     return Number(sumEffects(run).reward || 0) + Number(run.ring || 0) + (has(run, 'judgment') ? .5 : 0) + (has(run, 'riftHeart') ? 1 : 0) + (has(run, 'necklace') ? .30 : 0) + run.contracts.reduce((sum, c) => sum + Number(c.bonus || 0), 0);
@@ -1328,14 +1244,17 @@ function view(user, stats = rpg().calculateUserStats(user), slotEffects) {
         enemy.shieldLayers = require('./combat_shields').active(run.enemy, Date.now()).map(({ amount, expiresAt }) => ({ amount, expiresAt }));
         enemy.shield = enemy.shieldLayers.reduce((sum, layer) => sum + layer.amount, 0);
     }
-    result.run = { id: run.id, status: run.status, phase: run.phase, completed: !!run.completed, canReturn: canReturn(user), canClaim: run.status === 'ended' && !run.claimed && rewardEligible(run), floor: run.floor, clearedFloor: run.clearedFloor, distortion: run.distortion, outcome: run.outcome || null, claimed: !!run.claimed, battlesWon: run.battlesWon, elitesWon: run.elitesWon, enemy: run.phase === 'combat' ? enemy : null,
-        choices: run.phase === 'augment' ? run.choices.filter(id => !obtainedAugment(run, id)).map(id => AUGMENTS.find(a => a.id === id)).filter(Boolean).map(({ id, name, desc, floors, rarity, category, equipment, character, characterName, dangerous, stoneBranch, isStoneEntry }) => ({ id, name, desc, floors, rarity, category, equipment, character, characterName, stoneBranch, isStoneEntry, dangerous: !!dangerous })) : [],
+    result.run = { id: run.id, status: run.status, phase: run.phase, forcedReturn: !!run.forcedReturn, completed: !!run.completed, canReturn: canReturn(user), canClaim: run.status === 'ended' && !run.claimed && rewardEligible(run), floor: run.floor, clearedFloor: run.clearedFloor, distortion: run.distortion, outcome: run.outcome || null, claimed: !!run.claimed, battlesWon: run.battlesWon, elitesWon: run.elitesWon, enemy: run.phase === 'combat' ? enemy : null,
+        choices: run.phase === 'augment' ? run.choices.filter(id => !obtainedAugment(run, id)).map(id => AUGMENTS.find(a => a.id === id)).filter(Boolean).map(({ id, name, desc, lines, text, note, category, iconUrl, skill }) => ({ id, name, desc, lines, text, note: note || null, category, iconUrl, skill: skill || null, rarity: 'prismatic', floors: 0 })) : [],
+        boon: boons.view(user, playerPower), encounterKey: run.encounterId || null,
+        augmentIn: heldAugments(run) >= AUGMENT_MAX ? null : run.augmentDue ? 0 : AUGMENT_EVERY - Number(run.encounterWins || 0) % AUGMENT_EVERY,
+        augmentCount: heldAugments(run), augmentMax: AUGMENT_MAX,
         routes: run.phase === 'route' ? (run.routes || []).map(route => ({ ...route, gimmick: routeMechanics.describe(route.gimmick), title: { normal: '일반 전투', elite: '엘리트 전투', event: '알 수 없는 방' }[route.kind], description: { normal: '몬스터가 길을 지키고 있습니다.', elite: '강한 적에게 도전합니다.', event: '문 너머의 운명을 마주합니다.' }[route.kind], powerWarning: routePowerWarning(user, route, playerPower) })) : [],
         routeGimmick: routeMechanics.view(user),
-        mechanicStatus: features.view(user), stoneEntryOffer: !!run.stoneEntryOffer,
+        mechanicStatus: [...prism().statusView(user), ...features.view(user)], stoneEntryOffer: !!run.stoneEntryOffer,
         relicChoices: run.phase === 'relic' ? (run.relicChoices || []).map(id => RELICS.find(relic => relic.id === id)).filter(Boolean) : [], relicPicksRemaining: Number(run.relicPicksRemaining || 0),
         event: run.event ? { id: run.event.id, ...EVENTS[run.event.id], equipment: run.event.equipment || null, choices: run.phase === 'event' ? eventChoices(user) : [], ...(run.phase === 'puzzle' ? { puzzle: run.event.puzzle.publicPuzzle, deadline: run.event.deadline } : {}) } : null,
-        relics: run.relics.filter(id => RELICS.some(r => r.id === id)).map(id => ({ ...RELICS.find(r => r.id === id), spent: id === 'feather' && !!run.featherUsed })), effects: Object.entries(run.acquired).filter(([id]) => AUGMENTS.some(a => a.id === id)).map(([id, count]) => ({ ...AUGMENTS.find(a => a.id === id), count })), permanentEffects: sumEffects(run), temporary: run.temporary.filter(buff => !buff.equipment || EQUIPMENT_AUGMENTS.get(buff.equipment)?.id !== buff.id).map(({ name, battles }) => ({ name, battles })), equipmentPermanent: run.equipmentPermanent,
+        relics: run.relics.filter(id => RELICS.some(r => r.id === id)).map(id => ({ ...RELICS.find(r => r.id === id), spent: id === 'feather' && !!run.featherUsed })), effects: Object.entries(run.acquired).map(([id, count]) => { const augment = AUGMENTS.find(a => a.id === id) || LEGACY_AUGMENTS.find(a => a.id === id); return augment && { ...augment, count, legacy: !AUGMENTS.includes(augment) }; }).filter(Boolean), permanentEffects: sumEffects(run), temporary: run.temporary.filter(buff => !buff.equipment || EQUIPMENT_AUGMENTS.get(buff.equipment)?.id !== buff.id).map(({ name, battles }) => ({ name, battles })), equipmentPermanent: run.equipmentPermanent,
         contracts: run.contracts, quests: (run.quests || []).map(q => ({ name: q.name, remaining: q.remaining, progress: q.progress, target: q.target || q.battles, status: q.status })), history: run.history.slice(0, 20), lastOutcome: run.lastOutcome || null, rewards: previewRewards(run), rewardBonus: run.rewardBonus || 0, nextActionAt: Number(user.field?.nextActionAt || 0),
         rewardSummary: run.mode === 'hell' ? [] : claimedRewards(run),
         offerId: run.offerId || null, timer: run.mode === 'hell' ? null : { remainingMs: remainingTime(run), paused: timerPaused(run) }, timeoutClaimError: run.timeoutClaimError || null,
@@ -1348,11 +1267,9 @@ function view(user, stats = rpg().calculateUserStats(user), slotEffects) {
         for (const choice of result.run.choices) {
             choice.starting = result.run.startingAugment;
             choice.canReroll = canReroll && !run.rerolled?.[run.choices.indexOf(choice.id)];
-            choice.powerWarning = result.run.startingAugment ? null : powerWarning(user, choice.floors, choice.id === 'rewind' || AUGMENTS.find(a => a.id === choice.id)?.acquire?.forceElite || AUGMENTS.find(a => a.id === choice.id)?.quest?.forceElite || run.forceElite ? 'elite' : 'normal', false, playerPower, true);
-            choice.floors = result.run.startingAugment ? 0 : choice.floors < 0 ? choice.floors : progression.augmentMovement(run, choice.floors);
         }
         for (const choice of result.run.event?.choices || []) choice.powerWarning = eventPowerWarning(user, choice.id, playerPower);
     }
     return require('./paradise_hell').decorateView(result, user);
 }
-module.exports = { TICKET, MAX_FLOOR, MIN_LEVEL, TIME_LIMIT_MS, ULTIMATE_START_COOLDOWN_MS, CP_ANCHORS, AUGMENTS, RELICS, EVENTS, active, heavenActive, getResources, validateConfig, recommendedPower, enemyAttackInterval, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, rerollAugment, normalizeAugmentOffer, normalizeRelicOffer, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerRoutes, chooseRoute, offerRelics, chooseRelic, offerAugments, availableAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, dismiss, view, weeklyInfo, recordFloor, buildWeeklyRanking, remainingTime, isTimedOut, advanceTime };
+module.exports = { TICKET, MAX_FLOOR, MIN_LEVEL, TIME_LIMIT_MS, ULTIMATE_START_COOLDOWN_MS, CP_ANCHORS, AUGMENT_EVERY, AUGMENT_MAX, RUN_VERSION, AUGMENTS, RELICS, EVENTS, active, heavenActive, getResources, validateConfig, recommendedPower, enemyAttackInterval, setPhase, clampResources, log, heavenMonsterStats, powerWarning, nextChoice, afterChoice, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, rerollAugment, normalizeAugmentOffer, normalizeRelicOffer, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerRoutes, chooseRoute, offerRelics, chooseRelic, offerAugments, availableAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, dismiss, view, forceReturnOutdated, weeklyInfo, recordFloor, buildWeeklyRanking, remainingTime, isTimedOut, advanceTime };

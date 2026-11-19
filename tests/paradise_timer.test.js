@@ -11,7 +11,7 @@ function timer() {
     let now = 10000000, claims = 0, api;
     api = vm.runInNewContext(timerSource + '\n({ TIME_LIMIT_MS, timeLimit, timerPaused, remainingTime, setPhase, advanceTime })', {
         Date: { now: () => now },
-        require: name => name === './paradise_content' ? { AUGMENTS: [], RELICS: [], EVENTS: [], EQUIPMENT_NAMES: [] }
+        require: name => name === './paradise_content' ? { AUGMENTS: [], LEGACY_AUGMENTS: [], RELICS: [], EVENTS: [], EQUIPMENT_NAMES: [] }
             : name === './paradise_progression' ? { has: (run, id) => run?.mode !== 'hell' && !!run?.celestial?.traits?.includes(id) } : {},
         collapseEncounter: () => false,
         finish(user, outcome) { api.setPhase(user, 'ended'); user.paradise.status = 'ended'; user.paradise.outcome = outcome; user.field = null; },
@@ -80,7 +80,7 @@ test('ended clocks and hell mode remain unchanged', () => {
 
 test('choice pauses are enabled by default but combat and puzzles still tick', () => {
     const t = timer(), u = user(); t.advanceTime(u);
-    for (const phase of ['augment', 'relic', 'route', 'event']) {
+    for (const phase of ['augment', 'boon', 'relic', 'route', 'event']) {
         t.setPhase(u, phase); const before = t.remainingTime(u.paradise);
         assert.equal(u.paradise.clock.paused, true, phase);
         t.tick(minute); assert.equal(t.remainingTime(u.paradise), before, phase);
@@ -96,7 +96,7 @@ test('choice pauses are enabled by default but combat and puzzles still tick', (
 
 
 test('already running choice clocks settle elapsed time once then pause, including reloads', () => {
-    for (const phase of ['augment', 'route', 'event', 'relic']) {
+    for (const phase of ['augment', 'boon', 'route', 'event', 'relic']) {
         const t = timer(), u = user({ remainingMs: 10 * minute, limitMs: 15 * minute, updatedAt: t.now - minute, paused: false });
         u.paradise.phase = phase;
         assert.equal(t.advanceTime(u), true);

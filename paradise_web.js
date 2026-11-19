@@ -16,6 +16,8 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             enemyOverdueMs: fighting && !mirror ? Math.max(0, Date.now() - Number(user.field.nextEnemyAttackAt || user.field.enteredAt || Date.now())) : 0,
             aiOverdueMs: mirror ? Math.max(0, Date.now() - Number(run.enemy.mirror.nextActionAt || Date.now())) : 0 };
         const changed = timing.measure('advance_compute', () => {
+            // 개편 전에 시작해 진행 중이던 천상 탐험은 먼저 귀환시킨다(보상은 평소처럼 정산).
+            if (corridor.forceReturnOutdated(user)) return true;
             const timeAdvanced = corridor.advanceTime(user);
             const resourcesAdded = corridor.active(user) && !user.paradise.resources;
             if (resourcesAdded) { corridor.getResources(user); user.paradise.revision++; }
@@ -61,11 +63,17 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             view.battle = getCombatView(user, view, stats);
             if (user.paradise.battle?.hackCard) {
                 const card = serializeCard(user.paradise.battle.hackCard, user, context);
-                for (const skill of card.skills || []) if (!view.battle.skills.some(s => s.name === skill.name)) view.battle.skills.push({ ...skill, cooldownEnd: Number(user.field.skillCooldowns[skill.name] || 0), borrowed: true });
+                // 빌린 스킬은 빌려 온 카드 이름(단추 오른쪽 위)과 내가 실제로 내는 비용으로 보인다.
+                for (const skill of card.skills || []) if (!view.battle.skills.some(s => s.name === skill.name)) view.battle.skills.push({ ...skill, cooldownEnd: Number(user.field.skillCooldowns[skill.name] || 0), borrowed: true, sourceCard: card.name, ...(rpgenius.getParadiseBorrowedSkillView(user, stats, skill.name) || {}) });
             }
             const characters = require('./paradise_augments_characters'), blocked = characters.skillBlocked(user) || require('./paradise_routes').skillBlocked(user);
             const mechanics = require('./paradise_mechanics');
             view.battle.skills.push(...mechanics.skillView(user, stats));
+            const prism = require('./paradise_prism');
+            view.battle.skills.push(...prism.skillView(user, stats));
+            // 증강의 지속 상태(연출용). 죽음을 초월하는 자의 마지막 기회 동안은 HP를 0으로 보인다.
+            view.battle.augmentAuras = prism.view(user);
+            if (prism.transcendActive(user)) { if (view.battle.player) view.battle.player.hp = 0; view.player.hp = 0; }
             const stones = require('./paradise_stones'), stoneSkills = stones.skillView(user, stats);
             if (stoneSkills.length) {
                 const cards = require('./DB/RPGenius/CharacterCards.json'), skills = require('./DB/RPGenius/Skills.json');
@@ -104,7 +112,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
     };
     server.get('/paradise', (req, res) => {
         if (!getSession(req)?.name) return res.redirect('/');
-        res.type('html').send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#05090e"><title>낙원</title><link rel="stylesheet" href="/static/paradise.css"></head><body><main id="paradiseRoot" aria-label="낙원"><canvas id="paScene" aria-hidden="true"></canvas><div id="paBattle" hidden><canvas id="hfCanvas" aria-hidden="true"></canvas><canvas id="hfHud" aria-hidden="true"></canvas></div><canvas id="paHud" aria-hidden="true"></canvas><div id="paControls" aria-label="게임 조작"></div><form id="paPuzzle" hidden></form><div id="paLive" class="sr-only" role="status" aria-live="polite"></div><div id="paFatal" hidden></div></main><noscript>낙원에 입장하려면 JavaScript를 켜주세요.</noscript><script>window.FIELD_MODE="paradise";</script><link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/combat-effects.js" defer></script><script src="/static/combat-fx.js" defer></script><script src="/static/combat-fx-kit.js" defer></script><script src="/static/combat-fx-scenes.js" defer></script><script src="/static/combat-fx-skills.js" defer></script><script src="/static/paradise-audio.js" defer></script><script src="/static/hfield.js" defer></script><script src="/static/paradise-lobby.js" defer></script><script src="/static/paradise-shop.js" defer></script><script src="/static/paradise.js" defer></script></body></html>`);
+        res.type('html').send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#05090e"><title>낙원</title><link rel="stylesheet" href="/static/paradise.css"></head><body><main id="paradiseRoot" aria-label="낙원"><canvas id="paScene" aria-hidden="true"></canvas><div id="paBattle" hidden><canvas id="hfCanvas" aria-hidden="true"></canvas><canvas id="hfHud" aria-hidden="true"></canvas></div><canvas id="paHud" aria-hidden="true"></canvas><div id="paControls" aria-label="게임 조작"></div><form id="paPuzzle" hidden></form><div id="paLive" class="sr-only" role="status" aria-live="polite"></div><div id="paFatal" hidden></div></main><noscript>낙원에 입장하려면 JavaScript를 켜주세요.</noscript><script>window.FIELD_MODE="paradise";</script><link rel="stylesheet" href="/static/ultimate-cutscene.css"><script src="/static/ultimate-cutscene.js"></script><script src="/static/damage-numbers.js" defer></script><script src="/static/combat-effects.js" defer></script><script src="/static/combat-fx.js" defer></script><script src="/static/combat-fx-kit.js" defer></script><script src="/static/combat-fx-scenes.js" defer></script><script src="/static/combat-fx-skills.js" defer></script><script src="/static/combat-fx-augments.js" defer></script><script src="/static/paradise-audio.js" defer></script><script src="/static/hfield.js" defer></script><script src="/static/paradise-lobby.js" defer></script><script src="/static/paradise-shop.js" defer></script><script src="/static/paradise.js" defer></script></body></html>`);
     });
     server.get('/api/paradise', requireUser, async (req, res) => {
         const timing = requestTiming('view', res);
@@ -180,7 +188,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             }
         });
     }
-    for (const action of ['enter', 'augment', 'reroll', 'route', 'relic', 'event', 'puzzle', 'attack', 'skill', 'retire', 'claim', 'dismiss', 'descend', 'altar', 'continue', 'chest']) {
+    for (const action of ['enter', 'augment', 'boon', 'reroll', 'route', 'relic', 'event', 'puzzle', 'attack', 'skill', 'retire', 'claim', 'dismiss', 'descend', 'altar', 'continue', 'chest']) {
         server.post('/api/paradise/' + action, requireUser, async (req, res) => {
             const body = req.body || {};
             if (!/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId || '') || !Number.isSafeInteger(body.revision) || body.revision < 0 || body.runId != null && typeof body.runId !== 'string') return res.status(400).json({ error: '낙원 화면을 새로 열어주세요.' });
@@ -211,6 +219,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     else if (action === 'continue') result = user.paradise.mode === 'hell' ? hell.continueAltar(user) : corridor.continueExploration(user);
                     else if (action === 'chest') result = hell.openChest(user, body.chest);
                     else if (action === 'augment') result = corridor.chooseAugment(user, body.choice);
+                    else if (action === 'boon') result = require('./paradise_boons').choose(user, { choice: body.choice, index: body.index });
                     else if (action === 'reroll') result = corridor.rerollAugment(user, body.choice);
                     else if (action === 'route') result = corridor.chooseRoute(user, body.choice);
                     else if (action === 'relic') result = corridor.chooseRelic(user, body.choice);
