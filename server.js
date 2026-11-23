@@ -124,10 +124,12 @@ const bannerS3 = new AWS.S3({
 // 배너 이미지 메모리 캐시 — S3 키는 업로드마다 고유(내용 불변)라 무효화 없이 캐시해도 안전하다.
 // 요청마다 S3 getObject를 하던 구조가 S3 전송량 과금(월 100GB 무료 초과분)의 원인이었음. 삭제 시에만 정리.
 const bannerImageCache = new Map(); // key -> { body: Buffer, contentType }
+const bannerImageLoads = new Map();
 const BANNER_CACHE_MAX_BYTES = 64 * 1024 * 1024;
 let bannerImageCacheBytes = 0;
 
 function cacheBannerImage(key, value) {
+    bannerImageCacheBytes -= bannerImageCache.get(key)?.body.length || 0;
     bannerImageCache.set(key, value);
     bannerImageCacheBytes += value.body.length;
     while (bannerImageCacheBytes > BANNER_CACHE_MAX_BYTES && bannerImageCache.size > 1) {
@@ -138,6 +140,7 @@ function cacheBannerImage(key, value) {
 }
 
 function evictBannerImage(key) {
+    bannerImageLoads.delete(key);
     const cached = bannerImageCache.get(key);
     if (!cached) return;
     bannerImageCacheBytes -= cached.body.length;
@@ -466,10 +469,33 @@ function normalizeBannerTargetUrl(value) {
     return '';
 }
 
-async function loadBannerList() {
-    const found = await rpgenius.loadRpgeniusDataEntry('Banner');
-    if (!found) return [];
+let bannerListLoadedAt = 0, bannerListLoad = null, bannerListFound = false;
+async function loadBannerList(fresh = false) {
+    if (fresh && bannerListLoad) await bannerListLoad;
+    if (fresh || Date.now() - bannerListLoadedAt >= 30000) {
+        if (!bannerListLoad) {
+            bannerListLoad = rpgenius.loadRpgeniusDataEntry('Banner').then(found => {
+                bannerListFound = found;
+                bannerListLoadedAt = Date.now();
+            }).finally(() => { bannerListLoad = null; });
+        }
+        await bannerListLoad;
+    }
+    if (!bannerListFound) return [];
     return normalizeBannerList(rpgenius.getDataCache('Banner', []));
+}
+
+async function loadBannerImage(entry) {
+    const cached = bannerImageCache.get(entry.key);
+    if (cached) return cached;
+    if (bannerImageLoads.has(entry.key)) return bannerImageLoads.get(entry.key);
+    const pending = bannerS3.getObject({ Bucket: BANNER_BUCKET, Key: entry.key }).promise().then(object => {
+        const value = { body: object.Body, contentType: BANNER_TYPES[entry.contentType] ? entry.contentType : (BANNER_TYPES[object.ContentType] ? object.ContentType : 'application/octet-stream') };
+        if (bannerImageLoads.get(entry.key) === pending) cacheBannerImage(entry.key, value);
+        return value;
+    }).finally(() => { if (bannerImageLoads.get(entry.key) === pending) bannerImageLoads.delete(entry.key); });
+    bannerImageLoads.set(entry.key, pending);
+    return pending;
 }
 
 function serializeBanner(entry, admin) {
@@ -830,13 +856,7 @@ server.get('/api/banners/:id/image', requireUser, async (req, res) => {
         res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
         res.setHeader('ETag', etag);
         if (req.headers['if-none-match'] == etag) return res.status(304).end();
-        let cached = bannerImageCache.get(entry.key);
-        if (!cached) {
-            const object = await bannerS3.getObject({ Bucket: BANNER_BUCKET, Key: entry.key }).promise();
-            const contentType = BANNER_TYPES[entry.contentType] ? entry.contentType : (BANNER_TYPES[object.ContentType] ? object.ContentType : 'application/octet-stream');
-            cached = { body: object.Body, contentType };
-            cacheBannerImage(entry.key, cached);
-        }
+        const cached = await loadBannerImage(entry);
         res.setHeader('Content-Type', cached.contentType);
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Content-Length', String(cached.body.length));
@@ -849,7 +869,7 @@ server.get('/api/banners/:id/image', requireUser, async (req, res) => {
 
 server.get('/api/admin/banners', requireAdmin, async (req, res) => {
     try {
-        const banners = await loadBannerList();
+        const banners = await loadBannerList(true);
         res.json({
             items: banners.map(entry => serializeBanner(entry, true)),
             targetTabs: BANNER_TARGET_TABS
@@ -865,7 +885,7 @@ server.put('/api/admin/banners', requireAdmin, async (req, res) => {
         const items = req.body && req.body.items;
         if (!Array.isArray(items)) return res.status(400).json({ error: '저장할 배너 목록이 필요합니다.' });
 
-        const banners = await loadBannerList();
+        const banners = await loadBannerList(true);
         const byId = new Map(banners.map(entry => [entry.id, entry]));
         const requestedIds = items.map(item => item && String(item.id || ''));
         const uniqueIds = new Set(requestedIds);
@@ -913,10 +933,11 @@ server.post('/api/admin/banners', requireAdmin, parseBannerUpload, async (req, r
             CacheControl: 'private, max-age=300',
             ServerSideEncryption: 'AES256'
         }).promise();
-        const banners = await loadBannerList();
+        const banners = await loadBannerList(true);
         banners.push(entry);
         try {
             await rpgenius.saveRpgeniusDataEntry('Banner', banners);
+            bannerListFound = true;
         } catch (e) {
             await bannerS3.deleteObject({ Bucket: BANNER_BUCKET, Key: key }).promise().catch(() => {});
             throw e;
@@ -930,7 +951,7 @@ server.post('/api/admin/banners', requireAdmin, parseBannerUpload, async (req, r
 
 server.delete('/api/admin/banners/:id', requireAdmin, async (req, res) => {
     try {
-        const banners = await loadBannerList();
+        const banners = await loadBannerList(true);
         const index = banners.findIndex(entry => entry.id == String(req.params.id));
         if (index < 0) return res.status(404).json({ error: '배너를 찾을 수 없습니다.' });
         const entry = banners[index];

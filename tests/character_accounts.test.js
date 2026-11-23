@@ -73,7 +73,7 @@ function fixture() {
     const entries = new Map(), commands = [];
     const putEntry = raw => entries.set(raw.id, { raw: structuredClone(raw), dbSnap: Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, JSON.stringify(value)])), dirty: false });
     [account, character].forEach(putEntry);
-    let reject = false;
+    let reject = false, loseResponse = false;
     const client = { async send(command) {
         const input = command.input, type = command.constructor.name;
         commands.push(type);
@@ -82,7 +82,12 @@ function fixture() {
         const operations = type === 'UpdateCommand' ? [{ Update: input }] : input.TransactItems;
         const staged = new Map([...records].map(([id, raw]) => [id, structuredClone(raw)]));
         for (const op of operations) {
-            if (op.Put) { staged.set(op.Put.Item.id, structuredClone(op.Put.Item)); continue; }
+            if (op.Put) {
+                if (staged.has(op.Put.Item.id) && op.Put.ConditionExpression === 'attribute_not_exists(id)') {
+                    throw Object.assign(new Error('isolated receipt conflict'), { name: 'TransactionCanceledException', CancellationReasons: [{ Code: 'ConditionalCheckFailed' }] });
+                }
+                staged.set(op.Put.Item.id, structuredClone(op.Put.Item)); continue;
+            }
             const update = op.Update, raw = staged.get(update.Key.id), values = update.ExpressionAttributeValues || {};
             for (const [alias, key] of Object.entries(update.ExpressionAttributeNames)) {
                 const index = alias.slice(2);
@@ -93,11 +98,12 @@ function fixture() {
             }
         }
         records.clear(); staged.forEach((raw, id) => records.set(id, raw));
+        if (loseResponse) { loseResponse = false; throw new Error('isolated lost response'); }
         return {};
     } };
     const store = createStore({ table: 'test-only', client, entries, putEntry, flush: async () => ({ success: true }),
         items: () => items, usage, deliver: () => {}, schedule: () => {} });
-    return { store, records, entries, commands, account, character, reject: () => { reject = true; },
+    return { store, records, entries, commands, account, character, reject: () => { reject = true; }, recover: () => { reject = false; }, loseResponse: () => { loseResponse = true; },
         user: () => load(store.hydrate(entries.get(character.id).raw)) };
 }
 
@@ -134,6 +140,91 @@ test('반복 사냥 저장은 합쳐지고 전환 전 flush에서 계정과 캐�
     assert.deepEqual(f.commands, ['TransactWriteCommand']);
     assert.equal(f.records.get(f.account.id).gold, 1000);
     assert.equal(f.records.get(f.character.id).exp, 323);
+});
+
+test('지연 보상과 즉시 소지품 변경을 중간 저장 없이 한 트랜잭션으로 확정한다', async () => {
+    const f = fixture();
+    let user = f.user(); user.gold += 10; user.exp += 20;
+    await f.store.commit([user], { defer: true });
+    user = f.user(); user.inventory.card.push({ id: 9, star: 4, type: '일반' });
+    await f.store.commit([user]);
+    assert.deepEqual(f.commands, ['TransactWriteCommand']);
+    assert.equal(f.records.get(f.account.id).gold, 910);
+    assert.equal(f.records.get(user.id).exp, 143);
+    assert.equal(f.records.get(user.id).inventory.card.at(-1).id, 9);
+    await f.store.flushGroup(f.account.id);
+    assert.equal(f.commands.length, 1, '기존 타이머와 반복 flush는 다시 저장하지 않는다');
+});
+
+test('합친 저장이 실패하면 지연 보상은 메모리에 유지하고 즉시 변경은 적용하지 않으며 재시도한다', async () => {
+    const f = fixture();
+    let user = f.user(); user.gold += 10; user.exp += 20;
+    await f.store.commit([user], { defer: true });
+    user = f.user(); user.inventory.card.pop();
+    f.reject();
+    await assert.rejects(f.store.commit([user]), /isolated write failure/);
+    assert.equal(f.records.get(f.account.id).gold, 900);
+    assert.equal(f.records.get(user.id).exp, 123);
+    assert.equal(f.user().gold, 910);
+    assert.equal(f.user().inventory.card.length, 4);
+    assert.equal(f.entries.get(user.id).dirty, true);
+    f.recover(); await f.store.commit([user]);
+    assert.equal(f.records.get(f.account.id).gold, 910);
+    assert.equal(f.records.get(user.id).exp, 143);
+    assert.equal(f.records.get(user.id).inventory.card.length, 3);
+});
+
+test('서로 다른 행의 단독 저장은 비싼 트랜잭션으로 묶지 않는다', async () => {
+    const f = fixture();
+    let user = f.user(); user.gold += 10;
+    await f.store.commit([user], { defer: true });
+    user = f.user(); user.inventory.card.pop();
+    await f.store.commit([user]);
+    assert.deepEqual(f.commands, ['UpdateCommand', 'UpdateCommand']);
+    assert.equal(f.records.get(f.account.id).gold, 910);
+    assert.equal(f.records.get(user.id).inventory.card.length, 3);
+});
+
+test('즉시 저장의 오래된 값은 지연 보상을 덮지 못하고 불필요한 사전 쓰기도 하지 않는다', async () => {
+    const f = fixture(), old = f.user(), fresh = f.user();
+    fresh.gold += 10; await f.store.commit([fresh], { defer: true });
+    old.gold += 5;
+    await assert.rejects(f.store.commit([old]), error => error.status === 409);
+    assert.equal(f.commands.length, 0);
+    assert.equal(f.user().gold, 910);
+    await f.store.commit([f.user()]);
+    assert.equal(f.records.get(f.account.id).gold, 910, '변경 없는 즉시 save도 대기 중 보상은 확정한다');
+});
+
+test('지연 보상과 포인트 원장을 함께 확정하고 응답 유실 뒤에도 두 번 차감하지 않는다', async () => {
+    const f = fixture();
+    let user = f.user(); user.gold += 10; user.exp += 20;
+    await f.store.commit([user], { defer: true });
+    user = f.user(); user.point -= 300;
+    usage.record(user, { amount: 300, category: 'character', action: 'rename', productName: '닉네임 변경권' });
+    f.loseResponse(); await f.store.commit([user]);
+    assert.equal(f.commands.filter(command => command === 'TransactWriteCommand').length, 1);
+    const account = f.records.get(f.account.id);
+    assert.equal(account.gold, 910); assert.equal(account.point, 4700);
+    assert.equal(Object.keys(account[usage.OUTBOX]).length, 1);
+    await f.store.commit([user]);
+    assert.equal(f.records.get(f.account.id).point, 4700);
+    assert.equal(f.commands.filter(command => command === 'TransactWriteCommand').length, 1);
+});
+
+test('중복 영수증으로 합친 거래가 취소되어도 먼저 얻은 지연 보상은 보존한다', async () => {
+    const f = fixture();
+    let user = f.user(); user.gold += 10; user.exp += 20;
+    await f.store.commit([user], { defer: true });
+    user = f.user(); user.inventory.card.pop();
+    const receipt = { id: 'receipt', result: 'already committed' };
+    f.records.set(receipt.id, receipt);
+    await assert.rejects(f.store.commit([user], { extras: [{ Put: { TableName: 'test-only', Item: receipt, ConditionExpression: 'attribute_not_exists(id)' } }] }), /receipt conflict/);
+    assert.equal(f.records.get(f.account.id).gold, 910);
+    assert.equal(f.records.get(user.id).exp, 143);
+    assert.equal(f.records.get(user.id).inventory.card.length, 4);
+    assert.equal(f.user().gold, 910);
+    assert.equal(f.user().exp, 143);
 });
 
 test('오래된 화면의 지연 저장이 최신 공유 잔액을 덮어쓰지 못한다', async () => {

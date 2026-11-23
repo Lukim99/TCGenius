@@ -5,6 +5,7 @@ const accounts = require('./character_accounts');
 const { GetCommand, UpdateCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
 const clone = value => value === undefined ? undefined : structuredClone(value);
 const same = require('node:util').isDeepStrictEqual;
+const conditionFailed = error => error.name === 'ConditionalCheckFailedException' || error.CancellationReasons?.some(reason => reason.Code === 'ConditionalCheckFailed');
 
 function createStore(deps) {
     const { table, client, entries, putEntry, flush, items, usage, deliver } = deps;
@@ -37,7 +38,7 @@ function createStore(deps) {
 
     function remember(raw) { putEntry(raw); }
 
-    async function transact(plans, extras = []) {
+    async function transact(plans, extras = [], preservePending = false) {
         const changed = plans.filter(plan => Object.keys(plan.changes).length);
         if (!changed.length && !extras.length) return;
         const operations = changed.map(plan => ({ Update: accounts.updateInput(table, plan.id, plan.changes, plan.before) }));
@@ -63,8 +64,8 @@ function createStore(deps) {
                 }
             }
             if (!committed) {
-                if (error.name === 'ConditionalCheckFailedException' || error.CancellationReasons?.some(reason => reason.Code === 'ConditionalCheckFailed')) {
-                    fresh.filter(Boolean).forEach(putEntry);
+                if (conditionFailed(error)) {
+                    fresh.filter(raw => raw && !(preservePending && entries.get(raw.id)?.dirty)).forEach(putEntry);
                     error.status = 409;
                 }
                 throw error;
@@ -100,7 +101,7 @@ function createStore(deps) {
         return account;
     }
 
-    async function flushPending(ownerId) {
+    async function pendingPlans(ownerId) {
         const account = entries.get(ownerId)?.raw;
         const ids = account?.recordType === 'account' ? [ownerId, ...account.characterIds] : [ownerId];
         const plans = [];
@@ -116,13 +117,22 @@ function createStore(deps) {
             }
             plans.push({ id, changes, before });
         }
-        await transact(plans);
+        return plans;
+    }
+
+    function finishPending(plans) {
         for (const plan of plans) {
             const entry = entries.get(plan.id);
             entry.dirty = false;
             if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
             deliver(entry);
         }
+    }
+
+    async function flushPending(ownerId) {
+        const plans = await pendingPlans(ownerId);
+        await transact(plans);
+        finishPending(plans);
     }
 
     function flushGroup(ownerId) {
@@ -154,7 +164,6 @@ function createStore(deps) {
             const keys = options.keys || [...new Set([...Object.keys(user), ...Object.keys(user.__loaded || {})])];
             const ownerId = user.accountId || user.id;
             if (!options.defer) {
-                if (user.accountId) await flushPending(ownerId);
                 const flushed = user.accountId ? { success: true } : await flush(user.id);
                 if (!flushed.success) throw flushed.result[0];
                 if (entries.get(ownerId)?.usageDelivery) await entries.get(ownerId).usageDelivery;
@@ -200,8 +209,41 @@ function createStore(deps) {
                 deps.schedule(entry);
             }
         } else {
-            if (options.defer) for (const user of users) await flushPending(user.accountId || user.id);
-            await transact([...plans.values()], options.extras);
+            // One atomic write covers both deferred progress and the immediate action.
+            // Validate against memory first; DB conditions must use the pre-deferral snapshot.
+            const pending = [];
+            const owners = [...new Set(users.filter(user => user.accountId || options.defer).map(user => user.accountId || user.id))];
+            for (const ownerId of owners) {
+                pending.push(...await pendingPlans(ownerId));
+            }
+            const overlaps = pending.some(plan => Object.keys(plan.changes).length && Object.keys(plans.get(plan.id)?.changes || {}).length);
+            // Keep unrelated, multi-account and legacy flushes on their existing cost/atomicity path.
+            if (pending.length && (!overlaps || owners.length !== 1 || users.some(user => !user.accountId))) {
+                for (const ownerId of owners) await flushPending(ownerId);
+                pending.length = 0;
+            }
+            const merged = new Map(pending.map(plan => [plan.id, { ...plan, changes: { ...plan.changes }, before: { ...plan.before } }]));
+            for (const plan of plans.values()) {
+                const raw = entries.get(plan.id)?.raw;
+                if (Object.entries(plan.before).some(([key, value]) => !same(raw?.[key], value))) {
+                    throw Object.assign(new Error('캐릭터 정보가 변경되었습니다. 다시 시도해주세요.'), { status: 409 });
+                }
+                const target = merged.get(plan.id) || { id: plan.id, changes: {}, before: {} };
+                for (const [key, value] of Object.entries(plan.changes)) {
+                    if (!Object.hasOwn(target.before, key)) target.before[key] = plan.before[key];
+                    target.changes[key] = value;
+                }
+                merged.set(plan.id, target);
+            }
+            try {
+                await transact([...merged.values()], options.extras, pending.length > 0);
+            } catch (error) {
+                // An already-used receipt must not erase the earlier deferred progress.
+                // Lost successful responses are reconciled inside transact before this fallback.
+                if (pending.length && conditionFailed(error)) for (const ownerId of owners) await flushPending(ownerId);
+                throw error;
+            }
+            finishPending(pending);
         }
         for (const user of users) {
             const fresh = hydrate(entries.get(user.id).raw);
