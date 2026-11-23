@@ -903,7 +903,7 @@ function formatSlotEffectProgression(se) {
         const nums = se.values.map(v => flat ? String(Number(v || 0)) : String(Math.round(Number(v || 0) * 1000) / 10));
         return nums.join(' / ') + (se.type === 'seconds' ? '초' : flat ? '' : '%');
     }
-    return formatValue(se);
+    return se.type === 'seconds' ? Number(se.base || 0) + '초' : formatValue(se);
 }
 
 function formatSkillDesc(skill) {
@@ -1222,9 +1222,8 @@ function formatCharacterCardDetail(card) {
     const skills = readJson(SKILLS_PATH, []);
     const lines = [];
     if (card.slot_effect) {
-        lines.push('[ 5성 이상 / 카드 슬롯 효과 ]');
+        lines.push('[ 카드 슬롯 효과 ]');
         lines.push('- ' + card.slot_effect.name + ' ' + formatSlotEffectProgression(card.slot_effect));
-        lines.push(' ㄴ 5성부터 등급 순 적용');
         lines.push('');
     }
     lines.push('[ 스킬 ]');
@@ -1242,7 +1241,6 @@ function formatCharacterCardDetail(card) {
             lines.push('〈 슬롯 효과 〉');
             card.class.slot_effects.forEach(se => {
                 lines.push('- ' + se.name + ' ' + formatSlotEffectProgression(se));
-                lines.push(' ㄴ 5성부터 등급 순 적용');
             });
         }
         if (Array.isArray(card.class.skills) && card.class.skills.length > 0) {
@@ -1853,6 +1851,7 @@ function buildPotentialDex() {
                 gradeLabel: getPotentialGradeLabel(grade),
                 groups: groups.map(g => ({
                     percent: Math.round(Number(g.rate || 0) / total * 1000) / 10,
+                    optionPercent: Array.isArray(g.roll) && g.roll.length ? Number((Number(g.rate || 0) / total / g.roll.length * 100).toFixed(4)) : 0,
                     options: (Array.isArray(g.roll) ? g.roll : []).map(formatPotentialRollText).filter(Boolean)
                 }))
             };

@@ -1083,16 +1083,10 @@ function skillPanelNode(skill) {
 }
 
 function slotEffectPanelNode(eff) {
-    const valText = eff.active ? eff.currentText : eff.baseText;
-    const perLevel = Number(String(eff.perLevelText || '').replace(/[^0-9.]/g, '')) > 0;
-    return el('div', { class: 'mc-panel slot' + (eff.active ? '' : ' locked') },
+    return el('div', { class: 'mc-panel slot' },
         el('div', { class: 'mc-head' },
             el('span', { class: 'mc-name' }, eff.name),
-            el('div', { class: 'mc-chips' }, el('span', { class: 'mc-chip val' }, valText))
-        ),
-        el('div', { class: 'mc-note' + (eff.active ? '' : ' warn') },
-            (eff.active ? '현재 ' + eff.currentStarText + ' 기준' : '⚠️ ' + eff.requireStarText + ' 이상부터 적용 (' + eff.requireStarText + ' 기준값)')
-            + (eff.valuesText ? ' · ' + eff.valuesText : (perLevel ? ' · 등급마다 +' + eff.perLevelText : ''))
+            el('div', { class: 'mc-chips' }, el('span', { class: 'mc-chip val' }, eff.baseText))
         )
     );
 }
@@ -1220,18 +1214,7 @@ function openMainCardModal(card, avatarRef) {
 }
 
 function cardSlotDetailNodes(card) {
-    const isJob = card && card.type === '전직';
-    const nodes = [];
-    // 전직 카드는 전직 슬롯 효과만, 일반 카드는 일반 슬롯 효과만 적용
-    if (card && card.awakening) {
-        card.awakening.slotEffects.forEach(effect => nodes.push(slotEffectPanelNode(effect)));
-    } else if (isJob) {
-        if (card.classInfo && Array.isArray(card.classInfo.slotEffects)) {
-            card.classInfo.slotEffects.forEach(se => nodes.push(slotEffectPanelNode(se)));
-        }
-    } else if (card.slotEffect) {
-        nodes.push(slotEffectPanelNode(card.slotEffect));
-    }
+    const nodes = (card?.slotEffects || []).map(slotEffectPanelNode);
     if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '슬롯 효과가 없습니다.'));
     return nodes;
 }
@@ -6107,10 +6090,11 @@ function dexEquipmentInfoNode(entry) {
             el('div', { class: 'dex-detail-section-head' }, el('div', null, el('strong', null, '적용 조건'), el('span', null, '장착 및 추가 효과 조건'))),
             el('div', { class: 'dex-detail-condition-list' }, ...entry.conditionLines.map(line => el('div', null, dexRichText(line))))));
     }
-    if (entry.desc && !entry.passive) {
+    const passiveUsesDescription = entry.passive && (['초월', '신화'].includes(entry.rarity) || entry.desc === entry.passive.desc);
+    if (entry.desc && !passiveUsesDescription) {
         nodes.push(el('section', { class: 'dex-detail-section' },
-            el('div', { class: 'dex-detail-section-head' }, el('div', null, el('strong', null, '장비 효과'), el('span', null, '장착 시 적용되는 고유 효과'))),
-            dexEffectList(entry.desc)));
+            el('div', { class: 'dex-detail-section-head' }, el('strong', null, '장비 설명')),
+            el('p', { class: 'dex-equipment-description' }, dexRichText(entry.desc))));
         const stages = dexTranscendStagesNode(entry, entry.desc);
         if (stages) nodes.push(stages);
     }
@@ -6279,124 +6263,73 @@ function dexSpecterCard(entry) {
     return card;
 }
 
-function dexCharacterDetail(entry) {
-    const card = el('div', { class: 'dex-character-detail' });
-    card.style.setProperty('--rar', 'var(--border-strong)');
+const characterDexState = { id: null, form: '일반' };
 
-    let view = '일반';
+function renderCharacterDex(grid) {
+    grid.className = 'dca';
+    const entries = dexData.character || [];
+    if (!entries.length) { grid.replaceChildren(); return; }
+    const cover = el('img', { class: 'dca-image', alt: '' });
+    const wall = el('img', { alt: '', 'aria-hidden': 'true' });
+    const types = el('div', { class: 'dca-types', 'aria-label': '캐릭터 상세 형태' });
+    const rail = el('div', { class: 'dca-rail', 'aria-label': '캐릭터 선택' });
+    const info = el('div', { class: 'dca-info', tabindex: '0', 'aria-label': '캐릭터 설명과 능력' });
+    const position = el('span', { class: 'dca-position' });
+    const step = delta => {
+        const index = entries.findIndex(entry => entry.id === characterDexState.id);
+        select(entries[(index + delta + entries.length) % entries.length]);
+        rail.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    };
+    entries.forEach(entry => rail.appendChild(el('button', {
+        type: 'button', class: 'dca-token', 'data-id': entry.id, 'aria-pressed': 'false', onclick: () => select(entry)
+    }, el('span', { class: 'dca-medallion' }, el('img', { src: entry.iconUrl, alt: '', loading: 'lazy' })),
+    el('span', { class: 'dca-token-name' }, entry.name))));
+    grid.replaceChildren(
+        el('div', { class: 'dca-wall' }, wall),
+        el('div', { class: 'dca-gallery' },
+            el('div', { class: 'dca-art' }, el('div', { class: 'dca-cover' }, cover)), types,
+            el('div', { class: 'dca-chooser' },
+                el('div', { class: 'dca-navigation' },
+                    el('button', { type: 'button', 'aria-label': '이전 캐릭터', onclick: () => step(-1) }, heavenIcon('prev')),
+                    position,
+                    el('button', { type: 'button', 'aria-label': '다음 캐릭터', onclick: () => step(1) }, heavenIcon('next'))), rail)), info);
 
-    // 일반/전직 토글 (전직이 있는 캐릭터만)
-    let toggleBar = null;
-    if (entry.hasJobClass || entry.awakening) {
-        toggleBar = el('div', { class: 'dex-char-toggle' });
-        ['일반', ...(entry.hasJobClass ? ['전직'] : []), ...(entry.awakening ? ['각성'] : [])].forEach(v => {
-            const btn = el('button', { class: 'dex-char-toggle-btn' + (v === '일반' ? ' active' : ''), type: 'button', 'aria-pressed': v === view }, v);
-            btn.onclick = () => {
-                if (view === v) return;
-                view = v;
-                toggleBar.querySelectorAll('.dex-char-toggle-btn').forEach(b => { b.classList.toggle('active', b.textContent === v); b.setAttribute('aria-pressed', b.textContent === v); });
-                renderBody();
-            };
-            toggleBar.appendChild(btn);
-        });
-        card.appendChild(toggleBar);
+    function select(entry) {
+        characterDexState.id = entry.id;
+        const forms = ['일반', ...(entry.hasJobClass ? ['전직'] : []), ...(entry.awakening ? ['각성'] : [])];
+        if (!forms.includes(characterDexState.form)) characterDexState.form = '일반';
+        const form = characterDexState.form, awake = form === '각성', job = form !== '일반';
+        const source = (awake ? entry.awakeningCoverUrl : job ? entry.jobCoverUrl : entry.coverUrl) || entry.coverUrl;
+        cover.src = wall.src = source;
+        cover.alt = entry.name + ' ' + form + ' 표지';
+        position.textContent = (entries.indexOf(entry) + 1) + ' / ' + entries.length;
+        rail.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.id) === entry.id)));
+        types.replaceChildren(...forms.map(value => el('button', {
+            type: 'button', 'aria-pressed': String(form === value), onclick: () => {
+                characterDexState.form = value; select(entry);
+            }
+        }, value)));
+        const skills = awake ? entry.awakening.skills : [...(entry.skills || []), ...(job ? entry.jobClass?.skills || [] : [])];
+        const effects = awake ? entry.awakening.slotEffects : job ? entry.jobClass?.slotEffects || [] : [entry.slotEffect].filter(Boolean);
+        info.replaceChildren(
+            el('header', { class: 'dca-heading' }, el('h3', null, entry.name),
+                el('p', { class: 'dca-introduction' }, entry.description)),
+            ...skills.map(skill => {
+                const ultimate = job && (entry.jobClass?.skills || []).some(value => value.id === skill.id);
+                return el('section', { class: 'dca-ability' },
+                    el('div', { class: 'dca-kicker' }, ultimate ? '궁극기' : '기본 스킬'), el('h4', null, skill.name),
+                    el('div', { class: 'dca-facts' }, el('span', null, (skill.resourceLabel || 'MP') + ' ' + comma(skill.mpCost)),
+                        el('span', null, '재사용 ' + skill.cooltimeText)),
+                    ...(skill.descLines || []).map(line => el('p', null, dexRichText(line))));
+            }),
+            ...(awake ? [el('section', { class: 'dca-ability' }, el('h4', null, '각성 패시브'),
+                ...entry.awakening.descLines.map(line => el('p', null, dexRichText(line))))] : []),
+            el('section', { class: 'dca-ability dca-effects' }, el('h4', null, '고유 슬롯 효과'),
+                ...effects.map(effect => el('p', null, el('span', null, effect.name), el('strong', null, effect.baseText)))));
+        info.scrollTop = 0;
     }
-
-    const body = el('div', { class: 'dex-character-body' });
-    card.appendChild(body);
-
-    function renderSkills(skills, upgraded = false) {
-        if (!skills || !skills.length) return null;
-        const det = el('details', { class: 'dex-collapse', open: true });
-        det.appendChild(el('summary', null, '스킬'));
-        const list = el('div', { class: 'dex-upgrade-list' });
-        skills.forEach(skill => {
-            const ultimate = upgraded && (entry.jobClass?.skills || []).some(jobSkill => jobSkill.id === skill.id);
-            list.appendChild(el('div', { class: 'dex-upgrade-row' + (ultimate ? ' dex-skill-ultimate' : '') },
-                el('div', { class: 'dex-skill-heading' }, el('strong', null, skill.name),
-                    ultimate ? el('span', { class: 'dex-skill-badge' }, '궁극기') : null),
-                el('dl', { class: 'dex-skill-costs' },
-                    el('div', { class: 'dex-skill-mp' }, el('dt', null, skill.resourceLabel || 'MP'), el('dd', null, comma(skill.mpCost))),
-                    el('div', null, el('dt', null, '쿨타임'), el('dd', null, skill.cooltimeText))),
-                el('div', { class: 'lines' }, ...(skill.descLines || []).map(line => el('div', null, line)))
-            ));
-        });
-        det.appendChild(list);
-        return det;
-    }
-
-    function highlightProgression(text) {
-        const fragment = document.createDocumentFragment();
-        const progression = /-?\d[\d,]*(?:\.\d+)?%?(?:\s*\/\s*-?\d[\d,]*(?:\.\d+)?%?){2,}/g;
-        let offset = 0;
-        for (const match of text.matchAll(progression)) {
-            fragment.appendChild(document.createTextNode(text.slice(offset, match.index)));
-            const steps = match[0].split(/\s*\/\s*/);
-            steps.forEach((value, index) => {
-                if (index) fragment.appendChild(document.createTextNode(' / '));
-                const remaining = steps.length - index;
-                fragment.appendChild(el('span', { class: 'dex-progression-value' + (remaining <= 3 ? ' dex-slot-tier-' + remaining : '') }, value));
-            });
-            offset = match.index + match[0].length;
-        }
-        fragment.appendChild(document.createTextNode(text.slice(offset)));
-        return fragment;
-    }
-
-    function renderSlotEffects(effects) {
-        if (!effects.length) return null;
-        return el('div', { class: 'dex-stat-block dex-slot-effects' },
-            el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과'),
-            ...effects.map(eff => {
-                const values = el('div', { class: 'dex-slot-values' });
-                if (eff.valuesText) {
-                    values.appendChild(highlightProgression(eff.valuesText));
-                } else {
-                    values.appendChild(el('span', null, eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
-                    if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0)
-                        values.appendChild(el('div', null, '이후 등급마다 ' + (String(eff.perLevelText).trim().startsWith('-') ? '' : '+') + eff.perLevelText));
-                }
-                return el('div', { class: 'dex-slot-effect' }, el('div', { class: 'dex-slot-name' }, eff.name), values);
-            }));
-    }
-
-    function renderBody() {
-        body.innerHTML = '';
-        const isAwakening = view === '각성';
-        const isJob = view === '전직' || isAwakening;
-        const coverUrl = isAwakening ? entry.awakeningCoverUrl : isJob ? entry.jobCoverUrl : entry.coverUrl;
-
-        if (coverUrl) {
-            body.appendChild(el('div', { class: 'dex-character-cover' },
-                el('img', { src: coverUrl, alt: entry.name, style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } })
-            ));
-        }
-
-        const head = el('div', { style: { display: 'grid', gap: '4px' } });
-        head.appendChild(el('div', null,
-            el('div', { class: 'dex-name' }, entry.name),
-            el('div', { class: 'dex-meta' },
-                el('span', { class: 'tag rarity' }, isJob ? view + ' 카드' : (entry.typeLabel || '캐릭터 카드'))
-            )
-        ));
-        body.appendChild(head);
-
-        if (isAwakening || (isJob && entry.jobClass)) {
-            if (isAwakening) body.appendChild(el('div', { class: 'dex-stat-block dex-awakening-passive' }, el('div', { class: 'dex-stat-title' }, '각성 패시브'), ...entry.awakening.descLines.map(line => el('div', null, highlightProgression(line)))));
-            const effs = isAwakening ? entry.awakening.slotEffects : entry.jobClass.slotEffects || [];
-            const slotBlock = renderSlotEffects(effs);
-            if (slotBlock) body.appendChild(slotBlock);
-            const skillsDet = renderSkills(isAwakening ? entry.awakening.skills : [...(entry.skills || []), ...(entry.jobClass.skills || [])], true);
-            if (skillsDet) body.appendChild(skillsDet);
-        } else {
-            if (entry.slotEffect) body.appendChild(renderSlotEffects([entry.slotEffect]));
-            const skillsDet = renderSkills(entry.skills);
-            if (skillsDet) body.appendChild(skillsDet);
-        }
-    }
-
-    renderBody();
-    return card;
+    select(entries.find(entry => entry.id === characterDexState.id) || entries[0]);
+    rail.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
 let titlesData = null;
@@ -6699,39 +6632,61 @@ function dexTitleCard(entry) {
     return card;
 }
 
-function dexPotentialCard(typeData) {
-    const card = el('div', { class: 'dex-pot-card' });
-    card.appendChild(el('div', { class: 'dex-pot-cardhead' }, typeData.label + ' 잠재능력'));
-    const tbody = el('tbody');
-    (typeData.grades || []).forEach(g => {
-        const groups = g.groups || [];
-        if (!groups.length) return;
-        groups.forEach((group, gi) => {
-            const tr = el('tr', { class: gi === 0 ? 'grade-start' : '' });
-            if (gi === 0) tr.appendChild(el('td', { class: 'c-grade', rowSpan: groups.length },
-                el('span', { class: 'pot-grade ' + g.grade }, g.gradeLabel)));
-            tr.appendChild(el('td', { class: 'c-rate' }, el('span', { class: 'dex-rate-pill' }, group.percent + '%')));
-            const optCell = el('td', { class: 'c-opt' });
-            const opts = group.options || [];
-            if (!opts.length) optCell.appendChild(el('span', { class: 'dex-opt-none' }, '없음'));
-            else opts.forEach(o => optCell.appendChild(el('span', { class: 'dex-opt-chip' }, o)));
-            tr.appendChild(optCell);
-            tbody.appendChild(tr);
-        });
-    });
-    const table = el('table', { class: 'dex-pot-table' },
-        el('thead', null, el('tr', null,
-            el('th', { class: 'c-grade' }, '등급'),
-            el('th', { class: 'c-rate' }, '확률'),
-            el('th', { class: 'c-opt' }, '옵션'))),
-        tbody);
-    card.appendChild(el('div', { class: 'dex-pot-tablewrap' }, table));
-    return card;
+const potentialDexState = { type: 'weapon', grade: 'bronze', query: '' };
+
+function renderPotentialDex(grid) {
+    grid.className = 'pdx';
+    const state = potentialDexState, types = potentialDexData.types || [];
+    const typeTabs = el('div', { class: 'pdx-types', 'aria-label': '잠재능력 장비 종류' });
+    const gradeTabs = el('div', { class: 'pdx-grades', 'aria-label': '옵션 등급' });
+    const title = el('h3'), count = el('span', { class: 'pdx-count' }), rows = el('tbody');
+    const input = el('input', { type: 'search', placeholder: '옵션 검색', 'aria-label': '잠재능력 옵션 검색', value: state.query });
+    const clear = el('button', { type: 'button', 'aria-label': '옵션 검색 지우기', hidden: !state.query,
+        onclick: () => { state.query = input.value = ''; paintRows(); input.focus(); } }, heavenIcon('close'));
+    input.oninput = () => { state.query = input.value; paintRows(); };
+    types.forEach(type => typeTabs.appendChild(el('button', {
+        type: 'button', 'data-type': type.type, onclick: () => { state.type = type.type; paint(); }
+    }, type.label)));
+    grid.replaceChildren(
+        el('header', { class: 'pdx-heading' }, el('span', { class: 'pdx-kicker' }, '잠재능력'), title), typeTabs, gradeTabs,
+        el('div', { class: 'pdx-tools' }, el('label', { class: 'pdx-search' }, heavenIcon('search'), input, clear), count),
+        el('p', { class: 'pdx-note' }, '선택한 옵션 등급에서 한 줄을 뽑을 때의 확률입니다.'),
+        el('div', { class: 'pdx-scroll', tabindex: '0', 'aria-label': '잠재능력 옵션 목록' },
+            el('table', null, el('thead', null, el('tr', null, el('th', { scope: 'col' }, '옵션'),
+                el('th', { scope: 'col' }, '등장 확률'))), rows)));
+    function paint() {
+        const type = types.find(value => value.type === state.type) || types[0];
+        state.type = type.type;
+        const grade = type.grades.find(value => value.grade === state.grade) || type.grades[0];
+        state.grade = grade.grade;
+        grid.dataset.grade = state.grade;
+        title.textContent = type.label + ' 잠재능력';
+        typeTabs.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.type === state.type)));
+        gradeTabs.replaceChildren(...type.grades.map(value => el('button', {
+            type: 'button', 'data-grade': value.grade, 'aria-pressed': String(value.grade === state.grade),
+            onclick: () => { state.grade = value.grade; paint(); }
+        }, el('span', { class: 'pdx-gem', 'aria-hidden': 'true' }), value.gradeLabel)));
+        paintRows();
+    }
+    function paintRows() {
+        const grade = types.find(value => value.type === state.type).grades.find(value => value.grade === state.grade);
+        const options = grade.groups.flatMap(group => group.options.map(text => ({ text, percent: group.optionPercent })));
+        const query = state.query.trim().toLocaleLowerCase();
+        const shown = options.filter(option => option.text.toLocaleLowerCase().includes(query));
+        clear.hidden = !state.query;
+        count.textContent = shown.length + ' / ' + options.length;
+        rows.replaceChildren(...(shown.length ? shown.map(option => el('tr', null,
+            el('td', null, dexRichText(option.text)), el('td', { class: 'pdx-rate' }, option.percent + '%')))
+            : [el('tr', null, el('td', { colSpan: 2, class: 'pdx-empty' }, '검색한 옵션이 없습니다.'))]));
+        grid.querySelector('.pdx-scroll').scrollTop = 0;
+    }
+    paint();
 }
 
 function renderDex() {
     const grid = $('#dexList'), shell = $('#dexShell');
-    const full = dexTab === 'augment' || dexTab === 'potential';
+    const full = ['augment', 'potential', 'character'].includes(dexTab);
+    shell.dataset.catalog = dexTab;
     shell.dataset.layout = full ? 'full' : 'browse';
     if (full) delete shell.dataset.dock;
     if (dexTab === 'augment') {
@@ -6739,10 +6694,11 @@ function renderDex() {
         return;
     }
     if (dexTab === 'potential') {
-        grid.className = 'dex-grid dex-pot-grid';
-        if (!potentialDexData) return;
-        grid.innerHTML = '';
-        (potentialDexData.types || []).forEach(t => grid.appendChild(dexPotentialCard(t)));
+        if (potentialDexData) renderPotentialDex(grid);
+        return;
+    }
+    if (dexTab === 'character') {
+        if (dexData) renderCharacterDex(grid);
         return;
     }
     renderDexBrowser(grid);
@@ -6762,7 +6718,7 @@ const dexDefaultHay = entry => [entry.name, entry.rarity, entry.typeLabel, entry
 const dexTitleState = entry => entry.equipped ? '표시 중' : entry.statsApplied ? '능력치 적용 중' : entry.unlocked ? '보유' : '미보유';
 
 function dexKind(tab) {
-    if (tab === 'augment' || tab === 'potential') return null;
+    if (['augment', 'potential', 'character'].includes(tab)) return null;
     if (tab === 'title') return titlesData ? {
         items: titlesData.titles || [], look: 'title', detail: dexTitleCard, lead: dexTitleCurrentNode,
         hay: entry => [entry.name, ...(entry.statLines || [])].join(' '),
@@ -6770,11 +6726,6 @@ function dexKind(tab) {
         sub: entry => [dexTitleState(entry)]
     } : null;
     if (!dexData) return null;
-    if (tab === 'character') return {
-        items: dexData.character || [], look: 'portrait', detail: dexCharacterDetail, hay: entry => entry.name,
-        filters: [['all', '전체'], ['job', '전직'], ['awakening', '각성']], test: (entry, filter) => filter === 'job' ? !!entry.hasJobClass : !!entry.awakening,
-        sub: entry => [entry.hasJobClass ? '전직' : null, entry.awakening ? '각성' : null]
-    };
     if (tab === 'orb') return {
         items: dexData.orb || [], detail: dexOrbCard, fallback: '🔮', hay: entry => [entry.name, entry.category, ...(entry.baseStatLines || [])].join(' '),
         groupOf: entry => entry.category || '기타', groupNote: entry => (entry.categoryParts || []).join(', '),
@@ -6807,12 +6758,9 @@ function dexTitleCurrentNode() {
 
 function dexSlot(entry, kind) {
     const key = dexKey(entry);
-    const art = kind.look === 'portrait'
-        ? el('span', { class: 'cdx-slot-art is-portrait' }, el('span', { 'aria-hidden': 'true' }, entry.name.slice(0, 1)),
-            el('img', { src: entry.portraitUrl || entry.imageUrl, alt: '', loading: 'lazy', onerror: event => event.target.remove() }))
-        : kind.look === 'title'
-            ? el('span', { class: 'cdx-slot-art is-title' }, el('img', { src: entry.imageUrl, alt: '', loading: 'lazy', onerror: event => event.target.remove() }))
-            : dexThumb(entry.iconUrl, entry.frameUrl, kind.fallback || SLOT_ICONS[entry.type] || '⚙️', 'dex-thumb cdx-slot-art');
+    const art = kind.look === 'title'
+        ? el('span', { class: 'cdx-slot-art is-title' }, el('img', { src: entry.imageUrl, alt: '', loading: 'lazy', onerror: event => event.target.remove() }))
+        : dexThumb(entry.iconUrl, entry.frameUrl, kind.fallback || SLOT_ICONS[entry.type] || '⚙️', 'dex-thumb cdx-slot-art');
     const slot = el('button', { type: 'button', class: 'cdx-slot' + (kind.look === 'title' && !entry.unlocked ? ' is-locked' : ''), 'data-key': key, 'aria-pressed': 'false', onclick: () => dexPick(key, true) },
         art,
         el('span', { class: 'cdx-slot-copy' },

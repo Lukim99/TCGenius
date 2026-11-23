@@ -6509,26 +6509,9 @@ function serializeCard(card, user, context) {
         const stats = context?.stats || (user ? rpgenius.calculateUserStats(user) : {});
         const slotEffects = context?.slotEffects || (user ? rpgenius.calculateCardSlotEffects(user) : {});
         const star = Number(card && card.star || 0);
-        const fmtPct = v => (Math.round(Number(v || 0) * 1000) / 10) + '%';
         classInfo = {
             name: data.class.name || '',
-            slotEffects: Array.isArray(data.class.slot_effects) ? data.class.slot_effects.map(se => {
-                const hasValues = Array.isArray(se.values) && se.values.length > 0;
-                const base = hasValues ? Number(se.values[0] || 0) : Number(se.base || 0);
-                const perLevel = hasValues ? 0 : Number(se.per_level || 0);
-                const current = rpgenius.getSlotEffectValueAtStar(se, star);
-                const fmt = v => se.type === 'seconds' ? String(v) + '초' : se.type === 'flat' ? String(v) : fmtPct(v);
-                return {
-                    name: se.name,
-                    baseText: fmt(base),
-                    perLevelText: hasValues ? '' : fmt(perLevel),
-                    valuesText: hasValues ? rpgenius.formatSlotEffectProgression(se) : '',
-                    currentText: fmt(current),
-                    active: star >= 4,
-                    requireStarText: '5성',
-                    currentStarText: (star + 1) + '성'
-                };
-            }) : [],
+            slotEffects: rpgenius.getCardSlotEffectDefinitions({ ...card, type: '전직' }).map(effect => buildSlotEffectInfo(card, { slot_effect: effect })),
             skills: Array.isArray(data.class.skills) ? data.class.skills.map(skillId => {
                 const skill = skills[Number(skillId)];
                 if (!skill) return null;
@@ -6579,6 +6562,7 @@ function serializeCard(card, user, context) {
         imageUrl: getCardImageUrl(card, user, false, data),
         iconUrl: getCardIconUrl(card, user, data),
         slotEffect: buildSlotEffectInfo(card, data),
+        slotEffects: rpgenius.getCardSlotEffectDefinitions(card).map(effect => buildSlotEffectInfo(card, { slot_effect: effect })),
         skills: buildSkillInfo(card, user, context),
         classInfo,
         awakening: rpgenius.cardAwakening.getDefinition(card) ? {
@@ -7065,7 +7049,7 @@ function buildRecipeIndex() {
 function buildCharacterDex() {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const skills = readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
-    const fmtPct = v => (Math.round(Number(v || 0) * 1000) / 10) + '%';
+    const introductions = require('./DB/RPGenius/CharacterIntroductions.json');
     const buildSkillEntry = skillId => {
         const skill = skills[Number(skillId)];
         if (!skill) return null;
@@ -7085,17 +7069,7 @@ function buildCharacterDex() {
         let jobClass = null;
         if (data.class) {
             jobClass = {
-                slotEffects: Array.isArray(data.class.slot_effects) ? data.class.slot_effects.map(se => {
-                    const hasValues = Array.isArray(se.values) && se.values.length > 0;
-                    const fmt = v => se.type === 'flat' ? String(v) : fmtPct(v);
-                    return {
-                        name: se.name,
-                        baseText: hasValues ? fmt(Number(se.values[0] || 0)) : fmtPct(se.base),
-                        perLevelText: hasValues ? '' : fmtPct(se.per_level),
-                        valuesText: hasValues ? rpgenius.formatSlotEffectProgression(se) : '',
-                        requireStarText: '5성'
-                    };
-                }) : [],
+                slotEffects: rpgenius.getCardSlotEffectDefinitions({ id, type: '전직' }).map(effect => buildSlotEffectInfo({ star: 4 }, { slot_effect: effect })),
                 skills: Array.isArray(data.class.skills) ? data.class.skills.map(buildSkillEntry).filter(Boolean) : []
             };
         }
@@ -7106,6 +7080,8 @@ function buildCharacterDex() {
             id,
             name: data.name,
             formatted: rpgenius.formatUserCard(baseCard),
+            description: introductions[data.name] || '',
+            iconUrl: getCardIconUrl({ id, star: 4, type: '일반' }, null, data)?.concat('&portrait=1') || null,
             portraitUrl: cardComposite.resolveCardLayers({ name: data.name, star: 0, type: '일반' }) ? '/card-image?name=' + encodeURIComponent(data.name) + '&portrait=1' : null,
             imageUrl: getCardImageUrl(baseCard, { prestige: false }),
             coverUrl: getCharacterCoverImageUrl(data),
@@ -9976,6 +9952,7 @@ function renderUserDashboard(sess, opts) {
 <link rel="stylesheet" href="/static/dispatch.css">
 <script src="/static/dispatch.js"></script>
 <link rel="stylesheet" href="/static/dex-scene.css">
+<link rel="stylesheet" href="/static/dex-catalogs.css">
 <link rel="stylesheet" href="/static/game-font.css?v=20261123">
 <script src="/static/app.js"></script>
 <script src="/static/dex-scene.js"></script>
