@@ -236,7 +236,13 @@ body.is-leaving .as-camp{opacity:0}
 .as-slot-name{font-weight:800;font-size:clamp(1rem,.86rem + .4vw,1.2rem);color:var(--ink)}
 .as-slot-lv{color:var(--gold);font-weight:700;margin-right:.6em}
 .as-slot-nick{white-space:nowrap}
-.as-slot-class{color:var(--teal);font-size:.88rem;font-weight:700}
+.as-slot-class{color:#fff;font-size:.88rem;font-weight:700}
+.as-slot-class .card-name-halloween{display:inline-block;color:#ff922e;white-space:nowrap;text-shadow:none}
+@supports (background-clip:text) or (-webkit-background-clip:text){
+  .as-slot-class .card-name-halloween{background-image:linear-gradient(110deg,#ff922e 0%,#ff922e 44%,#ffd3a8 48%,#fff 50%,#ffd3a8 52%,#ff922e 56%,#ff922e 100%);background-size:240% 100%;background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:halloween-name-shine 3.2s linear infinite}
+}
+@keyframes halloween-name-shine{from{background-position:120% 50%}to{background-position:-20% 50%}}
+@media(prefers-reduced-motion:reduce){.as-slot-class .card-name-halloween{animation:none;background:none;-webkit-text-fill-color:currentColor}}
 .as-slot-power{color:var(--ink-2);font-size:.84rem;font-weight:600}
 .as-slot-power b{font-weight:700;color:#fff;margin-left:.4em;font-variant-numeric:tabular-nums}
 .as-slot:hover .as-slot-plate{opacity:1}

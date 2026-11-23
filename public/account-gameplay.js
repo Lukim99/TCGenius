@@ -108,7 +108,7 @@
 
   const menu = el('div', 'ag-menu');
   const toChars = el('a', 'ag-item ag-item-main', '캐릭터 선택'); toChars.id = 'agChars'; toChars.href = '/characters';
-  const toSupport = el('a', 'ag-item', '서포트 슬롯 연결'); toSupport.href = '/characters#links';
+  const toSupport = el('a', 'ag-item', '슬롯 연결'); toSupport.href = '/characters#links';
   menu.appendChild(toChars); menu.appendChild(toSupport);
   // 게임이 만든 단추를 그대로 옮긴다. 눌렀을 때 하는 일은 app.js가 붙인 그대로다.
   function adopt(node, label) {

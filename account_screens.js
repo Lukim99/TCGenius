@@ -5,7 +5,7 @@
 // 화면에 필요한 값은 public/account-stage.js가 API에서 받아 textContent로만 그린다.
 // 장면(하늘, 문, 호수, 캐릭터)은 WebGL 캔버스가 그리고, 여기 있는 단추와 글자는 그 위에 얹는 게임 HUD다.
 
-const VERSION = '20261123m3';
+const VERSION = '20261123m4';
 const CSS = '/static/account-stage.css?v=' + VERSION;
 const JS = '/static/account-stage.js?v=' + VERSION;
 const ART = '/static/assets/account-stage/';
@@ -103,7 +103,7 @@ function renderCharacterSelection() {
     <div class="as-dock-actions">
       <button type="button" class="as-btn" id="asRename" disabled>이름 변경</button>
       <button type="button" class="as-btn" id="asTransfer" disabled>물품 이전</button>
-      <button type="button" class="as-btn" id="asLinks" disabled>서포트 연결</button>
+      <button type="button" class="as-btn" id="asLinks" disabled>슬롯 연결</button>
     </div>
     <button type="button" class="as-plaque as-start" id="asStart" disabled><span class="as-btn-label">게임 시작</span></button>
     <div class="as-dock-side">

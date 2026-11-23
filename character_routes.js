@@ -60,7 +60,7 @@ function registerCharacterRoutes(server, deps) {
         const display = data ? { ...data, ...user.main_card } : null;
         return { id: user.id, name: user.name, level: Number(user.level || 1), characterName: data?.name || '',
             type: user.main_card?.type || '일반', power: rpg.calculateTownCombatPower(user).total,
-            cardLabel: data ? rpg.formatUserCard({ id: user.main_card.id, star: user.main_card.star, type: user.main_card.type }) : '',
+            cardLabel: data ? rpg.formatUserCard(user.main_card) : '',
             imageUrl: sprite(display), renameTickets: count(user, '닉네임 변경권'),
             needsStarter: !!user.need_character_card_select, isActive: user.id === account.activeCharacterId };
     }

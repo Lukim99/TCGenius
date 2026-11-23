@@ -384,7 +384,7 @@
     function place(item) {
       const h = item.handle, b = h.box, vw = (b[2] - b[0]) * h.w, vh = (b[3] - b[1]) * h.h;
       const st = states.get(item.key), sel = st ? st.sel : 0;
-      const s = Math.min(item.boxH / vh, item.boxW / vw) * (1 + 0.07 * sel);
+      const s = Math.min(item.boxH / vh, item.boxW / vw) * (item.kind == 'hero' ? 0.93 + 0.07 * sel : 1);
       const w = h.w * s, hh = h.h * s;
       return { x: item.cx - (b[0] + b[2]) / 2 * w, y: item.feetY - b[3] * hh, w, h: hh, vw: vw * s, vh: vh * s, sel, a: st ? st.a : 1 };
     }
@@ -925,7 +925,7 @@
           if (r.right < -200 || r.left > W + 200 || r.top > H + 200) return;
           const hero = t.kind == 'hero';
           items.push({ key: t.key, handle: t.handle, kind: t.kind, cx: r.left + r.width / 2, feetY: r.bottom,
-            boxH: hero ? r.height : Math.min(r.height * 0.5, 170), boxW: r.width * (hero ? 1.25 : 0.86),
+            boxH: hero ? r.height : Math.min(r.height * 0.5, 170), boxW: r.width * (hero ? 0.96 : 0.86),
             sel: hero && sameId(t.id, selectedId), sigil: t.sigil, spin: i % 2 ? -1 : 1 });
         });
         const scroll = window.scrollY || 0;
@@ -1341,7 +1341,13 @@
         const nameRow = el('span', 'as-slot-name');
         nameRow.appendChild(el('span', 'as-slot-nick', c.name));
         plate.appendChild(nameRow);
-        if (!c.needsStarter) plate.appendChild(el('span', 'as-slot-class', typeof c.cardLabel == 'string' && c.cardLabel ? c.cardLabel : classText(c)));
+        if (!c.needsStarter) {
+          const label = typeof c.cardLabel == 'string' && c.cardLabel ? c.cardLabel : classText(c);
+          const cardName = el('span', 'as-slot-class'), halloween = label.indexOf('할로윈 ');
+          if (halloween < 0) cardName.textContent = label;
+          else cardName.append(label.slice(0, halloween), el('span', 'card-name-halloween', '할로윈'), label.slice(halloween + 3));
+          plate.appendChild(cardName);
+        }
         const power = el('span', 'as-slot-power');
         power.appendChild(el('span', 'as-slot-lv', 'Lv.' + fmt(c.level)));
         if (!c.needsStarter) { power.appendChild(doc.createTextNode(' 전투력 ')); power.appendChild(el('b', '', fmt(c.power))); }
@@ -1433,14 +1439,14 @@
         handle.body.appendChild(row);
       });
     }
-    // 서포트 슬롯 연결: 고른 캐릭터가 아니라 지금 플레이 중인 캐릭터의 슬롯을 다룬다.
+    // 슬롯 연결: 고른 캐릭터가 아니라 지금 플레이 중인 캐릭터의 슬롯을 다룬다.
     function openLinks() {
       if (!data) return;
       const active = characters().find(c => c.isActive) || characters().find(c => sameId(c.id, data.activeId));
       const picked = selected();
-      openModal('서포트 슬롯 연결', true, handle => {
+      openModal('슬롯 연결', true, handle => {
         const lead = el('p', 'as-m-lead'), bonus = el('div'), slotsBox = el('div', 'as-links');
-        lead.textContent = '플레이 중인 캐릭터' + (active ? ' ' + active.name : '') + '의 서포트 슬롯에, 같은 캐릭터 카드를 메인으로 쓰는 내 다른 캐릭터를 연결합니다. 카드 타입은 달라도 됩니다.';
+        lead.textContent = '플레이 중인 캐릭터' + (active ? ' ' + active.name : '') + '의 슬롯에, 같은 캐릭터 카드를 메인으로 쓰는 내 다른 캐릭터를 연결합니다. 카드 타입은 달라도 됩니다.';
         handle.body.appendChild(lead);
         if (active && picked && !sameId(active.id, picked.id)) {
           const note = el('p', 'as-m-flag');
@@ -1471,7 +1477,7 @@
           slotsBox.textContent = '';
           const slots = Array.isArray(view.slots) ? view.slots : [];
           if (!slots.length) {
-            slotsBox.appendChild(el('p', 'as-pick-none', '장착한 서포트 슬롯 카드가 없습니다. 게임 안 캐릭터 화면에서 슬롯에 카드를 장착하면 여기서 연결할 수 있습니다.'));
+            slotsBox.appendChild(el('p', 'as-pick-none', '장착한 슬롯 카드가 없습니다. 게임 안 캐릭터 화면에서 슬롯에 카드를 장착하면 여기서 연결할 수 있습니다.'));
             return;
           }
           slots.forEach(slot => {
