@@ -855,10 +855,12 @@ function grantPartyQuestClearRewards(room) {
     if (room.questId === birthdayEvent.ID) return grantBirthdayClearRewards(room);
     const isMansion = room.questId.startsWith('mansion');
     const isMansionNightmare = room.questId === 'mansionNightmare';
-    if (isMansion && room.state !== 'cleared') return Promise.resolve();
-    if (isMansion && room.rewardPromise) return room.rewardPromise;
+    if (room.state !== 'cleared') return Promise.resolve();
+    if (room.rewardPromise) return room.rewardPromise;
+    room.rewardPending = true;
     const work = (async () => {
-        if (isMansion) await Promise.all([...(room.refundTasks || []), ...(room.pendingTitleGrants || [])]);
+        // 물약 반환과 칭호 저장이 끝난 최신 인벤토리로 보상을 계산한다.
+        await Promise.all([...(room.refundTasks || []), ...(room.pendingTitleGrants || [])]);
         const quest = getQuestById(room.questId);
         const rewards = quest && quest.rewards || {};
         const packs = getPartyQuestPacks();
@@ -866,7 +868,7 @@ function grantPartyQuestClearRewards(room) {
         for (const member of room.members) {
             try {
                 const user = await rpgenius.getRPGUserByName(member.name);
-                if (!user) continue;
+                if (!user) throw new Error('캐릭터 정보를 찾지 못했습니다.');
                 // 퀘스트: 파티 퀘스트 클리어 집계 (인원 조건 포함, 아래 user.save로 저장)
                 if (typeof rpgenius.recordQuestEvent === 'function') {
                     rpgenius.recordQuestEvent(user, 'partyClear', { quest: quest && quest.name || '', questId: room.questId, members: room.members.length });
@@ -899,7 +901,6 @@ function grantPartyQuestClearRewards(room) {
                 if (equipmentGold > 0) {
                     user.gold = Number(user.gold || 0) + equipmentGold;
                     addPartyQuestRewardSummary(summary, 'equipmentGold', '🪙 장비 효과 골드', equipmentGold);
-                    member.runtime.pendingEquipmentGold = 0;
                 }
                 const selected = pickPartyQuestRewardEntry(rewards.reward);
                 let itemReward = null;
@@ -983,6 +984,7 @@ function grantPartyQuestClearRewards(room) {
                     };
                 }
                 if (isMansion) await rpgenius.commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'titleProgress', 'titles', 'quests']); else await user.save();
+                if (equipmentGold > 0) member.runtime.pendingEquipmentGold = 0;
                 results.push({
                     name: member.name,
                     exp,
@@ -996,15 +998,16 @@ function grantPartyQuestClearRewards(room) {
                     summary: Object.keys(summary).map(key => ({ label: summary[key].label, count: summary[key].count }))
                 });
             } catch (e) {
-                console.error('[partyquest] reward grant error:', member.name, e);
+                console.error('[partyquest] reward grant error:', member.name, { questId: room.questId, roomId: room.id }, e);
                 results.push({ name: member.name, error: '보상 지급 실패' });
             }
         }
         room.result.rewards = results;
-        pushNotice(room, '보상 지급 완료', 'success', 4500);
+        const failed = results.some(result => result.error);
+        pushNotice(room, failed ? '일부 보상 지급 실패' : '보상 지급 완료', failed ? 'danger' : 'success', 4500);
         broadcastRoom(room);
-    })();
-    if (isMansion) room.rewardPromise = work;
+    })().finally(() => { room.rewardPending = false; });
+    room.rewardPromise = work;
     return work;
 }
 
@@ -2278,7 +2281,8 @@ function endQuest(room, cleared, reason) {
     for (const m of room.members) {
         if (m.potions && m.potions.length) {
             const refund = refundLeftoverPotionsAsync(m.name, m.potions);
-            if (room.questId.startsWith('mansion') || room.questId === birthdayEvent.ID) { if (!room.refundTasks) room.refundTasks = []; room.refundTasks.push(refund); }
+            if (!room.refundTasks) room.refundTasks = [];
+            room.refundTasks.push(refund);
             m.potions = [];
         }
         if (!cleared && Number(m.runtime && m.runtime.pendingEquipmentGold || 0) > 0) grantPendingEquipmentGoldAsync(m);
@@ -2306,7 +2310,7 @@ function grantTitleAsync(room, name, titleId) {
             if (room) pushNotice(room, name + ' — 칭호 「' + ((def && def.name) || titleId) + '」 획득', 'success', 6000);
         } catch (e) { console.error('[partyquest] title grant error:', e); }
     })();
-    if (room && titleId === 'mansionEyes') { if (!room.pendingTitleGrants) room.pendingTitleGrants = []; room.pendingTitleGrants.push(work); }
+    if (room) { if (!room.pendingTitleGrants) room.pendingTitleGrants = []; room.pendingTitleGrants.push(work); }
     return work;
 }
 
@@ -2331,6 +2335,7 @@ function restartQuest(hostName) {
     const birthdayError = birthdayEvent.admissionError(room.questId);
     if (birthdayError) return { error: birthdayError };
     if (room.state !== 'cleared' && room.state !== 'failed') return { error: '퀘스트가 종료된 후에만 사용할 수 있습니다.' };
+    if (room.rewardPending) return { error: '보상 지급이 끝난 후 다시 시도해주세요.' };
     stopTick(room);
     room.state = 'lobby';
     room.phaseIndex = -1;

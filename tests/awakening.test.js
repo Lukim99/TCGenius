@@ -623,14 +623,14 @@ test('레이드 보상 횟수가 있을 때만 용기의 보석 5%, 드랍율 �
             if (locked) u.titleProgress = { hoduRewardWeek: week, hoduRewardCount: 3, butaRewardWeek: week };
             rpg.getRPGUserByName = async () => u;
             const member = { name: u.name, potions: [], position: '메인딜러', baseSnapshot: { stats: { itemDropChance: 1000 }, slotEffects: { itemDropChance: 1000 } }, runtime: { hp: 100, hpMax: 100, buffs: [], cooldownsUntil: {} } };
-            const room = { id: 'test', questId, members: [member], result: {}, notices: [], combatLog: [], chatLog: [], streams: new Map(), state: 'finished' };
+            const room = { id: 'test', questId, members: [member], result: {}, notices: [], combatLog: [], chatLog: [], streams: new Map(), state: 'cleared' };
             await rolls(.01, () => party.grantPartyQuestClearRewards(room));
             assert.equal(rpg.getInventoryItemCount(u, 0), locked ? 0 : 1);
             assert.equal(room.result.rewards[0].weeklyLocked, locked);
         }
         const u = user('빵귤'); u.save = async () => ({ success: true });
         rpg.getRPGUserByName = async () => u;
-        const room = { id: 'test', questId: 'blackHodu', chatLog: [], members: [{ name: u.name, potions: [], baseSnapshot: { stats: { itemDropChance: 1000 }, slotEffects: {} }, runtime: {} }], result: {}, streams: new Map() };
+        const room = { id: 'test', questId: 'blackHodu', state: 'cleared', chatLog: [], members: [{ name: u.name, potions: [], baseSnapshot: { stats: { itemDropChance: 1000 }, slotEffects: {} }, runtime: {} }], result: {}, streams: new Map() };
         await rolls(.05, () => party.grantPartyQuestClearRewards(room));
         assert.equal(rpg.getInventoryItemCount(u, 0), 0);
     } finally { rpg.getRPGUserByName = original; }
