@@ -1442,34 +1442,33 @@
         handle.body.appendChild(row);
       });
     }
-    // 슬롯 연결: 고른 캐릭터가 아니라 지금 플레이 중인 캐릭터의 슬롯을 다룬다.
+    // 현재 플레이 중인 캐릭터의 슬롯을 편성한다.
     function openLinks() {
       if (!data) return;
       openModal('슬롯 연결', true, handle => {
         panel.classList.add('is-links');
         const board = el('div', 'as-links'), main = el('div', 'as-link-main');
-        const formation = el('div', 'as-link-formation');
-        const heading = el('div', 'as-link-heading'), count = el('span', 'as-link-count');
-        count.setAttribute('role', 'status');
+        const formation = el('div', 'as-link-formation'), heading = el('div', 'as-link-heading');
+        const count = el('span', 'as-link-count'), nav = el('div', 'as-link-nav');
+        count.setAttribute('role', 'status'); nav.setAttribute('role', 'group'); nav.setAttribute('aria-label', '슬롯 선택');
         heading.append(el('h3', '', '연결 슬롯'), count);
-        const slotsBox = el('div', 'as-link-slots'), bonus = el('dl', 'as-link-bonus');
-        slotsBox.setAttribute('role', 'group'); slotsBox.setAttribute('aria-label', '연결 슬롯 5개');
-        formation.append(heading, slotsBox, bonus);
+        const slotsBox = el('div', 'as-link-slots');
+        slotsBox.setAttribute('role', 'group'); slotsBox.setAttribute('aria-label', '연결된 캐릭터');
+        formation.append(heading, nav, slotsBox);
         const editor = el('div', 'as-link-editor'), editorHead = el('div', 'as-link-heading');
-        const target = el('h3'), clear = el('button', 'as-link-clear', '연결 해제');
+        const target = el('h3'), clear = el('button', 'as-btn as-link-clear', '연결 해제');
         clear.type = 'button'; clear.addEventListener('click', () => commit(null));
         editorHead.append(target, clear);
         const candidates = el('div', 'as-link-candidates');
         candidates.setAttribute('role', 'group'); candidates.setAttribute('aria-label', '연결할 부캐 선택');
-        const command = el('div', 'as-link-command'), detail = el('div', 'as-link-preview');
+        const command = el('div', 'as-link-command'), detail = el('div', 'as-link-preview'), bonus = el('dl', 'as-link-bonus');
         const connect = el('button', 'as-btn as-link-connect'); connect.type = 'button';
         connect.addEventListener('click', () => commit(chosen()));
-        command.append(detail, connect);
+        command.append(bonus, detail, connect);
         editor.append(editorHead, candidates, command);
         board.append(main, formation, editor);
-        handle.body.appendChild(board);
-        handle.body.appendChild(handle.errorBox);
-        let view = null, index = 0, chosenId = null;
+        handle.body.append(board, handle.errorBox);
+        let view = null, index = 0, chosenId = null, scrollTimer = 0;
         const current = () => view && view.slots[index];
         const chosen = () => current()?.candidates.find(c => sameId(c.id, chosenId)) || null;
 
@@ -1482,39 +1481,70 @@
           return box;
         }
         function cardLabel(text) {
-          const label = el('span', 'as-slot-class'), at = (text || '').indexOf('할로윈 ');
-          if (at < 0) label.textContent = text || '';
-          else label.append(text.slice(0, at), el('span', 'card-name-halloween', '할로윈'), text.slice(at + 3));
-          return label;
+          const label = el('span', 'as-link-card-title');
+          const parts = (text || '').match(/^(\[[^\]]+\])\s*(?:(각성|전직|광폭)\s+)?(.*)$/);
+          if (!parts) { label.appendChild(el('strong', 'as-slot-class', text || '카드 없음')); return label; }
+          label.append(el('span', 'as-link-grade', parts[1] + (parts[2] ? ' ' + parts[2] : '')), doc.createTextNode(' '));
+          const name = el('strong', 'as-slot-class');
+          parts[3].split(' ').filter(Boolean).forEach((word, i) => {
+            if (i) name.appendChild(doc.createTextNode(' '));
+            name.appendChild(el('span', word === '할로윈' ? 'card-name-halloween' : '', word));
+          });
+          label.appendChild(name); return label;
+        }
+        function effects(rows, inactive) {
+          const list = el('dl', 'as-link-effects');
+          (rows || []).forEach(effect => {
+            const row = el('div', (effect.negative ? 'is-negative ' : '') + (effect.grade ? 'is-grade ' : '') + (!effect.active || inactive ? 'is-inactive' : ''));
+            row.append(el('dt', '', effect.name), el('dd', '', effect.value));
+            if (effect.condition) row.appendChild(el('small', '', effect.condition));
+            list.appendChild(row);
+          });
+          return list;
         }
         function paintFormation() {
           const character = view.character;
-          main.replaceChildren(portrait(character.imageUrl, 'as-link-main-art'));
-          const identity = el('div');
-          identity.append(el('span', 'as-link-eyebrow', '플레이 중'), el('strong', '', character.name), el('small', '', 'Lv.' + fmt(character.level)));
-          main.appendChild(identity);
-          count.textContent = view.slots.filter(slot => slot.memberName).length + ' / 5 연결';
+          const identity = el('div', 'as-link-main-name');
+          identity.append(el('span', 'as-link-eyebrow', '플레이 중'), cardLabel(character.cardLabel), el('small', '', 'Lv.' + fmt(character.level)));
+          main.replaceChildren(portrait(character.imageUrl, 'as-link-main-art'), identity, effects(character.effects));
+          count.textContent = view.slots.filter(slot => slot.linkedId).length + ' / 5 연결';
+          nav.textContent = '';
+          view.slots.forEach(slot => {
+            const button = el('button', 'as-link-seal' + (slot.linkedId ? ' is-linked' : '') + (slot.error ? ' is-invalid' : ''), String(slot.index + 1));
+            button.type = 'button'; button.dataset.index = slot.index;
+            button.setAttribute('aria-label', '슬롯 ' + (slot.index + 1) + ', ' + (slot.linkedId ? slot.name : '빈 슬롯'));
+            button.addEventListener('click', () => selectSlot(slot.index));
+            nav.appendChild(button);
+          });
+          const sum = Math.max(0, Number(view.levelSum) || 0), percent = (sum / 10).toLocaleString('ko-KR', { maximumFractionDigits: 1 });
+          bonus.textContent = '';
+          [['체력', '+' + fmt(sum)], ['골드 경험치 드롭', '+' + percent + '%']].forEach(([label, value]) => {
+            const stat = el('div'); stat.append(el('dt', '', label), el('dd', '', value)); bonus.appendChild(stat);
+          });
+          paintSlots();
+        }
+        function paintSlots() {
+          const left = slotsBox.scrollLeft, option = chosen();
           slotsBox.textContent = '';
           view.slots.forEach(slot => {
-            const button = el('button', 'as-link-slot' + (slot.error ? ' is-invalid' : ''));
+            const preview = slot.index === index && option && !option.error && !sameId(option.id, slot.linkedId);
+            const shown = preview ? { name: option.cardLabel, imageUrl: option.imageUrl, level: option.level, effects: option.effects } : slot;
+            const button = el('button', 'as-link-slot' + (slot.error ? ' is-invalid' : '') + (preview ? ' is-preview' : '') + (!shown.imageUrl ? ' is-empty' : ''));
             button.type = 'button'; button.dataset.index = slot.index;
             button.setAttribute('aria-pressed', slot.index === index ? 'true' : 'false');
-            const name = slot.memberName || (slot.error ? '연결 확인' : '빈 슬롯');
-            button.setAttribute('aria-label', '슬롯 ' + (slot.index + 1) + ', ' + name);
-            button.appendChild(el('span', 'as-link-number', '슬롯 ' + (slot.index + 1)));
-            const art = portrait(slot.imageUrl, 'as-link-slot-art');
-            if (!slot.imageUrl) art.appendChild(el('span', 'as-link-empty', slot.error ? '!' : '+'));
-            button.append(art, el('span', 'as-link-slot-name', name));
-            button.title = slot.error || (slot.memberName ? slot.memberName + '\n' + slot.name : '연결할 부캐 선택');
+            button.setAttribute('aria-label', '슬롯 ' + (slot.index + 1) + ', ' + shown.name + (preview ? ', 연결 전 미리보기' : ''));
+            const number = el('span', 'as-link-number'); number.append(el('b', '', String(slot.index + 1)), el('span', '', preview ? '연결 전' : slot.error ? '연결 확인' : slot.linkedId ? '연결됨' : '빈 슬롯'));
+            const art = portrait(shown.imageUrl, 'as-link-slot-art');
+            if (!shown.imageUrl) art.appendChild(el('span', 'as-link-empty', '+'));
+            const inscription = el('span', 'as-link-inscription');
+            inscription.appendChild(cardLabel(shown.imageUrl ? shown.name : '부캐 선택'));
+            if (shown.imageUrl) inscription.append(el('small', 'as-link-level', 'Lv.' + fmt(shown.level)), effects(shown.effects, !!slot.error && !preview));
+            button.append(number, art, inscription);
             button.addEventListener('click', () => selectSlot(slot.index));
             slotsBox.appendChild(button);
           });
-          const sum = Math.max(0, Number(view.levelSum) || 0);
-          const percent = (sum / 10).toLocaleString('ko-KR', { maximumFractionDigits: 1 });
-          bonus.textContent = '';
-          [['레벨 합', fmt(sum)], ['체력', '+' + fmt(sum)], ['골드 경험치 드롭', '+' + percent + '%']].forEach(([label, value]) => {
-            const stat = el('div'); stat.append(el('dt', '', label), el('dd', '', value)); bonus.appendChild(stat);
-          });
+          nav.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', Number(button.dataset.index) === index ? 'true' : 'false'));
+          slotsBox.scrollLeft = left;
         }
         function paintCandidates() {
           const slot = current(), left = candidates.scrollLeft;
@@ -1525,12 +1555,12 @@
             const assigned = view.slots.find(s => sameId(s.linkedId, option.id));
             const button = el('button', 'as-link-option' + (option.error ? ' is-unavailable' : ''));
             button.type = 'button'; button.dataset.id = option.id;
-            button.title = option.name + '\n' + option.cardLabel;
             const state = assigned ? '슬롯 ' + (assigned.index + 1) + ' 연결됨' : option.error ? '연결 불가' : '연결 가능';
-            button.setAttribute('aria-label', option.name + ', Lv.' + fmt(option.level) + ', ' + option.cardLabel + ', ' + state);
-            button.append(el('span', 'as-link-state' + (assigned ? ' is-linked' : ''), state), portrait(option.imageUrl, 'as-link-option-art'),
-              el('strong', 'as-link-name', option.name), el('small', 'as-link-level', 'Lv.' + fmt(option.level)), cardLabel(option.cardLabel));
-            button.addEventListener('click', () => { chosenId = option.id; paintCommand(); });
+            button.setAttribute('aria-label', option.cardLabel + ', ' + option.name + ', ' + state);
+            const words = el('span', 'as-link-option-name');
+            words.append(cardLabel(option.cardLabel), el('small', 'as-link-owner', option.name + ' Lv.' + fmt(option.level)));
+            button.append(el('span', 'as-link-state' + (assigned ? ' is-linked' : ''), state), portrait(option.imageUrl, 'as-link-option-art'), words);
+            button.addEventListener('click', () => { if (handle.isBusy()) return; chosenId = option.id; paintSlots(); paintCommand(); });
             candidates.appendChild(button);
           });
           if (!slot.candidates.length) candidates.appendChild(el('p', 'as-pick-none', '아직 부캐가 없습니다.'));
@@ -1540,29 +1570,36 @@
         function paintCommand() {
           const slot = current(), option = chosen(), on = option && sameId(option.id, slot.linkedId);
           candidates.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', sameId(button.dataset.id, chosenId) ? 'true' : 'false'));
-          detail.textContent = '';
-          if (option) {
-            detail.append(el('strong', '', option.name), cardLabel(option.cardLabel));
-            if (option.error) detail.appendChild(el('span', 'as-link-reason', option.error));
-          } else {
-            detail.appendChild(el('span', 'as-link-prompt', slot.error || '부캐를 선택하세요'));
-          }
+          detail.textContent = option?.error || (!option && slot.error) || '';
+          command.classList.toggle('has-error', !!detail.textContent);
           connect.textContent = on && !option.error ? '연결됨' : '슬롯 ' + (index + 1) + '에 ' + (slot.linkedId ? '교체' : '연결');
           connect.disabled = !option || !!option.error || on;
         }
-        function selectSlot(next) {
+        function selectSlot(next, fromScroll) {
           if (!view || handle.isBusy()) return;
           index = next; chosenId = current().linkedId;
-          paintFormation(); paintCandidates();
-          slotsBox.querySelector('[data-index="' + index + '"]').focus({ preventScroll: true });
-          candidates.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          paintSlots(); paintCandidates();
+          if (!fromScroll) {
+            nav.querySelector('[data-index="' + index + '"]').focus({ preventScroll: true });
+            slotsBox.querySelector('[data-index="' + index + '"]').scrollIntoView({ block: 'nearest', inline: 'center' });
+          }
+          candidates.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
         }
-        slotsBox.addEventListener('keydown', ev => {
+        nav.addEventListener('keydown', ev => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) return;
           ev.preventDefault();
-          const from = Number(ev.target.closest('.as-link-slot')?.dataset.index ?? index);
+          const from = Number(ev.target.closest('button')?.dataset.index ?? index);
           selectSlot(ev.key === 'Home' ? 0 : ev.key === 'End' ? 4 : Math.max(0, Math.min(4, from + (ev.key === 'ArrowLeft' ? -1 : 1))));
         });
+        slotsBox.addEventListener('scroll', () => {
+          clearTimeout(scrollTimer);
+          scrollTimer = setTimeout(() => {
+            if (!handle.alive() || handle.isBusy() || !matchMedia('(max-width:1000px)').matches) return;
+            const center = slotsBox.getBoundingClientRect().left + slotsBox.clientWidth / 2;
+            const nearest = Array.from(slotsBox.children).sort((a, b) => Math.abs(a.getBoundingClientRect().left + a.clientWidth / 2 - center) - Math.abs(b.getBoundingClientRect().left + b.clientWidth / 2 - center))[0];
+            if (nearest && Number(nearest.dataset.index) !== index) selectSlot(Number(nearest.dataset.index), true);
+          }, 120);
+        }, { passive: true });
         async function commit(option) {
           if (!view || handle.isBusy() || option?.error) return;
           const slot = current();
@@ -1572,8 +1609,7 @@
           connect.textContent = '적용 중';
           try {
             await write('/api/characters/link', { characterId: view.characterId, index, linkedId: option ? option.id : null });
-            await load();
-            await loadList({});
+            await load(); await loadList({});
           } catch (err) {
             if (!handle.alive()) return;
             handle.error(err.message);
@@ -1592,6 +1628,8 @@
           }
           view = fresh; chosenId = current().linkedId;
           paintFormation(); paintCandidates();
+          slotsBox.querySelector('[data-index="' + index + '"]').scrollIntoView({ block: 'nearest', inline: 'center' });
+          candidates.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
         }
         target.textContent = '불러오는 중'; connect.disabled = clear.disabled = true;
         load().catch(err => { if (handle.alive()) handle.error(err.message); });

@@ -3097,9 +3097,21 @@ function getSlotEffectValueAtStar(se, star) {
     return Number(se.base || 0) + Number(se.per_level || 0) * (s - 4);
 }
 
+function getCardSlotEffectDefinitions(card) {
+    const data = readJsonCached(CHARACTER_CARDS_PATH, [])[card?.id];
+    if (!data) return [];
+    if (card.type === '광폭') return data.berserkSlotEffects || [];
+    if (card.type === '각성') return cardAwakening.getDefinition(card)?.slots || [];
+    if (card.type === '전직') return data.class?.slot_effects || [];
+    return data.slot_effect ? [data.slot_effect] : [];
+}
+
+function getCardSlotGradeBonus(card) {
+    return [.01, .02, .03, .04, .06, .08, .10, .12][Math.min(7, Number(card?.star || 0) - 4)] || 0;
+}
+
 function calculateCardSlotEffects(user) {
     if (paradisePower.context(user)) return { ...paradisePower.context(user).slots };
-    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const effects = {
         expBonus: 0,
         hpDamageReduction: 0,
@@ -3147,28 +3159,10 @@ function calculateCardSlotEffects(user) {
     };
     const slotCards = getCharacterSlotCards(user);
     [user.main_card, ...slotCards].filter(Boolean).forEach(card => {
-        const cardData = characterCards[card.id];
-        if (!cardData) return;
         const star = Math.max(card === user.main_card ? 4 : 0, Number(card.star || 0));
-        if (card.type === '광폭') {
-            (cardData.berserkSlotEffects || []).forEach(se => applyEffect(se.effect, getSlotEffectValueAtStar(se, star)));
-            return;
-        }
-        if (card.type === '각성') {
-            const awakening = cardAwakening.getDefinition(card);
-            if (awakening) awakening.slots.forEach(se => applyEffect(se.effect, getSlotEffectValueAtStar(se, star)));
-            return;
-        }
-        if (card.type === '전직') {
-            if (cardData.class && Array.isArray(cardData.class.slot_effects)) {
-                cardData.class.slot_effects.forEach(se => applyEffect(se.effect, getSlotEffectValueAtStar(se, star)));
-            }
-            return;
-        }
-        if (cardData.slot_effect && cardData.slot_effect.effect) applyEffect(cardData.slot_effect.effect, getSlotEffectValueAtStar(cardData.slot_effect, star));
+        getCardSlotEffectDefinitions(card).forEach(effect => applyEffect(effect.effect, getSlotEffectValueAtStar(effect, star)));
     });
-    const gradeAttack = [.01, .02, .03, .04, .06, .08, .10, .12];
-    effects.finalAttackBonus += slotCards.reduce((sum, card) => sum + (gradeAttack[Math.min(7, Number(card.star || 0) - 4)] || 0), 0);
+    effects.finalAttackBonus += slotCards.reduce((sum, card) => sum + getCardSlotGradeBonus(card), 0);
     const levelSum = getLinkedCharacterLevelSum(user);
     effects.linkedHp = levelSum;
     effects.goldBonus += levelSum / 1000;
@@ -18091,7 +18085,7 @@ function __setQuestDefs(defs) {
 
 module.exports = {
     returnMailGifts,
-    getLinkedCharacterLevelSum, getCharacterSlots, getCharacterSlotCards,
+    getLinkedCharacterLevelSum, getCharacterSlots, getCharacterSlotCards, getCardSlotEffectDefinitions, getCardSlotGradeBonus,
     isCharacterNameTaken, calculateTownCombatPower,
     getCharacterStore, ensureCharacterAccount, getAccountUserByLogin, getAccountGoldState,
     flushPointUsageOutboxes, getPointUsageDeliveryStatus,

@@ -382,6 +382,13 @@ test('부캐 5명의 메인 카드와 레벨이 실제 슬롯이 되고 메인 �
     const profile = (await request('/api/profile')).body;
     assert.deepEqual(profile.cardSlots.map(card => card.slotCharacterId), members.slice(0, 5).map(member => member.id));
     assert.equal(profile.cardSlots[4].type, '각성');
+    const linksView = (await request('/api/characters/links')).body;
+    assert.match(linksView.slots[4].name, /각성 켄시/);
+    assert.ok(linksView.slots[4].effects.some(effect => effect.name === '치명타 피해량' && effect.value === '+15%' && effect.active));
+    assert.ok(linksView.slots[4].effects.some(effect => effect.name === '치명타 확률 감소' && effect.value === '5%' && effect.negative && effect.active));
+    assert.ok(linksView.slots[4].effects.some(effect => effect.grade && effect.value === '+1%'));
+    assert.ok(linksView.character.effects.every(effect => !effect.grade), '메인의 등급 공격력을 슬롯 효과로 표시하지 않는다');
+    assert.ok(linksView.slots.every(slot => slot.effects.length && slot.candidates.every(candidate => Array.isArray(candidate.effects))));
 
     rpg.saveUserPreset(user, 0);
     const preset = structuredClone(user.presets[0]);

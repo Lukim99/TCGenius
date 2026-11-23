@@ -207,19 +207,35 @@ function registerCharacterRoutes(server, deps) {
         const user = req.accountUser, account = store().accountFor(user);
         const members = store().members(user).filter(member => member.id !== user.id);
         const portrait = member => sprite({ ...cards()[member.main_card?.id], ...member.main_card });
-        const candidates = members.map(member => ({ id: member.id, name: member.name, level: member.level,
-            cardLabel: rpg.formatUserCard(member.main_card), imageUrl: portrait(member) }));
-        res.json({ characterId: user.id, character: { name: user.name, level: user.level,
-            cardLabel: rpg.formatUserCard(user.main_card), imageUrl: portrait(user) }, slots: rpg.getCharacterSlots(user).map(slot => ({
-            index: slot.index, name: slot.member ? rpg.formatUserCard(slot.member.main_card) : '빈 슬롯',
-            memberName: slot.member?.name || '', level: slot.member?.level || 0, error: slot.error,
-            imageUrl: slot.member ? portrait(slot.member) : null, linkedId: slot.id,
-            candidates: candidates.map(member => {
-                const links = Array.from({ length: 5 }, (_, index) => index === slot.index ? member.id : user.slotCharacterLinks?.[index] || null);
-                const error = rpg.getCharacterSlots(user, links).find(entry => entry.error)?.error || null;
-                return { ...member, error };
-            })
-        })), levelSum: rpg.getLinkedCharacterLevelSum(user), accountName: account.name });
+        const mainEffects = rpg.calculateCardSlotEffects({ main_card: user.main_card });
+        function details(member, isMain = false) {
+            const card = member.main_card, star = Math.max(isMain ? 4 : 0, Number(card?.star || 0));
+            const combined = isMain ? mainEffects : rpg.calculateCardSlotEffects({ main_card: user.main_card, card_slot: card ? [card] : [] });
+            const effects = rpg.getCardSlotEffectDefinitions(card).map(effect => {
+                const value = rpg.getSlotEffectValueAtStar(effect, star);
+                const key = { skillDamageReduction: 'skillDamageBonus', basicDamageReduction: 'basicDamageBonus' }[effect.effect] || effect.effect;
+                const active = !!value && Math.abs(Number(combined[key] || 0) - (isMain ? 0 : Number(mainEffects[key] || 0))) > 1e-9;
+                const name = value < 0 ? effect.name.replace(/증가$/, '감소') + (/감소$|증가$/.test(effect.name) ? '' : ' 감소') : effect.name;
+                const amount = effect.type === 'seconds' ? Math.abs(value) + '초' : effect.type === 'flat' ? Math.abs(value).toLocaleString('ko-KR') : Math.round(Math.abs(value) * 1000) / 10 + '%';
+                return { name, value: (value >= 0 ? '+' : '') + amount, active,
+                    negative: value < 0 || ['skillDamageReduction', 'basicDamageReduction', 'takenDamageIncrease'].includes(effect.effect),
+                    condition: !active ? star < 4 ? '5성부터 적용' : value ? '메인 조건 미충족' : '' : '' };
+            });
+            if (!isMain) effects.push({ name: '등급 공격력', value: '+' + Math.round(rpg.getCardSlotGradeBonus(card) * 100) + '%', active: star >= 4, grade: true });
+            return { id: member.id, name: member.name, level: member.level, cardLabel: rpg.formatUserCard(card), imageUrl: portrait(member), effects };
+        }
+        const candidates = members.map(member => details(member));
+        res.json({ characterId: user.id, character: details(user, true), slots: rpg.getCharacterSlots(user).map(slot => {
+            const assigned = candidates.find(member => member.id === slot.id);
+            return { index: slot.index, name: assigned?.cardLabel || '빈 슬롯', memberName: assigned?.name || '',
+                level: assigned?.level || 0, imageUrl: assigned?.imageUrl || null, effects: assigned?.effects || [],
+                error: slot.error, linkedId: slot.id,
+                candidates: candidates.map(member => {
+                    const links = Array.from({ length: 5 }, (_, index) => index === slot.index ? member.id : user.slotCharacterLinks?.[index] || null);
+                    const error = rpg.getCharacterSlots(user, links).find(entry => entry.error)?.error || null;
+                    return { ...member, error };
+                }) };
+        }), levelSum: rpg.getLinkedCharacterLevelSum(user), accountName: account.name });
     });
 
     action('link', async ({ req, res, current, account, receipt }) => {
