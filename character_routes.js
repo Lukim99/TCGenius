@@ -3,6 +3,8 @@
 const crypto = require('node:crypto');
 const { SHARED_FIELDS } = require('./character_accounts');
 const pointUsage = require('./point_usage');
+// 일반 표지에 인쇄된 소개만 옮긴 읽기 전용 문구. 운영 카드/스킬 데이터와 분리한다.
+const introductions = require('./DB/RPGenius/CharacterIntroductions.json');
 
 function registerCharacterRoutes(server, deps) {
     const { rpg, partyquest, requireAccount, setCharacterSession, cards, skills, sprite, cardIcon, cardCover, cardImage, equipmentImage } = deps;
@@ -76,7 +78,10 @@ function registerCharacterRoutes(server, deps) {
                 characters: members.map(character => summary(character, account)),
                 starters: cards().map((card, id) => card?.name ? {
                     id, name: card.name, star: 5, imageUrl: sprite(card),
-                    iconUrl: cardIcon({ id, star: 4, type: '일반' }, null, card), coverUrl: cardCover(card),
+                    iconUrl: cardIcon({ id, star: 4, type: '일반' }, null, card)?.concat('&portrait=1') || null,
+                    coverUrl: cardCover(card),
+                    covers: Object.fromEntries(['일반', '전직', '각성'].map(type => [type, cardCover(card, type)])),
+                    description: introductions[card.name] || '',
                     skills: (card.skills || []).map(skillId => {
                         const skill = skillData[skillId];
                         return skill ? { name: skill.name, description: rpg.formatCurrentSkillDesc(skill, 4),

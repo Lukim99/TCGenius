@@ -5262,7 +5262,7 @@ server.get('/card-image', requireUser, async (req, res) => {
     const name = String(req.query.name || '');
     if (!name || name.includes('..') || path.basename(name) != name) return res.status(400).end();
     if (req.query.portrait === '1') {
-        const layers = cardComposite.resolveCardLayers({ name, star: Number(req.query.star || 0), type: String(req.query.type || '일반'), skin: String(req.query.skin || ''), prestige: req.query.prestige === '1' });
+        const layers = cardComposite.resolveCardLayers({ name, star: Number(req.query.star || 0), type: String(req.query.type || '일반'), skin: String(req.query.skin || ''), prestige: req.query.prestige === '1', square: req.query.square === '1' });
         if (!layers) return res.status(404).end();
         return res.sendFile(layers.character);
     }
@@ -6279,9 +6279,9 @@ function getCardIconUrl(card, user, characterData) {
     return getCardImageUrl(card, user, true, characterData);
 }
 
-function getCharacterCoverImageUrl(data) {
-    if (!data || !data.name || !cardComposite.getCoverPath(data.name, '일반')) return null;
-    return '/card-image?name=' + encodeURIComponent(data.name) + '&cover=' + encodeURIComponent('일반');
+function getCharacterCoverImageUrl(data, type = '일반') {
+    if (!data || !data.name || !cardComposite.getCoverPath(data.name, type)) return null;
+    return '/card-image?name=' + encodeURIComponent(data.name) + '&cover=' + encodeURIComponent(type);
 }
 
 function getJobCoverImageUrl(data) {

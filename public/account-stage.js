@@ -31,7 +31,12 @@
     let ctx = null, master = null, unlocked = false, opening = null;
     let muted = false;
     try { muted = localStorage.getItem(KEY) == '1'; } catch (_) { /* 저장소를 못 쓰면 켠 채로 둔다 */ }
-    const buffers = {}, loops = {}, wanted = {};
+    const buffers = {};
+    // 긴 BGM은 PCM 전체를 메모리에 풀지 않고 브라우저 오디오로 스트리밍한다.
+    const music = el('audio'); music.id = 'asMusic'; music.hidden = true;
+    music.src = ASSET + 'portraits-of-dawn.mp3'; music.preload = 'metadata'; music.loop = true; music.volume = 0.28;
+    body.appendChild(music);
+    let musicWanted = false;
 
     function ensure() {
       if (!AC) return null;
@@ -66,49 +71,38 @@
         source.start();
       }, () => {});
     }
-    function startLoops() {
-      if (!running()) return;
-      Object.keys(wanted).forEach(name => {
-        if (loops[name]) return;
-        loops[name] = true;
-        load(name).then(buffer => {
-          if (!buffer || !ctx) { loops[name] = null; return; }
-          const source = ctx.createBufferSource(), gain = ctx.createGain();
-          source.buffer = buffer; source.loop = true;
-          gain.gain.setValueAtTime(0, ctx.currentTime);
-          gain.gain.linearRampToValueAtTime(wanted[name], ctx.currentTime + 2);
-          source.connect(gain); gain.connect(master);
-          source.start();
-          loops[name] = source;
-        });
-      });
+    function startMusic() {
+      if (!musicWanted || muted || doc.hidden) { music.pause(); return; }
+      if (music.paused) music.play().catch(() => {}); // 자동 재생이 막히면 첫 입력에서 다시 시도한다.
     }
-    function loop(name, volume) { wanted[name] = volume; startLoops(); }
+    function background() { musicWanted = true; startMusic(); }
     // 브라우저가 소리를 막아 두므로 첫 입력에서 연다.
     function unlock() {
-      if (!ensure()) return;
       unlocked = true;
-      if (ctx.state == 'suspended') { opening = ctx.resume(); opening.then(startLoops, () => {}); }
-      else startLoops();
+      startMusic();
+      if (!ensure()) return;
+      if (ctx.state == 'suspended') { opening = ctx.resume(); opening.catch(() => {}); }
     }
     function tryAuto() {
-      if (!ensure()) return;
-      if (running()) { unlocked = true; startLoops(); }
+      startMusic();
+      if (ensure() && running()) unlocked = true;
     }
     function setMuted(next) {
       muted = !!next;
       try { localStorage.setItem(KEY, muted ? '1' : '0'); } catch (_) { /* 무시 */ }
       if (master && ctx) master.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.08);
+      startMusic();
     }
     doc.addEventListener('visibilitychange', () => {
+      startMusic();
       if (!ctx || !unlocked) return;
       if (doc.hidden) ctx.suspend().catch(() => {});
-      else ctx.resume().then(startLoops, () => {});
+      else ctx.resume().catch(() => {});
     });
     const firstInput = () => { unlock(); if (running() || !AC) { doc.removeEventListener('pointerdown', firstInput, true); doc.removeEventListener('keydown', firstInput, true); } };
     doc.addEventListener('pointerdown', firstInput, true);
     doc.addEventListener('keydown', firstInput, true);
-    return { play, loop, unlock, tryAuto, setMuted, isMuted: () => muted };
+    return { play, background, unlock, tryAuto, setMuted, isMuted: () => muted };
   })();
 
   function bindMute() {
@@ -814,8 +808,7 @@
     function wake(byKeyboard) {
       if (body.getAttribute('data-phase') != 'title') return;
       Sound.unlock();
-      Sound.loop('night', 0.4);
-      Sound.loop('lake', 0.4);
+      Sound.background();
       Sound.play('whoosh', 0.55);
       const before = brand.getBoundingClientRect();
       body.setAttribute('data-phase', 'name');
@@ -951,7 +944,6 @@
     }
     function closeModal(force) {
       if (!modalState || (modalState.busy && !force)) return;
-      if (!force && panel.classList.contains('is-cover-expanded')) { panel.querySelector('.as-create-cover').click(); return; }
       const back = modalState.back;
       modalState = null;
       modal.hidden = true;
@@ -965,7 +957,7 @@
       const state = modalState = { busy: false, back: doc.activeElement };
       $('asModalTitle').textContent = title;
       panel.classList.toggle('is-wide', !!wide);
-      panel.classList.remove('is-links', 'is-creation', 'is-cover-expanded');
+      panel.classList.remove('is-links', 'is-creation');
       modalBody.textContent = '';
       const errorBox = el('p', 'as-m-error');
       errorBox.setAttribute('role', 'alert');
@@ -1075,21 +1067,22 @@
         const wall = el('div', 'as-create-wall'); wall.setAttribute('aria-hidden', 'true');
         const gallery = el('section', 'as-create-gallery'); gallery.setAttribute('aria-label', '캐릭터 표지와 선택');
         const art = el('div', 'as-create-art');
-        const cover = el('button', 'as-create-cover'); cover.type = 'button'; cover.setAttribute('aria-expanded', 'false');
-        const coverHint = el('span', 'as-create-cover-hint', '표지 크게 보기');
-        art.append(cover, coverHint);
+        const cover = el('div', 'as-create-cover'); cover.id = 'asCreateCover';
+        art.appendChild(cover);
+        const coverTypes = el('div', 'as-create-cover-types'); coverTypes.setAttribute('role', 'group'); coverTypes.setAttribute('aria-label', '표지 종류');
         const chooser = el('div', 'as-create-chooser'), navigation = el('div', 'as-create-navigation');
         const previous = el('button', 'as-tool', '‹'), next = el('button', 'as-tool', '›');
         previous.type = next.type = 'button'; previous.setAttribute('aria-label', '이전 캐릭터'); next.setAttribute('aria-label', '다음 캐릭터');
         const position = el('span', 'as-create-position');
         navigation.append(previous, el('span', '', '캐릭터 선택'), position, next);
         const rail = el('div', 'as-create-rail'); rail.setAttribute('role', 'radiogroup'); rail.setAttribute('aria-label', '시작 캐릭터');
-        chooser.append(navigation, rail); gallery.append(art, chooser);
+        chooser.append(navigation, rail); gallery.append(art, coverTypes, chooser);
         const inscription = el('section', 'as-create-inscription'); inscription.setAttribute('aria-label', '캐릭터 설명');
         const heading = el('div', 'as-create-heading'), title = el('h3', 'as-create-name'); title.setAttribute('aria-live', 'polite');
-        const grade = el('span', 'as-create-grade'); heading.append(grade, title);
-        const description = el('div', 'as-create-description'); description.tabIndex = 0; description.setAttribute('role', 'region'); description.setAttribute('aria-label', '스킬과 고유 효과');
-        inscription.append(heading, description);
+        const grade = el('span', 'as-create-grade', '시작 카드'), introduction = el('p', 'as-create-introduction');
+        heading.append(grade, title, introduction);
+        const description = el('div', 'as-create-description'); description.tabIndex = 0; description.setAttribute('role', 'region'); description.setAttribute('aria-label', '캐릭터 소개, 스킬과 고유 효과');
+        const abilities = el('div'); description.append(heading, abilities); inscription.appendChild(description);
         const footer = el('div', 'as-create-footer');
         const field = character ? null : nameField(handle, '');
         if (field) {
@@ -1105,7 +1098,7 @@
         const act = actions(handle, character ? '이 캐릭터로 시작' : '이 캐릭터 선택', () => {
           if (handle.isBusy()) return;
           if (field && !field.wrap.hidden) {
-            field.wrap.hidden = true; handle.error('');
+            field.wrap.hidden = true; form.classList.remove('is-naming'); handle.error('');
             act.submit.querySelector('.as-btn-label').textContent = '이 캐릭터 선택';
             $('asModalTitle').textContent = '새 캐릭터';
             tokens[selectedIndex]?.focus({ preventScroll: true }); sizeCreation();
@@ -1113,17 +1106,46 @@
         });
         act.row.firstChild.textContent = '돌아가기'; footer.append(handle.errorBox, act.row);
         form.append(wall, gallery, inscription, footer); handle.body.appendChild(form);
-        let selectedIndex = -1, artVersion = 0, lastSound = 0;
+        let selectedIndex = -1, artVersion = 0, lastSound = 0, coverType = '일반';
         const tokens = [];
+
+        function paintCover() {
+          const item = starters[selectedIndex], version = ++artVersion;
+          Array.from(coverTypes.children).forEach(button => button.setAttribute('aria-pressed', String(button.textContent === coverType)));
+          cover.dataset.status = '표지 불러오는 중'; cover.classList.add('is-loading');
+          const src = safeUrl(item.covers?.[coverType] || (coverType === '일반' ? item.coverUrl : ''));
+          const img = el('img', 'as-create-image'); img.alt = item.name + ' ' + coverType + ' 표지';
+          const failed = () => {
+            if (!handle.alive() || version !== artVersion) return;
+            cover.replaceChildren(); wall.replaceChildren(); cover.classList.remove('is-loading'); cover.dataset.status = '표지를 불러올 수 없습니다';
+          };
+          img.addEventListener('load', () => {
+            if (!handle.alive() || version !== artVersion) return;
+            cover.replaceChildren(img); cover.classList.remove('is-loading'); cover.dataset.status = '';
+            if (!reduced()) img.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280 });
+            const backdrop = el('img'); backdrop.alt = ''; backdrop.src = src; wall.replaceChildren(backdrop);
+          }, { once: true });
+          img.addEventListener('error', failed, { once: true });
+          if (src) img.src = src; else failed();
+        }
+        ['일반', '전직', '각성'].forEach(type => {
+          const button = el('button', 'as-create-cover-type', type); button.type = 'button';
+          button.setAttribute('aria-controls', cover.id);
+          button.addEventListener('click', () => {
+            if (handle.isBusy() || coverType === type || selectedIndex < 0) return;
+            coverType = type; paintCover();
+          });
+          coverTypes.appendChild(button);
+        });
 
         function select(index, userAction) {
           if (handle.isBusy() || index === selectedIndex || !starters[index]) return;
           selectedIndex = index;
-          const item = starters[index], version = ++artVersion;
+          const item = starters[index];
           tokens.forEach((button, i) => { button.setAttribute('aria-checked', String(i === index)); button.tabIndex = i === index ? 0 : -1; });
           title.textContent = item.name; position.textContent = String(index + 1).padStart(2, '0') + ' / ' + starters.length;
-          grade.textContent = '시작 카드 [' + item.star + '성]';
-          description.replaceChildren(); description.scrollTop = 0;
+          introduction.textContent = item.description || '';
+          abilities.replaceChildren(); description.scrollTop = 0;
           (item.skills || []).forEach(skill => {
             const entry = el('section', 'as-create-skill');
             entry.append(el('p', 'as-create-kicker', '기본 스킬'), el('h4', '', skill.name));
@@ -1131,28 +1153,12 @@
             facts.append(el('span', '', skill.resource + ' ' + skill.cost), el('span', '', '재사용 ' + skill.cooldown));
             entry.appendChild(facts);
             String(skill.description || '').split('\n').filter(Boolean).forEach(line => entry.appendChild(el('p', 'as-create-copy', line)));
-            description.appendChild(entry);
+            abilities.appendChild(entry);
           });
           const effects = el('section', 'as-create-effect'); effects.appendChild(el('h4', '', '고유 슬롯 효과'));
           (item.effects || []).forEach(effect => { const line = el('p'); line.append(el('span', '', effect.name), el('strong', '', effect.value)); effects.appendChild(line); });
-          description.appendChild(effects);
-          cover.setAttribute('aria-label', item.name + ' 표지 크게 보기');
-          cover.dataset.status = '표지 불러오는 중'; cover.classList.add('is-loading');
-          const src = safeUrl(item.coverUrl), img = el('img', 'as-create-image'); img.alt = item.name + ' 캐릭터 표지';
-          const failed = () => {
-            if (!handle.alive() || version !== artVersion) return;
-            cover.replaceChildren(); wall.replaceChildren(); cover.classList.remove('is-loading'); cover.dataset.status = '표지를 불러올 수 없습니다';
-          };
-          img.addEventListener('load', () => {
-            if (!handle.alive() || version !== artVersion) return;
-            const old = Array.from(cover.children); cover.appendChild(img);
-            cover.classList.remove('is-loading'); cover.dataset.status = '';
-            if (!reduced()) img.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280 });
-            old.forEach(node => node.remove());
-            const backdrop = el('img'); backdrop.alt = ''; backdrop.src = src; wall.replaceChildren(backdrop);
-          }, { once: true });
-          img.addEventListener('error', failed, { once: true });
-          if (src) img.src = src; else failed();
+          abilities.appendChild(effects);
+          paintCover();
           if (userAction) {
             const rect = tokens[index].getBoundingClientRect(), parent = rail.getBoundingClientRect();
             rail.scrollTo({ left: rail.scrollLeft + rect.left - parent.left - (rail.clientWidth - rect.width) / 2, behavior: reduced() ? 'instant' : 'smooth' });
@@ -1178,21 +1184,13 @@
         });
         previous.addEventListener('click', () => select((selectedIndex - 1 + starters.length) % starters.length, true));
         next.addEventListener('click', () => select((selectedIndex + 1) % starters.length, true));
-        cover.addEventListener('click', () => {
-          if (handle.isBusy()) return;
-          const expanded = panel.classList.toggle('is-cover-expanded');
-          cover.setAttribute('aria-expanded', String(expanded));
-          cover.setAttribute('aria-label', expanded ? '표지 크게 보기 닫기' : title.textContent + ' 표지 크게 보기');
-          inscription.inert = footer.inert = chooser.inert = expanded;
-          coverHint.textContent = expanded ? '눌러서 돌아가기' : '표지 크게 보기'; cover.focus({ preventScroll: true });
-        });
         if (tokens.length) { tokens[0].setAttribute('data-autofocus', '1'); select(0, false); }
         else { handle.error('고를 수 있는 캐릭터가 없습니다.'); act.submit.disabled = true; }
         form.addEventListener('submit', async ev => {
           ev.preventDefault();
           if (handle.isBusy()) return;
           if (field && field.wrap.hidden) {
-            field.wrap.hidden = false;
+            field.wrap.hidden = false; form.classList.add('is-naming');
             act.submit.querySelector('.as-btn-label').textContent = '캐릭터 생성';
             $('asModalTitle').textContent = '닉네임 입력';
             field.input.focus(); sizeCreation(); return;
@@ -1830,7 +1828,7 @@
     });
     roster.addEventListener('scroll', stage.dirty, { passive: true });
 
-    Sound.loop('lake', 0.5);
+    Sound.background();
     Sound.tryAuto();
     loadList({});
   }

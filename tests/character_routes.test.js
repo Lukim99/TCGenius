@@ -42,19 +42,27 @@ test('첫 로그인에서 기존 계정을 보존해 1번 캐릭터로 옮기고
     assert.equal(result.body.starters.length, 17);
 });
 
-test('생성 안내는 5성 스킬과 메인의 고유 효과를 제공하고 모든 캐릭터의 아이콘과 표지를 연결한다', async () => {
+test('생성 안내는 5성 능력, 프레임 없는 아이콘, 세 종류 표지와 일반 표지 소개를 제공한다', async () => {
     const { starters } = (await request('/api/characters')).body;
     for (const card of starters) {
         const icon = new URL(card.iconUrl, base), cover = new URL(card.coverUrl, base);
         assert.equal(icon.searchParams.get('square'), '1');
+        assert.equal(icon.searchParams.get('portrait'), '1');
         assert.equal(icon.searchParams.get('star'), '4');
         assert.equal(card.star, 5);
         assert.equal(cover.searchParams.get('name'), card.name);
         assert.equal(cover.searchParams.get('cover'), '일반');
+        assert.ok(card.description.length > 15);
+        for (const type of ['일반', '전직', '각성']) {
+            const variant = new URL(card.covers[type], base);
+            assert.equal(variant.searchParams.get('name'), card.name);
+            assert.equal(variant.searchParams.get('cover'), type);
+        }
         assert.ok(card.skills.length && card.effects.length);
         assert.ok(card.skills.every(skill => skill.description && !skill.description.includes('${')));
     }
     const bread = starters.find(card => card.name === '빵귤');
+    assert.equal(bread.description, 'E세계 대저택의 빵귤. 그녀가 받은 능력은 쿠루미였다.');
     assert.match(bread.skills[0].description, /공격력의 160%/);
     assert.match(bread.skills[0].description, /27% 증가/);
     assert.deepEqual(bread.effects, [{ name: '스킬 쿨타임 감소', value: '10%' }]);
