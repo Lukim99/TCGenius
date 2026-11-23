@@ -23,7 +23,55 @@ before(async () => {
 });
 after(() => sandbox.close());
 
-test('기본 2000골드와 50% 보너스는 3000골드를 지급하고 공용 한도에는 2000만 적립한다', async () => {
+test('슬롯이 없어도 메인 레벨을 체력과 세 보너스에 더하고 잘못된 슬롯은 중복 합산하지 않는다', async () => {
+    const user = await rpg.getUserByPrimaryId(sandbox.account.id), alt = await rpg.getUserByPrimaryId(altId);
+    user.level = 200; user.main_card = { id: 0, type: '일반', star: 0 };
+    user.equipments = {}; user.card_slot = []; user.slotCharacterLinks = [];
+    alt.level = 100; await rpg.getCharacterStore().commit([alt]);
+    const check = sum => {
+        const effects = rpg.calculateCardSlotEffects(user);
+        assert.equal(rpg.getLinkedCharacterLevelSum(user), sum);
+        assert.equal(effects.linkedHp, sum);
+        for (const key of ['goldBonus', 'expBonus', 'itemDropChance']) assert.equal(effects[key], sum / 1000);
+        assert.equal(rpg.calculateUserStats(user).hp - rpg.calculateUserStats({ ...user, accountId: null }).hp, sum);
+    };
+    check(200);
+    user.slotCharacterLinks = [user.id, altId, altId, 'missing']; check(300);
+    alt.main_card.star = 3; await rpg.getCharacterStore().commit([alt]); check(200);
+    alt.main_card.star = 4; await rpg.getCharacterStore().commit([alt]);
+    user.slotCharacterLinks = []; user.level = 201; check(201);
+    user.level = 200; await rpg.getCharacterStore().commit([user]);
+    assert.equal((await request('/api/characters/links')).levelSum, 200);
+    await request('/api/characters/select', { id: altId, requestId: crypto.randomUUID() });
+    assert.equal((await request('/api/characters/links')).levelSum, 100, '전환한 캐릭터의 레벨을 사용한다');
+    await request('/api/characters/select', { id: user.id, requestId: crypto.randomUUID() });
+});
+
+test('메인 200레벨만으로 실제 골드와 경험치가 20% 증가하고 드롭 확률도 증가한다', async () => {
+    const user = await rpg.getUserByPrimaryId(sandbox.account.id);
+    user.level = 200; user.exp = 0; user.main_card = { id: 0, type: '일반', star: 4 };
+    user.slotCharacterLinks = []; user.card_slot = []; user.equipments = {};
+    user.goldPotion = user.expPotion = user.battleCryPotion = null;
+    user.prestige = user.jobPrestige = false; user.statTitle = user.equippedTitle = null; user.huntingGold = null;
+    const original = require('../DB/RPGenius/Dungeon.json')[0];
+    const dungeon = { ...original, requireLevel: 190, reward: { exp: 1000, gold: { min: 2000, max: 2000 } } };
+    const items = rpg.getDataCache('Item');
+    let gemId = items.findIndex(item => item.name === '인내의 보석');
+    if (gemId < 0) { gemId = items.length; items.push({ name: '인내의 보석', type: '재료' }); }
+    user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: null };
+    user.hp = user.mp = 1000000;
+    const goldBefore = user.gold, gemBefore = rpg.getInventoryItemCount(user, gemId), random = Math.random;
+    Math.random = () => .0011; // 기본 0.1%는 실패하고 레벨 보너스가 적용된 0.12%는 성공한다.
+    try { await rpg.buildHuntResult(user, dungeon, dungeon.hp, { isBasic: true }); }
+    finally { Math.random = random; }
+    assert.equal(user.gold - goldBefore, 2400);
+    assert.equal(user.exp, 1200);
+    assert.equal(user.huntingGold.used, 2000);
+    assert.equal(rpg.getInventoryItemCount(user, gemId) - gemBefore, 1);
+    user.field = null; await rpg.getCharacterStore().commit([user]);
+});
+
+test('기본 골드만 한도에 적립하고 메인 레벨과 추가 골드 보너스는 지급에만 적용한다', async () => {
     const user = await rpg.getUserByPrimaryId(sandbox.account.id);
     user.main_card = { id: 0, type: '일반', star: 4 }; user.slotCharacterLinks = []; user.card_slot = [];
     user.equipments = {}; user.battleCryPotion = null; user.goldPotion = null; user.jobPrestige = false;
@@ -33,7 +81,7 @@ test('기본 2000골드와 50% 보너스는 3000골드를 지급하고 공용 �
     user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: null };
     const before = user.gold;
     await rpg.buildHuntResult(user, dungeon, dungeon.hp, { isBasic: true, goldBonus: .5 });
-    assert.equal(user.gold - before, 3000);
+    assert.equal(user.gold - before, Math.round(2000 * (1.5 + user.level / 1000)));
     assert.equal(user.huntingGold.used, 2000);
     await rpg.getCharacterStore().commit([user]);
     assert.equal((await request('/api/characters')).goldCap.used, 2000);
@@ -42,7 +90,7 @@ test('기본 2000골드와 50% 보너스는 3000골드를 지급하고 공용 �
     user.huntingGold.used = state.limit - 1000;
     const nearLimit = user.gold;
     await rpg.buildHuntResult(user, dungeon, dungeon.hp, { isBasic: true, goldBonus: .5 });
-    assert.equal(user.gold - nearLimit, 1500);
+    assert.equal(user.gold - nearLimit, Math.round(1000 * (1.5 + user.level / 1000)));
     assert.equal(user.huntingGold.used, state.limit);
     const capped = user.gold;
     await rpg.buildHuntResult(user, dungeon, dungeon.hp, { isBasic: true, goldBonus: .5 });

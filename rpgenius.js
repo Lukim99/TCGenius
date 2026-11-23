@@ -3172,7 +3172,8 @@ function calculateCardSlotEffects(user) {
 
 function getLinkedCharacterLevelSum(user) {
     if (!user.accountId) return 0;
-    return getCharacterSlots(user).reduce((sum, slot) => sum + (slot.member ? Number(slot.member.level || 1) : 0), 0);
+    // 현재 플레이 중인 캐릭터와 유효한 슬롯 부캐의 레벨을 각각 한 번씩 합산한다.
+    return getCharacterSlots(user).reduce((sum, slot) => sum + (slot.member ? Number(slot.member.level || 1) : 0), Number(user.level || 1));
 }
 
 function getCharacterSlots(user, links) {
@@ -3220,7 +3221,7 @@ function formatCardSlotEffectLines(user) {
         ['shieldAttack', '보호막 유지 중 공격력 강화'], ['mentalRegen', '초당 정신력 회복량'], ['nonCriticalFinalDamage', '비치명타 최종 피해 증가'],
         ['alternateDamage', '교차 공격 피해'], ['maxCmb', '최대 연격 횟수'], ['maxMpBonus', '최대 MP 증가'],
         ['summonAttack', '소환수 공격력'], ['mentalCostReduction', '정신력 소모량 감소'], ['mentalMax', '최대 정신력'],
-        ['ilionCardDuration', '카드 지속 시간'], ['ilionDeckSize', '카드덱 최대 카드 수'], ['linkedHp', '연결 캐릭터 HP'],
+        ['ilionCardDuration', '카드 지속 시간'], ['ilionDeckSize', '카드덱 최대 카드 수'], ['linkedHp', '캐릭터 레벨 보너스 HP'],
         ['missingHpDef', '잃은 HP 1%당 방어력'], ['missingHpFinal', '잃은 HP 1%당 최종 피해'],
         ['missingHpExtra', '잃은 HP 1%당 추가 피해'], ['missingHpAttack', '잃은 HP 1%당 공격력']
     ];

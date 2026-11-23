@@ -12,10 +12,10 @@ const clone = value => value === undefined ? undefined : structuredClone(value);
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function isAccountItem(item) {
-    if (!item) return false;
+    if (!item || item.name === '이벤트 리스트 종이') return false;
     if (item.accountScope !== undefined) return item.accountScope === 'account';
     return item.type === '이벤트' || /^\[이벤트\]/.test(item.name || '') || /이벤트.*(?:상자|주머니)$/.test(item.name || '')
-        || ['이벤트 리스트 종이', '출석 도장', '송편', '랜덤 빼빼로 1종 ×11'].includes(item.name)
+        || ['출석 도장', '송편', '랜덤 빼빼로 1종 ×11'].includes(item.name)
         || /^26빼빼로데이\d패키지$/.test(item.name || '');
 }
 

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const accounts = require('../character_accounts');
 const { createStore } = require('../character_store');
 const usage = require('../point_usage');
-const items = [{ name: '물약', type: '소모품' }, { name: '[이벤트]상자', type: '가챠' }, { name: '송편', type: '가챠' }];
+const items = [{ name: '물약', type: '소모품' }, { name: '[이벤트]상자', type: '가챠' }, { name: '송편', type: '가챠' }, { name: '이벤트 리스트 종이', type: '재료' }];
 const original = () => ({ id: 'original-id', name: '원래이름', code: 'login-code', level: 200, exp: 123,
     gold: 900, point: 5000, prestige: true, avatars: [{ id: 'avatar-1', name: '의상' }],
     main_card: { id: 0, type: '일반', star: 4 }, card_slot: [{ id: 0, type: '전직', star: 5 }, { id: 1, type: '일반', star: 4 }, { id: 1, type: '각성', star: 8 }],
@@ -46,6 +46,19 @@ test('기존 슬롯 카드 전부를 속성 그대로 반환하고 다시 실행
     const cards = structuredClone(user.inventory.card);
     accounts.normalizeSlots(user);
     assert.deepEqual(user.inventory.card, cards);
+});
+
+test('이벤트 리스트 종이는 공유 분류에서 제외하고 초기 계정 분리에서도 캐릭터에 보존한다', () => {
+    assert.equal(accounts.isAccountItem(items[3]), false);
+    assert.equal(accounts.isAccountItem({ ...items[3], type: '이벤트', accountScope: 'account' }), false);
+    const legacy = original();
+    legacy.inventory.item.push({ id: 3, count: 5 }); legacy.boundItems[3] = 2;
+    const { account, character } = accounts.migrate(legacy, items);
+    assert.deepEqual(character.inventory.item.find(item => item.id === 3), { id: 3, count: 5 });
+    assert.equal(character.boundItems[3], 2);
+    assert.ok(!account.items.some(item => item.id === 3));
+    assert.equal(account.boundItems[3], undefined);
+    assert.deepEqual(account.items, [{ id: 1, count: 4 }, { id: 2, count: 8 }]);
 });
 
 test('하루 골드 한도는 승인된 레벨 구간과 5레벨 단위를 따른다', () => {
@@ -150,6 +163,21 @@ test('공용 상자를 열면 수량만 계정에서 줄고 결과 카드는 여
     assert.equal(f.records.get(f.account.id).items.find(item => item.id === 1).count, 3);
     assert.equal(f.records.get(user.id).inventory.card.at(-1).star, 11);
     assert.equal(f.records.get(f.account.id).inventory, undefined);
+});
+
+test('새로 얻은 이벤트 리스트 종이는 캐릭터에만 저장하고 다른 캐릭터에게 공유하지 않는다', async () => {
+    const f = fixture(), user = f.user();
+    user.inventory.item.push({ id: 3, count: 2 }); user.boundItems[3] = 1;
+    await f.store.commit([user]);
+    assert.deepEqual(f.commands, ['UpdateCommand'], '캐릭터 저장 한 번만 필요하다');
+    assert.deepEqual(f.records.get(user.id).inventory.item.find(item => item.id === 3), { id: 3, count: 2 });
+    assert.equal(f.records.get(user.id).boundItems[3], 1);
+    const account = f.records.get(f.account.id);
+    assert.ok(!account.items.some(item => item.id === 3));
+    const other = accounts.hydrate({ id: 'second', inventory: { item: [{ id: 3, count: 7 }] } }, account);
+    assert.deepEqual(other.inventory.item.filter(item => item.id === 3), [{ id: 3, count: 7 }]);
+    assert.equal(other.boundItems[3], undefined);
+    assert.equal(other.inventory.item.find(item => item.id === 1).count, 4, '나머지 이벤트 아이템은 공유한다');
 });
 
 test('부캐에서 쓴 포인트도 기존 계정 ID와 계정 이름으로 집계한다', () => {

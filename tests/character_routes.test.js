@@ -203,11 +203,11 @@ test('카드를 따로 장착하지 않고 5성 이상 부캐를 슬롯에 지�
     assert.deepEqual(first.card_slot, []);
     const linked = await action('link', { characterId: first.id, index: 0, linkedId: secondId });
     assert.equal(linked.status, 200, JSON.stringify(linked.body));
-    assert.equal(linked.body.levelSum, 1);
+    assert.equal(linked.body.levelSum, first.level + 1);
     assert.equal((await action('link', { characterId: first.id, index: 0, linkedId: first.id })).status, 400);
     const effects = rpg.calculateCardSlotEffects(await rpg.getUserByPrimaryId(first.id));
-    assert.equal(effects.linkedHp, 1);
-    assert.ok(effects.goldBonus >= .001);
+    assert.equal(effects.linkedHp, first.level + 1);
+    assert.ok(effects.goldBonus >= (first.level + 1) / 1000);
 });
 
 test('카드 전송기는 1개만 소모하고 거래권 없이 카드 속성을 보존해 이전한다', async () => {
@@ -379,7 +379,7 @@ test('연결 부캐 레벨 합산은 실제 드랍 확률에도 적용된다', a
         const user = await rpg.getUserByPrimaryId(sandbox.account.id);
         user.main_card = { id: 0, star: 4, type: '일반' }; user.level = dungeon.requireLevel + 10; user.hp = user.mp = 1000000;
         user.card_slot = [{ id: 1, star: 4, type: '각성' }]; user.slotCharacterLinks = linked ? [secondId] : [];
-        assert.equal(rpg.getLinkedCharacterLevelSum(user), linked ? 260 : 0);
+        assert.equal(rpg.getLinkedCharacterLevelSum(user), user.level + (linked ? 260 : 0));
         user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: null };
         const before = rpg.getInventoryItemCount(user, gemId), random = Math.random; Math.random = () => .0011;
         try { await rpg.buildHuntResult(user, dungeon, dungeon.hp * 2, { isBasic: true }); }
@@ -445,8 +445,8 @@ test('부캐 5명의 메인 카드와 레벨이 실제 슬롯이 되고 메인 �
     assert.equal((await action('link', { characterId: main.id, index: 0, linkedId: main.id })).status, 400);
     const user = await rpg.getUserByPrimaryId(main.id), beforeCards = structuredClone(user.inventory.card);
     const effects = rpg.calculateCardSlotEffects(user);
-    assert.equal(effects.linkedHp, 700);
-    assert.equal(effects.goldBonus, .7); assert.equal(effects.expBonus, .7); assert.equal(effects.itemDropChance, .7);
+    assert.equal(effects.linkedHp, user.level + 700);
+    assert.equal(effects.goldBonus, (user.level + 700) / 1000); assert.equal(effects.expBonus, (user.level + 700) / 1000); assert.equal(effects.itemDropChance, (user.level + 700) / 1000);
     assert.equal(effects.skillCoolReduction, .1, '슬롯에 빵귤이 없어도 메인 빵귤 고유 효과가 적용된다');
     assert.equal(effects.finalAttackBonus, .05, '5성 부캐 5명의 1%만 적용하고 오메가 메인의 12%는 제외한다');
     assert.equal(effects.critMul, .15); assert.equal(effects.crit, -.05);
@@ -483,13 +483,13 @@ test('부캐 5명의 메인 카드와 레벨이 실제 슬롯이 되고 메인 �
     assert.equal(saved.body.ok, true, JSON.stringify(saved.body));
     const defender = await rpg.getUserByPrimaryId(main.id), deck = pvp.resolveDefenseDeck(defender);
     const snapshot = pvp.buildSideSnapshot(defender, deck);
-    assert.equal(snapshot.slotEffects.linkedHp, 700);
+    assert.equal(snapshot.slotEffects.linkedHp, defender.level + 700);
     assert.equal(snapshot.slotEffects.finalAttackBonus, .05);
     assert.ok(pvp.validateDefensePayload(user, { ...defense, slotCharacterLinks: [main.id] }).error);
     assert.ok(pvp.validateDefensePayload(user, { ...defense, slotCharacterLinks: [members[0].id, members[0].id] }).error);
 
     members[0].level = 220; await members[0].save();
-    assert.equal(rpg.calculateCardSlotEffects(await rpg.getUserByPrimaryId(main.id)).linkedHp, 720);
+    assert.equal(rpg.calculateCardSlotEffects(await rpg.getUserByPrimaryId(main.id)).linkedHp, main.level + 720);
     members[5].main_card = { id: 1, type: '전직', star: 4 }; await members[5].save();
     assert.equal((await action('link', { characterId: main.id, index: 4, linkedId: members[5].id })).status, 400, '슬롯끼리는 다른 타입도 동일 캐릭터 중복 불가');
     members[5].main_card = { id: 0, type: '일반', star: 4 }; await members[5].save();
