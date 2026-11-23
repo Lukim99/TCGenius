@@ -86,7 +86,7 @@
 .tr-scene[data-step="item"] .tr-p-item, .tr-scene[data-step="who"] .tr-p-who, .tr-scene[data-step="confirm"] .tr-p-confirm { display: flex; }
 .tr-h { display: flex; align-items: center; gap: 12px; margin: 0; font-size: .74rem; font-weight: 700; letter-spacing: .16em; color: var(--tr-gold); }
 .tr-h::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--tr-line), transparent); }
-.tr-note, .tr-rule { margin: 0; font-size: .78rem; color: var(--tr-dim); }
+.tr-note { margin: 0; font-size: .78rem; color: var(--tr-dim); }
 
 /* 물품: 전송기 두 대가 종류 전환, 물품은 맨 그림으로 진열 */
 .tr-tabs { display: grid; grid-template-columns: 1fr 1fr; flex: none; border-bottom: 1px solid var(--tr-line); }
@@ -272,7 +272,6 @@
   .tr-panel { gap: 8px; padding-top: 0; }
   .tr-scene .tr-tab { min-height: 44px; padding-bottom: 2px; } .tr-tab-icon { width: 34px; height: 34px; }
   .tr-tab-text { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 8px; } .tr-tab-label { font-size: .9rem; }
-  .tr-rule { order: 5; font-size: .72rem; }
   .tr-list { gap: 10px 6px; padding-top: 4px; } .tr-item-art { height: 64px; } .tr-pick-img { height: 72px; }
   .tr-state { min-height: 72px; padding: 8px 16px; gap: 6px; } .tr-state-sigil { width: 32px; height: 32px; }
   .tr-foot { gap: 4px 10px; padding-top: 8px; }

@@ -3,8 +3,8 @@
   var A = '/static/assets/account-stage/';
   var WIDE = '(min-width:1100px) and (min-height:600px)';
   var KIND = {
-    card: { label: '카드', ticket: '카드 전송기', list: 'cards', rule: '소지품에 있는 카드만 옮길 수 있습니다.' },
-    equipment: { label: '장비', ticket: '장비 전송기', list: 'equipment', rule: '장착을 해제한 초월 등급 장비만 옮길 수 있습니다. 잠긴 장비는 목록에 나오지 않습니다.' }
+    card: { label: '카드', ticket: '카드 전송기', list: 'cards' },
+    equipment: { label: '장비', ticket: '장비 전송기', list: 'equipment' }
   };
   var STEPS = [['item', '물품'], ['who', '받는 이'], ['confirm', '확인']];
 
@@ -161,7 +161,6 @@
       tabEls[k] = { el: b, ic: ic, n: n };
       tabs.appendChild(b);
     });
-    var rule = h('p', 'tr-rule');
     var search = h('input', 'tr-search');
     search.type = 'search'; search.placeholder = '이름으로 찾기'; search.setAttribute('aria-label', '물품 이름으로 찾기');
     search.autocomplete = 'off';
@@ -170,7 +169,7 @@
     add(state, img('tr-state-sigil', A + 'sigil.webp'), stateText, retry);
     retry.addEventListener('click', function () { sound('tap', 0.6); load(false); });
     var list = h('div', 'tr-list'); list.setAttribute('role', 'group'); list.setAttribute('aria-label', '물품 목록');
-    add(pItem, tabs, rule, search, state, list);
+    add(pItem, tabs, search, state, list);
 
     /* 캐릭터 패널 */
     var pWho = h('section', 'tr-panel tr-p-who'); pWho.setAttribute('aria-label', '보내는 이와 받는 이');
@@ -389,7 +388,6 @@
         t.ic.hidden = !icon(k); if (icon(k)) setSrc(t.ic, icon(k));
         t.n.textContent = S.inv ? '전송기 ' + tickets(k) + '개' : '';
       });
-      rule.textContent = K.rule + ' ' + K.ticket + ' 1개를 쓰며, 거래권은 쓰지 않습니다.';
       buildList(); syncList(); syncWho(); renderConfirm(); renderInspect();
       costUse.textContent = K.ticket + ' 1개 사용';
       costHave.textContent = S.inv ? '보유 ' + tickets() + '개' : '';
