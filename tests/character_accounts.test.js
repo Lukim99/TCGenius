@@ -127,6 +127,24 @@ test('계정과 캐릭터를 바꾸는 보상은 한 트랜잭션으로 저장�
     assert.equal(f.records.get(f.account.id).gold, 910);
 });
 
+test('중첩 undefined는 기존 JSON 저장 형식대로 정리하고 배열 위치와 다음 저장 조건을 보존한다', async () => {
+    const f = fixture(), user = f.user();
+    user.paradise = { combatEvents: [{ damage: 20, optional: undefined }], slots: [undefined, { value: 0, active: false }], nullable: null };
+    const expected = { combatEvents: [{ damage: 20 }], slots: [null, { value: 0, active: false }], nullable: null };
+    const plan = accounts.splitChanges(user, ['paradise'], items)[0];
+    assert.doesNotThrow(() => require('@aws-sdk/util-dynamodb').marshall(accounts.updateInput('test', user.id, plan.changes, plan.before).ExpressionAttributeValues));
+    await f.store.commit([user]);
+    assert.deepEqual(f.records.get(user.id).paradise, expected);
+    assert.deepEqual(f.user().paradise, expected);
+    assert.deepEqual(JSON.parse(user.__loaded.paradise), expected);
+    user.paradise.combatEvents.push({ damage: 30, optional: undefined });
+    await f.store.commit([user]);
+    assert.equal(f.user().paradise.combatEvents.length, 2);
+    delete user.paradise;
+    await f.store.commit([user]);
+    assert.equal(f.user().paradise, undefined);
+});
+
 test('반복 사냥 저장은 합쳐지고 전환 전 flush에서 계정과 캐릭터를 함께 확정한다', async () => {
     const f = fixture();
     for (let i = 0; i < 10; i++) {

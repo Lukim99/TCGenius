@@ -6819,7 +6819,6 @@ function grantDailyDungeonClearReward(user, dungeon, stats, slotEffects, extra, 
     const rewardMultiplier = rolled.lucky ? 2 : 1;
     expReward *= rewardMultiplier;
     goldReward *= rewardMultiplier;
-    goldReward = capHuntingGold(user, rolled.gold * rewardMultiplier, goldReward);
     itemRewards.forEach(item => { item.count *= rewardMultiplier; });
     const levelUps = addExperience(user, expReward);
     user.gold = Number(user.gold || 0) + goldReward;

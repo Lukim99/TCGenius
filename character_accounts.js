@@ -8,7 +8,8 @@ const SHARED_FIELDS = new Set([
     'unlockedTitles', 'titles', 'titleProgress', 'chuseok2026', 'personalDraw', 'pointMine', 'yut', 'yutEvent',
     'eventDiceDropDaily', 'songpyeonDropDaily', 'pointMineDropDaily', 'peperoDropDaily', 'peperoEvent', 'huntingGold'
 ]);
-const clone = value => value === undefined ? undefined : structuredClone(value);
+// 기존 사용자 저장 및 __loaded 스냅샷과 같은 JSON 표현으로 중첩 undefined를 정리한다.
+const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function isAccountItem(item) {

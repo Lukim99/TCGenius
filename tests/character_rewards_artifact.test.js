@@ -23,6 +23,27 @@ before(async () => {
 });
 after(() => sandbox.close());
 
+test('일일 던전 골드는 보너스와 럭키 타임을 온전히 지급하고 사냥 한도에는 적립하지 않는다', async () => {
+    const user = await rpg.getUserByPrimaryId(sandbox.account.id);
+    user.goldPotion = null; user.jobPrestige = false;
+    const original = rpg.findDailyDungeonByName('마동');
+    const dungeon = { ...original, dailyDungeon: { ...original.dailyDungeon, exp: 0, gold: { min: 1000, max: 1000 }, items: [], itemChoices: [] } };
+    const cap = rpg.getAccountGoldState(user);
+    for (const used of [0, cap.limit - 500, cap.limit]) for (const lucky of [false, true]) {
+        user.huntingGold = { date: cap.date, used };
+        user.field = { name: dungeon.name, dailyDungeon: true, enteredAt: Date.now(), skillCooldowns: {} };
+        const before = user.gold;
+        const result = rpg.grantDailyDungeonClearReward(user, dungeon, { gold: .2 }, { goldBonus: .3 }, { goldBonus: .5 }, () => lucky ? 0 : .9);
+        assert.equal(result.error, undefined);
+        assert.equal(result.gold, lucky ? 4000 : 2000);
+        assert.equal(user.gold - before, result.gold);
+        assert.deepEqual(user.huntingGold, { date: cap.date, used });
+        await rpg.getCharacterStore().commit([user]);
+        assert.equal(rpg.getAccountGoldState(await rpg.getUserByPrimaryId(altId)).used, used);
+    }
+    user.huntingGold = null; await rpg.getCharacterStore().commit([user]);
+});
+
 test('슬롯이 없어도 메인 레벨을 체력과 세 보너스에 더하고 잘못된 슬롯은 중복 합산하지 않는다', async () => {
     const user = await rpg.getUserByPrimaryId(sandbox.account.id), alt = await rpg.getUserByPrimaryId(altId);
     user.level = 200; user.main_card = { id: 0, type: '일반', star: 0 };
