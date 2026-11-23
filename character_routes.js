@@ -7,7 +7,7 @@ const pointUsage = require('./point_usage');
 const introductions = require('./DB/RPGenius/CharacterIntroductions.json');
 
 function registerCharacterRoutes(server, deps) {
-    const { rpg, partyquest, requireAccount, setCharacterSession, cards, skills, sprite, cardIcon, cardCover, cardImage, equipmentImage } = deps;
+    const { rpg, partyquest, requireAccount, setCharacterSession, cards, skills, sprite, cardIcon, cardCover, cardImage, itemIcon, inventoryEquipment } = deps;
     const store = () => rpg.getCharacterStore();
     const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
     const itemId = name => rpg.getDataCache('Item', []).findIndex(item => item?.name === name);
@@ -63,7 +63,7 @@ function registerCharacterRoutes(server, deps) {
         return { id: user.id, name: user.name, level: Number(user.level || 1), characterName: data?.name || '',
             type: user.main_card?.type || '일반', power: rpg.calculateTownCombatPower(user).total,
             cardLabel: data ? rpg.formatUserCard(user.main_card) : '',
-            imageUrl: sprite(display), renameTickets: count(user, '닉네임 변경권'),
+            imageUrl: sprite(display), renameTickets: count(user, '닉네임 변경권'), expandTickets: count(user, '캐릭터 슬롯 확장권'),
             needsStarter: !!user.need_character_card_select, isActive: user.id === account.activeCharacterId };
     }
 
@@ -74,6 +74,7 @@ function registerCharacterRoutes(server, deps) {
             const skillData = skills();
             res.json({ accountName: account.name, activeId: account.activeCharacterId, capacity: account.capacity,
                 slotCost: 800, renameCost: 300, renameTickets: count(user, '닉네임 변경권'),
+                itemIcons: Object.fromEntries(['닉네임 변경권', '캐릭터 슬롯 확장권'].map(name => [name, itemIcon({ name, type: '티켓' })])),
                 wallet: { gold: user.gold, garnet: user.garnet, point: user.point }, goldCap: rpg.getAccountGoldState(user),
                 characters: members.map(character => summary(character, account)),
                 starters: cards().map((card, id) => card?.name ? {
@@ -179,13 +180,20 @@ function registerCharacterRoutes(server, deps) {
         res.json(result);
     });
 
-    action('expand', async ({ res, current, account, receipt }) => {
-        if (Number(current.point || 0) < 800) fail('포인트가 부족합니다.');
-        current.point -= 800;
-        rpg.addPointSpendMileage(current, 800);
-        pointUsage.record(current, { amount: 800, category: 'character', action: 'expand', productName: '캐릭터 슬롯 확장' });
+    action('expand', async ({ req, res, current, account, receipt }) => {
+        const owner = req.body.sourceId ? await member(account, req.body.sourceId) : current;
+        const ticket = itemId('캐릭터 슬롯 확장권');
+        const payment = count(owner, '캐릭터 슬롯 확장권') > 0 ? 'ticket' : 'point';
+        if (req.body.payment !== payment) fail('확장권 보유 수량과 사용 비용이 바뀌었습니다. 창을 다시 열어 확인해주세요.', 409);
+        if (payment === 'ticket') rpg.removeInventoryItem(owner, ticket, 1);
+        else {
+            if (Number(current.point || 0) < 800) fail('포인트가 부족합니다.');
+            current.point -= 800;
+            rpg.addPointSpendMileage(current, 800);
+            pointUsage.record(current, { amount: 800, category: 'character', action: 'expand', productName: '캐릭터 슬롯 확장' });
+        }
         const result = { ok: true, capacity: account.capacity + 1 };
-        await store().commit([current], { accountChange: { id: account.id, changes: { capacity: account.capacity + 1 },
+        await store().commit([payment === 'ticket' ? owner : current], { accountChange: { id: account.id, changes: { capacity: account.capacity + 1 },
             before: { capacity: account.capacity } }, extras: [receipt(result)] });
         res.json(result);
     });
@@ -216,10 +224,12 @@ function registerCharacterRoutes(server, deps) {
     server.get('/api/characters/transferable', requireAccount, async (req, res) => {
         try {
             const account = store().accountFor(req.accountUser), user = await member(account, req.query.sourceId);
-            res.json({ cards: (user.inventory.card || []).map((card, index) => ({ index, token: itemToken(user, 'card', index), name: rpg.formatUserCard(card), imageUrl: cardImage(card, user), locked: !!card.locked })).filter(card => !card.locked),
-                equipment: (user.inventory.equipment || []).map((equip, index) => ({ equip, index, data: rpg.getEquipmentData(equip.type, equip.id) }))
-                    .filter(entry => entry.data?.rarity === '초월' && !entry.equip.locked)
-                    .map(({ equip, index, data }) => ({ index, token: itemToken(user, 'equipment', index), name: data.name, imageUrl: equipmentImage(equip.type, equip.id) })),
+            res.json({ cards: (user.inventory.card || []).map((card, index) => ({ index, token: itemToken(user, 'card', index), name: rpg.formatUserCard(card), imageUrl: cardImage(card, user), locked: !!card.locked,
+                details: card.skin || card.statSkin || card.avatarId || card.statAvatarId ? ['아바타 장착은 이전되지 않습니다.'] : [] })).filter(card => !card.locked),
+                equipment: inventoryEquipment(user).filter(entry => entry.source === 'inventory' && entry.baseRarity === '초월' && !entry.locked)
+                    .map(entry => ({ index: entry.index, token: itemToken(user, 'equipment', entry.index), name: entry.baseName,
+                        displayName: entry.name, imageUrl: entry.iconUrl, detail: entry, details: [] })),
+                ticketIcons: Object.fromEntries(['card', 'equipment'].map(kind => [kind, itemIcon({ name: ticketName(kind), type: '티켓' })])),
                 tickets: { card: count(user, ticketName('card')), equipment: count(user, ticketName('equipment')) } });
         } catch (error) { res.status(error.status || 500).json({ error: error.message }); }
     });

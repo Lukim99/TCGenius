@@ -12,13 +12,15 @@ const { newShopItemId, readShopCatalog } = require('../shop_catalog');
 const definitions = [
     { name: '닉네임 변경권', type: '티켓', no_trade: true, desc: '캐릭터 선택 화면에서 1개를 소모하여 캐릭터 이름을 변경한다. 계정 로그인 이름은 유지된다.' },
     { name: '카드 전송기', type: '티켓', no_trade: true, desc: '캐릭터 선택 화면에서 1개를 소모하여 같은 계정의 다른 캐릭터에게 보관 중인 카드 1개를 이전한다. 거래권은 소모하지 않는다.' },
-    { name: '장비 전송기', type: '티켓', no_trade: true, desc: '캐릭터 선택 화면에서 1개를 소모하여 같은 계정의 다른 캐릭터에게 보관 중인 초월 장비 1개를 이전한다.' }
+    { name: '장비 전송기', type: '티켓', no_trade: true, desc: '캐릭터 선택 화면에서 1개를 소모하여 같은 계정의 다른 캐릭터에게 보관 중인 초월 장비 1개를 이전한다.' },
+    { name: '캐릭터 슬롯 확장권', type: '티켓', no_trade: true, desc: '캐릭터 선택 화면에서 1개를 소모하여 계정의 캐릭터 자리를 한 칸 늘린다.' }
 ];
 
-function prepare(before) {
-    if (!Array.isArray(before.Item) || !Array.isArray(before.Shop?.['포인트'])) throw new Error('운영 Item/포인트 상점이 없습니다. 초기화하지 않습니다.');
+function prepare(before, { itemsOnly = false } = {}) {
+    if (!Array.isArray(before.Item) || !itemsOnly && !Array.isArray(before.Shop?.['포인트'])) throw new Error('운영 Item/포인트 상점이 없습니다. 초기화하지 않습니다.');
     const after = structuredClone(before);
     for (const item of definitions) if (!after.Item.some(existing => existing?.name === item.name)) after.Item.push(item);
+    if (itemsOnly) return after;
     const id = after.Item.findIndex(item => item?.name === '닉네임 변경권');
     if (!Object.values(after.Shop).flat().some(product => product?.type === '아이템' && product.item_id === id)) {
         after.Shop['포인트'].push({ shopId: newShopItemId(), type: '아이템', item_id: id, count: 1, price: { goods: 'point', amount: 300 } });
@@ -29,8 +31,9 @@ function prepare(before) {
 }
 
 async function main() {
+    const envDir = process.argv.find(arg => arg.startsWith('--env-dir='))?.slice(10) || path.join(__dirname, '..');
     for (const name of ['.env', '.env.local']) {
-        const file = path.join(__dirname, '..', name);
+        const file = path.join(envDir, name);
         if (!fs.existsSync(file)) continue;
         for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
             const match = line.match(/^\s*(AWS_[A-Z_]+)=(.*)$/);
@@ -40,11 +43,11 @@ async function main() {
     const db = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || 'ap-northeast-2', credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_KEY_ID
     } }));
-    const keys = ['Item', 'Shop'];
+    const itemsOnly = process.argv.includes('--items-only'), keys = itemsOnly ? ['Item'] : ['Item', 'Shop'];
     const read = async key => (await db.send(new GetCommand({ TableName: 'rpgenius_data', Key: { key }, ConsistentRead: true }))).Item?.data;
     const before = Object.fromEntries(await Promise.all(keys.map(async key => [key, await read(key)])));
-    const after = prepare(before), changed = keys.filter(key => !isDeepStrictEqual(before[key], after[key]));
-    console.log(JSON.stringify({ changed, addedItems: after.Item.slice(before.Item.length), addedProducts: after.Shop['포인트'].slice(before.Shop['포인트'].length) }, null, 2));
+    const after = prepare(before, { itemsOnly }), changed = keys.filter(key => !isDeepStrictEqual(before[key], after[key]));
+    console.log(JSON.stringify({ changed, addedItems: after.Item.slice(before.Item.length), addedProducts: itemsOnly ? [] : after.Shop['포인트'].slice(before.Shop['포인트'].length) }, null, 2));
     if (!process.argv.includes('--apply') || !changed.length) return;
     const folder = path.join(os.tmpdir(), 'tcgenius-shop-backups');
     fs.mkdirSync(folder, { recursive: true });

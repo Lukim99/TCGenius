@@ -5,14 +5,14 @@
 // 화면에 필요한 값은 public/account-stage.js가 API에서 받아 textContent로만 그린다.
 // 장면(하늘, 문, 호수, 캐릭터)은 WebGL 캔버스가 그리고, 여기 있는 단추와 글자는 그 위에 얹는 게임 HUD다.
 
-const VERSION = '20261123m11';
+const VERSION = '20261123m12';
 const CSS = '/static/account-stage.css?v=' + VERSION;
 const JS = '/static/account-stage.js?v=' + VERSION;
 const ART = '/static/assets/account-stage/';
 
 const ICON_SOUND = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 9.5v5h3.6L12 18.6V5.4L7.6 9.5H4z" fill="currentColor"/><path class="as-ico-wave" d="M15.2 8.6a4.8 4.8 0 0 1 0 6.8M17.6 6a8.4 8.4 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path class="as-ico-cut" d="M15.5 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 
-function head(title, fonts) {
+function head(title, fonts, transfer = false) {
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
 <title>${title}</title>
@@ -21,6 +21,7 @@ function head(title, fonts) {
 <meta name="theme-color" content="#060a1c">
 ${fonts.map(href => `<link rel="preload" href="${href}" as="font" type="font/woff2" crossorigin>`).join('')}
 <link rel="stylesheet" href="${CSS}">
+${transfer ? '<link rel="stylesheet" href="/static/account-transfer.css?v=' + VERSION + '">' : ''}
 </head>`;
 }
 
@@ -75,7 +76,7 @@ ${NOSCRIPT}
 }
 
 function renderCharacterSelection() {
-    return `${head('RPGENIUS 캐릭터 선택', [ART + 'as-serif.woff2'])}
+    return `${head('RPGENIUS 캐릭터 선택', [ART + 'as-serif.woff2'], true)}
 <body class="as" data-screen="characters" data-phase="loading">
 <canvas id="asStage" class="as-stage" aria-hidden="true"></canvas>
 <div class="as-camp" id="asCamp">
@@ -126,6 +127,7 @@ function renderCharacterSelection() {
 <div class="as-toast" id="asToast" role="status" aria-live="polite"></div>
 <div class="as-veil as-veil-on" id="asVeil" aria-hidden="true"></div>
 ${NOSCRIPT}
+<script src="/static/account-transfer.js?v=${VERSION}" defer></script>
 <script src="${JS}" defer></script>
 </body></html>`;
 }

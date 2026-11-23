@@ -945,9 +945,10 @@
     function closeModal(force) {
       if (!modalState || (modalState.busy && !force)) return;
       const back = modalState.back;
+      if (modalState.cleanup) modalState.cleanup();
       modalState = null;
       modal.hidden = true;
-      modal.classList.remove('is-creation', 'is-keyboard');
+      modal.classList.remove('is-creation', 'is-keyboard', 'is-transfer');
       modalBody.textContent = '';
       camp.inert = false; camp.removeAttribute('aria-hidden');
       if (back && doc.contains(back)) back.focus();
@@ -957,7 +958,7 @@
       const state = modalState = { busy: false, back: doc.activeElement };
       $('asModalTitle').textContent = title;
       panel.classList.toggle('is-wide', !!wide);
-      panel.classList.remove('is-links', 'is-creation');
+      panel.classList.remove('is-links', 'is-creation', 'is-transfer');
       modalBody.textContent = '';
       const errorBox = el('p', 'as-m-error');
       errorBox.setAttribute('role', 'alert');
@@ -966,6 +967,7 @@
         error(message) { errorBox.textContent = message || ''; if (message) Sound.play('deny', 0.7); },
         busy(on, button) { state.busy = !!on; setBusy(button, on); },
         isBusy: () => state.busy,
+        cleanup: fn => { state.cleanup = fn; },
         alive: () => modalState === state,
         close: () => closeModal(true)
       };
@@ -1208,6 +1210,12 @@
         });
       });
     }
+    function ticketArt(name) {
+      const image = el('img', 'as-ticket-art'); image.alt = name;
+      image.src = safeUrl(data.itemIcons?.[name]);
+      image.addEventListener('error', () => image.remove());
+      return image;
+    }
     function openRename() {
       const character = selected();
       if (!character) return;
@@ -1215,6 +1223,7 @@
       const point = Number(data.wallet && data.wallet.point) || 0, short = !tickets && point < cost;
       openModal('이름 변경', false, handle => {
         const form = el('form'); form.noValidate = true; form.style.display = 'contents';
+        form.appendChild(ticketArt('닉네임 변경권'));
         const field = nameField(handle, character.name);
         form.appendChild(field.wrap);
         form.appendChild(bill(tickets
@@ -1242,24 +1251,28 @@
     }
     function openExpand() {
       if (!data) return;
+      const owner = selected();
+      if (!owner) return;
       const cost = Number(data.slotCost) || 0, point = Number(data.wallet && data.wallet.point) || 0, capacity = Number(data.capacity) || 0;
-      const short = point < cost;
+      const tickets = Math.max(0, Number(owner.expandTickets) || 0), short = !tickets && point < cost;
       openModal('캐릭터 자리 확장', false, handle => {
         const form = el('form'); form.noValidate = true; form.style.display = 'contents';
-        form.appendChild(el('p', 'as-m-lead', '포인트를 써서 캐릭터 자리를 한 칸 늘립니다. 되돌릴 수 없습니다.'));
+        form.appendChild(ticketArt('캐릭터 슬롯 확장권'));
+        form.appendChild(el('p', 'as-m-lead', tickets ? owner.name + '의 확장권으로 캐릭터 자리를 한 칸 늘립니다.' : '확장권이 없어 800P로 캐릭터 자리를 한 칸 늘립니다.'));
         form.appendChild(bill([
-          ['쓰는 것', fmt(cost) + ' 포인트', 'is-spend'],
-          ['보유 포인트', short ? fmt(point) + ' (부족)' : fmt(point) + ' → ' + fmt(point - cost), short ? 'is-short' : ''],
+          ['쓰는 것', tickets ? '캐릭터 슬롯 확장권 1개' : fmt(cost) + ' 포인트', 'is-spend'],
+          tickets ? ['보유 확장권', fmt(tickets) + '개 → ' + fmt(tickets - 1) + '개']
+            : ['보유 포인트', short ? fmt(point) + ' (부족)' : fmt(point) + ' → ' + fmt(point - cost), short ? 'is-short' : ''],
           ['캐릭터 자리', fmt(capacity) + '칸 → ' + fmt(capacity + 1) + '칸']
         ]));
         form.appendChild(handle.errorBox);
-        const act = actions(handle, fmt(cost) + ' 포인트 쓰고 확장');
+        const act = actions(handle, tickets ? '확장권 쓰고 확장' : fmt(cost) + ' 포인트 쓰고 확장');
         act.submit.disabled = short;
         if (!short) act.submit.setAttribute('data-autofocus', '1');
         form.appendChild(act.row);
         form.addEventListener('submit', async ev => {
           ev.preventDefault();
-          if (!await submitWrite(handle, act.submit, '/api/characters/expand', {})) return;
+          if (!await submitWrite(handle, act.submit, '/api/characters/expand', { sourceId: owner.id, payment: tickets ? 'ticket' : 'point' })) return;
           handle.close();
           Sound.play('coin', 0.7);
           toast('캐릭터 자리가 한 칸 늘었습니다.');
@@ -1271,85 +1284,24 @@
     function openTransfer() {
       const source = selected();
       if (!source) return;
-      const others = characters().filter(c => !sameId(c.id, source.id));
-      const KIND = { card: '카드', equipment: '장비' };
       openModal('물품 이전', true, handle => {
-        const form = el('form'); form.noValidate = true; form.style.display = 'contents';
-        let kind = 'card', item = null, target = others.length == 1 ? others[0] : null, list = null;
-        let tickets = Object.assign({ card: 0, equipment: 0 }, data.transferItems || {});
-        const lead = el('p', 'as-m-lead');
-        lead.textContent = source.name + '의 장착하지 않은 카드나 초월 장비 하나를 다른 캐릭터로 옮깁니다. 한 번 옮길 때마다 해당 전송기 1개를 쓰고, 거래권은 쓰지 않습니다.';
-        const tabs = el('div', 'as-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', '옮길 종류');
-        const tabButtons = {};
-        Object.keys(KIND).forEach(k => {
-          const tab = el('button', 'as-tab'); tab.type = 'button';
-          tab.addEventListener('click', () => { if (handle.isBusy() || kind == k) return; kind = k; item = null; Sound.play('tap', 0.5); paint(); });
-          tabButtons[k] = tab; tabs.appendChild(tab);
+        modal.classList.add('is-transfer'); panel.classList.add('is-transfer');
+        sizeCreation();
+        const scene = window.RPGTransferScene.mount({
+          root: handle.body, characters: characters(), initialSourceId: source.id,
+          loadInventory: async sourceId => {
+            const out = await api('GET', '/api/characters/transferable?sourceId=' + encodeURIComponent(sourceId));
+            return { ...out, equipment: (out.equipment || []).map(item => ({ ...item, name: item.displayName || item.name })) };
+          },
+          transferItem: async payload => {
+            await write('/api/characters/transfer', payload);
+            // 목록 갱신 실패와 이미 성공한 이전 요청은 구분한다.
+            loadList({});
+          },
+          onBusy: on => handle.busy(on), onClose: handle.close, isAlive: handle.alive,
+          playSound: Sound.play, reducedMotion: reduced
         });
-        const itemsBox = el('div'), route = el('p', 'as-route'), billBox = el('div');
-        const targetSet = picks('받을 캐릭터', others.map(c => ({ id: c.id, name: c.name, imageUrl: c.imageUrl })), false, picked => { target = others.find(c => sameId(c.id, picked.id)); paintSummary(); });
-        if (target) { const only = targetSet.querySelector('.as-pick'); if (only) only.setAttribute('aria-pressed', 'true'); }
-        const act = actions(handle, '이전하기');
-
-        function paintSummary() {
-          const have = Math.max(0, Number(tickets[kind]) || 0);
-          route.textContent = '';
-          route.appendChild(el('span', '', source.name));
-          route.appendChild(el('i', '', '→'));
-          route.appendChild(el('span', '', item ? item.name : KIND[kind] + '를 고르세요'));
-          route.appendChild(el('i', '', '→'));
-          route.appendChild(el('span', '', target ? target.name : '받을 캐릭터를 고르세요'));
-          billBox.textContent = '';
-          billBox.appendChild(bill([
-            ['쓰는 것', KIND[kind] + ' 전송기 1개', 'is-spend'],
-            ['보유 전송기', have ? fmt(have) + '개 → ' + fmt(have - 1) + '개' : '0개 (부족)', have ? '' : 'is-short']
-          ]));
-          act.submit.disabled = !item || !target || !have || handle.isBusy();
-        }
-        function paint() {
-          Object.keys(KIND).forEach(k => {
-            const tab = tabButtons[k];
-            tab.setAttribute('aria-pressed', kind == k ? 'true' : 'false');
-            tab.textContent = KIND[k];
-            tab.appendChild(el('small', '', '전송기 ' + fmt(tickets[k]) + '개'));
-          });
-          itemsBox.textContent = '';
-          if (!list) itemsBox.appendChild(el('p', 'as-pick-none', '옮길 수 있는 물품을 찾는 중입니다.'));
-          else {
-            const rows = Array.isArray(list[kind]) ? list[kind] : [];
-            const set = picks('옮길 ' + KIND[kind], rows, false, picked => { item = picked; paintSummary(); });
-            if (!rows.length) set.querySelector('.as-pick-none').textContent = '옮길 수 있는 ' + KIND[kind] + '가 없습니다. 장착 중인 것은 먼저 해제해야 합니다.';
-            itemsBox.appendChild(set);
-          }
-          paintSummary();
-        }
-        async function loadItems() {
-          list = null; item = null; paint();
-          try {
-            const out = await api('GET', '/api/characters/transferable?sourceId=' + encodeURIComponent(source.id));
-            if (!handle.alive()) return;
-            list = { card: out.cards || [], equipment: out.equipment || [] };
-            if (out.tickets) tickets = Object.assign({ card: 0, equipment: 0 }, out.tickets);
-          } catch (err) {
-            if (!handle.alive()) return;
-            list = { card: [], equipment: [] };
-            handle.error(err.message);
-          }
-          paint();
-        }
-        form.addEventListener('submit', async ev => {
-          ev.preventDefault();
-          if (!item || !target) return;
-          const moved = item.name, to = target.name;
-          if (!await submitWrite(handle, act.submit, '/api/characters/transfer', { sourceId: source.id, targetId: target.id, kind, index: item.index, itemToken: item.token })) { paintSummary(); return; }
-          Sound.play('coin', 0.7);
-          toast(moved + ' → ' + to + ' 이전을 마쳤습니다.');
-          loadList({});
-          if (handle.alive()) await loadItems();
-        });
-        [lead, tabs, itemsBox, targetSet, route, billBox, handle.errorBox, act.row].forEach(n => form.appendChild(n));
-        handle.body.appendChild(form);
-        loadItems();
+        handle.cleanup(() => scene.destroy());
       });
     }
 
@@ -1455,9 +1407,10 @@
         const plate = el('span', 'as-slot-plate');
         if (c.needsStarter) plate.appendChild(el('span', 'as-slot-flag is-warn', '시작 카드 선택 필요'));
         else if (c.isActive) plate.appendChild(el('span', 'as-slot-flag', '플레이 중'));
-        // 이름 한 줄, 카드 한 줄([9성] 각성 빵귤처럼 서버가 준 표기 그대로), 레벨과 전투력 한 줄.
+        // 닉네임 앞에 작은 레벨, 카드 이름과 전투력은 각각 한 줄.
         // 줄마다 한 줄로만 쓰고, 칸보다 길면 fitPlates()가 글자를 줄여 맞춘다.
         const nameRow = el('span', 'as-slot-name');
+        nameRow.appendChild(el('small', 'as-slot-lv', 'Lv.' + fmt(c.level)));
         nameRow.appendChild(el('span', 'as-slot-nick', c.name));
         plate.appendChild(nameRow);
         if (!c.needsStarter) {
@@ -1468,8 +1421,7 @@
           plate.appendChild(cardName);
         }
         const power = el('span', 'as-slot-power');
-        power.appendChild(el('span', 'as-slot-lv', 'Lv.' + fmt(c.level)));
-        if (!c.needsStarter) { power.appendChild(doc.createTextNode(' 전투력 ')); power.appendChild(el('b', '', fmt(c.power))); }
+        if (!c.needsStarter) { power.appendChild(doc.createTextNode('전투력 ')); power.appendChild(el('b', '', fmt(c.power))); }
         plate.appendChild(power);
         button.appendChild(plate);
         button.addEventListener('click', ev => {

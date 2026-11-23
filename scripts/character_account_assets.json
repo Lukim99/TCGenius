@@ -1,0 +1,195 @@
+{
+  "bucket": "eefl-image",
+  "assets": [
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/빵귤/캐릭터표지(일반).png",
+      "bytes": 2739478,
+      "sha256": "d1e7440ede7f4c2edb02d5897ceeb92e6994ab7777d3b55799ea95ca65c65133"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/빵귤/캐릭터표지(전직).png",
+      "bytes": 3164413,
+      "sha256": "24286ba894e833b0af9518f65a7721f23f8f1ba9f3034a5a9e8c15f30911cd1c"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/뭔마/캐릭터표지(일반).png",
+      "bytes": 1786355,
+      "sha256": "d9cea9fdadd03000c02aaefee87de9e8bb7c1257526d27de3d6110ffc2ddc5e5"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/뭔마/캐릭터표지(전직).png",
+      "bytes": 1772443,
+      "sha256": "c292c28c8bc80dc45e32b53de468153d79542bec85b9afbb776ed8e5fbe014eb"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/글렌첵/캐릭터표지(일반).png",
+      "bytes": 1327076,
+      "sha256": "c56e55903409a2845d1537f3f3619ac37d975a60a4bbf92d9d93fd0f9143926d"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/글렌첵/캐릭터표지(전직).png",
+      "bytes": 1190030,
+      "sha256": "84724557bcd0760d8f54cf003ec0a0471b48baad6b99f39332f2c414c9bdc42e"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/오버라이드/캐릭터표지(일반).png",
+      "bytes": 2378015,
+      "sha256": "ec4c03ffce052e842ece53939e5e5a3794ede381ba4c0f44b48920f01c711489"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/오버라이드/캐릭터표지(전직).png",
+      "bytes": 2401222,
+      "sha256": "8fca8052a3ba8ff82d73da548817566f02a151fd5b7bd51439eacdc68e3980e0"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/일레이나/캐릭터표지(일반).png",
+      "bytes": 1242561,
+      "sha256": "90f0612b7601e71b8ab794b20d4f0897458b42f29e84ccd7a926fd358a12d3c6"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/일레이나/캐릭터표지(전직).png",
+      "bytes": 1432209,
+      "sha256": "6edb6f3ea51607c93b5f08bbdb5063d1ad9c0d7fd160c7a578f3712662b1f191"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/진필규/캐릭터표지(일반).png",
+      "bytes": 1453214,
+      "sha256": "076c83e892ffab178de16e54e4e4e5a60fa18476766453b8831f47441bfd211c"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/진필규/캐릭터표지(전직).png",
+      "bytes": 1957191,
+      "sha256": "b83495893f57e0f189f5bd9bd34d7bcda879f298c3fdc1d10b039cc886292e05"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/켄시/캐릭터표지(일반).png",
+      "bytes": 1047389,
+      "sha256": "2260aa460b4522004e4a244bbb1a6fc03be78733d35305b6440f9011c9c13986"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/켄시/캐릭터표지(전직).png",
+      "bytes": 885007,
+      "sha256": "9b9444b97e8211c9c27a8f966d5c012c7f6e48d447868a066566ed14223568ca"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/제우스/캐릭터표지(일반).png",
+      "bytes": 2152814,
+      "sha256": "2ec6287ef4396183f47d2cbd8fe8a119d2c68d8b6f9330ad27dd8d98747a4edd"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/제우스/캐릭터표지(전직).png",
+      "bytes": 3373934,
+      "sha256": "dccb0b8118eade96c613c0290f3c7f9761505aa327a6e330be2931bb751e3030"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/타이란트/캐릭터표지(일반).png",
+      "bytes": 1248252,
+      "sha256": "67477a0f6c8eebae2ad725a31c3af2fadc777ed9c882084fb05f3d410f6a1438"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/타이란트/캐릭터표지(전직).png",
+      "bytes": 3022698,
+      "sha256": "b47b2942768cbd9c753cc871944d44a0c88fc60ff081e2d027e0f5087044ee27"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/마쉐비/캐릭터표지(일반).png",
+      "bytes": 1694451,
+      "sha256": "68ce97e873b2914136260cec64c5296f66233ea235e78982b28575a93e609a42"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/마쉐비/캐릭터표지(전직).png",
+      "bytes": 3011714,
+      "sha256": "86f01ad9c8ed144b652a9411cc21c975fa3772e1c8ab9719048e620ce5dd1e7e"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/딜러장/캐릭터표지(일반).png",
+      "bytes": 1505434,
+      "sha256": "2940f0b62423c48d6405d84c156cee062656df7d1b6f682e77f206fecc31a353"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/딜러장/캐릭터표지(전직).png",
+      "bytes": 2360316,
+      "sha256": "e4bbac0c02f7bc53110e00d28e25e49808011102bd0b620a8663e63a2f68e903"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/이익태/캐릭터표지(일반).png",
+      "bytes": 1930850,
+      "sha256": "4c562f8742874a1fdf7435c76dc28205cd287d415315a97f02be1be6ff267066"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/이익태/캐릭터표지(전직).png",
+      "bytes": 3408668,
+      "sha256": "53c9da3ae77508ffba35ad8f41f9c8d80fa9f16b7c438980cb0aaa4eadd70b83"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/안성재/캐릭터표지(일반).png",
+      "bytes": 3053979,
+      "sha256": "9f8e3e01baac1933c9622d22aced8fe3669420ccba8ab2db9bd9f4d3e0ea4d3c"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/안성재/캐릭터표지(전직).png",
+      "bytes": 3372959,
+      "sha256": "4df953abafa6977f799925f7783d650c561e53718114f2a476b2a36a8abd1079"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/흠시원/캐릭터표지(일반).png",
+      "bytes": 1385973,
+      "sha256": "2b3e50ea21acef21068af37f6274874cb3ae89add9166ad0f058b86fb14a7335"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/흠시원/캐릭터표지(전직).png",
+      "bytes": 3902586,
+      "sha256": "98e367689844ac356243d0dea38916c7e9e05a3d8c278609d60051181f0bf9b2"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/일리온/캐릭터표지(일반).png",
+      "bytes": 1154092,
+      "sha256": "181d6d78317bfbb5b98a89add9db03ca78e086d4ae189f5c987489e58e25c001"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/일리온/캐릭터표지(전직).png",
+      "bytes": 4408300,
+      "sha256": "55a92db430e60cd51ef8dac5f2fce5d761e4ed89d12bbbdefbcd0bc2a309cfa1"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/워뇨띠/캐릭터표지(일반).png",
+      "bytes": 2080180,
+      "sha256": "0a06417d3ddee62f2cc71b0bc55fdcaa774c43770299f6ac40418a726dc05986"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/워뇨띠/캐릭터표지(전직).png",
+      "bytes": 3259567,
+      "sha256": "5a20d9ff73e4e2967a3e6526ec1d9d97a0c1ee4b05ca9c5f4ea0ac6dabb0e733"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/키노/캐릭터표지(일반).png",
+      "bytes": 925443,
+      "sha256": "ec7d27f37f714362b97255bd3c3a7c5b75e4a2919e3cc1a8190af5bb552366c5"
+    },
+    {
+      "key": "tcgenius/assets/cardImage/카드분리/캐릭터/키노/캐릭터표지(전직).png",
+      "bytes": 3275635,
+      "sha256": "26fb05a3d016260613c76efe9467c41cfe6df3cb2d73f84318dd75557b86e34e"
+    },
+    {
+      "key": "tcgenius/assets/itemImage/티켓/닉네임 변경권.png",
+      "bytes": 243166,
+      "sha256": "a0fa645c52f68666dc4ccafd11faebe1a2acd4b484a905f70230c6bb8f4e1be5"
+    },
+    {
+      "key": "tcgenius/assets/itemImage/티켓/카드 전송기.png",
+      "bytes": 331160,
+      "sha256": "57fc7dc0a25c3f511bb813a0e7b9dadae4832e19717057c7d3e585e86c648aba"
+    },
+    {
+      "key": "tcgenius/assets/itemImage/티켓/장비 전송기.png",
+      "bytes": 374227,
+      "sha256": "5ef5b9de3c0f61aa687da91bcfe3bf8714d2c1c442a3d341fc70f0f44c7e349c"
+    },
+    {
+      "key": "tcgenius/assets/itemImage/티켓/캐릭터 슬롯 확장권.png",
+      "bytes": 226164,
+      "sha256": "366363a7cf59a46034bf280287cd5427efd393d45b8df22034852d4de25b8fa5"
+    }
+  ]
+}

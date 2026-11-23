@@ -194,8 +194,8 @@ test('카드 전송기는 1개만 소모하고 거래권 없이 카드 속성을
 
 test('슬롯 확장 재전송으로 포인트를 중복 차감하지 않는다', async () => {
     const requestId = crypto.randomUUID();
-    assert.equal((await action('expand', {}, requestId)).status, 200);
-    assert.equal((await action('expand', {}, requestId)).status, 200);
+    assert.equal((await action('expand', { payment: 'point' }, requestId)).status, 200);
+    assert.equal((await action('expand', { payment: 'point' }, requestId)).status, 200);
     const view = (await request('/api/characters')).body;
     assert.equal(view.capacity, 7);
     assert.equal(view.wallet.point, 3900);
@@ -223,6 +223,11 @@ test('기존 초월 장비도 거래가 금지되고 전송기로 강화·잠재
     assert.match(rpg.getEquipmentTradeBlockReason(equip, user.name), /초월 장비는 거래할 수 없습니다/);
     user.inventory.equipment.push(equip); rpg.addInventoryItem(user, ticket, 1); await user.save();
     const entry = (await request('/api/characters/transferable?sourceId=' + user.id)).body.equipment.find(entry => entry.name === '검증용 초월');
+    assert.equal(entry.detail.typeLabel, '무기');
+    assert.equal(entry.detail.level, 15);
+    assert.equal(entry.detail.transcendStage, 3);
+    assert.equal(entry.detail.potentialDisplay.tierLabel, '레전더리');
+    assert.ok(entry.detail.statLines.length > 0);
     const sent = await action('transfer', { sourceId: user.id, targetId: secondId, kind: 'equipment', index: entry.index, itemToken: entry.token });
     assert.equal(sent.status, 200, JSON.stringify(sent.body));
     const target = await rpg.getUserByPrimaryId(secondId);
@@ -459,4 +464,34 @@ test('부캐 5명의 메인 카드와 레벨이 실제 슬롯이 되고 메인 �
     const state = (await request('/api/characters/links')).body;
     assert.match(state.slots[4].error, /타입이 다를 때/);
     assert.equal(rpg.calculateCardSlotEffects(await rpg.getUserByPrimaryId(main.id)).skillCoolReduction, .1, '부캐 카드가 바뀌어 중복 조건에 걸리면 효과를 중복 적용하지 않는다');
+});
+
+test('선택한 부캐의 확장권 1개로 한 칸을 열고 재요청으로 중복 차감하지 않는다', async () => {
+    const items = rpg.getDataCache('Item', []);
+    let ticket = items.findIndex(item => item.name === '캐릭터 슬롯 확장권');
+    if (ticket < 0) { ticket = items.length; items.push({ name: '캐릭터 슬롯 확장권', type: '티켓', no_trade: true }); }
+    const owner = await rpg.getUserByPrimaryId(secondId);
+    rpg.addInventoryItem(owner, ticket, 1); await owner.save();
+    const before = (await request('/api/characters')).body;
+    assert.equal(before.characters.find(c => c.id === owner.id).expandTickets, 1);
+    const id = crypto.randomUUID(), body = { sourceId: owner.id, payment: 'ticket' };
+    assert.equal((await action('expand', body, id)).status, 200);
+    assert.equal((await action('expand', body, id)).status, 200);
+    const after = (await request('/api/characters')).body;
+    assert.equal(after.capacity, before.capacity + 1);
+    assert.equal(after.wallet.point, before.wallet.point);
+    assert.equal(rpg.getInventoryItemCount(await rpg.getUserByPrimaryId(owner.id), ticket), 0);
+});
+
+test('확장권 보유 상태가 바뀌면 포인트나 확장권을 대신 쓰지 않고 타 계정 확장권을 거부한다', async () => {
+    const ticket = rpg.getDataCache('Item', []).findIndex(item => item.name === '캐릭터 슬롯 확장권');
+    const owner = await rpg.getUserByPrimaryId(secondId), before = (await request('/api/characters')).body;
+    assert.equal((await action('expand', { sourceId: owner.id, payment: 'ticket' })).status, 409);
+    rpg.addInventoryItem(owner, ticket, 1); await owner.save();
+    assert.equal((await action('expand', { sourceId: owner.id, payment: 'point' })).status, 409);
+    assert.equal((await action('expand', { sourceId: 'foreign-account-character', payment: 'ticket' })).status, 403);
+    const after = (await request('/api/characters')).body;
+    assert.equal(after.capacity, before.capacity);
+    assert.equal(after.wallet.point, before.wallet.point);
+    assert.equal(rpg.getInventoryItemCount(await rpg.getUserByPrimaryId(owner.id), ticket), 1);
 });

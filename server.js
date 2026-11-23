@@ -405,8 +405,8 @@ server.use(async (req, res, next) => {
 require('./character_routes').registerCharacterRoutes(server, { rpg: rpgenius, partyquest, requireAccount, setCharacterSession,
     cards: () => readJson(CHARACTER_CARDS_PATH, []), sprite: getHFieldCharacterSprite, cardImage: getCardImageUrl,
     skills: () => readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []),
-    cardIcon: getCardIconUrl, cardCover: getCharacterCoverImageUrl,
-    equipmentImage: (type, id) => getEquipmentIconUrl(rpgenius.getEquipmentData(type, id)) });
+    cardIcon: getCardIconUrl, cardCover: getCharacterCoverImageUrl, itemIcon: getItemIconUrl,
+    inventoryEquipment: buildInventoryEquipment });
 
 server.get('/characters', requireAccount, (req, res) => {
     res.type('html').send(require('./account_screens').renderCharacterSelection());
@@ -6280,13 +6280,13 @@ function getCardIconUrl(card, user, characterData) {
 }
 
 function getCharacterCoverImageUrl(data, type = '일반') {
-    if (!data || !data.name || !cardComposite.getCoverPath(data.name, type)) return null;
-    return '/card-image?name=' + encodeURIComponent(data.name) + '&cover=' + encodeURIComponent(type);
+    const file = data?.name && cardComposite.getCoverPath(data.name, type);
+    if (!file) return null;
+    return '/card-image?name=' + encodeURIComponent(data.name) + '&cover=' + encodeURIComponent(type) + '&v=' + fs.statSync(file).mtimeMs;
 }
 
 function getJobCoverImageUrl(data) {
-    if (!data || !data.name || !cardComposite.getCoverPath(data.name, '전직')) return null;
-    return '/card-image?name=' + encodeURIComponent(data.name) + '&cover=' + encodeURIComponent('전직');
+    return getCharacterCoverImageUrl(data, '전직');
 }
 
 function getItemImageUrl(dir, file) {

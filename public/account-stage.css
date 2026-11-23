@@ -234,15 +234,15 @@ body.is-leaving .as-camp{opacity:0}
 .as-slot-flag.is-warn{color:var(--teal)}
 .as-slot-flag.is-warn::before,.as-slot-flag.is-warn::after{background:linear-gradient(90deg,transparent,var(--teal))}
 .as-slot-name{font-weight:800;font-size:clamp(1rem,.86rem + .4vw,1.2rem);color:var(--ink)}
-.as-slot-lv{color:var(--gold);font-weight:700;margin-right:.6em}
+.as-slot-lv{color:var(--gold);font-size:.65em;font-weight:600;margin-right:.6em;white-space:nowrap}
 .as-slot-nick{white-space:nowrap}
 .as-slot-class{color:#fff;font-size:.88rem;font-weight:700}
-.as-slot-class .card-name-halloween{display:inline-block;color:#ff922e;white-space:nowrap;text-shadow:none}
+.as .card-name-halloween{display:inline-block;color:#ff922e;white-space:nowrap;text-shadow:none}
 @supports (background-clip:text) or (-webkit-background-clip:text){
-  .as-slot-class .card-name-halloween{background-image:linear-gradient(110deg,#ff922e 0%,#ff922e 44%,#ffd3a8 48%,#fff 50%,#ffd3a8 52%,#ff922e 56%,#ff922e 100%);background-size:240% 100%;background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:halloween-name-shine 3.2s linear infinite}
+  .as .card-name-halloween{background-image:linear-gradient(110deg,#ff922e 0%,#ff922e 44%,#ffd3a8 48%,#fff 50%,#ffd3a8 52%,#ff922e 56%,#ff922e 100%);background-size:240% 100%;background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:halloween-name-shine 3.2s linear infinite}
 }
 @keyframes halloween-name-shine{from{background-position:120% 50%}to{background-position:-20% 50%}}
-@media(prefers-reduced-motion:reduce){.as-slot-class .card-name-halloween{animation:none;background:none;-webkit-text-fill-color:currentColor}}
+@media(prefers-reduced-motion:reduce){.as .card-name-halloween{animation:none;background:none;-webkit-text-fill-color:currentColor}}
 .as-slot-power{color:var(--ink-2);font-size:.84rem;font-weight:600}
 .as-slot-power b{font-weight:700;color:#fff;margin-left:.4em;font-variant-numeric:tabular-nums}
 .as-slot:hover .as-slot-plate{opacity:1}
@@ -294,6 +294,7 @@ body.is-leaving .as-camp{opacity:0}
 .as-modal-body{flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:4px 10px 8px;display:flex;flex-direction:column;gap:14px}
 .as-modal-body p{margin:0}
 .as-m-lead{color:var(--ink-2);font-size:.96rem}
+.as-ticket-art{display:block;width:6rem;height:6rem;object-fit:contain;align-self:center}
 .as-m-label{display:block;margin-bottom:.4em;font-size:.82rem;letter-spacing:.2em;color:var(--gold)}
 .as-m-input{width:100%;min-height:50px;padding:.3em .8em;border:1px solid var(--line-strong);border-radius:2px;background:rgba(2,4,16,.72);color:#fff;font-weight:800;font-size:1.2rem;letter-spacing:.04em;-webkit-appearance:none;appearance:none}
 .as-m-input:focus,.as-m-input:focus-visible{outline:none;border-color:var(--gold-hi);box-shadow:0 0 0 3px rgba(242,207,134,.22)}

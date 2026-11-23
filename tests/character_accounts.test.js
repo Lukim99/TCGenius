@@ -167,9 +167,12 @@ test('신규 티켓 등록은 기존 운영 설정과 인덱스를 보존하며 
     const after = prepare(before);
     assert.deepEqual(after.Item[0], before.Item[0]);
     assert.equal(before.Item.length, 1);
-    assert.equal(after.Item.length, 4);
+    assert.equal(after.Item.length, 5);
     assert.equal(after.Shop.포인트.length, 1);
     assert.equal(after.Shop.포인트[0].price.amount, 300);
     after.Item[1].desc = '운영자가 수정'; after.Shop.포인트[0].price.amount = 123;
     assert.deepEqual(prepare(after), after);
+    const itemsOnly = prepare(before, { itemsOnly: true });
+    assert.equal(itemsOnly.Item.length, 5);
+    assert.deepEqual(itemsOnly.Shop, before.Shop);
 });
