@@ -3145,7 +3145,8 @@ function calculateCardSlotEffects(user) {
         if (typeof effects[key] === 'undefined') return;
         effects[key] += value;
     };
-    [user.main_card, ...(user.card_slot || [])].filter(Boolean).forEach(card => {
+    const slotCards = getCharacterSlotCards(user);
+    [user.main_card, ...slotCards].filter(Boolean).forEach(card => {
         const cardData = characterCards[card.id];
         if (!cardData) return;
         const star = Math.max(card === user.main_card ? 4 : 0, Number(card.star || 0));
@@ -3167,7 +3168,7 @@ function calculateCardSlotEffects(user) {
         if (cardData.slot_effect && cardData.slot_effect.effect) applyEffect(cardData.slot_effect.effect, getSlotEffectValueAtStar(cardData.slot_effect, star));
     });
     const gradeAttack = [.01, .02, .03, .04, .06, .08, .10, .12];
-    effects.finalAttackBonus += (user.card_slot || []).reduce((sum, card) => sum + (gradeAttack[Math.min(7, Number(card.star || 0) - 4)] || 0), 0);
+    effects.finalAttackBonus += slotCards.reduce((sum, card) => sum + (gradeAttack[Math.min(7, Number(card.star || 0) - 4)] || 0), 0);
     const levelSum = getLinkedCharacterLevelSum(user);
     effects.linkedHp = levelSum;
     effects.goldBonus += levelSum / 1000;
@@ -3178,11 +3179,15 @@ function calculateCardSlotEffects(user) {
 
 function getLinkedCharacterLevelSum(user) {
     if (!user.accountId) return 0;
-    const members = getCharacterStore().members(user);
-    return (user.card_slot || []).reduce((sum, card, index) => {
-        const member = members.find(member => member.id === user.slotCharacterLinks?.[index]);
-        return sum + (member && member.id !== user.id && Number(member.main_card?.id) === Number(card.id) ? Number(member.level || 1) : 0);
-    }, 0);
+    return getCharacterSlots(user).reduce((sum, slot) => sum + (slot.member ? Number(slot.member.level || 1) : 0), 0);
+}
+
+function getCharacterSlots(user, links) {
+    return characterAccounts.resolveSlots(user, getCharacterStore().members(user), links);
+}
+
+function getCharacterSlotCards(user) {
+    return user.accountId ? getCharacterSlots(user).flatMap(slot => slot.member ? [slot.member.main_card] : []) : (user.card_slot || []);
 }
 
 function formatCardSlotEffectLines(user) {
@@ -3830,7 +3835,7 @@ function equipMainCharacterCard(user, numberArg) {
     if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
     const card = user.inventory.card[number - 1];
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
-    if (Array.isArray(user.card_slot) && user.card_slot.some(slotCard => slotCard && Number(slotCard.id) == Number(card.id) && (slotCard.type || '일반') == (card.type || '일반'))) return '❌ 같은 타입의 동일 캐릭터가 카드 슬롯에 장착되어 있어 메인 카드로 장착할 수 없습니다.';
+    if (getCharacterSlotCards(user).some(slotCard => Number(slotCard.id) == Number(card.id) && (slotCard.type || '일반') == (card.type || '일반'))) return '❌ 같은 타입의 동일 캐릭터가 슬롯에 지정되어 있습니다. 슬롯을 해제한 뒤 메인 카드를 변경해주세요.';
     user.inventory.card.splice(number - 1, 1);
     if (user.main_card && typeof user.main_card.id != 'undefined') user.inventory.card.push(user.main_card);
     user.main_card = card;
@@ -3857,6 +3862,7 @@ function getRemainingCardInventorySpace(user) {
 }
 
 function equipCharacterCardSlot(user, numberArg) {
+    if (user.accountId) return '❌ 슬롯에는 카드를 장착하지 않습니다. 캐릭터 선택 화면의 슬롯 연결에서 부캐를 지정해주세요.';
     const maxCardSlot = Number(user.maxCardSlot || 5);
     if (Array.isArray(user.card_slot) && user.card_slot.length >= maxCardSlot) return '❌ 카드 슬롯이 가득 찼습니다.';
     const number = Number(numberArg);
@@ -3876,8 +3882,13 @@ function equipCharacterCardSlot(user, numberArg) {
 
 function removeCharacterCardSlot(user, slotArg) {
     const slotNumber = Number(slotArg);
-    const maxCardSlot = Number(user.maxCardSlot || 5);
+    const maxCardSlot = user.accountId ? 5 : Number(user.maxCardSlot || 5);
     if (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > maxCardSlot) return '❌ 슬롯 번호는 1~' + maxCardSlot + ' 사이여야 합니다.';
+    if (user.accountId) {
+        if (!user.slotCharacterLinks?.[slotNumber - 1]) return '❌ 해당 슬롯에 지정한 부캐가 없습니다.';
+        user.slotCharacterLinks[slotNumber - 1] = null;
+        return '✅ ' + slotNumber + '번 슬롯의 부캐 지정을 해제했습니다.';
+    }
     if (!Array.isArray(user.card_slot) || !user.card_slot[slotNumber - 1]) return '❌ 해당 슬롯에 장착된 카드가 없습니다.';
     const removed = user.card_slot[slotNumber - 1];
     if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
@@ -4429,7 +4440,7 @@ function calculateUserStats(user, _out) {
     }
     const artifactEquip = user.equipments && user.equipments.artifact;
     const artifactData = artifactEquip && getEquipmentData('artifact', artifactEquip.id);
-    const artifactValues = artifactData ? artifacts.evaluate(artifactEquip, artifactData.rarity, user, stats, getEquipmentData).values : {};
+    const artifactValues = artifactData ? artifacts.evaluate(artifactEquip, artifactData.rarity, { ...user, card_slot: getCharacterSlotCards(user) }, stats, getEquipmentData).values : {};
     for (const [key, value] of Object.entries(artifactValues)) {
         if (['hp', 'mp', 'pnt'].includes(key)) stats[key] = Math.round(Number(stats[key] || 0) * (1 + value));
         else if (key === 'atk') plusStats.atk += value;
@@ -4690,8 +4701,9 @@ function formatMyInfo(user) {
     const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
     const maxMp = Number(stats.mp || 0);
     const mp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
-    const cardSlots = user.card_slot || [];
-    const maxCardSlot = Number(user.maxCardSlot || 5);
+    const characterSlots = user.accountId ? getCharacterSlots(user) : null;
+    const cardSlots = characterSlots ? characterSlots.map(slot => slot.member?.main_card || null) : user.card_slot || [];
+    const maxCardSlot = user.accountId ? 5 : Number(user.maxCardSlot || 5);
 
     const cp = calculateCombatPower(user);
     const lines = [
@@ -4710,9 +4722,9 @@ function formatMyInfo(user) {
         '〈 장착 중인 캐릭터 카드 〉',
         '- ' + formatUserCard(user.main_card),
         '',
-        '〈 장착 중인 카드 슬롯 (' + cardSlots.length + '/' + maxCardSlot + ') 〉'
+        '〈 지정한 캐릭터 슬롯 (' + cardSlots.filter(Boolean).length + '/' + maxCardSlot + ') 〉'
     ];
-    for (let i = 0; i < maxCardSlot; i++) lines.push(cardSlots[i] ? '- ' + formatUserCard(cardSlots[i]) : '-');
+    for (let i = 0; i < maxCardSlot; i++) lines.push(cardSlots[i] ? '- ' + (characterSlots ? characterSlots[i].member.name + ' Lv.' + characterSlots[i].member.level + ' ' : '') + formatUserCard(cardSlots[i]) : '-');
     const slotEffectLines = formatCardSlotEffectLines(user);
     if (slotEffectLines.length > 0) lines.push('', '〈 카드 슬롯 효과 〉', ...slotEffectLines);
     lines.push('', '〈 장착 중인 장비 〉');
@@ -12133,7 +12145,7 @@ function getUserPresets(user) {
 function getAllUserCardsForPreset(user) {
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card.slice() : [];
     if (user.main_card && typeof user.main_card.id != 'undefined') cards.push(user.main_card);
-    (Array.isArray(user.card_slot) ? user.card_slot : []).forEach(c => { if (c) cards.push(c); });
+    if (!user.accountId) (Array.isArray(user.card_slot) ? user.card_slot : []).forEach(c => { if (c) cards.push(c); });
     return cards;
 }
 
@@ -12156,6 +12168,10 @@ function pruneUserPreset(user, preset) {
         return true;
     };
     if (preset.mainCard && !takeMatch(preset.mainCard)) { preset.mainCard = null; changed = true; }
+    if (user.accountId) {
+        if (preset.slotCards) { delete preset.slotCards; changed = true; }
+        return changed;
+    }
     const slotBefore = (preset.slotCards || []).length;
     const links = [];
     preset.slotCards = (preset.slotCards || []).filter((card, index) => {
@@ -12182,8 +12198,8 @@ function saveUserPreset(user, slotIndex) {
         name: (presets[slotIndex] && presets[slotIndex].name) || null,  // 덮어쓰기 시 이름 유지
         equipment,
         mainCard: cardPresetSignature(user.main_card),
-        slotCards,
-        slotCharacterLinks: slotCards.map((_, index) => user.slotCharacterLinks?.[index] || null)
+        ...(user.accountId ? {} : { slotCards }),
+        slotCharacterLinks: Array.from({ length: 5 }, (_, index) => user.slotCharacterLinks?.[index] || null)
     };
     return presets[slotIndex];
 }
@@ -12197,15 +12213,16 @@ function applyUserPreset(user, slotIndex) {
     const warnings = [];
 
     // 1) 슬롯 카드 전부 해제 (해제분이 들어갈 카드 인벤토리 공간 필요)
-    const slotCount = Array.isArray(user.card_slot) ? user.card_slot.length : 0;
+    const slotCount = !user.accountId && Array.isArray(user.card_slot) ? user.card_slot.length : 0;
     if (slotCount > 0 && getRemainingCardInventorySpace(user) < slotCount) {
         return { error: '캐릭터 카드 인벤토리 공간이 부족하여 프리셋을 적용할 수 없습니다.' };
     }
-    while (Array.isArray(user.card_slot) && user.card_slot.length > 0) {
+    while (!user.accountId && Array.isArray(user.card_slot) && user.card_slot.length > 0) {
         const r = removeCharacterCardSlot(user, 1);
         if (String(r).startsWith('❌')) return { error: String(r).replace(/^❌\s*/, '') };
     }
 
+    if (user.accountId) user.slotCharacterLinks = [];
     // 2) 메인 카드
     if (preset.mainCard && !cardMatchesPresetSignature(user.main_card, preset.mainCard, true)) {
         const num = findCardNumberBySignature(user, preset.mainCard);
@@ -12217,7 +12234,13 @@ function applyUserPreset(user, slotIndex) {
     }
 
     // 3) 슬롯 카드
-    for (const [index, sig] of (preset.slotCards || []).entries()) {
+    if (user.accountId) {
+        user.slotCharacterLinks = getCharacterSlots(user, preset.slotCharacterLinks || []).map(slot => {
+            if (slot.error) warnings.push('슬롯 ' + (slot.index + 1) + ': ' + slot.error);
+            return slot.member?.id || null;
+        });
+    }
+    for (const [index, sig] of (user.accountId ? [] : preset.slotCards || []).entries()) {
         const num = findCardNumberBySignature(user, sig);
         if (!num) { warnings.push('슬롯 카드를 찾을 수 없어 건너뛰었습니다.'); continue; }
         const r = equipCharacterCardSlot(user, num);
@@ -12267,7 +12290,8 @@ function resolvePresetForView(user, preset) {
         return pool.splice(i, 1)[0];
     };
     if (preset.mainCard) view.mainCard = takeMatch(preset.mainCard);
-    (preset.slotCards || []).forEach(sig => {
+    if (user.accountId) view.slotCards = getCharacterSlots({ ...user, main_card: view.mainCard || user.main_card }, preset.slotCharacterLinks || []).flatMap(slot => slot.member ? [slot.member.main_card] : []);
+    (user.accountId ? [] : preset.slotCards || []).forEach(sig => {
         const card = takeMatch(sig);
         if (card) view.slotCards.push(card);
     });
@@ -18067,7 +18091,7 @@ function __setQuestDefs(defs) {
 
 module.exports = {
     returnMailGifts,
-    getLinkedCharacterLevelSum,
+    getLinkedCharacterLevelSum, getCharacterSlots, getCharacterSlotCards,
     isCharacterNameTaken, calculateTownCombatPower,
     getCharacterStore, ensureCharacterAccount, getAccountUserByLogin, getAccountGoldState,
     flushPointUsageOutboxes, getPointUsageDeliveryStatus,

@@ -140,7 +140,8 @@ function makeCardTaker(user) {
 }
 
 function equippedDeck(user) {
-    return { mainCard: user.main_card || null, cardSlot: (Array.isArray(user.card_slot) ? user.card_slot : []).slice() };
+    return { mainCard: user.main_card || null, cardSlot: rpgenius.getCharacterSlotCards(user).slice(),
+        slotCharacterLinks: user.accountId ? rpgenius.getCharacterSlots(user).map(slot => slot.member?.id || null) : [] };
 }
 
 // 저장된 방어 덱을 실제 카드로 해석한다. 메인 카드를 못 찾으면 장착 덱으로 대체하고 valid=false.
@@ -148,10 +149,15 @@ function resolveDefenseDeck(user) {
     const defense = user.pvp && user.pvp.defense;
     const rules = defense && Array.isArray(defense.rules) && defense.rules.length > 0 ? defense.rules : DEFAULT_RULES;
     const equipped = equippedDeck(user);
-    if (!defense || !defense.mainCard) return { mainCard: equipped.mainCard, cardSlot: equipped.cardSlot, rules, useEquipped: true, valid: true };
+    if (!defense || !defense.mainCard) return { ...equipped, rules, useEquipped: true, valid: true };
     const take = makeCardTaker(user);
     const mainCard = take(defense.mainCard);
-    if (!mainCard) return { mainCard: equipped.mainCard, cardSlot: equipped.cardSlot, rules, useEquipped: false, valid: false };
+    if (!mainCard) return { ...equipped, rules, useEquipped: false, valid: false };
+    if (user.accountId) {
+        const slots = rpgenius.getCharacterSlots({ ...user, main_card: mainCard }, defense.slotCharacterLinks || user.slotCharacterLinks || []);
+        return { mainCard, cardSlot: slots.flatMap(slot => slot.member ? [slot.member.main_card] : []),
+            slotCharacterLinks: slots.map(slot => slot.member?.id || null), rules, useEquipped: false, valid: true };
+    }
     const maxSlots = Number(user.maxCardSlot || 5);
     const seen = new Set();
     const cardSlot = (Array.isArray(defense.slotCards) ? defense.slotCards : []).map(take).filter(card => {
@@ -202,6 +208,17 @@ function validateDefensePayload(user, payload) {
     const take = makeCardTaker(user);
     const mainCard = take(payload.mainCard);
     if (!mainCard) return { error: '메인 카드를 보유하고 있지 않습니다.' };
+    if (user.accountId) {
+        const links = payload.slotCharacterLinks;
+        if (rawSlots.length) return { error: '슬롯에는 인벤토리 카드 대신 부캐를 지정해주세요.' };
+        if (!Array.isArray(links) || links.length > 5 || links.some(id => id != null && typeof id !== 'string')) return { error: '슬롯에 지정할 부캐는 최대 5명입니다.' };
+        const slots = rpgenius.getCharacterSlots({ ...user, main_card: mainCard }, links);
+        const invalid = slots.find(slot => slot.error);
+        if (invalid) return { error: invalid.error };
+        const rules = validateRules(user, mainCard, Array.isArray(payload.rules) ? payload.rules : DEFAULT_RULES);
+        if (rules.error) return rules;
+        return { defense: { mainCard: rpgenius.cardPresetSignature(mainCard), slotCharacterLinks: slots.map(slot => slot.member?.id || null), rules: rules.rules } };
+    }
     const cardKey = card => Number(card.id) + ':' + (card.type || '일반');
     const keys = new Set();
     const slotCards = [];
@@ -268,7 +285,8 @@ function buildDisplay(mainCard, user, skillEntries) {
 
 // 카드만 바꾼 플레인 클론으로 전투 수치를 뽑는다 (DB 기록 없음).
 function buildSideSnapshot(user, deck) {
-    const clone = Object.assign({}, user, { main_card: deck.mainCard, card_slot: deck.cardSlot, field: null, mp: undefined, hp: undefined });
+    const clone = Object.assign({}, user, { main_card: deck.mainCard, card_slot: deck.cardSlot,
+        slotCharacterLinks: deck.slotCharacterLinks || user.slotCharacterLinks, field: null, mp: undefined, hp: undefined });
     const skills = rpgenius.getMainCardSkills(clone);
     const stats = rpgenius.calculateUserStats(clone);
     return {
@@ -2378,15 +2396,21 @@ function cardView(card, user) {
 
 function buildDefenseView(user) {
     const deck = resolveDefenseDeck(user);
-    const maxSlots = Number(user.maxCardSlot || 5);
+    const maxSlots = user.accountId ? 5 : Number(user.maxCardSlot || 5);
     const slotCards = [];
-    for (let i = 0; i < maxSlots; i++) slotCards.push(cardView(deck.cardSlot[i] || null, user));
+    const slots = user.accountId ? rpgenius.getCharacterSlots({ ...user, main_card: deck.mainCard }, deck.slotCharacterLinks) : null;
+    for (let i = 0; i < maxSlots; i++) {
+        const member = slots?.[i]?.member;
+        slotCards.push(slots ? member ? { ...cardView(member.main_card, rpgenius.getCharacterStore().hydrate(member)),
+            slotCharacterId: member.id, slotCharacterName: member.name, slotCharacterLevel: member.level } : null : cardView(deck.cardSlot[i] || null, user));
+    }
     return {
         useEquipped: deck.useEquipped,
         valid: deck.valid,
         maxSlots,
         mainCard: cardView(deck.mainCard, user),
         slotCards,
+        characterSlots: !!user.accountId,
         rules: deck.rules,
         skills: rpgenius.getMainCardSkills({ main_card: deck.mainCard }).map(entry => ({ name: entry.skill.name }))
     };
@@ -2398,7 +2422,7 @@ function buildCardList(user) {
         const view = cardView(user.main_card, user);
         if (view) cards.push(Object.assign(view, { location: 'main' }));
     }
-    (Array.isArray(user.card_slot) ? user.card_slot : []).forEach(card => {
+    (user.accountId ? [] : Array.isArray(user.card_slot) ? user.card_slot : []).forEach(card => {
         const view = cardView(card, user);
         if (view) cards.push(Object.assign(view, { location: 'slot' }));
     });
@@ -2406,6 +2430,12 @@ function buildCardList(user) {
         const view = cardView(card, user);
         if (view) cards.push(Object.assign(view, { location: 'inventory' }));
     });
+    if (user.accountId) for (const member of rpgenius.getCharacterStore().members(user)) {
+        if (member.id === user.id || member.need_character_card_select || !member.main_card) continue;
+        const view = cardView(member.main_card, rpgenius.getCharacterStore().hydrate(member));
+        if (view) cards.push({ ...view, location: 'characterSlot', slotCharacterId: member.id,
+            slotCharacterName: member.name, slotCharacterLevel: member.level });
+    }
     return cards;
 }
 

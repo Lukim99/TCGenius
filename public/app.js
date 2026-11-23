@@ -608,6 +608,7 @@ function cardNode(card, compact, onClick) {
     } });
     return el('div', props,
         card.imageUrl ? el('img', { src: card.imageUrl, alt: card.formatted }) : el('div', { class: 'no-img' }, card.name),
+        card.slotCharacterName ? el('div', { class: 'card-name' }, card.slotCharacterName + ' Lv.' + comma(card.slotCharacterLevel)) : null,
         el('div', { class: 'card-name' }, cardNameContent(card.formatted))
     );
 }
@@ -1236,65 +1237,28 @@ function cardSlotDetailNodes(card) {
 
 function openCardSlotModal(card, slotNumber) {
     const nodes = cardSlotDetailNodes(card);
-    openRichModal(cardNameContent(card.formatted), (card.starText || '') + ' · 카드 슬롯 효과', nodes);
+    openRichModal(cardNameContent(card.formatted), (card.slotCharacterName ? card.slotCharacterName + ' Lv.' + comma(card.slotCharacterLevel) : card.starText || '') + ' 슬롯 효과', nodes);
     if (Number(slotNumber || 0) > 0 && myName && currentProfileName === myName) {
-        appendAvatarSection({ source: 'slot', number: slotNumber });
         const row = el('div', { class: 'row modal-action-row' });
         row.appendChild(el('button', { class: 'modal-action-button remove', onclick: e => handleCardAction('slot/remove', { slot: slotNumber }, e) }, '슬롯에서 제거'));
-        row.appendChild(el('button', { class: 'modal-action-button change', onclick: () => openCardSlotPicker(slotNumber, card) }, '변경'));
+        row.appendChild(el('button', { class: 'modal-action-button change', onclick: () => openCardSlotPicker(slotNumber) }, '변경'));
         $('#modalBody').appendChild(row);
     }
 }
 
-function emptyCardSlotNode() {
-    return el('div', { class: 'card-tile compact slot-addable', role: 'button', tabindex: 0, onclick: () => openCardSlotPicker(null, null), onkeydown: e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCardSlotPicker(null, null); }
+function emptyCardSlotNode(slotNumber) {
+    return el('div', { class: 'card-tile compact slot-addable', role: 'button', tabindex: 0, onclick: () => openCardSlotPicker(slotNumber), onkeydown: e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCardSlotPicker(slotNumber); }
     } },
         el('div', { class: 'empty-card slot-add' },
             el('span', { class: 'slot-add-plus' }, '+'),
-            el('span', { class: 'slot-add-label' }, '카드 장착')
+            el('span', { class: 'slot-add-label' }, '부캐 지정')
         )
     );
 }
 
-// 슬롯 장착 가능한 인벤토리 카드 선택. replaceSlot이 있으면 해당 슬롯의 카드를 제거 후 장착(변경).
-async function openCardSlotPicker(replaceSlot, replacingCard) {
-    $('#modalTitle').textContent = replaceSlot ? '슬롯 카드 변경' : '슬롯 카드 장착';
-    $('#modalSub').style.display = 'none';
-    $('#modalBody').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
-    $('#modalBg').classList.add('active');
-    try {
-        const data = await api('/api/inventory/cards');
-        // 서버 규칙 선반영: 5성 이상 + 메인/다른 슬롯과 같은 캐릭터·타입 제외 (타입이 다르면 같은 캐릭터도 허용, 변경 대상 슬롯의 카드는 허용)
-        const cardKey = c => Number(c.id) + ':' + (c.type || '일반');
-        const usedKeys = new Set();
-        if (lastProfileData) {
-            if (lastProfileData.mainCard) usedKeys.add(cardKey(lastProfileData.mainCard));
-            (lastProfileData.cardSlots || []).forEach(c => { if (c && c.name) usedKeys.add(cardKey(c)); });
-        }
-        if (replacingCard) usedKeys.delete(cardKey(replacingCard));
-        const cards = (data.cards || []).filter(c => c && Number(c.number || 0) > 0 && Number(c.star || 0) >= 4 && !usedKeys.has(cardKey(c)));
-        if (!cards.length) {
-            $('#modalBody').replaceChildren(el('div', { class: 'empty' }, '슬롯에 장착할 수 있는 카드가 없습니다.\n(5성 이상, 메인/슬롯과 같은 캐릭터·타입 제외)'));
-            return;
-        }
-        $('#modalBody').replaceChildren(el('div', { class: 'card-grid eqm-card-pick' },
-            ...cards.map(card => cardNode(card, true, async c => {
-                try {
-                    if (replaceSlot) await postApi('/api/cards/slot/remove', { slot: replaceSlot });
-                    const res = await postApi('/api/cards/slot/equip', { number: c.number });
-                    closeModal();
-                    if (res.profile) renderProfile(res.profile);
-                    if (pageIsActive('inventory')) await loadInventory('cards');
-                } catch (e) {
-                    showAlert(e.message);
-                    try { renderProfile(await api('/api/profile')); } catch (_) {}
-                }
-            }))
-        ));
-    } catch (e) {
-        $('#modalBody').replaceChildren(el('div', { class: 'empty err' }, e.message));
-    }
+function openCardSlotPicker(slotNumber) {
+    location.assign('/characters' + (slotNumber ? '?slot=' + slotNumber : '') + '#links');
 }
 
 function openInventoryCardModal(card) {
@@ -1303,7 +1267,6 @@ function openInventoryCardModal(card) {
     if (!ownInventory || !Number(card.number || 0)) return;
     const row = el('div', { class: 'row game-actions-row' });
     row.appendChild(el('button', { class: 'primary', onclick: e => handleCardAction('equip-main', { number: card.number }, e) }, '메인카드 장착'));
-    row.appendChild(el('button', { onclick: e => handleCardAction('slot/equip', { number: card.number }, e) }, '슬롯 장착'));
     $('#modalBody').appendChild(row);
     if (card.salePrice > 0) $('#modalBody').appendChild(el('section', { class: 'game-management' },
         el('div', { class: 'game-management-row' },
@@ -2110,7 +2073,7 @@ function renderProfile(data) {
     renderBlessings(data.blessings, ownProfile);
     $('#slotCards').replaceChildren(...data.cardSlots.map((card, i) =>
         (card && card.name) ? cardNode(card, true, c => openCardSlotModal(c, i + 1))
-        : ownProfile ? emptyCardSlotNode() : cardNode(null)
+        : ownProfile ? emptyCardSlotNode(i + 1) : cardNode(null)
     ));
     renderGearSlots(data);
     if (data.user.isAdmin) $('#adminLink').style.display = '';
@@ -5516,6 +5479,7 @@ function pvpDefenseDraft(defense) {
     const source = Array.isArray(d.rules) && d.rules.length ? d.rules : PVP_DEFAULT_RULES;
     return {
         useEquipped: d.useEquipped !== false,
+        characterSlots: !!d.characterSlots,
         mainCard: d.mainCard || null,
         slotCards: Array.from({ length: maxSlots }, (_, i) => (d.slotCards || [])[i] || null),
         rules: source.map(r => ({
@@ -5631,7 +5595,7 @@ function pvpDeckNode(d) {
             el('span', { class: 'pvp-deck-label' }, '메인 카드'),
             el('div', { class: 'pvp-deck-main' }, pvpDeckTile(draft.mainCard, 'main', 0))),
         el('div', { class: 'pvp-deck-col' },
-            el('span', { class: 'pvp-deck-label' }, '슬롯 카드'),
+            el('span', { class: 'pvp-deck-label' }, '슬롯 캐릭터'),
             el('div', { class: 'pvp-deck-slots' }, ...draft.slotCards.map((c, i) => pvpDeckTile(c, 'slot', i)))));
     const warn = (d.defense && d.defense.valid === false)
         ? el('div', { class: 'pvp-warn' }, '방어 덱 카드를 찾을 수 없어 장착 덱으로 대체됩니다') : null;
@@ -5649,18 +5613,20 @@ function openPvpCardPicker(kind, index) {
     } else {
         draft.slotCards.forEach(c => { if (c) used.add(cardKey(c)); });
     }
-    const cards = (pvpState.data.cards || []).filter(c =>
-        c && !used.has(cardKey(c)) && (kind === 'main' || Number(c.star || 0) >= 4));
+    const usedCharacters = new Set(draft.slotCards.filter((card, i) => card && i !== index).map(card => Number(card.id)));
+    const cards = (pvpState.data.cards || []).filter(c => c && !used.has(cardKey(c))
+        && (kind === 'main' || Number(c.star || 0) >= 4 && !usedCharacters.has(Number(c.id)))
+        && (!draft.characterSlots || (kind === 'slot' ? c.location === 'characterSlot' : c.location !== 'characterSlot')));
     const pick = card => {
         if (kind === 'main') draft.mainCard = card;
         else draft.slotCards[index] = card;
         closeModal();
         renderPvp();
     };
-    openRichModal(kind === 'main' ? '방어 메인 카드' : '방어 슬롯 카드', null, [
+    openRichModal(kind === 'main' ? '방어 메인 카드' : '방어 슬롯 캐릭터', null, [
         cards.length
             ? el('div', { class: 'card-grid eqm-card-pick' }, ...cards.map(c => cardNode(c, true, pick)))
-            : el('div', { class: 'empty' }, kind === 'main' ? '선택할 수 있는 카드가 없습니다.' : '슬롯에 넣을 수 있는 카드가 없습니다.\n(5성 이상, 다른 카드와 다른 캐릭터)')
+            : el('div', { class: 'empty' }, kind === 'main' ? '선택할 수 있는 카드가 없습니다.' : '슬롯에 지정할 수 있는 부캐가 없습니다.')
     ]);
 }
 
@@ -5809,7 +5775,8 @@ async function savePvpDefense() {
         const r = await postApi('/api/pvp/defense', {
             useEquipped: draft.useEquipped,
             mainCard: draft.useEquipped || !draft.mainCard ? null : draft.mainCard.sig,
-            slotCards: draft.useEquipped ? [] : draft.slotCards.filter(Boolean).map(c => c.sig),
+            slotCards: draft.useEquipped || draft.characterSlots ? [] : draft.slotCards.filter(Boolean).map(c => c.sig),
+            ...(draft.characterSlots ? { slotCharacterLinks: draft.useEquipped ? [] : draft.slotCards.map(c => c?.slotCharacterId || null) } : {}),
             rules: draft.rules.map(pvpRulePayload)
         });
         if (r.ok === false) { showAlert(r.message || '저장하지 못했습니다.'); return; }

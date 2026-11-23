@@ -3903,6 +3903,10 @@ function getUnlockedPresetSlots(user) {
 
 function buildPresetPayload(user) {
     const presets = rpgenius.getUserPresets(user);
+    const linkedCards = (mainCard, links) => rpgenius.getCharacterSlots({ ...user, main_card: mainCard }, links).flatMap(slot => slot.member ? [{
+        ...serializeCard(slot.member.main_card, rpgenius.getCharacterStore().hydrate(slot.member)),
+        slotCharacterId: slot.member.id, slotCharacterName: slot.member.name, slotCharacterLevel: slot.member.level
+    }] : []);
     // 장비는 인벤토리 탭과 동일한 리치 직렬화(스탯/잠재/패시브 포함)를 uid로 매칭해 재사용
     const rich = buildInventoryEquipment(user);
     const richByUid = new Map(rich.filter(e => e.uid).map(e => [e.uid, e]));
@@ -3910,7 +3914,7 @@ function buildPresetPayload(user) {
         const view = rpgenius.resolvePresetForView(user, preset);
         if (!view) return null;
         const mainCard = view.mainCard ? serializeCard(view.mainCard, user) : null;
-        const slotCards = view.slotCards.map(card => serializeCard(card, user)).filter(Boolean);
+        const slotCards = user.accountId ? linkedCards(view.mainCard || user.main_card, preset.slotCharacterLinks || []) : view.slotCards.map(card => serializeCard(card, user)).filter(Boolean);
         // 장신구는 저장할 때의 칸 순서(slotKey)대로 보여 준다.
         const equipment = view.equipment.map(entry => {
             const found = entry.equip && richByUid.get(entry.equip.uid);
@@ -3923,13 +3927,13 @@ function buildPresetPayload(user) {
             slotCards,
             equipment,
             // 저장한 뒤 분해, 거래 등으로 없어진 품목 수
-            missing: Math.max(0, (preset.equipment || []).length - equipment.length) + (preset.mainCard && !mainCard ? 1 : 0) + Math.max(0, (preset.slotCards || []).length - slotCards.length)
+            missing: Math.max(0, (preset.equipment || []).length - equipment.length) + (preset.mainCard && !mainCard ? 1 : 0) + Math.max(0, (user.accountId ? preset.slotCharacterLinks || [] : preset.slotCards || []).filter(Boolean).length - slotCards.length)
         };
     });
     // 지금 장착한 상태. 화면이 프리셋과 비교해 바뀔 칸을 표시한다.
     const current = {
         mainCard: user.main_card && typeof user.main_card.id != 'undefined' ? serializeCard(user.main_card, user) : null,
-        slotCards: (Array.isArray(user.card_slot) ? user.card_slot : []).map(card => serializeCard(card, user)).filter(Boolean),
+        slotCards: user.accountId ? linkedCards(user.main_card, user.slotCharacterLinks) : rpgenius.getCharacterSlotCards(user).map(card => serializeCard(card, user)).filter(Boolean),
         equipment: rich.filter(e => e.equipped)
     };
     return {
@@ -3945,7 +3949,7 @@ function buildPresetPayload(user) {
         garnet: Number(user.garnet || 0),
         point: Number(user.point || 0),
         accessorySlots: Number(user.maxAccessory || 3),
-        cardSlots: Number(user.maxCardSlot || 5),
+        cardSlots: user.accountId ? 5 : Number(user.maxCardSlot || 5),
         current,
         presets: views
     };
@@ -9562,10 +9566,15 @@ function buildUserProfile(user) {
     const cp = rpgenius.calculateCombatPower(user);
     const maxHp = Number(stats.hp || 0);
     const maxMp = Number(stats.mp || 0);
-    const cardSlots = user.card_slot || [];
-    const maxCardSlot = Number(user.maxCardSlot || 5);
+    const characterSlots = user.accountId ? rpgenius.getCharacterSlots(user) : null;
+    const cardSlots = characterSlots ? characterSlots.map(slot => slot.member?.main_card || null) : user.card_slot || [];
+    const maxCardSlot = user.accountId ? 5 : Number(user.maxCardSlot || 5);
     const slots = [];
-    for (let i = 0; i < maxCardSlot; i++) slots.push(cardSlots[i] ? serializeCard(cardSlots[i], user) : null);
+    for (let i = 0; i < maxCardSlot; i++) {
+        const member = characterSlots?.[i]?.member;
+        slots.push(cardSlots[i] ? { ...serializeCard(cardSlots[i], member ? rpgenius.getCharacterStore().hydrate(member) : user),
+            ...(member ? { slotCharacterId: member.id, slotCharacterName: member.name, slotCharacterLevel: member.level } : {}) } : null);
+    }
     return {
         user: {
             name: user.name,
@@ -9657,7 +9666,7 @@ function renderUserDashboard(sess, opts) {
       <div class="pf-body">
         <div class="pf-tabs">
           <button class="pf-tab active" data-pftab="gear" type="button">장비</button>
-          <button class="pf-tab" data-pftab="cards" type="button">슬롯 카드</button>
+          <button class="pf-tab" data-pftab="cards" type="button">슬롯 캐릭터</button>
           <button class="pf-tab" data-pftab="stats" type="button">스탯</button>
           <button class="pf-tab" data-pftab="statpoint" type="button">스탯포인트</button>
           <button class="pf-tab" data-pftab="goods" type="button">재화</button>

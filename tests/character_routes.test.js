@@ -126,10 +126,13 @@ test('이름 변경 전 월드보스 기여도와 수령 기록은 같은 캐릭
     assert.deepEqual(rpg.getWorldBossState('이름변경검증').contributions, { 두번째새이름: 300 });
 });
 
-test('슬롯은 같은 캐릭터의 다른 타입 부캐에 연결하고 현재 캐릭터 연결은 거부한다', async () => {
+test('카드를 따로 장착하지 않고 5성 이상 부캐를 슬롯에 지정하며 현재 캐릭터는 제외한다', async () => {
     assert.equal((await action('select', { id: sandbox.account.id })).status, 200);
     const first = await rpg.getUserByPrimaryId(sandbox.account.id);
-    first.card_slot = [{ id: 1, type: '각성', star: 4 }]; await first.save();
+    const second = await rpg.getUserByPrimaryId(secondId);
+    assert.equal((await action('link', { characterId: first.id, index: 0, linkedId: secondId })).status, 400, '5성 미만 부캐는 지정할 수 없다');
+    second.main_card.star = 4; await second.save();
+    assert.deepEqual(first.card_slot, []);
     const linked = await action('link', { characterId: first.id, index: 0, linkedId: secondId });
     assert.equal(linked.status, 200, JSON.stringify(linked.body));
     assert.equal(linked.body.levelSum, 1);
@@ -222,15 +225,15 @@ test('카드 우편은 받는 캐릭터의 거래권을 한 번만 소모하고 
     assert.deepEqual(sender.inventory.card.at(-1), { ...card, id: 7 });
 });
 
-test('메인·보조는 다른 타입일 때만 겹칠 수 있고 보조끼리는 타입과 관계없이 중복을 거절한다', async () => {
+test('기존 카드 슬롯 장착 요청은 카드나 인벤토리를 변경하지 않고 거절한다', async () => {
     const user = await rpg.getUserByPrimaryId(secondId);
     user.main_card = { id: 1, star: 4, type: '일반' }; user.card_slot = [];
     user.inventory.card = [{ id: 1, star: 4, type: '각성' }, { id: 1, star: 4, type: '전직' }, { id: 1, star: 4, type: '일반' }];
-    assert.ok(!rpg.equipCharacterCardSlot(user, 1).startsWith('❌'));
+    assert.match(rpg.equipCharacterCardSlot(user, 1), /^❌/);
     assert.match(rpg.equipCharacterCardSlot(user, 1), /^❌/);
     assert.match(rpg.equipCharacterCardSlot(user, 2), /^❌/);
-    assert.equal(user.card_slot.length, 1);
-    assert.equal(user.inventory.card.length, 2);
+    assert.equal(user.card_slot.length, 0);
+    assert.equal(user.inventory.card.length, 3);
 });
 
 test('전투력 랭킹은 캐릭터별 마을 전투력을 표시하고 전투 버프나 현재 체력에 흔들리지 않는다', async () => {
@@ -250,12 +253,13 @@ test('전투력 랭킹은 캐릭터별 마을 전투력을 표시하고 전투 �
 
 test('프리셋을 다시 장착해도 직접 연결한 부캐를 보존한다', async () => {
     const user = await rpg.getUserByPrimaryId(sandbox.account.id);
-    user.card_slot = [{ id: 1, star: 4, type: '각성' }]; user.slotCharacterLinks = [secondId];
+    user.slotCharacterLinks = [secondId];
     user.inventory.card = [];
     rpg.saveUserPreset(user, 0);
     const applied = rpg.applyUserPreset(user, 0);
     assert.equal(applied.ok, true, applied.error);
-    assert.deepEqual(user.slotCharacterLinks, [secondId]);
+    assert.deepEqual(user.slotCharacterLinks, [secondId, null, null, null, null]);
+    assert.deepEqual(user.inventory.card, [], '프리셋이 부캐의 카드를 인벤토리로 복제하지 않는다');
 });
 
 test('계정 공용 구매 제한과 초보자 패키지의 캐릭터별 구매 제한을 구분한다', async () => {
@@ -324,7 +328,8 @@ test('웹에 접속하지 않은 기존 채팅 유저도 첫 게임 명령에서
     const user = await rpg.getRPGUserById('chat-sender');
     assert.equal(user.accountId, 'account:chat-legacy');
     assert.equal(user.characterNumber, 1); assert.equal(user.gold, 777);
-    assert.equal(user.card_slot.length, 1);
+    assert.equal(user.card_slot.length, 0);
+    assert.ok(user.inventory.card.some(card => card.id === 1 && card.type === '일반'));
     assert.ok(user.inventory.card.some(card => card.id === 1 && card.type === '각성'));
     assert.ok(messages.length > 0);
 });
@@ -340,4 +345,80 @@ test('편지 작성 중 카드 순서가 바뀌면 다른 카드를 발송하지
     assert.equal(sent.status, 409);
     assert.match(sent.body.error, /카드 목록이 변경/);
     assert.deepEqual((await rpg.getUserByPrimaryId(user.id)).inventory.card, before);
+});
+
+test('부캐 5명의 메인 카드와 레벨이 실제 슬롯이 되고 메인 고유 효과만 함께 적용된다', async () => {
+    const main = await rpg.getUserByPrimaryId(sandbox.account.id);
+    main.main_card = { id: 0, type: '일반', star: 11 };
+    main.card_slot = []; main.slotCharacterLinks = []; main.field = null; main.pendingAction = null;
+    await main.save();
+    const second = await rpg.getUserByPrimaryId(secondId);
+    second.main_card = { id: 1, type: '일반', star: 4 }; second.level = 200; await second.save();
+    const members = [second];
+    for (const [index, cardId] of [2, 3, 4, 6, 5].entries()) {
+        const created = await action('create', { name: '슬롯검증' + index, cardId });
+        assert.equal(created.status, 200, JSON.stringify(created.body));
+        const member = await rpg.getUserByPrimaryId(created.body.id);
+        member.main_card = { id: cardId, type: cardId === 6 ? '각성' : '일반', star: 4 };
+        member.level = [180, 120, 100, 100, 80][index]; await member.save();
+        members.push(member);
+    }
+    for (let index = 0; index < 5; index++) {
+        const chosen = await action('link', { characterId: main.id, index, linkedId: members[index].id });
+        assert.equal(chosen.status, 200, JSON.stringify(chosen.body));
+    }
+    assert.equal((await action('link', { characterId: main.id, index: 5, linkedId: members[5].id })).status, 400);
+    assert.equal((await action('link', { characterId: main.id, index: 0, linkedId: 'another-account' })).status, 403);
+    assert.equal((await action('link', { characterId: main.id, index: 0, linkedId: main.id })).status, 400);
+    const user = await rpg.getUserByPrimaryId(main.id), beforeCards = structuredClone(user.inventory.card);
+    const effects = rpg.calculateCardSlotEffects(user);
+    assert.equal(effects.linkedHp, 700);
+    assert.equal(effects.goldBonus, .7); assert.equal(effects.expBonus, .7); assert.equal(effects.itemDropChance, .7);
+    assert.equal(effects.skillCoolReduction, .1, '슬롯에 빵귤이 없어도 메인 빵귤 고유 효과가 적용된다');
+    assert.equal(effects.finalAttackBonus, .05, '5성 부캐 5명의 1%만 적용하고 오메가 메인의 12%는 제외한다');
+    assert.equal(effects.critMul, .15); assert.equal(effects.crit, -.05);
+    assert.deepEqual(user.card_slot, []);
+    assert.deepEqual(user.inventory.card, beforeCards);
+    const profile = (await request('/api/profile')).body;
+    assert.deepEqual(profile.cardSlots.map(card => card.slotCharacterId), members.slice(0, 5).map(member => member.id));
+    assert.equal(profile.cardSlots[4].type, '각성');
+
+    rpg.saveUserPreset(user, 0);
+    const preset = structuredClone(user.presets[0]);
+    assert.equal(preset.slotCards, undefined, '프리셋에는 부캐 ID를 저장하고 다른 캐릭터의 카드를 소유한 것으로 저장하지 않는다');
+    user.slotCharacterLinks = [];
+    assert.equal(rpg.applyUserPreset(user, 0).ok, true);
+    assert.deepEqual(user.slotCharacterLinks, members.slice(0, 5).map(member => member.id));
+    assert.deepEqual(user.inventory.card, beforeCards);
+    await user.save();
+    const presetView = (await request('/api/presets')).body;
+    assert.deepEqual(presetView.current.slotCards.map(card => card.slotCharacterId), members.slice(0, 5).map(member => member.id));
+    assert.deepEqual(presetView.presets[0].slotCards.map(card => card.slotCharacterName), members.slice(0, 5).map(member => member.name));
+
+    const pvp = require('../pvp');
+    const defense = { useEquipped: false, mainCard: rpg.cardPresetSignature(user.main_card),
+        slotCharacterLinks: user.slotCharacterLinks, rules: pvp.DEFAULT_RULES };
+    const saved = await request('/api/pvp/defense', defense);
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.ok, true, JSON.stringify(saved.body));
+    const defender = await rpg.getUserByPrimaryId(main.id), deck = pvp.resolveDefenseDeck(defender);
+    const snapshot = pvp.buildSideSnapshot(defender, deck);
+    assert.equal(snapshot.slotEffects.linkedHp, 700);
+    assert.equal(snapshot.slotEffects.finalAttackBonus, .05);
+    assert.ok(pvp.validateDefensePayload(user, { ...defense, slotCharacterLinks: [main.id] }).error);
+    assert.ok(pvp.validateDefensePayload(user, { ...defense, slotCharacterLinks: [members[0].id, members[0].id] }).error);
+
+    members[0].level = 220; await members[0].save();
+    assert.equal(rpg.calculateCardSlotEffects(await rpg.getUserByPrimaryId(main.id)).linkedHp, 720);
+    members[5].main_card = { id: 1, type: '전직', star: 4 }; await members[5].save();
+    assert.equal((await action('link', { characterId: main.id, index: 4, linkedId: members[5].id })).status, 400, '슬롯끼리는 다른 타입도 동일 캐릭터 중복 불가');
+    members[5].main_card = { id: 0, type: '일반', star: 4 }; await members[5].save();
+    assert.equal((await action('link', { characterId: main.id, index: 4, linkedId: members[5].id })).status, 400, '메인과 타입까지 같으면 불가');
+    members[5].main_card.type = '전직'; await members[5].save();
+    assert.equal((await action('link', { characterId: main.id, index: 4, linkedId: members[5].id })).status, 200, '메인과 같은 캐릭터도 다른 타입이면 부캐 1명 허용');
+    assert.ok(Math.abs(rpg.calculateCardSlotEffects(await rpg.getUserByPrimaryId(main.id)).skillCoolReduction - .15) < 1e-12);
+    members[5].main_card.type = '일반'; await members[5].save();
+    const state = (await request('/api/characters/links')).body;
+    assert.match(state.slots[4].error, /타입이 다를 때/);
+    assert.equal(rpg.calculateCardSlotEffects(await rpg.getUserByPrimaryId(main.id)).skillCoolReduction, .1, '부캐 카드가 바뀌어 중복 조건에 걸리면 효과를 중복 적용하지 않는다');
 });

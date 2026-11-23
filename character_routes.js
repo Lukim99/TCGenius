@@ -206,24 +206,33 @@ function registerCharacterRoutes(server, deps) {
     server.get('/api/characters/links', requireAccount, async (req, res) => {
         const user = req.accountUser, account = store().accountFor(user);
         const members = store().members(user).filter(member => member.id !== user.id);
-        res.json({ characterId: user.id, slots: (user.card_slot || []).map((card, index) => ({
-            index, name: rpg.formatUserCard(card), imageUrl: cardImage(card, user), linkedId: user.slotCharacterLinks?.[index] || null,
-            candidates: members.filter(member => Number(member.main_card?.id) === Number(card.id))
-                .map(member => ({ id: member.id, name: member.name, level: member.level, type: member.main_card?.type || '일반' }))
+        const portrait = member => sprite({ ...cards()[member.main_card?.id], ...member.main_card });
+        const candidates = members.map(member => ({ id: member.id, name: member.name, level: member.level,
+            cardLabel: rpg.formatUserCard(member.main_card), imageUrl: portrait(member) }));
+        res.json({ characterId: user.id, character: { name: user.name, level: user.level,
+            cardLabel: rpg.formatUserCard(user.main_card), imageUrl: portrait(user) }, slots: rpg.getCharacterSlots(user).map(slot => ({
+            index: slot.index, name: slot.member ? rpg.formatUserCard(slot.member.main_card) : '빈 슬롯',
+            memberName: slot.member?.name || '', level: slot.member?.level || 0, error: slot.error,
+            imageUrl: slot.member ? portrait(slot.member) : null, linkedId: slot.id,
+            candidates: candidates.map(member => {
+                const links = Array.from({ length: 5 }, (_, index) => index === slot.index ? member.id : user.slotCharacterLinks?.[index] || null);
+                const error = rpg.getCharacterSlots(user, links).find(entry => entry.error)?.error || null;
+                return { ...member, error };
+            })
         })), levelSum: rpg.getLinkedCharacterLevelSum(user), accountName: account.name });
     });
 
     action('link', async ({ req, res, current, account, receipt }) => {
         assertIdle(current);
         if (req.body.characterId !== current.id) fail('현재 플레이 중인 캐릭터가 변경되었습니다.', 409);
-        const index = Number(req.body.index), card = current.card_slot?.[index], id = req.body.linkedId;
-        if (!Number.isInteger(index) || index < 0 || !card) fail('연결할 슬롯을 선택해주세요.');
-        if (id) {
-            const linked = await member(account, id);
-            if (linked.id === current.id || Number(linked.main_card?.id) !== Number(card.id)) fail('같은 캐릭터 카드를 사용하는 다른 부캐를 선택해주세요. 타입은 달라도 됩니다.');
-        }
-        current.slotCharacterLinks = (current.card_slot || []).map((_, slot) => current.slotCharacterLinks?.[slot] || null);
-        current.slotCharacterLinks[index] = id || null;
+        const index = Number(req.body.index), id = req.body.linkedId;
+        if (!Number.isInteger(index) || index < 0 || index >= 5) fail('1~5번 슬롯을 선택해주세요.');
+        if (id != null && typeof id !== 'string') fail('슬롯에 지정할 부캐를 선택해주세요.');
+        if (id) await member(account, id);
+        const links = Array.from({ length: 5 }, (_, slot) => slot === index ? id || null : current.slotCharacterLinks?.[slot] || null);
+        const error = id && rpg.getCharacterSlots(current, links).find(slot => slot.error)?.error;
+        if (error) fail(error);
+        current.slotCharacterLinks = links;
         const result = { ok: true, levelSum: rpg.getLinkedCharacterLevelSum(current) };
         await store().commit([current], { keys: ['slotCharacterLinks'], extras: [receipt(result)] });
         res.json(result);

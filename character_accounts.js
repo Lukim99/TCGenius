@@ -44,15 +44,31 @@ function hydrate(character, account) {
 }
 
 function normalizeSlots(user) {
-    const seen = new Set();
     user.inventory ||= { card: [], equipment: [], pet: [], item: [] };
     user.inventory.card ||= [];
-    user.card_slot = (user.card_slot || []).filter(card => {
-        const duplicate = seen.has(Number(card.id)) || (Number(user.main_card?.id) === Number(card.id)
-            && (user.main_card.type || '일반') === (card.type || '일반'));
-        if (duplicate) user.inventory.card.push(card);
-        else seen.add(Number(card.id));
-        return !duplicate;
+    user.inventory.card.push(...(user.card_slot || []));
+    user.card_slot = [];
+    user.slotCharacterLinks = Array.from({ length: 5 }, (_, index) => user.slotCharacterLinks?.[index] || null);
+    for (const preset of user.presets || []) {
+        if (preset) delete preset.slotCards;
+    }
+}
+
+function resolveSlots(user, members, links = user.slotCharacterLinks) {
+    const byId = new Map(members.map(member => [member.id, member])), seen = new Set();
+    return Array.from({ length: 5 }, (_, index) => {
+        const id = links?.[index] || null, member = byId.get(id), card = member?.main_card;
+        let error = null;
+        if (id) {
+            if (!member || member.accountId !== user.accountId) error = '같은 계정의 캐릭터를 선택해주세요.';
+            else if (member.id === user.id) error = '플레이 중인 캐릭터는 슬롯에 지정할 수 없습니다.';
+            else if (!card || member.need_character_card_select) error = '먼저 해당 부캐의 메인 카드를 선택해주세요.';
+            else if (Number(card.star || 0) < 4) error = '메인 카드가 5성 이상인 부캐를 선택해주세요.';
+            else if (Number(card.id) === Number(user.main_card?.id) && (card.type || '일반') === (user.main_card.type || '일반')) error = '메인과 같은 캐릭터는 타입이 다를 때만 슬롯에 지정할 수 있습니다.';
+            else if (seen.has(Number(card.id))) error = '슬롯끼리는 타입과 관계없이 같은 캐릭터를 중복 지정할 수 없습니다.';
+            else seen.add(Number(card.id));
+        }
+        return { index, id, member: id && !error ? member : null, error };
     });
 }
 
@@ -145,4 +161,4 @@ function goldLimit(level) {
     return 150000000 + Math.floor((Math.min(300, level) - 260) / 5) * 10000000;
 }
 
-module.exports = { SHARED_FIELDS, isAccountItem, splitInventory, hydrate, normalizeSlots, migrate, splitChanges, updateInput, goldLimit };
+module.exports = { SHARED_FIELDS, isAccountItem, splitInventory, hydrate, normalizeSlots, resolveSlots, migrate, splitChanges, updateInput, goldLimit };

@@ -32,17 +32,20 @@ test('기존 사용자는 1번 캐릭터로 보존되고 공유 재화와 이벤
     assert.deepEqual(character.inventory.item, [{ id: 0, count: 20 }]);
     for (const key of ['level', 'exp', 'avatars', 'quests', 'paradiseWeekly', 'unknownFutureCharacterField']) assert.deepEqual(character[key], legacy[key]);
     assert.deepEqual(character.inventory.equipment, legacy.inventory.equipment);
-    assert.deepEqual(character.card_slot, legacy.card_slot.slice(0, 2));
-    assert.deepEqual(character.inventory.card, [...legacy.inventory.card, legacy.card_slot[2]]);
+    assert.deepEqual(character.card_slot, []);
+    assert.deepEqual(character.inventory.card, [...legacy.inventory.card, ...legacy.card_slot]);
     assert.deepEqual(accounts.hydrate(character, account).boundItems, legacy.boundItems);
 });
 
-test('같은 타입의 메인 중복도 삭제하지 않고 가방으로 반환한다', () => {
+test('기존 슬롯 카드 전부를 속성 그대로 반환하고 다시 실행해도 복제하지 않는다', () => {
     const user = original();
     user.card_slot.unshift({ ...user.main_card, marker: 'duplicate' });
     accounts.normalizeSlots(user);
-    assert.equal(user.card_slot.length, 2);
+    assert.equal(user.card_slot.length, 0);
     assert.equal(user.inventory.card.find(card => card.marker === 'duplicate').id, 0);
+    const cards = structuredClone(user.inventory.card);
+    accounts.normalizeSlots(user);
+    assert.deepEqual(user.inventory.card, cards);
 });
 
 test('하루 골드 한도는 승인된 레벨 구간과 5레벨 단위를 따른다', () => {
@@ -136,7 +139,7 @@ test('전송·보상 저장 실패 시 캐시와 DB에는 차감·지급이 모�
     await assert.rejects(f.store.commit([user]), /isolated write failure/);
     assert.deepEqual([...f.records], before);
     assert.equal(f.user().gold, 900);
-    assert.equal(f.user().inventory.card.length, 2);
+    assert.equal(f.user().inventory.card.length, 4);
 });
 
 test('공용 상자를 열면 수량만 계정에서 줄고 결과 카드는 여는 캐릭터에 생긴다', async () => {
