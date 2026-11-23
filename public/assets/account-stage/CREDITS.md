@@ -36,8 +36,8 @@ FFmpeg로 앞의 무음을 자르고(-48dB 기준) 모노 44.1kHz 128kbps MP3로
 | --- | --- | --- | --- | --- |
 | night.mp3 | 로그인 밤 배경음(반복) | alfrd_jpn | [amb-night-cricets_montenegro.aif](https://freesound.org/people/alfrd_jpn/sounds/264506/) | 2초부터 34초, 반복 31초 |
 | lake.mp3 | 두 화면의 호수 물소리(반복) | salilnair | [Water-lap-against-rocks-lake.wav](https://freesound.org/people/salilnair/sounds/524688/) | 4초부터 38초, 반복 31초 |
-| ripple.mp3 | 캐릭터 고르기, 서포트 연결 | alegemaate | [Water Splash](https://freesound.org/people/alegemaate/sounds/364700/) | 전체 0.80초 |
-| plunge.mp3 | 로그인 성공(세계가 뒤집힘), 게임 시작 | cribbler | [Splash_throw_2.wav](https://freesound.org/people/cribbler/sounds/440431/) | 1.49초(끝 0.25초 줄임) |
+| ripple.mp3 | 보관 음원(재생하지 않음) | alegemaate | [Water Splash](https://freesound.org/people/alegemaate/sounds/364700/) | 전체 0.80초 |
+| plunge.mp3 | 게임 시작 시 한 번 | cribbler | [Splash_throw_2.wav](https://freesound.org/people/cribbler/sounds/440431/) | 1.49초(끝 0.25초 줄임) |
 | whoosh.mp3 | 제목에서 입장, 코드 단계, 세계가 뒤집힐 때 | Khrinx | [Deep whosh - Short](https://freesound.org/people/Khrinx/sounds/523978/) | 2.18초(끝 0.25초 줄임) |
 | star.mp3 | 닉네임 글자를 적을 때 | nettimato | [tap stone](https://freesound.org/people/nettimato/sounds/350343/) | 전체 0.16초 |
 | tap.mp3 | 단추, 탭, 창 열기 | NoisyRedFox | [SingleKnock_Wood](https://freesound.org/people/NoisyRedFox/sounds/742356/) | 전체 0.20초 |

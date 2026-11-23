@@ -682,14 +682,13 @@
     if (on) button.setAttribute('aria-busy', 'true'); else button.removeAttribute('aria-busy');
   }
   // 화면을 덮고 다음 화면으로 넘어간다.
-  // 화면을 덮고 다음 화면으로 넘어간다.
   function leaveTo(url, light) {
     const veil = $('asVeil');
     veil.classList.toggle('as-veil-dark', !light);
     body.classList.add('is-leaving');
     if (reduced()) { veil.classList.add('as-veil-on'); setTimeout(() => location.assign(url), 200); return; }
-    setTimeout(() => veil.classList.add('as-veil-on'), light ? 1050 : 450);
-    setTimeout(() => location.assign(url), light ? 1700 : 1150);
+    veil.classList.add('as-veil-on');
+    setTimeout(() => location.assign(url), light ? 1000 : 800);
   }
   // 뒤로 가기로 돌아왔을 때 가려진 채 남지 않게 한다.
   window.addEventListener('pageshow', ev => { if (ev.persisted) location.reload(); });
@@ -833,9 +832,8 @@
       if (byKeyboard || window.matchMedia('(hover:hover) and (pointer:fine)').matches) nameInput.focus({ preventScroll: true });
     }
     function enter() {
-      Sound.play('plunge', 0.8);
       Sound.play('whoosh', 0.6);
-      // 세계가 물가를 축으로 뒤집힌다. 비치던 쪽이 진짜가 된다.
+      // 회전 중 장면이 납작해지는 구간은 페이드로 덮고 다음 장면에서 이어 밝힌다.
       stage.turnTo(1, 1500);
       leaveTo('/characters', true);
     }
@@ -914,7 +912,7 @@
     // 그래서 배치와 스크롤은 CSS가 맡고, WebGL은 같은 자리에 그림과 물그림자를 그린다.
     const GATE_ASPECT = 1400 / 937;
     const stage = createStage({
-      above: 'night', turn: 0.5, itemsWhenTurned: true,
+      above: 'night', turn: 1, itemsWhenTurned: true,
       scene(W, H) {
         let feet = Infinity, figH = 0;
         const items = [];
@@ -1239,7 +1237,7 @@
     }
 
     /* 목록 */
-    // 너비에 맞춰 한 줄 칸 수를 정한다. 좁은 화면은 두 칸, 넓은 화면은 가능하면 한 줄에 모두.
+    // 좁은 화면은 좌우로 넘기고, 넓은 화면은 너비에 맞춰 칸 수를 정한다.
     function layoutRoster() {
       const count = Number(roster.getAttribute('data-tiles')) || 0, field = roster.parentNode, width = field.clientWidth;
       if (!count || !width) return;
@@ -1250,14 +1248,16 @@
       roster.style.setProperty('--cols', String(cols));
       roster.style.setProperty('--rows', String(Math.ceil(count / cols)));
       if (count <= fit && width >= 560) roster.setAttribute('data-few', '1'); else roster.removeAttribute('data-few');
-      // 휴대폰 세로 화면: 첫 줄의 이름표가 아래 조작부에 가리지 않도록 캐릭터 키를 화면 높이에 맞춘다.
-      const first = roster.querySelector('.as-slot');
-      if (width < 560 && first && window.innerHeight > 520) {
-        const fig = first.querySelector('.as-slot-fig'), dock = $('asDock').getBoundingClientRect().height;
-        const taken = fig.getBoundingClientRect().top + (window.scrollY || 0) + (first.getBoundingClientRect().height - fig.getBoundingClientRect().height);
-        roster.style.setProperty('--fig', Math.round(Math.max(96, Math.min(280, window.innerHeight - taken - dock - 6))) + 'px');
-      } else roster.style.removeProperty('--fig');
       fitPlates();
+      // 가로 목록의 그림 높이를 남은 공간에 맞춰 모든 이름표를 입장 단추 위에 둔다.
+      const slots = Array.from(roster.querySelectorAll('.as-slot'));
+      if (getComputedStyle(roster).display == 'flex' && slots.length) {
+        const rosterStyle = getComputedStyle(roster);
+        const extra = Math.max(...slots.map(slot => slot.getBoundingClientRect().height - slot.querySelector('.as-slot-fig').getBoundingClientRect().height));
+        const available = field.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+          - parseFloat(rosterStyle.paddingTop) - parseFloat(rosterStyle.paddingBottom) - extra;
+        roster.style.setProperty('--fig', Math.floor(Math.max(48, Math.min(430, available))) + 'px');
+      } else roster.style.removeProperty('--fig');
       stage.dirty();
     }
     // 이름표의 각 줄이 제 칸 너비를 넘으면 글자 크기를 줄여 한 줄에 맞춘다(열 글자 이름, 긴 카드 이름).
@@ -1282,15 +1282,17 @@
     function rippleAt(tile, strength) {
       stage.ripple(() => { const r = tile.fig.getBoundingClientRect(); return r.left + r.width / 2; }, () => tile.fig.getBoundingClientRect().bottom, strength);
     }
-    function select(id, quiet) {
+    function select(id) {
       if (sameId(id, selectedId)) return;
       selectedId = id;
       roster.querySelectorAll('.as-slot[data-id]').forEach(b => b.setAttribute('aria-pressed', sameId(b.getAttribute('data-id'), id) ? 'true' : 'false'));
       paintDock();
       const tile = tiles.find(t => sameId(t.id, id));
-      if (tile) rippleAt(tile, 1);
+      if (tile) {
+        rippleAt(tile, 1);
+        if (getComputedStyle(roster).display == 'flex') tile.fig.parentNode.scrollIntoView({ block: 'nearest', inline: 'center', behavior: reduced() ? 'instant' : 'smooth' });
+      }
       stage.dirty();
-      if (!quiet) Sound.play('ripple', 0.45);
     }
     async function start() {
       const c = selected();
@@ -1528,7 +1530,6 @@
           }
           slot.linkedId = option.id == null ? null : option.id;
           if (out && Number.isFinite(Number(out.levelSum))) view.levelSum = Number(out.levelSum);
-          Sound.play('ripple', 0.45);
           toast(option.id == null ? '슬롯 ' + (Number(slot.index) + 1) + ' 연결을 풀었습니다.' : '슬롯 ' + (Number(slot.index) + 1) + '에 ' + option.name + '을(를) 연결했습니다.');
           paintBonus(); paintSlots();
           const again = slotsBox.querySelector('.as-link-option[aria-pressed="true"]');
@@ -1567,8 +1568,8 @@
         const retry = el('button', 'as-btn', '다시 불러오기'); retry.type = 'button';
         retry.addEventListener('click', () => { statusBox.textContent = '캐릭터를 불러오는 중입니다.'; loadList({}); });
         statusBox.appendChild(doc.createElement('br')); statusBox.appendChild(retry);
-        $('asVeil').classList.remove('as-veil-on');
-        stage.turnTo(1, 900);
+        body.setAttribute('data-phase', 'error');
+        revealStage();
         return;
       }
       const first = !data;
@@ -1584,13 +1585,16 @@
       body.setAttribute('data-phase', 'ready');
       paint(!first);
       if (first) {
-        // 로그인 화면에서 시작한 뒤집힘을 이어서 마친다.
-        $('asVeil').classList.remove('as-veil-on');
-        stage.turnTo(1, 900);
+        // 도착 화면은 회전을 반복하지 않고 완성된 장면을 서서히 드러낸다.
+        revealStage();
         const chosen = roster.querySelector('.as-slot[aria-pressed="true"]');
         if (chosen) { chosen.focus({ preventScroll: true }); if (chosen.scrollIntoView) chosen.scrollIntoView({ block: 'nearest', inline: 'center' }); }
         if (location.hash == '#links') openLinks();
       }
+    }
+
+    function revealStage() {
+      requestAnimationFrame(() => requestAnimationFrame(() => $('asVeil').classList.remove('as-veil-on')));
     }
 
     startButton.addEventListener('click', start);
