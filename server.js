@@ -404,6 +404,8 @@ server.use(async (req, res, next) => {
 
 require('./character_routes').registerCharacterRoutes(server, { rpg: rpgenius, partyquest, requireAccount, setCharacterSession,
     cards: () => readJson(CHARACTER_CARDS_PATH, []), sprite: getHFieldCharacterSprite, cardImage: getCardImageUrl,
+    skills: () => readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []),
+    cardIcon: getCardIconUrl, cardCover: getCharacterCoverImageUrl,
     equipmentImage: (type, id) => getEquipmentIconUrl(rpgenius.getEquipmentData(type, id)) });
 
 server.get('/characters', requireAccount, (req, res) => {

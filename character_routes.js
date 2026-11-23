@@ -5,7 +5,7 @@ const { SHARED_FIELDS } = require('./character_accounts');
 const pointUsage = require('./point_usage');
 
 function registerCharacterRoutes(server, deps) {
-    const { rpg, partyquest, requireAccount, setCharacterSession, cards, sprite, cardImage, equipmentImage } = deps;
+    const { rpg, partyquest, requireAccount, setCharacterSession, cards, skills, sprite, cardIcon, cardCover, cardImage, equipmentImage } = deps;
     const store = () => rpg.getCharacterStore();
     const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
     const itemId = name => rpg.getDataCache('Item', []).findIndex(item => item?.name === name);
@@ -69,11 +69,27 @@ function registerCharacterRoutes(server, deps) {
         try {
             const user = req.accountUser, account = store().accountFor(user);
             const members = await Promise.all(account.characterIds.map(id => member(account, id)));
+            const skillData = skills();
             res.json({ accountName: account.name, activeId: account.activeCharacterId, capacity: account.capacity,
                 slotCost: 800, renameCost: 300, renameTickets: count(user, '닉네임 변경권'),
                 wallet: { gold: user.gold, garnet: user.garnet, point: user.point }, goldCap: rpg.getAccountGoldState(user),
                 characters: members.map(character => summary(character, account)),
-                starters: cards().map((card, id) => card?.name ? { id, name: card.name, imageUrl: sprite(card) } : null).filter(Boolean),
+                starters: cards().map((card, id) => card?.name ? {
+                    id, name: card.name, star: 5, imageUrl: sprite(card),
+                    iconUrl: cardIcon({ id, star: 4, type: '일반' }, null, card), coverUrl: cardCover(card),
+                    skills: (card.skills || []).map(skillId => {
+                        const skill = skillData[skillId];
+                        return skill ? { name: skill.name, description: rpg.formatCurrentSkillDesc(skill, 4),
+                            cost: Number(skill.mental_cost ?? skill.mp_cost ?? 0), resource: skill.mental_cost != null ? '정신력' : 'MP',
+                            cooldown: rpg.formatCooltime(skill.cooltime) } : null;
+                    }).filter(Boolean),
+                    // 시작 카드의 5성 고유 슬롯 효과. 메인에도 같은 효과가 적용된다.
+                    effects: rpg.getCardSlotEffectDefinitions({ id, type: '일반' }).map(effect => {
+                        const value = rpg.getSlotEffectValueAtStar(effect, 4);
+                        return { name: effect.name, value: effect.type === 'flat' ? String(value)
+                            : effect.type === 'seconds' ? value + '초' : Math.round(value * 1000) / 10 + '%' };
+                    })
+                } : null).filter(Boolean),
                 transferItems: { card: count(user, ticketName('card')), equipment: count(user, ticketName('equipment')) } });
         } catch (error) { next(error); }
     });

@@ -938,11 +938,24 @@
     /* 창 */
     const modal = $('asModal'), panel = $('asModalPanel'), modalBody = $('asModalBody'), camp = $('asCamp');
     let modalState = null;
+    function sizeCreation() {
+      if (!window.visualViewport) return;
+      modal.style.setProperty('--as-viewport-h', Math.min(window.visualViewport.height, window.innerHeight) + 'px');
+      modal.style.setProperty('--as-viewport-top', window.visualViewport.offsetTop + 'px');
+      modal.classList.toggle('is-keyboard', window.visualViewport.height < window.innerHeight * .75 && doc.activeElement?.tagName === 'INPUT');
+    }
+    if (window.visualViewport) {
+      window.addEventListener('resize', sizeCreation);
+      window.visualViewport.addEventListener('resize', sizeCreation);
+      window.visualViewport.addEventListener('scroll', sizeCreation);
+    }
     function closeModal(force) {
       if (!modalState || (modalState.busy && !force)) return;
+      if (!force && panel.classList.contains('is-cover-expanded')) { panel.querySelector('.as-create-cover').click(); return; }
       const back = modalState.back;
       modalState = null;
       modal.hidden = true;
+      modal.classList.remove('is-creation', 'is-keyboard');
       modalBody.textContent = '';
       camp.inert = false; camp.removeAttribute('aria-hidden');
       if (back && doc.contains(back)) back.focus();
@@ -952,7 +965,7 @@
       const state = modalState = { busy: false, back: doc.activeElement };
       $('asModalTitle').textContent = title;
       panel.classList.toggle('is-wide', !!wide);
-      panel.classList.remove('is-links');
+      panel.classList.remove('is-links', 'is-creation', 'is-cover-expanded');
       modalBody.textContent = '';
       const errorBox = el('p', 'as-m-error');
       errorBox.setAttribute('role', 'alert');
@@ -979,7 +992,7 @@
       if (!modalState) return;
       if (ev.key == 'Escape') { ev.preventDefault(); closeModal(); return; }
       if (ev.key != 'Tab') return;
-      const items = Array.from(panel.querySelectorAll('button:not(:disabled),input:not(:disabled),[href]')).filter(n => n.offsetParent !== null);
+      const items = Array.from(panel.querySelectorAll('button:not(:disabled),input:not(:disabled),[href],[tabindex="0"]')).filter(n => n.offsetParent !== null && n.tabIndex >= 0 && !n.closest('[inert]'));
       if (!items.length) { ev.preventDefault(); return; }
       const first = items[0], last = items[items.length - 1];
       if (!panel.contains(doc.activeElement)) { ev.preventDefault(); (ev.shiftKey ? last : first).focus(); }
@@ -987,10 +1000,10 @@
       else if (!ev.shiftKey && doc.activeElement == last) { ev.preventDefault(); first.focus(); }
     });
 
-    function actions(handle, label, onSubmit) {
+    function actions(handle, label, onCancel) {
       const row = el('div', 'as-m-actions');
       const cancel = el('button', 'as-btn', '취소'); cancel.type = 'button';
-      cancel.addEventListener('click', () => closeModal());
+      cancel.addEventListener('click', () => onCancel ? onCancel() : closeModal());
       const submit = el('button', 'as-plaque as-plaque-s'); submit.type = 'submit';
       submit.appendChild(el('span', 'as-btn-label', label));
       row.appendChild(cancel); row.appendChild(submit);
@@ -1047,49 +1060,154 @@
 
     function openCreate() {
       if (!data) return;
-      openModal('새 캐릭터', true, handle => {
-        const form = el('form'); form.noValidate = true; form.style.display = 'contents';
-        let cardId = null;
-        form.appendChild(el('p', 'as-m-lead', '닉네임과 시작 카드를 고르세요.'));
-        const field = nameField(handle, '');
-        form.appendChild(field.wrap);
-        form.appendChild(picks('시작 카드', Array.isArray(data.starters) ? data.starters : [], true, item => { cardId = item.id; }));
-        form.appendChild(handle.errorBox);
-        const act = actions(handle, '캐릭터 만들기');
-        form.appendChild(act.row);
-        form.addEventListener('submit', async ev => {
-          ev.preventDefault();
-          const name = field.input.value.trim();
-          if (!NAME_RULE.test(name)) { handle.error('닉네임은 한글, 영문, 숫자, 띄어쓰기로 1~10자입니다.'); field.input.focus(); return; }
-          if (cardId == null) { handle.error('시작 카드를 고르세요.'); return; }
-          if (!await submitWrite(handle, act.submit, '/api/characters/create', { name, cardId })) return;
-          handle.close();
-          toast(name + ' 캐릭터를 만들었습니다.');
-          await loadList({ selectName: name });
-        });
-        handle.body.appendChild(form);
-      });
+      openCreation(null);
     }
     function openStarter(character) {
-      openModal('시작 카드 선택', true, handle => {
-        const form = el('form'); form.noValidate = true; form.style.display = 'contents';
-        let cardId = null;
-        const lead = el('p', 'as-m-lead');
-        lead.textContent = character.name + ' 캐릭터의 시작 카드를 고르세요.';
-        form.appendChild(lead);
-        form.appendChild(picks('시작 카드', Array.isArray(data.starters) ? data.starters : [], true, item => { cardId = item.id; }));
-        form.appendChild(handle.errorBox);
-        const act = actions(handle, '이 카드로 시작');
-        form.appendChild(act.row);
+      openCreation(character);
+    }
+    // 표지를 자르지 않는 전면 회랑. 기존 캐릭터의 첫 카드 선택도 같은 장면을 사용한다.
+    function openCreation(character) {
+      openModal(character ? '시작 캐릭터 선택' : '새 캐릭터', true, handle => {
+        modal.classList.add('is-creation'); panel.classList.add('is-creation');
+        sizeCreation();
+        const starters = Array.isArray(data.starters) ? data.starters : [];
+        const form = el('form', 'as-creation'); form.noValidate = true;
+        const wall = el('div', 'as-create-wall'); wall.setAttribute('aria-hidden', 'true');
+        const gallery = el('section', 'as-create-gallery'); gallery.setAttribute('aria-label', '캐릭터 표지와 선택');
+        const art = el('div', 'as-create-art');
+        const cover = el('button', 'as-create-cover'); cover.type = 'button'; cover.setAttribute('aria-expanded', 'false');
+        const coverHint = el('span', 'as-create-cover-hint', '표지 크게 보기');
+        art.append(cover, coverHint);
+        const chooser = el('div', 'as-create-chooser'), navigation = el('div', 'as-create-navigation');
+        const previous = el('button', 'as-tool', '‹'), next = el('button', 'as-tool', '›');
+        previous.type = next.type = 'button'; previous.setAttribute('aria-label', '이전 캐릭터'); next.setAttribute('aria-label', '다음 캐릭터');
+        const position = el('span', 'as-create-position');
+        navigation.append(previous, el('span', '', '캐릭터 선택'), position, next);
+        const rail = el('div', 'as-create-rail'); rail.setAttribute('role', 'radiogroup'); rail.setAttribute('aria-label', '시작 캐릭터');
+        chooser.append(navigation, rail); gallery.append(art, chooser);
+        const inscription = el('section', 'as-create-inscription'); inscription.setAttribute('aria-label', '캐릭터 설명');
+        const heading = el('div', 'as-create-heading'), title = el('h3', 'as-create-name'); title.setAttribute('aria-live', 'polite');
+        const grade = el('span', 'as-create-grade'); heading.append(grade, title);
+        const description = el('div', 'as-create-description'); description.tabIndex = 0; description.setAttribute('role', 'region'); description.setAttribute('aria-label', '스킬과 고유 효과');
+        inscription.append(heading, description);
+        const footer = el('div', 'as-create-footer');
+        const field = character ? null : nameField(handle, '');
+        if (field) {
+          field.input.removeAttribute('data-autofocus'); field.wrap.className = 'as-create-nickname';
+          field.wrap.hidden = true;
+          const note = field.wrap.querySelector('.as-m-note'); note.id = 'asCreateNameRule';
+          note.textContent = '한글, 영문, 숫자, 공백 1~10자'; field.input.setAttribute('aria-describedby', note.id);
+          const counter = el('span', 'as-create-count', '0 / 10'); counter.setAttribute('aria-hidden', 'true');
+          field.wrap.querySelector('label').appendChild(counter);
+          field.input.addEventListener('input', () => { counter.textContent = field.input.value.length + ' / 10'; handle.error(''); field.input.removeAttribute('aria-invalid'); });
+          footer.appendChild(field.wrap);
+        } else footer.appendChild(el('p', 'as-create-owner', character.name));
+        const act = actions(handle, character ? '이 캐릭터로 시작' : '이 캐릭터 선택', () => {
+          if (handle.isBusy()) return;
+          if (field && !field.wrap.hidden) {
+            field.wrap.hidden = true; handle.error('');
+            act.submit.querySelector('.as-btn-label').textContent = '이 캐릭터 선택';
+            $('asModalTitle').textContent = '새 캐릭터';
+            tokens[selectedIndex]?.focus({ preventScroll: true }); sizeCreation();
+          } else closeModal();
+        });
+        act.row.firstChild.textContent = '돌아가기'; footer.append(handle.errorBox, act.row);
+        form.append(wall, gallery, inscription, footer); handle.body.appendChild(form);
+        let selectedIndex = -1, artVersion = 0, lastSound = 0;
+        const tokens = [];
+
+        function select(index, userAction) {
+          if (handle.isBusy() || index === selectedIndex || !starters[index]) return;
+          selectedIndex = index;
+          const item = starters[index], version = ++artVersion;
+          tokens.forEach((button, i) => { button.setAttribute('aria-checked', String(i === index)); button.tabIndex = i === index ? 0 : -1; });
+          title.textContent = item.name; position.textContent = String(index + 1).padStart(2, '0') + ' / ' + starters.length;
+          grade.textContent = '시작 카드 [' + item.star + '성]';
+          description.replaceChildren(); description.scrollTop = 0;
+          (item.skills || []).forEach(skill => {
+            const entry = el('section', 'as-create-skill');
+            entry.append(el('p', 'as-create-kicker', '기본 스킬'), el('h4', '', skill.name));
+            const facts = el('div', 'as-create-facts');
+            facts.append(el('span', '', skill.resource + ' ' + skill.cost), el('span', '', '재사용 ' + skill.cooldown));
+            entry.appendChild(facts);
+            String(skill.description || '').split('\n').filter(Boolean).forEach(line => entry.appendChild(el('p', 'as-create-copy', line)));
+            description.appendChild(entry);
+          });
+          const effects = el('section', 'as-create-effect'); effects.appendChild(el('h4', '', '고유 슬롯 효과'));
+          (item.effects || []).forEach(effect => { const line = el('p'); line.append(el('span', '', effect.name), el('strong', '', effect.value)); effects.appendChild(line); });
+          description.appendChild(effects);
+          cover.setAttribute('aria-label', item.name + ' 표지 크게 보기');
+          cover.dataset.status = '표지 불러오는 중'; cover.classList.add('is-loading');
+          const src = safeUrl(item.coverUrl), img = el('img', 'as-create-image'); img.alt = item.name + ' 캐릭터 표지';
+          const failed = () => {
+            if (!handle.alive() || version !== artVersion) return;
+            cover.replaceChildren(); wall.replaceChildren(); cover.classList.remove('is-loading'); cover.dataset.status = '표지를 불러올 수 없습니다';
+          };
+          img.addEventListener('load', () => {
+            if (!handle.alive() || version !== artVersion) return;
+            const old = Array.from(cover.children); cover.appendChild(img);
+            cover.classList.remove('is-loading'); cover.dataset.status = '';
+            if (!reduced()) img.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280 });
+            old.forEach(node => node.remove());
+            const backdrop = el('img'); backdrop.alt = ''; backdrop.src = src; wall.replaceChildren(backdrop);
+          }, { once: true });
+          img.addEventListener('error', failed, { once: true });
+          if (src) img.src = src; else failed();
+          if (userAction) {
+            const rect = tokens[index].getBoundingClientRect(), parent = rail.getBoundingClientRect();
+            rail.scrollTo({ left: rail.scrollLeft + rect.left - parent.left - (rail.clientWidth - rect.width) / 2, behavior: reduced() ? 'instant' : 'smooth' });
+            // 외부 녹음 클릭음만 사용하며 키를 길게 눌러도 겹쳐 재생하지 않는다.
+            if (performance.now() - lastSound > 200) { Sound.play('tap', 0.45); lastSound = performance.now(); }
+          }
+        }
+        starters.forEach((item, index) => {
+          const token = el('button', 'as-create-token'); token.type = 'button'; token.setAttribute('role', 'radio'); token.setAttribute('aria-checked', 'false');
+          token.tabIndex = -1;
+          const frame = el('span', 'as-create-medallion'), src = safeUrl(item.iconUrl);
+          if (src) { const img = el('img'); img.alt = ''; img.src = src; img.loading = 'lazy'; img.addEventListener('error', () => img.remove()); frame.appendChild(img); }
+          token.append(frame, el('span', 'as-create-token-name', item.name));
+          token.addEventListener('click', () => select(index, true));
+          token.addEventListener('keydown', ev => {
+            const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[ev.key];
+            if (!step && ev.key !== 'Home' && ev.key !== 'End') return;
+            ev.preventDefault(); if (handle.isBusy()) return;
+            const target = ev.key === 'Home' ? 0 : ev.key === 'End' ? starters.length - 1 : (index + step + starters.length) % starters.length;
+            select(target, true); tokens[target].focus({ preventScroll: true });
+          });
+          tokens.push(token); rail.appendChild(token);
+        });
+        previous.addEventListener('click', () => select((selectedIndex - 1 + starters.length) % starters.length, true));
+        next.addEventListener('click', () => select((selectedIndex + 1) % starters.length, true));
+        cover.addEventListener('click', () => {
+          if (handle.isBusy()) return;
+          const expanded = panel.classList.toggle('is-cover-expanded');
+          cover.setAttribute('aria-expanded', String(expanded));
+          cover.setAttribute('aria-label', expanded ? '표지 크게 보기 닫기' : title.textContent + ' 표지 크게 보기');
+          inscription.inert = footer.inert = chooser.inert = expanded;
+          coverHint.textContent = expanded ? '눌러서 돌아가기' : '표지 크게 보기'; cover.focus({ preventScroll: true });
+        });
+        if (tokens.length) { tokens[0].setAttribute('data-autofocus', '1'); select(0, false); }
+        else { handle.error('고를 수 있는 캐릭터가 없습니다.'); act.submit.disabled = true; }
         form.addEventListener('submit', async ev => {
           ev.preventDefault();
-          if (cardId == null) { handle.error('시작 카드를 고르세요.'); return; }
-          if (!await submitWrite(handle, act.submit, '/api/characters/starter', { id: character.id, cardId })) return;
+          if (handle.isBusy()) return;
+          if (field && field.wrap.hidden) {
+            field.wrap.hidden = false;
+            act.submit.querySelector('.as-btn-label').textContent = '캐릭터 생성';
+            $('asModalTitle').textContent = '닉네임 입력';
+            field.input.focus(); sizeCreation(); return;
+          }
+          const item = starters[selectedIndex], name = field ? field.input.value.trim() : '';
+          if (field && !NAME_RULE.test(name)) { handle.error('닉네임을 한글, 영문, 숫자, 공백 1~10자로 입력해주세요.'); field.input.setAttribute('aria-invalid', 'true'); field.input.focus(); return; }
+          if (!item) { handle.error('시작 캐릭터를 고르세요.'); return; }
+          if (field) field.input.readOnly = true;
+          const ok = await submitWrite(handle, act.submit, '/api/characters/' + (character ? 'starter' : 'create'), character ? { id: character.id, cardId: item.id } : { name, cardId: item.id });
+          if (field) field.input.readOnly = false;
+          if (!ok) return;
           handle.close();
-          toast('시작 카드를 정했습니다.');
-          await loadList({});
+          toast(character ? '시작 카드를 정했습니다.' : name + ' 캐릭터를 만들었습니다.');
+          await loadList(character ? {} : { selectName: name });
         });
-        handle.body.appendChild(form);
       });
     }
     function openRename() {

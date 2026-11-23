@@ -42,6 +42,27 @@ test('첫 로그인에서 기존 계정을 보존해 1번 캐릭터로 옮기고
     assert.equal(result.body.starters.length, 17);
 });
 
+test('생성 안내는 5성 스킬과 메인의 고유 효과를 제공하고 모든 캐릭터의 아이콘과 표지를 연결한다', async () => {
+    const { starters } = (await request('/api/characters')).body;
+    for (const card of starters) {
+        const icon = new URL(card.iconUrl, base), cover = new URL(card.coverUrl, base);
+        assert.equal(icon.searchParams.get('square'), '1');
+        assert.equal(icon.searchParams.get('star'), '4');
+        assert.equal(card.star, 5);
+        assert.equal(cover.searchParams.get('name'), card.name);
+        assert.equal(cover.searchParams.get('cover'), '일반');
+        assert.ok(card.skills.length && card.effects.length);
+        assert.ok(card.skills.every(skill => skill.description && !skill.description.includes('${')));
+    }
+    const bread = starters.find(card => card.name === '빵귤');
+    assert.match(bread.skills[0].description, /공격력의 160%/);
+    assert.match(bread.skills[0].description, /27% 증가/);
+    assert.deepEqual(bread.effects, [{ name: '스킬 쿨타임 감소', value: '10%' }]);
+    assert.equal(starters.find(card => card.name === '켄시').effects[0].value, '10%');
+    assert.equal(starters.find(card => card.name === '키노').skills[0].resource, '정신력');
+    assert.equal(starters.find(card => card.name === '키노').effects[0].value, '10');
+});
+
 test('부캐 생성은 1레벨과 시작 키트를 지급하고 재전송으로 캐릭터를 중복 생성하지 않는다', async () => {
     const requestId = crypto.randomUUID();
     const first = await action('create', { name: '두번째', cardId: 1 }, requestId);
@@ -52,6 +73,7 @@ test('부캐 생성은 1레벨과 시작 키트를 지급하고 재전송으로 
     const second = await rpg.getUserByPrimaryId(secondId);
     assert.equal(second.level, 1);
     assert.equal(second.main_card.id, 1);
+    assert.equal(second.main_card.star, 4, '시작 카드는 5성으로 지급한다');
     assert.equal(second.need_character_card_select, false);
     assert.equal(rpg.getInventoryItemCount(second, 41), 1);
     assert.equal(second.point, 5000);
@@ -130,6 +152,7 @@ test('카드를 따로 장착하지 않고 5성 이상 부캐를 슬롯에 지�
     assert.equal((await action('select', { id: sandbox.account.id })).status, 200);
     const first = await rpg.getUserByPrimaryId(sandbox.account.id);
     const second = await rpg.getUserByPrimaryId(secondId);
+    second.main_card.star = 3; await second.save();
     assert.equal((await action('link', { characterId: first.id, index: 0, linkedId: secondId })).status, 400, '5성 미만 부캐는 지정할 수 없다');
     second.main_card.star = 4; await second.save();
     assert.deepEqual(first.card_slot, []);

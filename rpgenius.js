@@ -3795,7 +3795,7 @@ function selectStarterCard(user, cardName) {
     if (!user.need_character_card_select) return '❌ 이미 캐릭터 카드를 선택했습니다.';
     const characterCard = findCharacterCardByName(cardName);
     if (!characterCard) return '❌ 존재하지 않는 캐릭터 카드입니다.';
-    user.main_card = { id: characterCard.index, star: 0, type: '일반' };
+    user.main_card = { id: characterCard.index, star: 4, type: '일반' };
     user.need_character_card_select = false;
     const stats = calculateUserStats(user);
     user.hp = Number(stats.hp || 0);
