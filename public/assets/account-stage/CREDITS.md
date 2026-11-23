@@ -67,11 +67,20 @@ FFmpeg로 앞의 무음을 자르고(-48dB 기준) 모노 44.1kHz 128kbps MP3로
 
 아무도 직접 듣고 고르지 않았다. 길이, 최대 음량, 150Hz 아래와 200Hz~2kHz, 4kHz 위 대역 비율을 재서 골랐다.
 
+## 파견과 도감
+
+2026-11-23 파견 화면과 도감의 디자인 구현에는 Claude CLI의 `claude-fable-5-2`를 사용했다. 기존 게임 이미지를 재사용한다.
+파견 배경은 게임의 `필드/부타게임H.png`와 `public/assets/paradise/corridor.webp`, 출발과 귀환의 표식은 위의 `sigil.webp`, `marker.webp`를 재사용한다.
+파견 출발에는 `whoosh.mp3`, 보상을 지급한 귀환에는 `coin.mp3`, 선택에는 `tap.mp3`, 거절에는 `deny.mp3`를 사용한다. 도감의 선택 효과음은 `tap.mp3`다. 모두 위 표의 CC0 원본에서 가져온 기존 파일이며 새로 합성한 소리나 반복 환경음을 추가하지 않았다.
+화면별 효과음 끄기를 제공하고, 동작 줄이기 설정에서는 파견 전환 연출을 생략한다.
+
 ## 글꼴
+
+사용자 요청에 따라 도감, 파견, 캐릭터 선택에는 제공받은 `NEXON_Warhaven.zip`의 워헤이븐 Regular와 Bold 원본 OTF를 사용한다. 변환이나 서브셋 처리는 하지 않았다. 저작권 안내는 `public/assets/fonts/warhaven/LICENSE.txt`에 있으며 [넥슨 공식 서체 안내](https://brand.nexon.com/ko/ci-brand-guidelines/typeface#section-warhaven)를 확인했다. 아래의 기존 서체는 로그인 화면에 남는다.
 
 | 파일 | 원본 | 라이선스 |
 | --- | --- | --- |
 | as-serif.woff2 | Hahmlet 가변 글꼴(굵기 100~900, Google Fonts 배포본)에서 한글 11,172자와 라틴, 기호만 남기고 WOFF2로 압축 | SIL Open Font License 1.1, `Hahmlet-OFL.txt` |
 | as-wordmark.woff2 | Cormorant Garamond 가변 글꼴의 굵기 700을 뽑아 기본 라틴만 남기고 WOFF2로 압축 | SIL Open Font License 1.1, `CormorantGaramond-OFL.txt` |
 
-글자 수를 줄인 파생본이라 `AS Serif`, `AS Wordmark`라는 이름으로 불러 쓴다. 두 화면의 한글과 숫자는 모두 `AS Serif` 한 벌이고, `AS Wordmark`는 로그인 화면의 RPGENIUS 글자에만 쓴다.
+글자 수를 줄인 파생본이라 `AS Serif`, `AS Wordmark`라는 이름으로 불러 쓴다. 로그인 화면의 한글과 숫자는 `AS Serif`, RPGENIUS 제목은 `AS Wordmark`를 쓴다.

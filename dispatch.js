@@ -73,7 +73,8 @@ async function complete(id, now = Date.now()) {
         if (!active(user) || user.dispatch.endsAt > now) return user;
         const run = user.dispatch;
         if (run.destination === 'hell') {
-            run.result = rpg().grantHellRewards(user, .10).filter(line => line.startsWith('- ')).map(line => line.slice(2));
+            run.rewardItems = [];
+            run.result = rpg().grantHellRewards(user, .10, run.rewardItems).filter(line => line.startsWith('- ')).map(line => line.slice(2));
         } else {
             paradise.grantBaseRewards(user, run.rewards);
             paradise.recordWeeklyFloor(user, run.floor, new Date(run.endsAt));
@@ -112,10 +113,16 @@ function startScheduler() {
     setImmediate(tick);
 }
 
-function registerDispatchRoutes(server, { requireUser, itemIcon }) {
+function registerDispatchRoutes(server, { requireUser, itemIcon, rewardView }) {
     const state = user => {
         const result = view(user), items = rpg().getDataCache('Item', []);
         result.destinations.forEach(dest => { dest.ticketIcon = itemIcon(items.find(item => item?.name === dest.ticket)); });
+        if (result.run?.status === 'completed') {
+            const rewards = result.run.rewardItems || (result.run.destination === 'heaven'
+                ? result.run.rewards.map(reward => ({ kind: reward.type === '아이템' ? 'item' : reward.type === '경험치' ? 'exp' : 'currency', name: reward.name || reward.type, count: reward.count }))
+                : result.run.result || []);
+            result.run = { ...result.run, rewardItems: rewards.map(rewardView) };
+        }
         return result;
     };
     server.get('/api/dispatch', requireUser, async (req, res, next) => {

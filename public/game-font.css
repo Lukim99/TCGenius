@@ -1,0 +1,4 @@
+@font-face{font-family:'NEXON Warhaven';src:url('/static/assets/fonts/warhaven/NEXON_Warhaven_OTF_Regular.otf') format('opentype');font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:'NEXON Warhaven';src:url('/static/assets/fonts/warhaven/NEXON_Warhaven_OTF_Bold.otf') format('opentype');font-style:normal;font-weight:700;font-display:swap}
+.as[data-screen="characters"]{--font:'NEXON Warhaven','Malgun Gothic',sans-serif;--font-mark:var(--font)}
+.dispatch-screen,.page[data-page="dex"] .dex-shell.cdx,.modal.dex-equipment-modal,.modal.dex-character-modal{font-family:'NEXON Warhaven','Malgun Gothic',sans-serif}

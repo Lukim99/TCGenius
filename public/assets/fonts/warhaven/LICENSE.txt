@@ -1,0 +1,14 @@
+NEXON Warhaven Font
+Copyright (c) 2023 by NEXON Korea. All rights reserved.
+
+Source: NEXON_Warhaven.zip supplied by the user.
+NEXON_Warhaven_OTF_Regular.otf and NEXON_Warhaven_OTF_Bold.otf are included unchanged.
+
+Official copyright and usage guidance:
+https://brand.nexon.com/ko/ci-brand-guidelines/typeface#section-warhaven
+
+넥슨코리아가 제공한 워헤이븐체를 사용합니다. 서체의 권리는 넥슨코리아에 있습니다.
+개인과 기업의 상업적 사용 및 무료 배포를 허용합니다. 폰트 파일을 수정하여
+재배포하거나 폰트 자체를 판매할 수 없습니다. 저작권 안내를 함께 제공하면
+다른 소프트웨어에 포함하거나 임베디드 폰트로 사용할 수 있습니다.
+위 공식 안내를 기준으로 원본 OTF를 변환하거나 수정하지 않고 사용합니다.

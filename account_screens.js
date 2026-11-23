@@ -21,6 +21,7 @@ function head(title, fonts, transfer = false) {
 <meta name="theme-color" content="#060a1c">
 ${fonts.map(href => `<link rel="preload" href="${href}" as="font" type="font/woff2" crossorigin>`).join('')}
 <link rel="stylesheet" href="${CSS}">
+<link rel="stylesheet" href="/static/game-font.css?v=20261123">
 ${transfer ? '<link rel="stylesheet" href="/static/account-transfer.css?v=' + VERSION + '">' : ''}
 </head>`;
 }

@@ -1307,7 +1307,7 @@ const EQUIP_STAT_LABELS = {
 };
 const EQUIP_PLUSSTAT_LABELS = {
     wonyoddiShieldChance: '각성 패시브 보호막 획득 확률',
-    atk: '공격력',
+    atk: '최종 공격력',
     def: '최종 방어력',
     hp: '최종 체력',
     mp: '최종 MP',
@@ -1319,7 +1319,7 @@ const EQUIP_PLUSSTAT_LABELS = {
     afterSkill: '스킬 공격 피해',
     '000': '공격 시 10/100/1000 추가 피해 확률',
     exp: '경험치 획득량',
-    finalAtk: '공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해',
+    finalAtk: '최종 공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해',
     mpReduce: 'MP 소모량',
     itemDropChance: '아이템 획득 확률',
     recoveryEfficiency: '회복 효율',
@@ -7181,7 +7181,7 @@ function pickHellRarity(table) {
     return table[table.length - 1].rarity;
 }
 
-function grantHellEquipment(user, rarity, lines) {
+function grantHellEquipment(user, rarity, lines, rewards) {
     const equipments = getDataCache('Equipment', {});
     const pools = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].map(type => ({
         type,
@@ -7193,9 +7193,10 @@ function grantHellEquipment(user, rarity, lines) {
     addEquipmentInventory(user, picked.type, picked.id);
     const label = picked.data.rarity == '초월' ? '초월 1단계' : picked.data.rarity;
     lines.push('- <' + label + '> ' + picked.data.name);
+    if (rewards) rewards.push({ kind: 'equipment', equipment: { type: picked.type, id: picked.id }, name: picked.data.name, rarity: label, count: 1 });
 }
 
-function grantHellRewards(user, extraEquipmentChance = .20) {
+function grantHellRewards(user, extraEquipmentChance = .20, rewards) {
     const lines = [];
     const grantItem = (name, min, max, chance) => {
         if (Math.random() >= chance) return;
@@ -7204,6 +7205,7 @@ function grantHellRewards(user, extraEquipmentChance = .20) {
         const count = randomInt(min, max);
         addInventoryItem(user, id, count);
         lines.push('- ' + name + ' x' + comma(count));
+        if (rewards) rewards.push({ kind: 'item', itemId: id, name, count });
     };
     grantItem('헬 초대장', 1, 3, .75);
     grantItem('헬 도전장', 1, 2, .75);
@@ -7213,7 +7215,7 @@ function grantHellRewards(user, extraEquipmentChance = .20) {
         { rarity: '유니크', chance: .09 }, { rarity: '초월', chance: .05 }
     ];
     lines.push('', '[ 확정 장비 ]');
-    grantHellEquipment(user, pickHellRarity(guaranteed), lines);
+    grantHellEquipment(user, pickHellRarity(guaranteed), lines, rewards);
     if (Math.random() < extraEquipmentChance) {
         const extra = [
             { rarity: '일반', chance: .419 }, { rarity: '레어', chance: .44 },
@@ -7221,7 +7223,7 @@ function grantHellRewards(user, extraEquipmentChance = .20) {
             { rarity: '신화', chance: .001 }
         ];
         lines.push('', '[ 추가 장비 ]');
-        grantHellEquipment(user, pickHellRarity(extra), lines);
+        grantHellEquipment(user, pickHellRarity(extra), lines, rewards);
     }
     return lines;
 }
@@ -9859,12 +9861,12 @@ const SUPPORT_STAT_LABELS = {
 
 const SUPPORT_PLUS_STAT_LABELS = {
     wonyoddiShieldChance: '각성 패시브 보호막 획득 확률',
-    atk: '공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+    atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
     pnt: '방어력 관통',
     gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
     avd: '회피 확률', afterSkill: '스킬 공격 피해',
     '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
-    finalAtk: '공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
+    finalAtk: '최종 공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
     itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
     critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
     maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
@@ -11772,7 +11774,7 @@ function grantArtifact(user, rarity) {
 
 function getArtifactView(user, equip) {
     const data = equip && getEquipmentData('artifact', equip.id);
-    return data && equip.artifact ? artifacts.view(equip, data.rarity, user, calculateUserStats(user), getEquipmentData, readJson(CHARACTER_CARDS_PATH, [])) : null;
+    return data && equip.artifact ? artifacts.view(equip, data.rarity, { ...user, card_slot: getCharacterSlotCards(user) }, calculateUserStats(user), getEquipmentData, readJson(CHARACTER_CARDS_PATH, [])) : null;
 }
 
 // 신규 재화·최초 지급 처리는 변경한 필드와 원래 값이 함께 맞을 때만 저장한다.
@@ -12922,12 +12924,12 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     };
     const plusStatNames = {
         wonyoddiShieldChance: '각성 패시브 보호막 획득 확률',
-        atk: '공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+        atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
         pnt: '방어력 관통',
         gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
         avd: '회피 확률', afterSkill: '스킬 공격 피해',
         '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
-        finalAtk: '공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
+        finalAtk: '최종 공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
         itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
         critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
         maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',

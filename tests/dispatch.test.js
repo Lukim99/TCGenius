@@ -85,11 +85,26 @@ test('중복 출발은 한 번만 소모하고 파견 캐릭터의 플레이를 
     assert.equal((await request('/api/dispatch/start', { ...body, destination: 'heaven' })).status, 409);
     assert.equal((await request('/api/dispatch/start', { ...body, requestId: crypto.randomUUID() })).status, 409);
     assert.equal((await dispatch.complete(user.id, saved.dispatch.endsAt - 1)).dispatch.status, 'active');
-    await dispatch.complete(user.id, saved.dispatch.endsAt);
+    const random = mock.method(Math, 'random', () => .001);
+    try { await dispatch.complete(user.id, saved.dispatch.endsAt); }
+    finally { random.mock.restore(); }
     const equipment = structuredClone((await rpg.getUserByPrimaryId(user.id)).inventory.equipment);
     assert.ok(equipment.length >= 1);
     await dispatch.complete(user.id, saved.dispatch.endsAt + 1);
     assert.deepEqual((await rpg.getUserByPrimaryId(user.id)).inventory.equipment, equipment);
+    const report = (await request('/api/dispatch')).data.run;
+    const displayed = report.rewardItems.filter(reward => reward.kind === 'equipment');
+    assert.equal(displayed.length, equipment.length);
+    displayed.forEach((reward, index) => {
+        assert.deepEqual(reward.equipment, { type: equipment[index].type, id: equipment[index].id });
+        assert.equal(reward.count, 1);
+        assert.ok(reward.iconUrl && reward.frameUrl, '실제로 지급한 장비의 아이콘과 등급 프레임을 제공한다: ' + JSON.stringify(reward));
+    });
+    const legacy = await rpg.getUserByPrimaryId(user.id);
+    delete legacy.dispatch.rewardItems;
+    await rpg.getCharacterStore().commit([legacy]);
+    assert.deepEqual((await request('/api/dispatch')).data.run.rewardItems.map(reward => [reward.name, reward.count, reward.frameUrl]),
+        report.rewardItems.map(reward => [reward.name, reward.count, reward.frameUrl]), '기존 텍스트 귀환 기록도 같은 보상으로 표시한다');
     assert.equal((await request('/api/dispatch/start', body)).status, 200);
     assert.deepEqual((await rpg.getUserByPrimaryId(user.id)).inventory.equipment, equipment);
 });
@@ -125,6 +140,10 @@ test('캐릭터마다 파견하며 전환 뒤에도 원래 캐릭터의 보상�
     assert.equal(completed.paradiseWeekly.bestFloor, saved.dispatch.floor);
     assert.equal(completed.paradiseWeekly.reachedAt, saved.dispatch.endsAt);
     assert.equal(completed.paradise, null, '기존 천상 탐험 상태를 덮어쓰지 않는다');
+    const report = (await request('/api/dispatch')).data.run;
+    const gold = report.rewardItems.find(reward => reward.name === '골드');
+    assert.equal(gold.count, saved.dispatch.floor * original);
+    assert.ok(gold.iconUrl, '천상 보상 재화도 실제 수량과 아이콘을 제공한다');
     assert.equal((await rpg.getUserByPrimaryId(altId)).gold, completed.gold, '계정 공용 지갑에 지급한다');
 });
 

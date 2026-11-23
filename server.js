@@ -424,7 +424,7 @@ server.get('/characters', requireAccount, (req, res) => {
     res.type('html').send(require('./account_screens').renderCharacterSelection());
 });
 
-require('./dispatch').registerDispatchRoutes(server, { requireUser, itemIcon: getItemIconUrl });
+require('./dispatch').registerDispatchRoutes(server, { requireUser, itemIcon: getItemIconUrl, rewardView: mapDispatchReward });
 
 function parseBannerUpload(req, res, next) {
     bannerUploadBody(req, res, error => {
@@ -2450,6 +2450,24 @@ function mapFieldTickReward(reward) {
     return mapped;
 }
 
+function mapDispatchReward(reward) {
+    // 기존 귀환 기록은 텍스트만 저장되어 있으므로 읽을 때 현재 아이콘을 연결한다.
+    if (typeof reward === 'string') {
+        const equipment = reward.match(/^<(.+)> (.+)$/), item = reward.match(/^(.+) [x×]([\d,]+)$/);
+        if (equipment) {
+            const rarity = equipment[1].replace(/ \d+단계$/, '');
+            for (const [type, entries] of Object.entries(rpgenius.getDataCache('Equipment', {}))) {
+                if (!Array.isArray(entries)) continue;
+                const id = entries.findIndex(data => data?.name === equipment[2] && data.rarity === rarity);
+                if (id >= 0) return mapFieldTickReward({ kind: 'equipment', equipment: { type, id }, name: equipment[2], rarity: equipment[1], count: 1 });
+            }
+        }
+        reward = item ? { kind: 'item', name: item[1], count: Number(item[2].replace(/,/g, '')) } : { kind: 'text', name: reward };
+    }
+    if (reward.kind === 'currency') return { ...reward, iconUrl: getItemImageUrl('화폐', reward.name + '.png') };
+    return mapFieldTickReward(reward);
+}
+
 function mapFieldTickEvent(event) {
     const damage = Math.max(0, Number(event && event.damage || 0));
     const killedCount = Math.max(0, Number(event && event.killedCount || 0));
@@ -4411,7 +4429,7 @@ function buildStatDiffs(currentStats, nextStats, currentPlus, nextPlus) {
         atkPerMillionGold: '골드 100만 당 공격력'
     };
     const PLUS_LABELS = {
-        atk: '공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+        atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
         pnt: '방어력 관통', gold: '골드 획득량', potion: '물약 효율',
         afterBasic: '일반 공격 피해', avd: '회피 확률', afterSkill: '스킬 공격 피해',
         '000': '추가 피해 확률', exp: '경험치 획득량', eliteDmg: '엘리트 추가 피해',
@@ -4420,7 +4438,7 @@ function buildStatDiffs(currentStats, nextStats, currentPlus, nextPlus) {
         critDef: '치명타 피해 감소율', cmb: '연격 확률', maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 추가 고정 피해',
         takenDamage: '받는 피해 증가', damageBonus: '주는 피해 증가',
-        finalAtk: '공격력', finalDamage: '최종 피해', extraDamage: '추가 피해', bossDmg: '보스 추가 피해',
+        finalAtk: '최종 공격력', finalDamage: '최종 피해', extraDamage: '추가 피해', bossDmg: '보스 추가 피해',
         butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
     };
     // 값이 낮을수록(감소할수록) 이득인 스탯
@@ -9909,14 +9927,22 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="auction"><section class="market-stage-host" id="auctionStageRoot"></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
-  <div class="page" data-page="dex"><section class="panel dex-shell">
+  <div class="page" data-page="dex"><section class="panel dex-shell cdx" id="dexShell">
+    <div class="cdx-bar">
+      <button type="button" class="cdx-tool cdx-exit" id="dexExit" aria-label="도감 나가기"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5"/></svg><span>나가기</span></button>
+      <div class="cdx-heading"><h2>도감</h2></div>
+      <button type="button" class="cdx-tool cdx-sound" id="dexSound" aria-pressed="true" aria-label="효과음"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 8v4h3l4 3.2V4.8L6.5 8z"/><path class="wave" d="M13.2 7.4a3.6 3.6 0 010 5.2M15.2 5.4a6.4 6.4 0 010 9.2"/><path class="cut" d="M13.4 7.8l4 4.4M17.4 7.8l-4 4.4"/></svg></button>
+    </div>
     <aside class="dex-sidebar" aria-label="도감 종류">
-      <h2>도감</h2>
       <div class="dex-tabs">
         <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="artifact">아티팩트</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button><button class="dex-tab" data-tab="augment">천상</button>
       </div>
     </aside>
-    <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>
+    <div class="dex-content" id="dexWall"><div class="cdx-find" id="dexFind"><label class="cdx-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4.5 4.5"/></svg><input id="dexSearch" type="search" placeholder="이름, 세트, 패시브로 찾기" aria-label="도감 검색" autocomplete="off" enterkeyhint="search"><button type="button" id="dexSearchClear" class="cdx-search-clear" aria-label="검색어 지우기" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg></button></label><span id="dexCount" class="cdx-count" aria-live="polite"></span><div id="dexChips" class="cdx-chips" role="group" aria-label="분류"></div></div><div id="dexList" class="dex-grid"></div></div>
+    <aside class="cdx-dock" id="dexDock" aria-label="선택한 항목 상세">
+      <div id="dexDetail" class="cdx-detail"></div>
+      <div class="cdx-dock-bar"><button type="button" id="dexDockBack" class="cdx-dock-back"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5"/></svg><span>목록</span></button><button type="button" id="dexPrev" class="cdx-step" aria-label="이전 항목"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5"/></svg><span>이전</span></button><span id="dexPos" class="cdx-pos" aria-live="polite"></span><button type="button" id="dexNext" class="cdx-step" aria-label="다음 항목"><span>다음</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 4.5L13 10l-5.5 5.5"/></svg></button></div>
+    </aside>
   </section></div>
   <div class="page" data-page="directtrade"><section class="market-stage-host" id="directTradeRoot"></section></div>
   <div class="page" data-page="shop"><section class="panel shop-wrap"><div id="shopBody"></div></section></div>
@@ -9949,7 +9975,10 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/unique-avatar-ui.js"></script>
 <link rel="stylesheet" href="/static/dispatch.css">
 <script src="/static/dispatch.js"></script>
+<link rel="stylesheet" href="/static/dex-scene.css">
+<link rel="stylesheet" href="/static/game-font.css?v=20261123">
 <script src="/static/app.js"></script>
+<script src="/static/dex-scene.js"></script>
 <script src="/static/market-stage.js"></script>
 <script src="/static/direct-trade.js"></script>
 <script src="/static/mail-stage.js"></script>
