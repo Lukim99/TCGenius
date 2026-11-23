@@ -67,6 +67,27 @@ function registerCharacterRoutes(server, deps) {
             needsStarter: !!user.need_character_card_select, isActive: user.id === account.activeCharacterId };
     }
 
+    function starterPreview(data, id, type, skillData) {
+        const card = { id, type, star: 4 };
+        const skillGroups = [{ ids: data.skills || [], label: '기본 스킬' }];
+        if (type !== '일반') skillGroups.push({ ids: data.class?.skills || [], label: '궁극기' });
+        return {
+            skills: skillGroups.flatMap(group => group.ids.map(skillId => {
+                const skill = skillData[skillId];
+                return skill ? { name: skill.name, kind: group.label,
+                    description: rpg.cardAwakening.formatSkillDescription(card, skill, rpg.formatCurrentSkillDesc(skill, card.star)),
+                    cost: Number(skill.mental_cost ?? skill.mp_cost ?? 0), resource: skill.mental_cost != null ? '정신력' : 'MP',
+                    cooldown: rpg.formatCooltime(skill.cooltime) } : null;
+            }).filter(Boolean)),
+            passive: type === '각성' ? rpg.cardAwakening.formatPassive(card) : '',
+            effects: rpg.getCardSlotEffectDefinitions(card).map(effect => {
+                const value = rpg.getSlotEffectValueAtStar(effect, card.star);
+                return { name: effect.name, value: effect.type === 'flat' ? String(value)
+                    : effect.type === 'seconds' ? value + '초' : Math.round(value * 1000) / 10 + '%' };
+            })
+        };
+    }
+
     server.get('/api/characters', requireAccount, async (req, res, next) => {
         try {
             const user = req.accountUser, account = store().accountFor(user);
@@ -77,25 +98,18 @@ function registerCharacterRoutes(server, deps) {
                 itemIcons: Object.fromEntries(['닉네임 변경권', '캐릭터 슬롯 확장권'].map(name => [name, itemIcon({ name, type: '티켓' })])),
                 wallet: { gold: user.gold, garnet: user.garnet, point: user.point }, goldCap: rpg.getAccountGoldState(user),
                 characters: members.map(character => summary(character, account)),
-                starters: cards().map((card, id) => card?.name ? {
-                    id, name: card.name, star: 5, imageUrl: sprite(card),
-                    iconUrl: cardIcon({ id, star: 4, type: '일반' }, null, card)?.concat('&portrait=1') || null,
-                    coverUrl: cardCover(card),
-                    covers: Object.fromEntries(['일반', '전직', '각성'].map(type => [type, cardCover(card, type)])),
-                    description: introductions[card.name] || '',
-                    skills: (card.skills || []).map(skillId => {
-                        const skill = skillData[skillId];
-                        return skill ? { name: skill.name, description: rpg.formatCurrentSkillDesc(skill, 4),
-                            cost: Number(skill.mental_cost ?? skill.mp_cost ?? 0), resource: skill.mental_cost != null ? '정신력' : 'MP',
-                            cooldown: rpg.formatCooltime(skill.cooltime) } : null;
-                    }).filter(Boolean),
-                    // 시작 카드의 5성 고유 슬롯 효과. 메인에도 같은 효과가 적용된다.
-                    effects: rpg.getCardSlotEffectDefinitions({ id, type: '일반' }).map(effect => {
-                        const value = rpg.getSlotEffectValueAtStar(effect, 4);
-                        return { name: effect.name, value: effect.type === 'flat' ? String(value)
-                            : effect.type === 'seconds' ? value + '초' : Math.round(value * 1000) / 10 + '%' };
-                    })
-                } : null).filter(Boolean),
+                starters: cards().map((card, id) => {
+                    if (!card?.name) return null;
+                    const previews = Object.fromEntries(['일반', '전직', '각성'].map(type => [type, starterPreview(card, id, type, skillData)]));
+                    return {
+                        id, name: card.name, star: 5, imageUrl: sprite(card),
+                        iconUrl: cardIcon({ id, star: 4, type: '일반' }, null, card)?.concat('&portrait=1') || null,
+                        coverUrl: cardCover(card),
+                        covers: Object.fromEntries(['일반', '전직', '각성'].map(type => [type, cardCover(card, type)])),
+                        description: introductions[card.name] || '',
+                        skills: previews['일반'].skills, effects: previews['일반'].effects, previews
+                    };
+                }).filter(Boolean),
                 transferItems: { card: count(user, ticketName('card')), equipment: count(user, ticketName('equipment')) } });
         } catch (error) { next(error); }
     });

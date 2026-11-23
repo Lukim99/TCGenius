@@ -1071,7 +1071,7 @@
         const art = el('div', 'as-create-art');
         const cover = el('div', 'as-create-cover'); cover.id = 'asCreateCover';
         art.appendChild(cover);
-        const coverTypes = el('div', 'as-create-cover-types'); coverTypes.setAttribute('role', 'group'); coverTypes.setAttribute('aria-label', '표지 종류');
+        const coverTypes = el('div', 'as-create-cover-types'); coverTypes.setAttribute('role', 'group'); coverTypes.setAttribute('aria-label', '캐릭터 타입 미리보기');
         const chooser = el('div', 'as-create-chooser'), navigation = el('div', 'as-create-navigation');
         const previous = el('button', 'as-tool', '‹'), next = el('button', 'as-tool', '›');
         previous.type = next.type = 'button'; previous.setAttribute('aria-label', '이전 캐릭터'); next.setAttribute('aria-label', '다음 캐릭터');
@@ -1084,7 +1084,7 @@
         const grade = el('span', 'as-create-grade', '시작 카드'), introduction = el('p', 'as-create-introduction');
         heading.append(grade, title, introduction);
         const description = el('div', 'as-create-description'); description.tabIndex = 0; description.setAttribute('role', 'region'); description.setAttribute('aria-label', '캐릭터 소개, 스킬과 고유 효과');
-        const abilities = el('div'); description.append(heading, abilities); inscription.appendChild(description);
+        const abilities = el('div'); abilities.id = 'asCreateAbilities'; description.append(heading, abilities); inscription.appendChild(description);
         const footer = el('div', 'as-create-footer');
         const field = character ? null : nameField(handle, '');
         if (field) {
@@ -1111,6 +1111,29 @@
         let selectedIndex = -1, artVersion = 0, lastSound = 0, coverType = '일반';
         const tokens = [];
 
+        function paintAbilities() {
+          const preview = starters[selectedIndex].previews[coverType];
+          abilities.replaceChildren(); description.scrollTop = 0;
+          preview.skills.forEach(skill => {
+            const entry = el('section', 'as-create-skill');
+            entry.append(el('p', 'as-create-kicker', skill.kind), el('h4', '', skill.name));
+            const facts = el('div', 'as-create-facts');
+            facts.append(el('span', '', skill.resource + ' ' + skill.cost), el('span', '', '재사용 ' + skill.cooldown));
+            entry.appendChild(facts);
+            String(skill.description || '').split('\n').filter(Boolean).forEach(line => entry.appendChild(el('p', 'as-create-copy', line)));
+            abilities.appendChild(entry);
+          });
+          if (preview.passive) {
+            const passive = el('section', 'as-create-passive');
+            passive.appendChild(el('h4', '', '각성 패시브'));
+            preview.passive.split('\n').filter(Boolean).forEach(line => passive.appendChild(el('p', 'as-create-copy', line)));
+            abilities.appendChild(passive);
+          }
+          const effects = el('section', 'as-create-effect'); effects.appendChild(el('h4', '', coverType + ' 슬롯 패시브'));
+          preview.effects.forEach(effect => { const line = el('p'); line.append(el('span', '', effect.name), el('strong', '', effect.value)); effects.appendChild(line); });
+          abilities.appendChild(effects);
+        }
+
         function paintCover() {
           const item = starters[selectedIndex], version = ++artVersion;
           Array.from(coverTypes.children).forEach(button => button.setAttribute('aria-pressed', String(button.textContent === coverType)));
@@ -1132,10 +1155,10 @@
         }
         ['일반', '전직', '각성'].forEach(type => {
           const button = el('button', 'as-create-cover-type', type); button.type = 'button';
-          button.setAttribute('aria-controls', cover.id);
+          button.setAttribute('aria-controls', cover.id + ' ' + abilities.id);
           button.addEventListener('click', () => {
             if (handle.isBusy() || coverType === type || selectedIndex < 0) return;
-            coverType = type; paintCover();
+            coverType = type; paintCover(); paintAbilities();
           });
           coverTypes.appendChild(button);
         });
@@ -1147,19 +1170,7 @@
           tokens.forEach((button, i) => { button.setAttribute('aria-checked', String(i === index)); button.tabIndex = i === index ? 0 : -1; });
           title.textContent = item.name; position.textContent = String(index + 1).padStart(2, '0') + ' / ' + starters.length;
           introduction.textContent = item.description || '';
-          abilities.replaceChildren(); description.scrollTop = 0;
-          (item.skills || []).forEach(skill => {
-            const entry = el('section', 'as-create-skill');
-            entry.append(el('p', 'as-create-kicker', '기본 스킬'), el('h4', '', skill.name));
-            const facts = el('div', 'as-create-facts');
-            facts.append(el('span', '', skill.resource + ' ' + skill.cost), el('span', '', '재사용 ' + skill.cooldown));
-            entry.appendChild(facts);
-            String(skill.description || '').split('\n').filter(Boolean).forEach(line => entry.appendChild(el('p', 'as-create-copy', line)));
-            abilities.appendChild(entry);
-          });
-          const effects = el('section', 'as-create-effect'); effects.appendChild(el('h4', '', '고유 슬롯 효과'));
-          (item.effects || []).forEach(effect => { const line = el('p'); line.append(el('span', '', effect.name), el('strong', '', effect.value)); effects.appendChild(line); });
-          abilities.appendChild(effects);
+          paintAbilities();
           paintCover();
           if (userAction) {
             const rect = tokens[index].getBoundingClientRect(), parent = rail.getBoundingClientRect();

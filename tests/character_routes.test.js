@@ -71,6 +71,43 @@ test('생성 안내는 5성 능력, 프레임 없는 아이콘, 세 종류 표�
     assert.equal(starters.find(card => card.name === '키노').effects[0].value, '10');
 });
 
+test('생성 타입 미리보기는 궁극기, 각성 패시브와 해당 타입의 5성 슬롯 효과를 제공한다', async () => {
+    const { starters } = (await request('/api/characters')).body;
+    for (const card of starters) {
+        const previews = card.previews;
+        assert.deepEqual(previews['일반'].skills, card.skills);
+        assert.deepEqual(previews['일반'].effects, card.effects);
+        assert.equal(previews['일반'].passive, '');
+        assert.equal(previews['전직'].passive, '');
+        assert.ok(previews['각성'].passive.length > 0);
+        assert.ok(previews['일반'].skills.every(skill => skill.kind === '기본 스킬'));
+        for (const type of ['전직', '각성']) {
+            assert.ok(previews[type].skills.some(skill => skill.kind === '궁극기'));
+            assert.equal(previews[type].skills.length, previews['일반'].skills.length + 1);
+            assert.ok(previews[type].effects.length > 0);
+            assert.ok(!JSON.stringify(previews[type]).includes('${'), '성급 수치를 채워 표시한다');
+        }
+    }
+    const bread = starters.find(card => card.name === '빵귤').previews;
+    const ultimate = bread['전직'].skills.find(skill => skill.kind === '궁극기');
+    assert.equal(ultimate.name, '유드 알레프');
+    assert.equal(ultimate.cost, 520);
+    assert.equal(ultimate.cooldown, '120초');
+    assert.deepEqual(bread['전직'].effects, [{ name: '스킬 쿨타임 감소', value: '5%' }, { name: '교차 공격 피해', value: '5%' }]);
+    assert.deepEqual(bread['각성'].effects, [{ name: '스킬 쿨타임 감소', value: '15%' }, { name: '교차 공격 피해', value: '-5%' }]);
+    assert.match(bread['각성'].passive, /10%/);
+    const kenshi = starters.find(card => card.name === '켄시').previews;
+    assert.match(kenshi['전직'].skills[0].description, /절반/);
+    assert.ok(kenshi['각성'].skills.every(skill => /48% 감소/.test(skill.description)));
+    assert.deepEqual(kenshi['각성'].effects, [{ name: '치명타 피해량', value: '15%' }, { name: '치명타 확률', value: '-5%' }]);
+    const ilion = starters.find(card => card.name === '일리온').previews;
+    assert.equal(ilion['전직'].effects[0].value, '2초');
+    assert.equal(ilion['각성'].effects[0].value, '1');
+    const kino = starters.find(card => card.name === '키노').previews['전직'].skills.find(skill => skill.kind === '궁극기');
+    assert.equal(kino.resource, '정신력');
+    assert.equal(kino.cost, 80);
+});
+
 test('부캐 생성은 1레벨과 시작 키트를 지급하고 재전송으로 캐릭터를 중복 생성하지 않는다', async () => {
     const requestId = crypto.randomUUID();
     const first = await action('create', { name: '두번째', cardId: 1 }, requestId);
