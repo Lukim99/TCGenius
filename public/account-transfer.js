@@ -286,7 +286,7 @@
         b.addEventListener('click', function () {
           if (S.busy) return;
           S.item = it; S.done = null; S.error = ''; sound('tap', 0.8);
-          if (wide.matches) render(); else { setStep('inspect'); pInsp.focus({ preventScroll: true }); }
+          if (wide.matches || S.kind === 'card') render(); else { setStep('inspect'); pInsp.focus({ preventScroll: true }); }
         });
         list.appendChild(b);
       });
