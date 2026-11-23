@@ -28,6 +28,7 @@ const effectText = effect => effect.type === 'flat' ? String(effect.base)
 
 test('도감은 생성 화면의 아이콘과 소개, 형태별 표지 및 정확한 고유 슬롯 수치를 제공한다', async () => {
     const dex = await get('/api/dex/equipment');
+    assert.equal(Object.hasOwn(dex, 'artifact'), false, '아티팩트는 도감에서 제외한다');
     const { starters } = await get('/api/characters');
     assert.equal(dex.character.length, starters.length);
     for (const entry of dex.character) {

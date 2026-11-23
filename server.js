@@ -7235,14 +7235,13 @@ function buildEquipmentDex() {
         shoes: pack(eq.shoes, 'shoes', '신발'),
         accessory: pack(eq.accessory, 'accessory', '장신구'),
         support: pack(eq.support, 'support', '보조'),
-        artifact: pack(eq.artifact, 'artifact', '아티팩트'),
         orb: buildOrbDex(),
         specter: buildSpecterDex(),
         pet: buildPetDex(),
         character: buildCharacterDex(),
         rarityOrder: RARITY_ORDER
     };
-    const equipmentEntries = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'].flatMap(type => result[type]);
+    const equipmentEntries = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].flatMap(type => result[type]);
     const setGroups = {};
     equipmentEntries.forEach(entry => {
         if (!entry.set) return;
@@ -9911,7 +9910,7 @@ function renderUserDashboard(sess, opts) {
     </div>
     <aside class="dex-sidebar" aria-label="도감 종류">
       <div class="dex-tabs">
-        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="artifact">아티팩트</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button><button class="dex-tab" data-tab="augment">천상</button>
+        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button><button class="dex-tab" data-tab="augment">천상</button>
       </div>
     </aside>
     <div class="dex-content" id="dexWall"><div class="cdx-find" id="dexFind"><label class="cdx-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4.5 4.5"/></svg><input id="dexSearch" type="search" placeholder="이름, 세트, 패시브로 찾기" aria-label="도감 검색" autocomplete="off" enterkeyhint="search"><button type="button" id="dexSearchClear" class="cdx-search-clear" aria-label="검색어 지우기" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg></button></label><span id="dexCount" class="cdx-count" aria-live="polite"></span><div id="dexChips" class="cdx-chips" role="group" aria-label="분류"></div></div><div id="dexList" class="dex-grid"></div></div>
@@ -9953,6 +9952,8 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/dispatch.js"></script>
 <link rel="stylesheet" href="/static/dex-scene.css">
 <link rel="stylesheet" href="/static/dex-catalogs.css">
+<link rel="stylesheet" href="/static/dex-passives.css">
+<script src="/static/dex-passives.js"></script>
 <link rel="stylesheet" href="/static/game-font.css?v=20261123">
 <script src="/static/app.js"></script>
 <script src="/static/dex-scene.js"></script>
