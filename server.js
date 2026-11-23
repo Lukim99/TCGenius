@@ -5322,6 +5322,8 @@ server.get('/card-image', requireUser, async (req, res) => {
     if (typeof req.query.cover != 'undefined') {
         const coverPath = cardComposite.getCoverPath(name, String(req.query.cover));
         if (!coverPath) return res.status(404).end();
+        // Generated cover URLs change with the file, so this version can stay in the browser cache.
+        if (req.query.v === String(fs.statSync(coverPath).mtimeMs)) res.set('Cache-Control', 'private, max-age=86400, immutable');
         return res.sendFile(coverPath);
     }
     if (typeof req.query.star != 'undefined') {

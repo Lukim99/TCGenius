@@ -5,7 +5,7 @@
 // 화면에 필요한 값은 public/account-stage.js가 API에서 받아 textContent로만 그린다.
 // 장면(하늘, 문, 호수, 캐릭터)은 WebGL 캔버스가 그리고, 여기 있는 단추와 글자는 그 위에 얹는 게임 HUD다.
 
-const VERSION = '20261123m12';
+const VERSION = '20261123m13';
 const CSS = '/static/account-stage.css?v=' + VERSION;
 const JS = '/static/account-stage.js?v=' + VERSION;
 const ART = '/static/assets/account-stage/';

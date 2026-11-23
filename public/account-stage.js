@@ -1108,8 +1108,9 @@
         });
         act.row.firstChild.textContent = '돌아가기'; footer.append(handle.errorBox, act.row);
         form.append(wall, gallery, inscription, footer); handle.body.appendChild(form);
-        let selectedIndex = -1, artVersion = 0, lastSound = 0, coverType = '일반';
+        let selectedIndex = -1, artVersion = 0, lastSound = 0, coverType = '일반', coverTimer = null;
         const tokens = [];
+        handle.cleanup(() => clearTimeout(coverTimer));
 
         function paintAbilities() {
           const preview = starters[selectedIndex].previews[coverType];
@@ -1137,21 +1138,31 @@
         function paintCover() {
           const item = starters[selectedIndex], version = ++artVersion;
           Array.from(coverTypes.children).forEach(button => button.setAttribute('aria-pressed', String(button.textContent === coverType)));
-          cover.dataset.status = '표지 불러오는 중'; cover.classList.add('is-loading');
+          clearTimeout(coverTimer);
+          cover.dataset.status = ''; cover.classList.remove('is-loading');
           const src = safeUrl(item.covers?.[coverType] || (coverType === '일반' ? item.coverUrl : ''));
           const img = el('img', 'as-create-image'); img.alt = item.name + ' ' + coverType + ' 표지';
           const failed = () => {
             if (!handle.alive() || version !== artVersion) return;
+            clearTimeout(coverTimer);
             cover.replaceChildren(); wall.replaceChildren(); cover.classList.remove('is-loading'); cover.dataset.status = '표지를 불러올 수 없습니다';
           };
-          img.addEventListener('load', () => {
-            if (!handle.alive() || version !== artVersion) return;
+          const loaded = () => {
+            if (!handle.alive() || version !== artVersion || img.parentNode === cover) return;
+            clearTimeout(coverTimer);
             cover.replaceChildren(img); cover.classList.remove('is-loading'); cover.dataset.status = '';
             if (!reduced()) img.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280 });
             const backdrop = el('img'); backdrop.alt = ''; backdrop.src = src; wall.replaceChildren(backdrop);
-          }, { once: true });
+          };
+          img.addEventListener('load', loaded, { once: true });
           img.addEventListener('error', failed, { once: true });
-          if (src) img.src = src; else failed();
+          if (!src) { failed(); return; }
+          img.src = src;
+          if (img.complete && img.naturalWidth) loaded();
+          else coverTimer = setTimeout(() => {
+            if (!handle.alive() || version !== artVersion) return;
+            cover.dataset.status = '표지 불러오는 중'; cover.classList.add('is-loading');
+          }, 300);
         }
         ['일반', '전직', '각성'].forEach(type => {
           const button = el('button', 'as-create-cover-type', type); button.type = 'button';

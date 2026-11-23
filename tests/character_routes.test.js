@@ -71,6 +71,26 @@ test('생성 안내는 5성 능력, 프레임 없는 아이콘, 세 종류 표�
     assert.equal(starters.find(card => card.name === '키노').effects[0].value, '10');
 });
 
+test('현재 표지 버전은 브라우저 캐시를 사용하고 버전 없는 주소와 오래된 버전은 재검증한다', async () => {
+    const { starters } = (await request('/api/characters')).body;
+    const url = new URL(starters[0].coverUrl, base);
+    const image = await fetch(url, { headers: { Cookie: cookie } });
+    assert.equal(image.status, 200);
+    assert.equal(image.headers.get('cache-control'), 'private, max-age=86400, immutable');
+    assert.match(image.headers.get('content-type'), /^image\//);
+    const etag = image.headers.get('etag'); await image.arrayBuffer();
+    const cached = await fetch(url, { headers: { Cookie: cookie, 'If-None-Match': etag, 'Cache-Control': 'max-age=0' } });
+    assert.equal(cached.status, 304);
+    for (const version of [null, 'outdated']) {
+        if (version === null) url.searchParams.delete('v'); else url.searchParams.set('v', version);
+        const response = await fetch(url, { headers: { Cookie: cookie } });
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get('cache-control'), /max-age=0/);
+        assert.ok(!response.headers.get('cache-control').includes('immutable'));
+        await response.arrayBuffer();
+    }
+});
+
 test('생성 타입 미리보기는 궁극기, 각성 패시브와 해당 타입의 5성 슬롯 효과를 제공한다', async () => {
     const { starters } = (await request('/api/characters')).body;
     for (const card of starters) {
