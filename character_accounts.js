@@ -74,6 +74,7 @@ function resolveSlots(user, members, links = user.slotCharacterLinks) {
 
 function migrate(user, items, shops = {}) {
     const character = clone(user);
+    character.raidRewardProgress ??= require('./raid_reward_progress').fromLegacy(user);
     normalizeSlots(character);
     const account = { id: 'account:' + user.id, recordType: 'account', name: user.name,
         schemaVersion: 2, characterIds: [user.id], activeCharacterId: user.id, capacity: 6,

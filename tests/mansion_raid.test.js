@@ -137,6 +137,7 @@ async function reset(name = seeds[0].name) {
     const user = await rpg.getRPGUserByName(name);
     Object.assign(user, new rpg.RPGUser(name, name + '-id'), structuredClone(seeds.find(seed => seed.name === name)));
     user.gold = 1000000000; user.battleCryPotion = null; user.field = null; user.unlockedRaids = []; user.titleProgress = {}; user.titles = []; user.quests = {};
+    user.raidRewardProgress = {};
     assert.equal((await user.save()).success, true);
     writes.length = 0;
     return user;
@@ -1705,7 +1706,7 @@ test('레이드별 퀘스트 조건은 모든 난이도를 합산하고 주간 �
         await party.__test.grantPartyQuestClearRewards(room);
         assert.deepEqual(user.quests[951]?.counters || {}, {}, '진행 중인 레이드는 클리어로 집계하지 않는다');
         const week = rpg.getKoreanWeekKey(new Date());
-        Object.assign(user.titleProgress, { hoduRewardWeek: week, hoduRewardCount: 3, butaRewardWeek: week, mansionRewardWeek: week });
+        user.raidRewardProgress = { hoduRewardWeek: week, hoduRewardCount: 3, butaRewardWeek: week, mansionRewardWeek: week };
         await user.save();
         room.state = 'cleared'; room.result = {};
         await Promise.all([party.__test.grantPartyQuestClearRewards(room), party.__test.grantPartyQuestClearRewards(room)]);
@@ -1741,8 +1742,8 @@ test('나이트메어는 최초 보상만 한 번 지급하고 주가 바뀌어�
     assert.equal(user.gold, gold); assert.equal(user.inventory.equipment.length, 2);
     assert.equal(user.inventory.equipment.filter(equip => rpg.getEquipmentData('artifact', equip.id).rarity === '레전더리').length, 2);
     assert.equal(rpg.getInventoryItemCount(user, registration.shardId), 50); assert.equal(user.garnet, 3000);
-    assert.ok(user.titleProgress.mansionNightmareFirst); assert.ok(rpg.getUnlockedTitles(user).includes('mansionNightmare'));
-    assert.equal(user.titleProgress.mansionRewardWeek, undefined);
+    assert.ok(user.raidRewardProgress.mansionNightmareFirst); assert.ok(rpg.getUnlockedTitles(user).includes('mansionNightmare'));
+    assert.equal(user.raidRewardProgress.mansionRewardWeek, undefined);
     assert.ok(!rpg.getUnlockedTitles(user).includes('mansionFirstClear'));
     assert.ok(room.result.rewards[0].firstClear); assert.deepEqual(room.result.rewards[0].items, []);
     assert.equal(room.result.rewards[0].item, null);
@@ -1768,12 +1769,12 @@ test('나이트메어는 최초 보상만 한 번 지급하고 주가 바뀌어�
 test('이미 주간 보상을 받은 계정의 나이트메어 최초 보상은 주간 보상과 독립적으로 지급된다', async () => {
     const room = await battle('nightmare', 1, 1); room.state = 'cleared'; room.result = {};
     let user = await rpg.getRPGUserByName(seeds[0].name); const gold = user.gold;
-    user.titleProgress.mansionRewardWeek = rpg.getKoreanWeekKey(new Date()); await user.save();
+    user.raidRewardProgress = { mansionRewardWeek: rpg.getKoreanWeekKey(new Date()) }; await user.save();
     await party.__test.grantPartyQuestClearRewards(room);
     user = await rpg.getRPGUserByName(user.name);
     assert.equal(user.gold, gold); assert.equal(user.inventory.equipment.length, 2); assert.equal(room.result.rewards[0].weeklyLocked, false);
     assert.equal(rpg.getInventoryItemCount(user, registration.shardId), 50); assert.equal(user.garnet, 3000);
-    assert.equal(user.titleProgress.mansionRewardWeek, rpg.getKoreanWeekKey(new Date()));
+    assert.equal(user.raidRewardProgress.mansionRewardWeek, rpg.getKoreanWeekKey(new Date()));
 });
 
 test('카드 추가 보상은 문서 성급과 유효한 일반·전직·각성 캐릭터를 지급하며 투신 포션은 최종 공격력을 올린다', async () => {

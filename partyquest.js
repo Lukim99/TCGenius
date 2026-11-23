@@ -13,6 +13,7 @@ const ilionCards = require('./ilion_cards');
 const randoCharacters = require('./rando_characters');
 const combatShields = require('./combat_shields');
 const birthdayEvent = require('./birthday_raid');
+const raidRewardProgress = require('./raid_reward_progress');
 
 const PARTY_QUEST_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PartyQuest.json');
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -877,13 +878,14 @@ function grantPartyQuestClearRewards(room) {
                 // 부타게임 주간 보상 제한 (노말/하드 통합 주 1회, 월요일 0시 KST 초기화).
                 // 입장/클리어는 무제한이고 칭호 진행도는 계속 쌓인다.
                 const prog = rpgenius.getTitleProgress(user);
+                const raidProgress = raidRewardProgress.getProgress(user);
                 const weekKey = rpgenius.getKoreanWeekKey(new Date());
                 // 흑화 호두 주간 보상 제한: 노말/익스트림 통합 주 최대 3회 (입장/클리어/칭호 진행도/최초 클리어 보너스는 무제한)
                 const isHodu = room.questId === 'blackHodu' || room.questId === 'blackHoduExtreme';
-                const hoduRewardCount = isHodu && prog.hoduRewardWeek === weekKey ? Number(prog.hoduRewardCount || 0) : 0;
-                const weeklyLocked = (isButaQuest(room.questId) && prog.butaRewardWeek === weekKey)
+                const hoduRewardCount = isHodu && raidProgress.hoduRewardWeek === weekKey ? Number(raidProgress.hoduRewardCount || 0) : 0;
+                const weeklyLocked = (isButaQuest(room.questId) && raidProgress.butaRewardWeek === weekKey)
                     || (isHodu && hoduRewardCount >= HODU_WEEKLY_REWARD_LIMIT)
-                    || (isMansion && !isMansionNightmare && prog.mansionRewardWeek === weekKey);
+                    || (isMansion && !isMansionNightmare && raidProgress.mansionRewardWeek === weekKey);
                 const grantRegularRewards = !weeklyLocked && !isMansionNightmare;
                 const exp = grantRegularRewards ? Math.max(0, Math.round(Number(rewards.exp || 0))) : 0;
                 const levelUps = exp > 0 ? addPartyQuestExperience(user, exp) : 0;
@@ -935,8 +937,8 @@ function grantPartyQuestClearRewards(room) {
                 if (!itemReward && extraRewards.length) itemReward = extraRewards[extraRewards.length - 1];
                 // 칭호 진행 추적 (흑화 호두)
                 if (isHodu && !weeklyLocked) {
-                    prog.hoduRewardWeek = weekKey;
-                    prog.hoduRewardCount = hoduRewardCount + 1;
+                    raidProgress.hoduRewardWeek = weekKey;
+                    raidProgress.hoduRewardCount = hoduRewardCount + 1;
                 }
                 if (room.questId === 'blackHodu') {
                     prog.hoduClears = Number(prog.hoduClears || 0) + 1;
@@ -945,31 +947,32 @@ function grantPartyQuestClearRewards(room) {
                 // 칭호 진행 추적 (부타게임 — 노말/하드 공용 카운터, 주간 제한과 무관하게 적립)
                 if (isButaQuest(room.questId)) {
                     prog.butaClears = Number(prog.butaClears || 0) + 1;
-                    if (!weeklyLocked) prog.butaRewardWeek = weekKey;
+                    if (!weeklyLocked) raidProgress.butaRewardWeek = weekKey;
                     rpgenius.checkAndUnlockTitles(user);
                 }
                 // 흑화 호두 (익스트림) 개인 최초 클리어 보너스 (기존 보상과 별도)
                 let firstClear = null;
                 if (isMansion) {
                     prog.mansionClears = Number(prog.mansionClears || 0) + 1;
-                    if (!isMansionNightmare && !weeklyLocked) prog.mansionRewardWeek = weekKey;
+                    if (!isMansionNightmare && !weeklyLocked) raidProgress.mansionRewardWeek = weekKey;
                     rpgenius.checkAndUnlockTitles(user);
-                    if (isMansionNightmare && !prog.mansionNightmareFirst) {
+                    if (isMansionNightmare && !raidProgress.mansionNightmareFirst) {
                         const granted = (quest.firstClearRewards || []).flatMap(entry => { const reward = grantPartyQuestPackReward(user, entry, summary); return reward ? reward.pieces || [reward] : []; });
                         for (const reward of granted) if (reward.kind === 'item') Object.assign(reward, getPartyQuestItemAsset(reward.itemId, 0));
-                        rpgenius.unlockTitle(user, 'mansionNightmare');
-                        prog.mansionNightmareFirst = true;
-                        firstClear = { questName: quest.name, rewards: [...granted, { kind: 'title', name: '악몽의 대저택', count: 1, iconUrl: rpgenius.getTitleImageUrl('악몽의 대저택') }] };
+                        const newTitle = rpgenius.unlockTitle(user, 'mansionNightmare');
+                        raidProgress.mansionNightmareFirst = true;
+                        firstClear = { questName: quest.name, rewards: [...granted, ...(newTitle ? [{ kind: 'title', name: '악몽의 대저택', count: 1, iconUrl: rpgenius.getTitleImageUrl('악몽의 대저택') }] : [])] };
                     }
                 }
-                if (room.questId === 'blackHoduExtreme' && !rpgenius.getUnlockedTitles(user).includes('hoduExtreme')) {
+                if (room.questId === 'blackHoduExtreme' && !raidProgress.hoduExtremeFirst) {
                     const bonusGold = 1000000;
                     const bonusGarnet = 200;
                     const boxItemId = 137;
                     user.gold = Number(user.gold || 0) + bonusGold;
                     user.garnet = Number(user.garnet || 0) + bonusGarnet;
                     rpgenius.addInventoryItem(user, boxItemId, 1);
-                    rpgenius.unlockTitle(user, 'hoduExtreme');
+                    const newTitle = rpgenius.unlockTitle(user, 'hoduExtreme');
+                    raidProgress.hoduExtremeFirst = true;
                     const itemCache = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Item', []) : [];
                     const boxItem = itemCache[boxItemId];
                     const boxAsset = getPartyQuestItemAsset(boxItemId, 0);
@@ -979,11 +982,11 @@ function grantPartyQuestClearRewards(room) {
                             { kind: 'item', name: boxItem ? boxItem.name : '흑화 호두 장신구 상자', count: 1, iconUrl: boxAsset.iconUrl, frameUrl: boxAsset.frameUrl },
                             { kind: 'garnet', name: '가넷', count: bonusGarnet },
                             { kind: 'gold', name: '골드', count: bonusGold },
-                            { kind: 'title', name: '흑두 익스트림' }
+                            ...(newTitle ? [{ kind: 'title', name: '흑두 익스트림' }] : [])
                         ]
                     };
                 }
-                if (isMansion) await rpgenius.commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'titleProgress', 'titles', 'quests']); else await user.save();
+                if (isMansion) await rpgenius.commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'titleProgress', 'titles', 'quests', 'raidRewardProgress']); else await user.save();
                 if (equipmentGold > 0) member.runtime.pendingEquipmentGold = 0;
                 results.push({
                     name: member.name,

@@ -157,6 +157,7 @@ function registerCharacterRoutes(server, deps) {
         user.accountId = account.id;
         user.characterNumber = account.characterIds.length + 1;
         user.boundItems = {};
+        user.raidRewardProgress = {};
         starter(user, req.body.cardId);
         const raw = JSON.parse(JSON.stringify(user)), result = { ok: true, id: user.id };
         await store().commit([current], { keys: [], accountChange: { id: account.id,

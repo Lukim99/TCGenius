@@ -620,7 +620,7 @@ test('레이드 보상 횟수가 있을 때만 용기의 보석 5%, 드랍율 �
         for (const [questId, locked] of [['blackHodu', false], ['blackHodu', true], ['butaGame', false], ['butaGameHard', true]]) {
             const u = user('빵귤'); u.save = async () => ({ success: true });
             const week = rpg.getKoreanWeekKey(new Date());
-            if (locked) u.titleProgress = { hoduRewardWeek: week, hoduRewardCount: 3, butaRewardWeek: week };
+            if (locked) u.raidRewardProgress = { hoduRewardWeek: week, hoduRewardCount: 3, butaRewardWeek: week };
             rpg.getRPGUserByName = async () => u;
             const member = { name: u.name, potions: [], position: '메인딜러', baseSnapshot: { stats: { itemDropChance: 1000 }, slotEffects: { itemDropChance: 1000 } }, runtime: { hp: 100, hpMax: 100, buffs: [], cooldownsUntil: {} } };
             const room = { id: 'test', questId, members: [member], result: {}, notices: [], combatLog: [], chatLog: [], streams: new Map(), state: 'cleared' };
