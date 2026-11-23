@@ -16,8 +16,8 @@ function registerCharacterRoutes(server, deps) {
     const itemToken = (user, kind, index) => crypto.createHash('sha256').update(JSON.stringify([user.id, kind, index, user.inventory[kind]?.[index]])).digest('hex');
     const names = new Map();
 
-    function assertIdle(user) {
-        const reason = rpg.getWebGameActionBlock(user, true);
+    function assertIdle(user, allowDispatch = false) {
+        const reason = rpg.getWebGameActionBlock(allowDispatch ? { ...user, dispatch: null } : user, true);
         if (reason) fail(reason, 409);
         if (user.paradise?.status === 'active' || partyquest.getRoomOf(user.name)
             || user.pvp?.battle && user.pvp.battle.phase !== 'ended') fail('진행 중인 전투나 탐험을 먼저 마쳐주세요.', 409);
@@ -64,6 +64,7 @@ function registerCharacterRoutes(server, deps) {
             type: user.main_card?.type || '일반', power: rpg.calculateTownCombatPower(user).total,
             cardLabel: data ? rpg.formatUserCard(user.main_card) : '',
             imageUrl: sprite(display), renameTickets: count(user, '닉네임 변경권'), expandTickets: count(user, '캐릭터 슬롯 확장권'),
+            dispatch: user.dispatch ? { status: user.dispatch.status, endsAt: user.dispatch.endsAt, destination: user.dispatch.destination } : null,
             needsStarter: !!user.need_character_card_select, isActive: user.id === account.activeCharacterId };
     }
 
@@ -184,8 +185,8 @@ function registerCharacterRoutes(server, deps) {
             setCharacterSession(res, current);
             return res.json(result);
         }
-        assertIdle(current);
-        assertIdle(target);
+        assertIdle(current, true);
+        assertIdle(target, true);
         await rpg.stopFishingForCommand(current);
         await store().commit([current], { keys: [], accountChange: { id: account.id,
             changes: { activeCharacterId: target.id, selectionRevision: account.selectionRevision + 1 },

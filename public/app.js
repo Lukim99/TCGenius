@@ -34,7 +34,7 @@ const api = async url => {
 const postApi = async (url, body) => {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
     const x = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(x.error || ('HTTP ' + r.status));
+    if (!r.ok) throw Object.assign(new Error(x.error || ('HTTP ' + r.status)), { status: r.status, retryable: !!x.retryable });
     return x;
 };
 // ===== 공통 메시지 모달 (네이티브 alert/confirm/prompt 대체) =====
@@ -173,11 +173,12 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '자물쇠': '자물쇠', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '자물쇠': '자물쇠', combine: '카드조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
 PAGE_LABELS.awakeningcombine = '각성조합';
 PAGE_LABELS['orb-fusion'] = '보주합성';
 PAGE_LABELS['낚시'] = '낚시';
 PAGE_LABELS.directtrade = '1:1거래';
+PAGE_LABELS.dispatch = '파견';
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -195,7 +196,7 @@ const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'orb-fusion', 'equipment-synthesis', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', 'dispatch', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'orb-fusion', 'equipment-synthesis', 'dex', '레벨보상'] },
     { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['포인트 광산', '퍼스널뽑기', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder', 'directtrade'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -286,6 +287,7 @@ function navigatePage(pageId) {
     if (pageId === '퀘스트') loadQuests();
     if (pageId === '사냥') renderHuntMenu();
     if (pageId === 'combine') loadCombine();
+    if (pageId === 'dispatch') window.DispatchUI.mount($('#dispatchRoot'), { api, postApi }); else window.DispatchUI?.unmount();
     if (pageId === 'jobcombine') loadJobCombine();
     if (pageId === 'awakeningcombine') loadAwakeningCombine();
     if (pageId === 'orb-fusion') window.OrbFusionUI.mount($('#orbFusionRoot'), { api, postApi }); else window.OrbFusionUI?.unmount();
@@ -7292,7 +7294,8 @@ async function refreshMailBadge() {
         const requestedTab = new URLSearchParams(location.search).get('tab');
         const tab = ['캡슐', '윷놀이'].includes(requestedTab) ? '포인트 광산' : requestedTab;
         const initialPage = (typeof window !== 'undefined' && window.__INITIAL_PAGE) || '';
-        if (tab && GROUPS.some(g => g.pages.includes(tab))) activatePage(tab);
+        if (me.dispatching) activatePage('dispatch');
+        else if (tab && GROUPS.some(g => g.pages.includes(tab))) activatePage(tab);
         else if (initialPage && GROUPS.some(g => g.pages.includes(initialPage))) activatePage(initialPage);
         else activatePage('home');
     } catch (e) {

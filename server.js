@@ -94,7 +94,7 @@ const BANNER_TARGET_TABS = [
     { value: '사냥', label: '콘텐츠 · 사냥' },
     { value: '[H]필드', label: '콘텐츠 · 헬 필드' },
     { value: 'pvp', label: '콘텐츠 · PVP' },
-    { value: 'combine', label: '콘텐츠 · 조합' },
+    { value: 'combine', label: '콘텐츠 · 카드조합' },
     { value: 'jobcombine', label: '콘텐츠 · 전직조합' },
     { value: 'awakeningcombine', label: '콘텐츠 · 각성조합' },
     { value: 'orb-fusion', label: '콘텐츠 / 보주합성' },
@@ -298,6 +298,12 @@ async function assertCurrentCharacter(req) {
     const user = await sessionCharacter(req.session);
     const changed = !user || characterSessionError(req, req.session, user);
     if (changed) throw Object.assign(new Error(changed || '캐릭터를 다시 선택해주세요.'), { status: 409, code: 'CHARACTER_CHANGED' });
+    if (dispatchBlocksRequest(req, user)) throw Object.assign(new Error('파견 중인 캐릭터입니다. 다른 캐릭터로 전환해주세요.'), { status: 409 });
+}
+
+function dispatchBlocksRequest(req, user) {
+    return user.dispatch?.status === 'active' && !['GET', 'HEAD'].includes(req.method)
+        && !/^\/api\/(dispatch(?:\/|$)|characters(?:\/|$)|admin\/|otp\/|chat\/|point\/charge$|logout$)/.test(req.path);
 }
 
 async function requireAccount(req, res, next) {
@@ -363,17 +369,21 @@ function requireUser(req, res, next) {
     if (shopPurchaseLocks.has(sess.name)) return res.status(409).json({ error: '아이템 또는 구매를 처리 중입니다. 잠시 후 다시 시도해주세요.' });
     rpgenius.getRPGUserByName(sess.name).then(user => {
         if (!user) return next();
-        return rpgenius.enqueueFieldAction(user, () => new Promise(resolve => {
-            if (res.destroyed) { resolve(); return; }
-            const changed = characterSessionError(req, sess, user);
-            if (changed) { res.status(409).json({ error: changed, code: 'CHARACTER_CHANGED' }); resolve(); return; }
-            const end = res.end;
-            res.end = function(...args) {
-                try { return end.apply(this, args); }
-                finally { res.end = end; resolve(); }
-            };
-            next();
-        }));
+        return rpgenius.enqueueFieldAction(user, async () => {
+            user = await rpgenius.getRPGUserByName(sess.name);
+            return new Promise(resolve => {
+                if (res.destroyed) { resolve(); return; }
+                const changed = characterSessionError(req, sess, user);
+                if (changed) { res.status(409).json({ error: changed, code: 'CHARACTER_CHANGED' }); resolve(); return; }
+                if (dispatchBlocksRequest(req, user)) { res.status(409).json({ error: '파견 중인 캐릭터입니다. 다른 캐릭터로 전환해주세요.', code: 'CHARACTER_DISPATCHED' }); resolve(); return; }
+                const end = res.end;
+                res.end = function(...args) {
+                    try { return end.apply(this, args); }
+                    finally { res.end = end; resolve(); }
+                };
+                next();
+            });
+        });
     }).catch(next);
 }
 
@@ -390,7 +400,9 @@ server.use(async (req, res, next) => {
         if (!user.accountId) { user = await rpgenius.ensureCharacterAccount(user); setCharacterSession(res, user); }
         const changed = characterSessionError(req, sess, user);
         if (changed) return req.path.startsWith('/api/') ? res.status(409).json({ error: changed, code: 'CHARACTER_CHANGED' }) : res.redirect('/characters');
+        if (dispatchBlocksRequest(req, user)) return res.status(409).json({ error: '파견 중인 캐릭터입니다. 다른 캐릭터로 전환해주세요.', code: 'CHARACTER_DISPATCHED' });
         req.characterSession = { ...sess, name: user.name, characterId: user.id, accountId: user.accountId, admin: !!user.isAdmin };
+        req.dispatching = user.dispatch?.status === 'active';
         const send = res.send;
         res.send = function(body) {
             if (typeof body === 'string' && body.includes('</head>')) {
@@ -411,6 +423,8 @@ require('./character_routes').registerCharacterRoutes(server, { rpg: rpgenius, p
 server.get('/characters', requireAccount, (req, res) => {
     res.type('html').send(require('./account_screens').renderCharacterSelection());
 });
+
+require('./dispatch').registerDispatchRoutes(server, { requireUser, itemIcon: getItemIconUrl });
 
 function parseBannerUpload(req, res, next) {
     bannerUploadBody(req, res, error => {
@@ -660,7 +674,7 @@ server.post('/api/logout', (req, res) => {
 });
 
 server.get('/api/me', requireUser, (req, res) => {
-    res.json({ name: req.session.name, admin: !!req.session.admin });
+    res.json({ name: req.session.name, admin: !!req.session.admin, dispatching: !!req.dispatching });
 });
 
 server.get('/api/otp/status', requireUser, async (req, res) => {
@@ -9806,6 +9820,7 @@ function renderUserDashboard(sess, opts) {
       <div id="viewer" class="viewer inventory-viewer"></div>
     </section>
   </div>
+  <div class="page" data-page="dispatch"><div id="dispatchRoot"></div></div>
   <div class="page" data-page="낚시"><section id="fishingPanel"></section></div>
   <div class="page" data-page="mail"><section class="market-stage-host" id="mailStageRoot"></section></div>
   <div class="page" data-page="preset"><section class="market-stage-host" id="presetStageRoot"></section></div>
@@ -9932,6 +9947,8 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/orb-fusion.js"></script>
 <link rel="stylesheet" href="/static/unique-avatar.css">
 <script src="/static/unique-avatar-ui.js"></script>
+<link rel="stylesheet" href="/static/dispatch.css">
+<script src="/static/dispatch.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/market-stage.js"></script>
 <script src="/static/direct-trade.js"></script>

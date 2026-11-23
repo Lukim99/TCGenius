@@ -1291,7 +1291,7 @@ function serializeBossPatternEvents(mon) {
     if (Number(st.reflectWindow || 0) > 0) add('reflect', pattern('reflectWindow', '반사'), st.reflectWindow, Number(getMonsterPattern(mon, 'reflectWindow').windowSec || 5), '반사');
     if (Number(st.mochiWindow || 0) > 0) add('mochi', pattern('mochiShield', '모찌나간다'), st.mochiWindow, Number(getMonsterPattern(mon, 'mochiShield').windowSec || 8), '보호막');
     if (st.gimmickActive?.tick === tickIngyeoRain) {
-        add('rain', pattern('rainShield', '레인! 도와줘!'), st.gimmickActive.remain, Number(getMonsterPattern(mon, 'rainShield').windowSec || 10), '보호막', { targets: st.markName ? [st.markName] : [] });
+        add('rain', pattern('rainShield', '레인! 도와줘!'), st.gimmickActive.remain, Number(getMonsterPattern(mon, 'rainShield').windowSec || 10), '보호막', { targets: st.gimmickActive.targets || [] });
     }
     if (st.markName && !st.berserk) add('mark:' + st.markName, pattern('markDot', '잉여왕 표식'), null, null, '주시', { targets: [st.markName] });
     if (st.berserk) add('berserk', pattern('burnZone', '폭주지대'), null, null, '폭주');
@@ -3798,7 +3798,7 @@ function finishBlackHoduCast(room, mon, cast) {
             target = room.members.find(m => m.position === pos && m.runtime && !m.runtime.dead);
             if (target) break;
         }
-        if (target) executeMember(room, target, mon.name + ' [' + (pattern.name || '종언') + ']');
+        if (target) applyFixedDamageToMember(room, target, Math.ceil(Number(target.runtime.hpMax || 0) * Number(pattern.damageTargetMaxHpPct || 0.8)), mon.name + ' [' + (pattern.name || '종언') + ']');
     }
 }
 
@@ -4592,9 +4592,14 @@ function moveIngyeoMark(room, mon) {
 function startIngyeoRain(room, mon) {
     const st = mon.bossState;
     const p = getMonsterPattern(mon, 'rainShield');
+    // 주시 대상과 다음 생존자까지 공격 가능. 마지막 순번 다음에는 처음으로 돌아간다.
+    const start = Math.max(0, room.members.findIndex(m => m.name === st.markName));
+    const targets = [...room.members.slice(start), ...room.members.slice(0, start)]
+        .filter(m => m.runtime && !m.runtime.dead).slice(0, 2).map(m => m.name);
+    st.gimmickActive.targets = targets;
     pushNotice(room, '레인! 도와줘!', 'danger', 5000);
     for (const m of getAliveMembers(room)) {
-        if (m.name !== st.markName) applySealToMember(room, m, Number(p.sealSec || 10), p.name || '레인! 도와줘!');
+        if (!targets.includes(m.name)) applySealToMember(room, m, Number(p.sealSec || 10), p.name || '레인! 도와줘!');
     }
     setBossShield(room, mon, Number(p.shield || 80000), p.name || '레인! 도와줘!');
     st.gimmickActive.remain = Number(p.windowSec || 10);

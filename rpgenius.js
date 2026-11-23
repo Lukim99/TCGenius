@@ -3809,6 +3809,7 @@ function canUsePartyQuest(user) {
 }
 
 function getWebGameActionBlock(user, allowStarter = false) {
+    if (user.dispatch?.status === 'active') return '파견 중인 캐릭터입니다. 다른 캐릭터로 전환할 수 있습니다.';
     if (!allowStarter && user.need_character_card_select) return '먼저 시작 캐릭터를 선택해주세요.';
     if (getTradeSessionForUser(user.name)) return '거래를 완료하거나 취소한 뒤 이용해주세요.';
     if (user.pendingFragment) return '먼저 편린 보상을 받아주세요.';
@@ -7194,8 +7195,8 @@ function grantHellEquipment(user, rarity, lines) {
     lines.push('- <' + label + '> ' + picked.data.name);
 }
 
-function grantHellPillarRewards(user) {
-    const lines = ['🏛️ 기둥을 파괴했습니다!', '', '[ 부타게임[H] 보상 ]'];
+function grantHellRewards(user, extraEquipmentChance = .20) {
+    const lines = [];
     const grantItem = (name, min, max, chance) => {
         if (Math.random() >= chance) return;
         const id = getItemIdByName(name);
@@ -7213,7 +7214,7 @@ function grantHellPillarRewards(user) {
     ];
     lines.push('', '[ 확정 장비 ]');
     grantHellEquipment(user, pickHellRarity(guaranteed), lines);
-    if (Math.random() < .20) {
+    if (Math.random() < extraEquipmentChance) {
         const extra = [
             { rarity: '일반', chance: .419 }, { rarity: '레어', chance: .44 },
             { rarity: '유니크', chance: .09 }, { rarity: '초월', chance: .05 },
@@ -7222,6 +7223,11 @@ function grantHellPillarRewards(user) {
         lines.push('', '[ 추가 장비 ]');
         grantHellEquipment(user, pickHellRarity(extra), lines);
     }
+    return lines;
+}
+
+function grantHellPillarRewards(user) {
+    const lines = ['🏛️ 기둥을 파괴했습니다!', '', '[ 부타게임[H] 보상 ]', ...grantHellRewards(user)];
     saveFieldCooldowns(user);
     clearFieldRuntimeTimers(user.name);
     user.field = null;
@@ -15181,6 +15187,7 @@ function createTradeRequest(user, targetName, channel) {
     if (!targetName) return '❌ /RPGenius 거래신청 [닉네임]';
     if (targetName == user.name) return '❌ 자기 자신에게는 거래를 신청할 수 없습니다.';
     const target = userCacheById.get(userIdByName.get(targetName))?.raw;
+    if (user.dispatch?.status === 'active' || target?.dispatch?.status === 'active') return '❌ 파견 중인 캐릭터와는 거래할 수 없습니다.';
     if (target && (target.accountId || target.id) === (user.accountId || user.id)) return '❌ 같은 계정의 캐릭터에게는 거래를 신청할 수 없습니다.';
     if (hasAnyTradeInvolvement(user.name)) return '❌ 이미 진행 중인 거래가 있습니다.';
     if (hasAnyTradeInvolvement(targetName)) return '❌ 상대방이 이미 다른 거래에 참여 중입니다.';
@@ -16267,6 +16274,14 @@ async function getParadiseWeeklyRecords() {
     return users.filter(user => user.recordType !== 'account').map(user => ({ name: user.name, paradiseWeekly: user.paradiseWeekly ? { ...user.paradiseWeekly } : null }));
 }
 
+// The dispatch clock reads only cached deadlines, never full inventories or DynamoDB scans.
+async function getActiveDispatches() {
+    await initUserCache();
+    return Array.from(userCacheById.values(), entry => entry.raw)
+        .filter(user => user.dispatch?.status === 'active')
+        .map(user => ({ id: user.id, endsAt: user.dispatch.endsAt }));
+}
+
 // 웹 회원가입. /RPGenius 등록과 동일한 검증 + 같은 UA로 로그인된 계정이 있으면 등록 불가.
 async function registerNamedUser(user) {
     try {
@@ -16542,6 +16557,10 @@ async function handleRPGCommand(data, channel, context = {}) {
     const user = await getPlayer();
     if (!user) {
         reply('❌ 등록되지 않은 사용자입니다.\n/RPGenius 등록 [닉네임]');
+        return true;
+    }
+    if (user.dispatch?.status === 'active') {
+        reply('❌ 파견 중인 캐릭터입니다. 웹에서 다른 캐릭터로 전환해주세요.');
         return true;
     }
     // 봇/보스 타이머 틱이 이 유저의 명령과 같은 큐(senderId)에서 직렬화되도록 매핑 기록.
@@ -18084,6 +18103,7 @@ function __setQuestDefs(defs) {
 }
 
 module.exports = {
+    getActiveDispatches, grantHellRewards,
     returnMailGifts,
     getLinkedCharacterLevelSum, getCharacterSlots, getCharacterSlotCards, getCardSlotEffectDefinitions, getCardSlotGradeBonus,
     isCharacterNameTaken, calculateTownCombatPower,

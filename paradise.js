@@ -84,8 +84,17 @@ function weeklyInfo(user, date = new Date()) {
 }
 function recordFloor(user, date = new Date()) {
     if (user.paradise.mode === 'hell') { user.paradise.highestFloor = Math.max(user.paradise.highestFloor || 0, user.paradise.floor); return; }
-    const info = weeklyInfo(user, date), floor = clamp(Number(user.paradise.floor), 1, MAX_FLOOR);
+    const floor = clamp(Number(user.paradise.floor), 1, MAX_FLOOR);
     user.paradise.highestFloor = Math.max(Number(user.paradise.highestFloor || user.paradise.clearedFloor || 0), floor);
+    recordWeeklyFloor(user, floor, date);
+}
+function recordWeeklyFloor(user, floor, date = new Date()) {
+    const info = weeklyInfo(user, date);
+    if (user.paradiseWeekly?.week > info.week) {
+        user.paradiseWeeklyHistory ||= {};
+        if (floor > Number(user.paradiseWeeklyHistory[info.week]?.bestFloor || 0)) user.paradiseWeeklyHistory[info.week] = { week: info.week, bestFloor: floor, reachedAt: date.getTime() };
+        return;
+    }
     if (user.paradiseWeekly?.week && user.paradiseWeekly.week !== info.week) {
         user.paradiseWeeklyHistory ||= {};
         user.paradiseWeeklyHistory[user.paradiseWeekly.week] = { ...user.paradiseWeekly };
@@ -1201,11 +1210,7 @@ function claim(user) {
     if (user.inventory.card.length + contracts.length > Number(user.maxCardLimit || 52)) return { error: `계약 카드 ${contracts.length}장을 받을 카드 보관함 공간이 필요합니다. 정리 후 다시 수령해주세요.` };
     const cards = contracts.map(c => rpg().buildCharacterCardReward({ card_type: c.type, display_star: c.star, card_id: c.cardId }));
     if (cards.some(c => !c)) return { error: '계약 카드 보상 데이터를 찾을 수 없습니다. 계약은 보존됩니다.' };
-    for (const reward of rewards) {
-        if (reward.type === '골드') user.gold = Number(user.gold || 0) + reward.count;
-        else if (reward.type === '경험치') rpg().addExperience(user, reward.count);
-        else rpg().grantItemReward(user, items.findIndex(i => i?.name === reward.name), reward.count);
-    }
+    grantBaseRewards(user, rewards);
     user.inventory.card.push(...cards);
     run.claimed = true; run.claimedAt = Date.now(); run.rewards = { rewards, cards };
     delete run.timeoutClaimError;
@@ -1220,6 +1225,17 @@ function claimedRewards(run) {
         ...run.rewards.cards.map(card => ({ kind: 'card', card, name: rpg().formatUserCard(card), count: 1 }))
     ];
 }
+
+function grantBaseRewards(user, rewards) {
+    const items = rpg().getDataCache('Item', []);
+    if (rewards.some(reward => reward.type === '아이템' && !items.some(item => item?.name === reward.name))) throw new Error('천상 보상 아이템이 운영 DB에 없습니다.');
+    for (const reward of rewards) {
+        if (reward.type === '골드') user.gold = Number(user.gold || 0) + reward.count;
+        else if (reward.type === '경험치') rpg().addExperience(user, reward.count);
+        else rpg().grantItemReward(user, items.findIndex(item => item?.name === reward.name), reward.count);
+    }
+}
+
 function dismiss(user) {
     const run = user.paradise;
     if (!run || run.status !== 'ended' || run.mode === 'hell' && !run.claimed || run.mode !== 'hell' && !run.claimed && (rewardEligible(run) || canReturn(user))) return { error: '탐험을 마치고 남은 보상을 수령해주세요.' };
@@ -1272,4 +1288,4 @@ function view(user, stats = rpg().calculateUserStats(user), slotEffects) {
     }
     return require('./paradise_hell').decorateView(result, user);
 }
-module.exports = { TICKET, MAX_FLOOR, MIN_LEVEL, TIME_LIMIT_MS, ULTIMATE_START_COOLDOWN_MS, CP_ANCHORS, AUGMENT_EVERY, AUGMENT_MAX, RUN_VERSION, AUGMENTS, RELICS, EVENTS, active, heavenActive, getResources, validateConfig, recommendedPower, enemyAttackInterval, setPhase, clampResources, log, heavenMonsterStats, powerWarning, nextChoice, afterChoice, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, rerollAugment, normalizeAugmentOffer, normalizeRelicOffer, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerRoutes, chooseRoute, offerRelics, chooseRelic, offerAugments, availableAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, dismiss, view, forceReturnOutdated, weeklyInfo, recordFloor, buildWeeklyRanking, remainingTime, isTimedOut, advanceTime };
+module.exports = { previewRewards, grantBaseRewards, recordWeeklyFloor, TICKET, MAX_FLOOR, MIN_LEVEL, TIME_LIMIT_MS, ULTIMATE_START_COOLDOWN_MS, CP_ANCHORS, AUGMENT_EVERY, AUGMENT_MAX, RUN_VERSION, AUGMENTS, RELICS, EVENTS, active, heavenActive, getResources, validateConfig, recommendedPower, enemyAttackInterval, setPhase, clampResources, log, heavenMonsterStats, powerWarning, nextChoice, afterChoice, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, rerollAugment, normalizeAugmentOffer, normalizeRelicOffer, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerRoutes, chooseRoute, offerRelics, chooseRelic, offerAugments, availableAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, dismiss, view, forceReturnOutdated, weeklyInfo, recordFloor, buildWeeklyRanking, remainingTime, isTimedOut, advanceTime };

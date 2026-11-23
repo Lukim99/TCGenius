@@ -11,6 +11,8 @@ function rewardsForRank(config, rank, participationFromRank = PARTICIPATION_FROM
 async function settle(date = new Date()) {
     const currentWeek = rpg().getKoreanWeekKey(date), config = rpg().getDataCache('Paradise', null)?.weeklyRewards;
     if (!config || checkedWeek === currentWeek) return;
+    // Finish overdue dispatches first, including those that ended while the server was down.
+    await require('./dispatch').settleDue(date.getTime());
     const users = []; let cursor;
     do {
         const page = await db.send(new ScanCommand({ TableName: 'rpgenius_user', ConsistentRead: true,

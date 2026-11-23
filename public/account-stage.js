@@ -1417,6 +1417,7 @@
         button.setAttribute('aria-pressed', sameId(c.id, selectedId) ? 'true' : 'false');
         const plate = el('span', 'as-slot-plate');
         if (c.needsStarter) plate.appendChild(el('span', 'as-slot-flag is-warn', '시작 카드 선택 필요'));
+        else if (c.dispatch?.status === 'active') plate.appendChild(el('span', 'as-slot-flag is-warn', '파견 중'));
         else if (c.isActive) plate.appendChild(el('span', 'as-slot-flag', '플레이 중'));
         // 닉네임 앞에 작은 레벨, 카드 이름과 전투력은 각각 한 줄.
         // 줄마다 한 줄로만 쓰고, 칸보다 길면 fitPlates()가 글자를 줄여 맞춘다.

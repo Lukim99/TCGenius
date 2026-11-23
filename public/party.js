@@ -437,7 +437,7 @@
         const meta = $('#pqQuestCardMeta');
         meta.replaceChildren();
         if (q.minLevel) meta.append(el('span', null, '입장 Lv.' + q.minLevel));
-        if (q.recommendedPower) meta.append(el('span', null, '전투력 ' + Number(q.recommendedPower).toLocaleString()));
+        if (q.recommendedPower) meta.append(el('span', null, '권장 전투력 ' + Number(q.recommendedPower).toLocaleString()));
         meta.append(el('span', null, q.minPlayers + '~' + q.maxPlayers + '인'));
         if (q.locked) meta.append(el('span', null, q.unlockError || '퀘스트 보상으로 해금 필요'));
         $('#pqCreateConfirm').disabled = !!q.locked;

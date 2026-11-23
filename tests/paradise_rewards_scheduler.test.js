@@ -12,7 +12,26 @@ const { recordFloor } = vm.runInNewContext(corridorSource.slice(corridorSource.i
 });
 const monday = new Date('2026-11-09T00:00:00+09:00'), sunday = new Date('2026-11-08T23:59:59+09:00');
 
-function settlementFixture({ users = [], snapshots = new Map(), failMailOnce = false, beforeScan, now = monday.getTime() } = {}) {
+test('주간 정산 전에 서버 중단 중 완료된 천상 파견을 반영하고 실패 시 정산을 보류한다', async () => {
+    const users = [{ id: 'dispatch-recipient', name: 'dispatch-recipient' }];
+    let fail = true, completed = false;
+    const fixture = settlementFixture({ users,
+        beforeDispatch(at) {
+            assert.equal(at, monday.getTime());
+            if (fail) throw new Error('dispatch completion unavailable');
+            users[0].paradiseWeekly = { week: getKoreanWeekKey(sunday), bestFloor: 150, reachedAt: sunday.getTime() };
+            completed = true;
+        }, beforeScan() { assert.equal(completed, true); }
+    });
+    await assert.rejects(fixture.settleWeekly(monday), /dispatch completion/);
+    assert.equal(fixture.sent.length, 0); assert.equal(fixture.commands.length, 0);
+    fail = false;
+    await fixture.settleWeekly(monday);
+    assert.equal(fixture.sent.length, 1);
+    assert.match(fixture.sent[0].options.body, /150층 1위/);
+});
+
+function settlementFixture({ users = [], snapshots = new Map(), failMailOnce = false, beforeScan, beforeDispatch, now = monday.getTime() } = {}) {
     const scheduled = [], intervals = [], errors = [], sent = [], commands = [];
     const config = { participation: [], ranks: [{ from: 1, to: 7, rewards: [{ type: '가넷', count: 123 }] }] };
     const db = { async send(command) {
@@ -29,7 +48,8 @@ function settlementFixture({ users = [], snapshots = new Map(), failMailOnce = f
         sent.push({ name, options: structuredClone(options) }); return { ok: true };
     } };
     class ClockDate extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
-    const modules = { '@aws-sdk/client-dynamodb': { DynamoDBClient: class {} }, '@aws-sdk/lib-dynamodb': { ...commandTypes, DynamoDBDocumentClient: { from: () => db } }, './rpgenius': rpg };
+    const modules = { '@aws-sdk/client-dynamodb': { DynamoDBClient: class {} }, '@aws-sdk/lib-dynamodb': { ...commandTypes, DynamoDBDocumentClient: { from: () => db } }, './rpgenius': rpg,
+        './dispatch': { async settleDue(at) { if (beforeDispatch) await beforeDispatch(at); } } };
     const context = { module: { exports: {} }, require: name => { assert.ok(modules[name], name); return modules[name]; }, process: { env: {} }, structuredClone, Date: ClockDate, console: { error: (...args) => errors.push(args) }, setImmediate: fn => scheduled.push(fn), setInterval: (fn, delay) => { const handle = { unref() { handle.unreferenced = true; } }; intervals.push({ fn, delay, handle }); return handle; } };
     vm.runInNewContext(source('paradise_rewards'), context);
     return { ...context.module.exports, scheduled, intervals, errors, sent, commands, snapshots, config, setNow(value) { now = value; } };
@@ -59,11 +79,13 @@ test('startup settlement is scheduled once; a failed tick retries next minute us
 });
 
 test('single-flight settlement does not duplicate a pending scan', async () => {
-    let release;
+    let release, scanned;
     const gate = new Promise(resolve => { release = resolve; });
-    const f = settlementFixture({ beforeScan: () => gate });
+    const scanStarted = new Promise(resolve => { scanned = resolve; });
+    const f = settlementFixture({ beforeScan: () => { scanned(); return gate; } });
     const first = f.settleWeekly(), second = f.settleWeekly();
     assert.equal(first, second);
+    await scanStarted;
     assert.equal(f.commands.filter(type => type === 'ScanCommand').length, 1);
     release(); await first;
 });
