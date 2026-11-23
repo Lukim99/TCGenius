@@ -26,11 +26,11 @@ function record(user, info) {
     const before = Number(info.balanceBefore ?? after + amount);
     if (![amount, before, after].every(Number.isSafeInteger) || before - after !== amount) throw new Error('포인트 기록 금액이 올바르지 않습니다.');
     const event = {
-        id: crypto.randomUUID(), occurred_at: new Date().toISOString(), user_id: String(user.id), nickname: String(user.name || ''),
+        id: crypto.randomUUID(), occurred_at: new Date().toISOString(), user_id: String(user.accountId ? user.accountId.slice('account:'.length) : user.id), nickname: String(user.accountName || user.name || ''),
         is_admin: !!user.isAdmin, kind: info.kind || 'consumption', category: info.category, action: info.action,
         product_id: String(info.productId || info.action), product_name: info.productName,
         quantity: info.quantity ?? 1, amount, balance_before: before, balance_after: after,
-        source: context.getStore()?.source || info.source || 'game', details: info.details || {}
+        source: context.getStore()?.source || info.source || 'game', details: { ...(info.details || {}), ...(user.accountId ? { characterId: user.id, characterName: user.name } : {}) }
     };
     if (!event.category || !event.action || !event.product_name || !Number.isSafeInteger(event.quantity) || event.quantity < 1) throw new Error('포인트 사용처 정보가 올바르지 않습니다.');
     const events = staged.get(user) || [];

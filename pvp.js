@@ -153,7 +153,12 @@ function resolveDefenseDeck(user) {
     const mainCard = take(defense.mainCard);
     if (!mainCard) return { mainCard: equipped.mainCard, cardSlot: equipped.cardSlot, rules, useEquipped: false, valid: false };
     const maxSlots = Number(user.maxCardSlot || 5);
-    const cardSlot = (Array.isArray(defense.slotCards) ? defense.slotCards : []).map(take).filter(Boolean).slice(0, maxSlots);
+    const seen = new Set();
+    const cardSlot = (Array.isArray(defense.slotCards) ? defense.slotCards : []).map(take).filter(card => {
+        if (!card || Number(card.star || 0) < 4 || seen.has(Number(card.id)) || Number(card.id) === Number(mainCard.id) && (card.type || '일반') === (mainCard.type || '일반')) return false;
+        seen.add(Number(card.id));
+        return true;
+    }).slice(0, maxSlots);
     return { mainCard, cardSlot, rules, useEquipped: false, valid: true };
 }
 
@@ -198,14 +203,15 @@ function validateDefensePayload(user, payload) {
     const mainCard = take(payload.mainCard);
     if (!mainCard) return { error: '메인 카드를 보유하고 있지 않습니다.' };
     const cardKey = card => Number(card.id) + ':' + (card.type || '일반');
-    const keys = new Set([cardKey(mainCard)]);
+    const keys = new Set();
     const slotCards = [];
     for (const sig of rawSlots) {
         const card = take(sig);
         if (!card) return { error: '카드 슬롯에 넣을 카드를 보유하고 있지 않습니다.' };
         if (Number(card.star || 0) < 4) return { error: '카드 슬롯에는 5성 이상 카드만 등록할 수 있습니다.' };
-        if (keys.has(cardKey(card))) return { error: '같은 타입의 동일 캐릭터는 한 번만 등록할 수 있습니다.' };
-        keys.add(cardKey(card));
+        if (cardKey(card) === cardKey(mainCard)) return { error: '메인과 같은 타입의 동일 캐릭터는 등록할 수 없습니다.' };
+        if (keys.has(Number(card.id))) return { error: '슬롯끼리는 타입과 관계없이 동일 캐릭터를 중복 등록할 수 없습니다.' };
+        keys.add(Number(card.id));
         slotCards.push(card);
     }
     const rules = validateRules(user, mainCard, Array.isArray(payload.rules) ? payload.rules : DEFAULT_RULES);
@@ -548,6 +554,7 @@ function getLiveEquipmentStats(side, t) {
     randoCharacters.tickMental(stats, side.runtime, side.snapshot.slotEffects, t);
     const shield = refreshShield(side, t);
     randoCharacters.applyStats(stats, side.runtime, side.snapshot.slotEffects, shield && shield.amount || 0, t, side.enteredAt);
+    require('./slot_runtime').applyMissingHp(stats, side.snapshot.slotEffects, side.hp, side.maxHp);
     return transcendEquipment.capPrisonKeyCritical(armorExpansion.applyConditionalStats(stats));
 }
 
@@ -990,9 +997,6 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
         extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(aSlot.nonElementFinalDamage || 0);
     }
     // 보호막 공격 시 최종 피해 증가 (전직 흠시원 슬롯 효과)
-    if (defender.shield && Number(defender.shield.amount || 0) > 0 && Number(aSlot.shieldFinalDamage || 0) > 0) {
-        extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(aSlot.shieldFinalDamage || 0);
-    }
     if (isDirectAttack && Number(aSlot.tenthHitFinalAtk || 0) > 0) {
         extra.tenthAtkBonus = Number(aSlot.tenthHitFinalAtk || 0);
         extra.tenthAtkStart = Number(attacker.attackCount || 0);
@@ -1354,7 +1358,7 @@ function doSkill(battle, actorKey, skill, t) {
         markTriggeredEffect(extra, 'equipment', '어머니의 마음');
     }
     if (name === '헤즈업') {
-        const drawn = ilionCards.draw(actor.runtime, actor.skillCooldowns, equipmentStage(actor, '무한홀덤덱'), equipmentStage(actor, '어머니의 마음'), t);
+        const drawn = ilionCards.draw(actor.runtime, actor.skillCooldowns, equipmentStage(actor, '무한홀덤덱'), equipmentStage(actor, '어머니의 마음'), t, undefined, slotEffects);
         Object.assign(stats, getLiveEquipmentStats(actor, t));
         const raw = stats.awakening?.effect === 'headsUpDamage' ? Math.round(stats.atk * stats.awakening.value * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0))) : 0;
         if (!raw) { extra.cardDamage = true; extra.dotAttack = true; }
@@ -1733,7 +1737,7 @@ function doKinoSprayTick(battle, actorKey, t) {
 function doIlionDrawTick(battle, actorKey, t) {
     const actor = battle[actorKey], target = battle[actorKey === 'me' ? 'opp' : 'me'];
     const drawn = ilionCards.tick(actor.runtime, actor.skillCooldowns, equipmentStage(actor, '무한홀덤덱'),
-        equipmentStage(actor, '어머니의 마음'), actor.enteredAt, t);
+        equipmentStage(actor, '어머니의 마음'), actor.enteredAt, t, undefined, actor.snapshot.slotEffects);
     if (!drawn) return;
     const equipmentState = equipmentRuntime(actor);
     tcgEquipment.record(equipmentState, '무한홀덤덱');
@@ -2028,6 +2032,7 @@ async function getLadder(force) {
             .filter(user => user && user.name && user.main_card && typeof user.main_card.id != 'undefined')
             .map(user => Object.assign({
                 name: user.name,
+                accountId: user.accountId || user.id,
                 level: Number(user.level || 1),
                 rating: readRating(user),
                 wins: Number(user.pvp && user.pvp.wins || 0),
@@ -2084,7 +2089,7 @@ function pickOpponents(user, ladder, kinds, excludeNames) {
     const myRating = readRating(user);
     const exclude = new Set(excludeNames);
     exclude.add(user.name);
-    const pool = ladder.filter(entry => !exclude.has(entry.name));
+    const pool = ladder.filter(entry => !exclude.has(entry.name) && entry.accountId !== (user.accountId || user.id));
     const picked = [];
     const remaining = () => pool.filter(entry => picked.indexOf(entry) < 0);
     const nearPool = pool.slice().sort((a, b) =>
@@ -2176,6 +2181,7 @@ async function startBattle(user, opponentName) {
     if (!user.main_card || typeof user.main_card.id == 'undefined') return { ok: false, message: '메인 카드를 먼저 장착해주세요.' };
     const opponent = await rpgenius.getRPGUserByName(opponentName);
     if (!opponent) return { ok: false, message: '상대를 찾을 수 없습니다.' };
+    if ((opponent.accountId || opponent.id) === (user.accountId || user.id)) return { ok: false, message: '같은 계정의 캐릭터와는 대결할 수 없습니다.' };
     const oppDeck = resolveDefenseDeck(opponent);
     if (!oppDeck.mainCard || typeof oppDeck.mainCard.id == 'undefined') return { ok: false, message: '상대의 방어 덱이 준비되지 않았습니다.' };
     const t = now();

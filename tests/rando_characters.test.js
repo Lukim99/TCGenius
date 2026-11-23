@@ -136,34 +136,36 @@ test('박카스 저정신력 회복은 30에서 종료, 1/3단계 카스 쿨타�
     stats.randoEquipment['박카스 스프레이'] = 1; near(rando.cooldownMultiplier(stats, '카스 살포'), .9);
 });
 
-test('전용 슬롯 제한, 행동 쿨타임 초 단위, 정신력·비치명타·지속 피해 슬롯', async () => {
-    const u = user(); u.card_slot = [{ id: 15, star: 11, type: '일반' }]; near(rpg.calculateCardSlotEffects(u).wonyoddiBasicCooldown, .30);
+test('메인 고정 슬롯 효과와 전용 제한, 행동 쿨타임 초 단위, 정신력·지속 피해 슬롯', async () => {
+    const u = user(); near(rpg.calculateCardSlotEffects(u).wonyoddiBasicCooldown, .30);
+    u.card_slot = [{ id: 15, star: 11, type: '일반' }];
     u.main_card.id = 16; near(rpg.calculateCardSlotEffects(u).wonyoddiBasicCooldown, 0);
-    u.card_slot[0].type = '전직'; near(rpg.calculateCardSlotEffects(u).actionCooldownFlat, .35);
-    u.card_slot[0] = { id: 16, star: 11, type: '일반' }; near(rpg.calculateCardSlotEffects(u).mentalRegen, 8);
-    u.card_slot[0].type = '전직'; near(rpg.calculateUserStats(u).nonCriticalFinalDamage, .22);
+    u.card_slot[0].type = '광폭'; near(rpg.calculateCardSlotEffects(u).actionCooldownFlat, .20);
+    u.card_slot[0] = { id: 16, star: 11, type: '전직' }; near(rpg.calculateCardSlotEffects(u).mentalRegen, 5);
+    near(rpg.calculateUserStats(u).mentalCostReduction, 10);
     await fixed(.5, () => assert.equal(rpg.calculateAttackHitResult(1000, 0, 0, { atk: 1000, crit: 0, critMul: 1.5, nonCriticalFinalDamage: .22 }, {}, {}, {}).finalDamage, 1220));
-    u.card_slot[0].type = '각성'; near(rpg.calculateUserStats(u).dotDamage, .18);
+    u.card_slot[0].type = '각성'; near(rpg.calculateUserStats(u).mental, 130);
+    u.card_slot[0].type = '광폭'; near(rpg.calculateUserStats(u).dotDamage, .10);
 });
 
-test('실제 필드 모드 전환: 5초가 3.5초로 감소, 일반 공격은 별도 3.5초 대기', async () => at(100000, async () => {
+test('실제 필드 모드 전환: 5초가 3.5초로 감소, 일반 공격은 메인 슬롯 30% 감소로 2.45초 대기', async () => at(100000, async () => {
     const u = trainingUser();
     await fixed(.5, () => rpg.useSkillInField(u, '모드 전환'));
     assert.equal(u.field.wonyoddi.mode, '즐리'); assert.equal(u.field.skillCooldowns['모드 전환'], 103500);
     u.field.nextActionAt = 0;
     await fixed(.5, () => rpg.useBasicAttackInField(u));
-    assert.equal(u.field.training.metrics.damage, 2272); assert.equal(u.field.basicUntil, 103500);
+    assert.equal(u.field.training.metrics.damage, 2272); assert.equal(u.field.basicUntil, 102450);
     u.field.nextActionAt = 0; assert.match(await rpg.useBasicAttackInField(u), /일반 공격 쿨타임/);
 }));
 
 test('실제 각성 워뇨띠: 고정 피해·7초 보호막·장비 단계와 보호막 슬롯 공격력', async () => at(200000, async () => {
     const u = trainingUser(15, '각성'); equip(u, '가면 스위처', 3);
-    u.card_slot = [{ id: 15, type: '각성', star: 11 }];
+    u.card_slot = [{ id: 15, type: '전직', star: 11 }];
     const message = await fixed(.5, () => rpg.useSkillInField(u, '모드 전환'));
     assert.ok(!message.startsWith('❌'));
     assert.equal(u.field.shield.amount, 700); assert.equal(u.field.shield.expired_at, 207000);
-    assert.equal(u.field.training.metrics.damage, 3885 + 684);
-    assert.equal(rpg.calculateUserStats(u).atk, 1140);
+    assert.equal(u.field.training.metrics.damage, 3885 + Math.round(Math.round(1220 * .60) * 1.10));
+    assert.equal(rpg.calculateUserStats(u).atk, 1220);
 }));
 
 test('필드의 기존 보호막을 보존하고 워뇨띠 보호막만 갱신·흡수·만료한다', async () => at(210000, async () => {
@@ -236,7 +238,7 @@ test('PvP도 기존 보호막과 장비·각성 보호막을 따로 유지하며
 test('실제 키노 스킬은 MP 대신 정신력, 처치 보너스와 카스 2초 간격 5틱', async () => at(300000, async () => {
     const u = trainingUser(16); u.field.training.targetHp = 1;
     await fixed(.5, () => rpg.useSkillInField(u, '아이돌 할래?'));
-    near(u.field.kino.value, 75); assert.equal(u.mp, 0); assert.equal(u.field.training.metrics.kills, 1);
+    near(u.field.kino.value, 85); assert.equal(u.mp, 0); assert.equal(u.field.training.metrics.kills, 1);
     const spray = trainingUser(16, '전직'); equip(spray, '박카스 스프레이', 3);
     await fixed(.5, () => rpg.useSkillInField(spray, '카스 살포'));
     near(spray.field.kino.value, 25); assert.equal(spray.field.skillCooldowns['카스 살포'], 348000);
@@ -247,10 +249,10 @@ test('실제 키노 스킬은 MP 대신 정신력, 처치 보너스와 카스 2�
 }));
 
 test('실제 카스 살포는 회복 슬롯과 청심환 장착 시 최대 150 중 120에서 90 소모로 폭주한 뒤 타격 정신력 5만 회복한다', async () => at(320000, async () => {
-    const real = user(16, '전직'); equip(real, '청심환', 3); real.card_slot = [{ id: 16, star: 11, type: '일반' }];
+    const real = user(16, '전직'); equip(real, '청심환', 3);
     const u = training.configure(real, { player: { crit: 0, cmb: 0, maxCmb: 0 }, target: { def: 0, counterAttack: false } });
     assert.equal(rpg.calculateUserStats(u).mental, 150); near(u.field.kino.value, 150);
-    assert.equal(rpg.calculateCardSlotEffects(u).mentalRegen, 8);
+    assert.equal(rpg.calculateCardSlotEffects(u).mentalRegen, 5);
     u.field.kino.value = 120;
     const result = await fixed(.5, () => rpg.useSkillInField(u, '카스 살포'));
     assert.ok(!result.startsWith('❌'), result);
@@ -263,7 +265,7 @@ test('실제 카스 살포는 회복 슬롯과 청심환 장착 시 최대 150 �
 
 test('실제 장비 스탯: 청심환 최대 정신력·쿨타임, 고유 장비 정신력 및 보호막 확률', () => {
     const k = user(16, '각성'); equip(k, '청심환', 3); equip(k, '원빌리언 사원증', 1, 'support');
-    const stats = rpg.calculateUserStats(k); assert.equal(stats.mental, 160); assert.equal(stats.mp, 0); near(stats.cooldown, .14); near(stats.dotDamage, .20);
+    const stats = rpg.calculateUserStats(k); assert.equal(stats.mental, 190); assert.equal(stats.mp, 0); near(stats.cooldown, .14); near(stats.dotDamage, .20);
     const w = user(15, '각성'); equip(w, '럭키비키 키링', 1, 'support'); near(rpg.calculateUserStats(w).wonyoddiShieldChance, .10);
 });
 

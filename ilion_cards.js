@@ -41,15 +41,15 @@ function exclude(runtime, cooldowns, motherStage, now) {
     return card.name;
 }
 
-function draw(runtime, cooldowns, deckStage, motherStage, now, rng = Math.random) {
+function draw(runtime, cooldowns, deckStage, motherStage, now, rng = Math.random, slots = {}) {
     const s = state(runtime);
     // 추첨 직전 덱을 기준으로 제외한다. 밀려날 카드도 다시 뽑을 수 없다.
     const available = cards.filter(card => !s.deck.some(held => held.name === card.name));
     const card = available[Math.min(available.length - 1, Math.floor(rng() * available.length))];
     const removed = [];
-    while (s.deck.length >= (deckStage > 0 ? 3 : 2)) removed.push(exclude(runtime, cooldowns, motherStage, now));
+    while (s.deck.length >= (deckStage > 0 ? 3 : 2) + Number(slots.ilionDeckSize || 0)) removed.push(exclude(runtime, cooldowns, motherStage, now));
     const excluded = removed.length ? removed.join(', ') : null;
-    s.deck.push({ name: card.name, until: card.seconds ? now + card.seconds * 1000 : 0 });
+    s.deck.push({ name: card.name, until: card.seconds ? now + (card.seconds + Number(slots.ilionCardDuration || 0)) * 1000 : 0 });
     return { name: card.name, excluded, text: '카드 뽑기: ' + card.name + (excluded ? ' / ' + excluded + ' 제외' : '') };
 }
 
@@ -112,10 +112,10 @@ function autoDrawAt(runtime, stage, startedAt) {
     return s.autoDrawAt;
 }
 
-function tick(runtime, cooldowns, stage, motherStage, startedAt, now, rng) {
+function tick(runtime, cooldowns, stage, motherStage, startedAt, now, rng, slots) {
     const at = autoDrawAt(runtime, stage, startedAt);
     if (at == null || now < at) return null;
-    const result = draw(runtime, cooldowns, stage, motherStage, now, rng);
+    const result = draw(runtime, cooldowns, stage, motherStage, now, rng, slots);
     state(runtime).autoDrawAt = now + Math.max(1, 11 - stage) * 1000;
     return result;
 }

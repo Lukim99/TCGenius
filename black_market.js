@@ -172,9 +172,10 @@ function createBlackMarket({ read, commit, getItems, getUser, withUser, display,
     return {
         tick: () => serial(advance),
         get: name => serial(async () => view(await advance(), name)),
-        bid: (name, body) => serial(async () => {
+        bid: (name, body, validateSession) => serial(async () => {
             const state = await advance();
             return withUser(name, async () => {
+                if (validateSession) await validateSession();
                 if (state.status !== 'open' || now() >= state.closesAt) fail('정산 중입니다. 09시 또는 21시 새 회차에 다시 입찰해주세요.', 409);
                 const index = state.lots.findIndex(lot => lot.sector === body.sector && lot.lotId === body.lotId);
                 if (body.date !== state.date || body.periodId && body.periodId !== state.periodId || index < 0) fail('매물이 변경되었습니다. 새로고침해주세요.', 409);

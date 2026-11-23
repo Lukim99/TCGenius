@@ -258,6 +258,7 @@ function parseCookies(req) {
 }
 
 function getSession(req) {
+    if (req.characterSession) return req.characterSession;
     const cookies = parseCookies(req);
     return verify(cookies[SESSION_COOKIE]);
 }
@@ -269,6 +270,44 @@ function setSession(res, payload) {
 
 function clearSession(res) {
     res.setHeader('Set-Cookie', SESSION_COOKIE + '=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+}
+
+function setCharacterSession(res, user) {
+    const account = rpgenius.getCharacterStore().accountFor(user);
+    setSession(res, { name: user.name, accountId: account.id, characterId: user.id, selectionRevision: account.selectionRevision,
+        admin: !!user.isAdmin, canPartyQuest: partyquest.canOpenPartyQuest(user), exp: Date.now() + SESSION_TTL_MS });
+}
+
+async function sessionCharacter(sess) {
+    if (!sess?.name) return null;
+    const user = sess.characterId ? await rpgenius.getUserByPrimaryId(sess.characterId) : await rpgenius.getRPGUserByName(sess.name);
+    if (!user || sess.accountId && user.accountId !== sess.accountId) return null;
+    return user;
+}
+
+function characterSessionError(req, sess, user) {
+    const account = rpgenius.getCharacterStore().accountFor(user);
+    if (!account) return null;
+    const clientId = req.get('X-Character-Id') || req.query.characterId;
+    if (account.activeCharacterId !== user.id || Number(sess.selectionRevision || 0) !== account.selectionRevision
+        || clientId && clientId !== user.id) return '다른 캐릭터로 전환되었습니다. 캐릭터를 다시 선택해주세요.';
+    return null;
+}
+
+async function assertCurrentCharacter(req) {
+    const user = await sessionCharacter(req.session);
+    const changed = !user || characterSessionError(req, req.session, user);
+    if (changed) throw Object.assign(new Error(changed || '캐릭터를 다시 선택해주세요.'), { status: 409, code: 'CHARACTER_CHANGED' });
+}
+
+async function requireAccount(req, res, next) {
+    try {
+        const user = await sessionCharacter(getSession(req));
+        if (!user) return res.status(401).json({ error: '로그인이 필요합니다.' });
+        const migrated = user.accountId ? user : await rpgenius.ensureCharacterAccount(user);
+        req.accountUser = await rpgenius.getUserByPrimaryId(migrated.accountId);
+        next();
+    } catch (error) { next(error); }
 }
 
 // ===== 2단계 인증 (구글 OTP / TOTP, RFC 6238) — 외부 의존성 없이 crypto만 사용 =====
@@ -326,6 +365,8 @@ function requireUser(req, res, next) {
         if (!user) return next();
         return rpgenius.enqueueFieldAction(user, () => new Promise(resolve => {
             if (res.destroyed) { resolve(); return; }
+            const changed = characterSessionError(req, sess, user);
+            if (changed) { res.status(409).json({ error: changed, code: 'CHARACTER_CHANGED' }); resolve(); return; }
             const end = res.end;
             res.end = function(...args) {
                 try { return end.apply(this, args); }
@@ -335,6 +376,39 @@ function requireUser(req, res, next) {
         }));
     }).catch(next);
 }
+
+// Resolve identity once per request. Old tabs keep their original character ID even when cookies change.
+server.use(async (req, res, next) => {
+    if (req.path === '/characters' || req.path.startsWith('/api/characters') || ['/api/login', '/api/register', '/api/logout'].includes(req.path)) return next();
+    const sess = getSession(req);
+    if (!sess?.name) return next();
+    // Existing signed administrator sessions also support the standalone admin console.
+    if (sess.admin && !sess.characterId && (req.path === '/admin' || req.path.startsWith('/api/admin/'))) return next();
+    try {
+        let user = await sessionCharacter(sess);
+        if (!user) return req.path.startsWith('/api/') ? res.status(401).json({ error: '로그인이 필요합니다.' }) : res.redirect('/characters');
+        if (!user.accountId) { user = await rpgenius.ensureCharacterAccount(user); setCharacterSession(res, user); }
+        const changed = characterSessionError(req, sess, user);
+        if (changed) return req.path.startsWith('/api/') ? res.status(409).json({ error: changed, code: 'CHARACTER_CHANGED' }) : res.redirect('/characters');
+        req.characterSession = { ...sess, name: user.name, characterId: user.id, accountId: user.accountId, admin: !!user.isAdmin };
+        const send = res.send;
+        res.send = function(body) {
+            if (typeof body === 'string' && body.includes('</head>')) {
+                body = body.replace('</head>', '<script src="/static/character-session.js" data-character-id="' + escapeHtml(user.id) + '"></script></head>');
+            }
+            return send.call(this, body);
+        };
+        next();
+    } catch (error) { next(error); }
+});
+
+require('./character_routes').registerCharacterRoutes(server, { rpg: rpgenius, partyquest, requireAccount, setCharacterSession,
+    cards: () => readJson(CHARACTER_CARDS_PATH, []), sprite: getHFieldCharacterSprite, cardImage: getCardImageUrl,
+    equipmentImage: (type, id) => getEquipmentIconUrl(rpgenius.getEquipmentData(type, id)) });
+
+server.get('/characters', requireAccount, (req, res) => {
+    res.type('html').send(require('./account_screens').renderCharacterSelection());
+});
 
 function parseBannerUpload(req, res, next) {
     bannerUploadBody(req, res, error => {
@@ -459,7 +533,7 @@ server.get('/', async (req, res) => {
             return res.send(renderUserDashboard(sess));
         }
     }
-    return res.send(renderLogin());
+    return res.send(require('./account_screens').renderLogin());
 });
 
 server.get('/mail', async (req, res) => {
@@ -533,12 +607,12 @@ server.post('/api/login', async (req, res) => {
     const ua = String(req.headers['user-agent'] || '').trim();
     if (!name) return res.status(400).json({ error: '닉네임을 입력해주세요.' });
     try {
-        const user = await rpgenius.getRPGUserByName(name);
+        const user = await rpgenius.getAccountUserByLogin(name);
         if (!user) return res.status(401).json({ error: '존재하지 않는 닉네임입니다.' });
         const knownAgent = ua && Array.isArray(user.logged_in_agent) && user.logged_in_agent.includes(ua);
         if (!code && !otp) {
             if (knownAgent) {
-                setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: partyquest.canOpenPartyQuest(user), exp: Date.now() + SESSION_TTL_MS });
+                setCharacterSession(res, await rpgenius.ensureCharacterAccount(user));
                 return res.json({ ok: true, name: user.name });
             }
             return res.json({ needCode: true, canOtp: !!user.otpSecret });
@@ -550,12 +624,12 @@ server.post('/api/login', async (req, res) => {
             // 로그인 코드 대신 OTP로 새 기기 인증
             if (!user.otpSecret || !verifyTotp(user.otpSecret, otp)) return res.status(401).json({ error: 'OTP 코드가 올바르지 않습니다.' });
         }
-        const latest = await rpgenius.getRPGUserByName(name);
+        const latest = await rpgenius.getAccountUserByLogin(name);
         if (latest && ua && !latest.logged_in_agent.includes(ua)) {
             latest.logged_in_agent.push(ua);
             await latest.save();
         }
-        setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: partyquest.canOpenPartyQuest(user), exp: Date.now() + SESSION_TTL_MS });
+        setCharacterSession(res, await rpgenius.ensureCharacterAccount(latest || user));
         res.json({ ok: true, name: user.name });
     } catch (e) {
         console.error('login error:', e);
@@ -570,7 +644,7 @@ server.post('/api/register', async (req, res) => {
     try {
         const result = await rpgenius.webRegisterRPGUser(name, ua);
         if (result.error) return res.status(400).json({ error: result.error });
-        setSession(res, { name: result.user.name, admin: false, canPartyQuest: false, exp: Date.now() + SESSION_TTL_MS });
+        setCharacterSession(res, await rpgenius.ensureCharacterAccount(result.user));
         res.json({ ok: true, name: result.user.name });
     } catch (e) {
         console.error('register error:', e);
@@ -1018,10 +1092,13 @@ server.get('/api/mail/giftable', requireUser, async (req, res) => {
         const avatars = rpgenius.getUserAvatars(user)
             .filter(entry => entry && !rpgenius.getAvatarTradeBlockReason(user, entry.name, entry.id))
             .map(entry => Object.assign({ ...entry, grade: rpgenius.getAvatarGradeByName(entry.name) }, getAvatarDisplayAssets(entry.name)));
+        const cardVersion = inventoryVersion(user, 'cards');
+        const cards = (user.inventory.card || []).map((card, index) => ({ ...card, index, version: cardVersion, name: rpgenius.formatUserCard(card),
+            iconUrl: getCardIconUrl(card, user), ticketCost: rpgenius.getCardTicketCost(card) })).filter(card => !card.locked);
         res.json({
             gold: Number(user.gold || 0), garnet: Number(user.garnet || 0), point: Number(user.point || 0),
             goldIconUrl: getItemImageUrl('화폐', '골드.png'), garnetIconUrl: getItemImageUrl('화폐', '가넷.png'), pointIconUrl: getItemImageUrl('화폐', '포인트.png'),
-            feeRate: rpgenius.MAIL_GOLD_FEE_RATE, feeMin: rpgenius.MAIL_GOLD_FEE_MIN, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items, avatars
+            feeRate: rpgenius.MAIL_GOLD_FEE_RATE, feeMin: rpgenius.MAIL_GOLD_FEE_MIN, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items, avatars, cards
         });
     } catch (e) { console.error('mail giftable error:', e); res.status(500).json({ error: '서버 오류' }); }
 });
@@ -1053,9 +1130,7 @@ server.post('/api/mail/claim', requireUser, async (req, res) => {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const id = String((req.body && req.body.id) || '');
-        const result = id.startsWith('black-market:')
-            ? await rpgenius.enqueueFieldAction(user, async () => rpgenius.claimMailGifts(await rpgenius.getUserByPrimaryId(user.id), id))
-            : await rpgenius.claimMailGifts(user, id);
+        const result = await rpgenius.claimMailGifts(user, id);
         if (result.error) return res.status(400).json({ error: result.error });
         res.json({ ok: true, lines: result.lines || [] });
     } catch (e) { console.error('mail claim error:', e); res.status(500).json({ error: '서버 오류' }); }
@@ -1066,10 +1141,22 @@ server.post('/api/mail/send', requireUser, async (req, res) => {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const b = req.body || {};
+        if (Array.isArray(b.gifts) && b.gifts.some(gift => gift?.type === 'card' && gift.version !== inventoryVersion(user, 'cards'))) {
+            return res.status(409).json({ error: '카드 목록이 변경되었습니다. 편지 쓰기를 다시 열어 카드를 선택해주세요.' });
+        }
         const result = await rpgenius.sendMail(user, b.to, b.subject, b.body, Array.isArray(b.gifts) ? b.gifts : []);
         if (result.error) return res.status(400).json({ error: result.error });
         res.json({ ok: true, fee: result.fee || 0 });
     } catch (e) { console.error('mail send error:', e); res.status(500).json({ error: '서버 오류' }); }
+});
+
+server.post('/api/mail/return', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const result = await rpgenius.returnMailGifts(user, String(req.body?.id || ''));
+        res.status(result.error ? 400 : 200).json(result);
+    } catch (error) { res.status(409).json({ error: '우편 상태가 변경되었거나 반송을 저장하지 못했습니다. 다시 확인해주세요.' }); }
 });
 
 // 관리자 전체 발송 (선물 합성·무소모·무수수료·GM 태그)
@@ -1096,10 +1183,17 @@ server.post('/api/admin/mail/send-user', requireAdmin, async (req, res) => {
 
 // 랭킹 산출(전 유저 전투력 계산)은 무겁고 요청자와 무관하므로 60초 캐시한다. `me` 부분만 요청마다 조회.
 let rankingCache = { at: 0, payload: null };
+let rankingLoading = null;
 const RANKING_CACHE_TTL_MS = 60 * 1000;
 
 async function buildRankingPayload() {
     if (rankingCache.payload && Date.now() - rankingCache.at < RANKING_CACHE_TTL_MS) return rankingCache.payload;
+    if (rankingLoading) return rankingLoading;
+    rankingLoading = calculateRankingPayload();
+    try { return await rankingLoading; } finally { rankingLoading = null; }
+}
+
+async function calculateRankingPayload() {
     const users = await rpgenius.getAllRPGUsers();
     const rows = users.map(u => {
         const level = Number(u.level || 1);
@@ -1109,7 +1203,7 @@ async function buildRankingPayload() {
         return {
             name: u.name,
             level,
-            cp: rpgenius.calculateCombatPower(u).total,
+            cp: rpgenius.calculateTownCombatPower(u).total,
             totalExp,
             title: buildTitleDisplay(u)
         };
@@ -3454,7 +3548,10 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
     // 중간 실패 시 역순으로 실행되는 보상(rollback) 스택
     const rollback = [];
     try {
-        const storeNickname = await resolveStoreNickname(nickname);
+        const accountUser = await rpgenius.getRPGUserByName(nickname);
+        if (!accountUser) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const accountName = accountUser.accountName || accountUser.name;
+        const storeNickname = await resolveStoreNickname(accountName);
         const { data: acc, error: accErr } = await supabaseP.from('users').select('balance').eq('nickname', storeNickname).maybeSingle();
         if (accErr) throw accErr;
         if (!acc) return res.status(404).json({ error: '연동된 계정을 찾을 수 없습니다.' });
@@ -3499,7 +3596,7 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
         rollback.push(() => addSupabaseUserBalance('유치원생', -kinder));
 
         // 4) 충전 로그 기록 (최대 100건)
-        await appendPointLog({ id: crypto.randomUUID(), nickname, amount, point: newPoint, lotto, company, lukim, kinder, at: new Date().toISOString() });
+        await appendPointLog({ id: crypto.randomUUID(), nickname: accountName, characterName: nickname, amount, point: newPoint, lotto, company, lukim, kinder, at: new Date().toISOString() });
 
         // 5) 카카오 알림 (성공 후 best-effort, 실패해도 충전은 롤백하지 않음)
         sendKakaoNotice(POINT_CHARGE_NOTICE_CHANNEL_ID,
@@ -4364,12 +4461,12 @@ function blackMarketRoute(method, route, auth, handle) {
             res.json(await handle(req));
         } catch (error) {
             if (!error.status) console.error('[암시장]', error);
-            res.status(error.status || 500).json({ error: error.status ? error.message : '암시장 처리에 실패했습니다. 새로고침 후 다시 시도해주세요.' });
+            res.status(error.status || 500).json({ error: error.status ? error.message : '암시장 처리에 실패했습니다. 새로고침 후 다시 시도해주세요.', ...(error.code ? { code: error.code } : {}) });
         }
     });
 }
 blackMarketRoute('get', '/api/black-market', requireUser, req => blackMarket.get(req.session.name));
-blackMarketRoute('post', '/api/black-market/bid', requireUser, req => blackMarket.bid(req.session.name, req.body || {}));
+blackMarketRoute('post', '/api/black-market/bid', requireUser, req => blackMarket.bid(req.session.name, req.body || {}, () => assertCurrentCharacter(req)));
 blackMarketRoute('get', '/api/admin/black-market', requireAdmin, async req => {
     await rpgenius.loadRpgeniusDataEntry('Item', { consistentRead: true });
     return blackMarket.admin(req.query.date, req.query.round);
@@ -4832,8 +4929,9 @@ server.post('/api/auction/register', requireUser, async (req, res) => {
 
 // 두 계정이 바뀌는 거래는 항상 같은 ID 순서로 잠근다. 판매 대금과 입찰 보관금도 서로 덮어쓰지 않는다.
 async function withMarketAccounts(names, task) {
-    const users = (await Promise.all([...new Set(names.filter(Boolean))].map(name => rpgenius.getRPGUserByName(name)))).filter(Boolean);
-    users.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const found = (await Promise.all([...new Set(names.filter(Boolean))].map(name => rpgenius.getRPGUserByName(name)))).filter(Boolean);
+    const users = [...new Map(found.map(user => [user.accountId || user.id, user])).values()];
+    users.sort((a, b) => String(a.accountId || a.id).localeCompare(String(b.accountId || b.id)));
     const run = index => index === users.length ? task() : rpgenius.enqueueFieldAction(users[index], () => run(index + 1));
     return run(0);
 }
@@ -4842,13 +4940,13 @@ server.post('/api/auction/buy', requireUser, async (req, res) => {
     try {
         const id = String((req.body && req.body.id) || '');
         const entry = (await getAuctionList()).find(item => item.id === id);
-        const out = await withMarketAccounts([req.session.name, entry?.sellerName], () => buyAuction(req.session.name, id, req.body && req.body.count));
+        const out = await withMarketAccounts([req.session.name, entry?.sellerName], async () => { await assertCurrentCharacter(req); return buyAuction(req.session.name, id, req.body && req.body.count); });
         if (out.error) return res.status(400).json({ error: out.error });
         if (out.notice) sendAuctionKakaoNotice(out.notice);
         res.json({ ok: true });
     } catch (e) {
         console.error('auction buy error:', e);
-        res.status(500).json({ error: '서버 오류' });
+        res.status(e.status || 500).json({ error: e.status ? e.message : '서버 오류', ...(e.code ? { code: e.code } : {}) });
     }
 });
 
@@ -4948,13 +5046,13 @@ server.post('/api/buyorder/fulfill', requireUser, async (req, res) => {
     try {
         const id = String((req.body && req.body.id) || '');
         const entry = (await getBuyOrderList()).find(item => item.id === id);
-        const out = await withMarketAccounts([req.session.name, entry?.buyerName], () => fulfillBuyOrder(req.session.name, id, req.body || {}));
+        const out = await withMarketAccounts([req.session.name, entry?.buyerName], async () => { await assertCurrentCharacter(req); return fulfillBuyOrder(req.session.name, id, req.body || {}); });
         if (out.error) return res.status(400).json({ error: out.error });
         if (out.notice) sendAuctionKakaoNotice(out.notice);
         res.json({ ok: true });
     } catch (e) {
         console.error('buyorder fulfill error:', e);
-        res.status(500).json({ error: '서버 오류' });
+        res.status(e.status || 500).json({ error: e.status ? e.message : '서버 오류', ...(e.code ? { code: e.code } : {}) });
     }
 });
 
@@ -5738,19 +5836,21 @@ server.post('/api/admin/shop-limits/reset', requireAdmin, async (req, res) => {
         if ((scope == 'item' || scope == 'items') && shopIds.length != requestedIds.length) return res.status(409).json({ error: '선택한 상품이 변경되었거나 저장되지 않았습니다. 상점을 저장하거나 다시 불러와주세요.' });
         const users = await rpgenius.getAllRPGUsers();
         let userUpdated = 0;
-        for (const user of users) {
-            if (!user.shopPurchases || typeof user.shopPurchases != 'object') continue;
-            let changed = false;
-            if (scope == 'all') {
-                if (Object.keys(user.shopPurchases).length > 0) {
-                    delete user.shopPurchases;
-                    changed = true;
+        const processedAccounts = new Set();
+        for (const snapshot of users) {
+            await rpgenius.enqueueFieldAction(snapshot, async () => {
+                const user = await rpgenius.getUserByPrimaryId(snapshot.id), ownerId = user.accountId || user.id;
+                const fields = ['characterShopPurchases', ...(!processedAccounts.has(ownerId) ? ['shopPurchases'] : [])];
+                processedAccounts.add(ownerId);
+                let changed = false;
+                for (const field of fields) {
+                    if (!user[field] || typeof user[field] !== 'object') continue;
+                    if (scope === 'all') {
+                        if (Object.keys(user[field]).length) { delete user[field]; changed = true; }
+                    } else if (shopCatalog.resetShopRecords(user[field], shopIds) > 0) changed = true;
                 }
-            } else changed = shopCatalog.resetShopRecords(user.shopPurchases, shopIds) > 0;
-            if (changed) {
-                await user.save();
-                userUpdated++;
-            }
+                if (changed) { await user.save(); userUpdated++; }
+            });
         }
         await rpgenius.loadRpgeniusDataEntry('ShopState');
         const state = rpgenius.getDataCache('ShopState', {}) || {};
@@ -5804,7 +5904,7 @@ server.get('/api/admin/point-usage', requireAdmin, async (req, res) => {
     try { params = pointUsage.filters(req.query); }
     catch (error) { return res.status(400).json({ error: error.message }); }
     try {
-        params.p_admin_ids = (await rpgenius.getAllRPGUsers()).filter(user => user.isAdmin).map(user => String(user.id));
+        params.p_admin_ids = [...new Set((await rpgenius.getAllRPGUsers()).filter(user => user.isAdmin).map(user => String(user.accountId ? user.accountId.slice('account:'.length) : user.id)))];
         const data = await pointUsage.report(params);
         res.json({ ...data, delivery: rpgenius.getPointUsageDeliveryStatus(), timezone: 'Asia/Seoul' });
     } catch (error) { res.status(503).json({ error: error.message }); }
@@ -6507,7 +6607,7 @@ function buildInventoryItems(user) {
             return {
                 id: Number(inv.id), name: data.name, type: data.type, desc: data.desc || '', count: Number(inv.count || 0),
                 version, sellPrice: Number(data.sellPrice || 0),
-                noTrade: data.no_trade === true, usable: isUsableInventoryItem(data), bulkUsable: isBulkUsableInventoryItem(data),
+                noTrade: data.no_trade === true || data.rarity === '초월', usable: isUsableInventoryItem(data), bulkUsable: isBulkUsableInventoryItem(data),
                 useKind: getItemUseResultKind(data),
                 iconUrl: assets.iconUrl, frameUrl: assets.frameUrl
             };
@@ -6705,7 +6805,7 @@ function buildInventoryEquipment(user) {
             rolled: equip && equip.rolled || null,
             soul: soulActive ? { name: soulActive.name || '', expiredAt: Number(soulActive.expired_at || 0), stat: soulActive.stat || {}, plusStat: soulActive.plusStat || {} } : null,
             requireMainCard: Array.isArray(data.requireMainCard) ? data.requireMainCard.slice() : null,
-            noTrade: data.no_trade === true,
+            noTrade: data.no_trade === true || data.rarity === '초월',
             bound: rpgenius.isEquipmentBindingEnabled() && !!(equip && equip.boundOwner),
             uid: (equip && equip.uid) || null,
             iconUrl: getEquipmentIconUrl(data),
@@ -6851,7 +6951,7 @@ function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
         name: data.name,
         rarity: data.rarity,
         desc: data.desc || '',
-        noTrade: data.no_trade === true,
+        noTrade: data.no_trade === true || data.rarity === '초월',
         iconUrl: getEquipmentIconUrl(data),
         frameUrl: getAuctionFrameUrl('equipment', data.rarity),
         baseStatLines: baseLineData.stats,
@@ -8665,6 +8765,8 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
 
     const buyer = await rpgenius.getRPGUserByName(buyerName);
     if (!buyer) return { error: '유저를 찾을 수 없습니다.' };
+    const listingOwner = await rpgenius.getRPGUserByName(entry.sellerName);
+    if (listingOwner && (listingOwner.accountId || listingOwner.id) === (buyer.accountId || buyer.id)) return { error: '같은 계정의 경매는 구매할 수 없습니다.' };
 
     const unitPrice = Number(entry.price || 0);
     const currency = entry.currency;
@@ -8987,7 +9089,7 @@ async function registerBuyOrder(buyerName, body) {
         const eqId = Number(body.equipId);
         const data = getEquipmentData(equipType, eqId);
         if (!data) return { error: '존재하지 않는 장비입니다.' };
-        if (data.no_trade === true) return { error: '거래 불가 장비는 구매 등록할 수 없습니다.' };
+        if (data.no_trade === true || data.rarity === '초월') return { error: '거래 불가 장비는 구매 등록할 수 없습니다.' };
         payload = { type: equipType, id: eqId };
         if (body.level !== undefined && body.level !== null && body.level !== '') {
             const level = Math.floor(Number(body.level));
@@ -9110,6 +9212,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
 
     const buyer = await rpgenius.getRPGUserByName(entry.buyerName);
     if (!buyer) return { error: '구매자 정보를 찾을 수 없습니다.' };
+    if ((buyer.accountId || buyer.id) === (seller.accountId || seller.id)) return { error: '같은 계정의 구매 등록은 이행할 수 없습니다.' };
     ensureInventoryShape(buyer);
 
     const stock = Number(entry.count || 1);
@@ -9228,7 +9331,7 @@ function buildBuyOrderLookups() {
         return { id, name: data.name, imageUrl: getCardIconUrl({ id, star: 0 }, { prestige: false }) };
     }).filter(Boolean);
     const pack = (list, type) => (list || []).map((e, id) => {
-        if (!e || e.no_trade === true) return null;
+        if (!e || e.no_trade === true || e.rarity === '초월') return null;
         const iconUrl = getEquipmentIconUrl(e);
         const frameUrl = getAuctionFrameUrl('equipment', e.rarity);
         return { id, name: e.name, rarity: e.rarity, iconUrl, frameUrl };
@@ -9506,130 +9609,13 @@ function buildUserProfile(user) {
     };
 }
 
-function renderLogin() {
-    return `<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><title>RPGenius</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css");
-:root{color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;min-height:100svh;display:grid;place-items:center;background:#101216;color:#eceef2;font-family:Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-.card{background:#181b21;border:1px solid #2a2e37;border-radius:10px;padding:34px 30px;width:min(380px,92vw)}
-h1{margin:0 0 8px;font-size:20px;font-weight:700;color:#eceef2;letter-spacing:.02em}
-p.sub{margin:0 0 24px;color:#9aa3b2;font-size:13px}
-label{display:block;font-size:11px;color:#646c79;margin-bottom:8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
-input{width:100%;padding:12px 14px;background:#14161b;border:1px solid #2a2e37;border-radius:6px;color:#eceef2;font-size:14px;outline:none;font-family:ui-monospace,monospace;letter-spacing:.08em;transition:border-color .15s,box-shadow .15s}
-input:focus{border-color:#e8b04b;box-shadow:0 0 0 3px rgba(232,176,75,.15)}
-button{width:100%;margin-top:18px;padding:13px;background:#e8b04b;color:#1f1503;border:0;border-radius:6px;font-weight:700;cursor:pointer;font-size:14px;letter-spacing:.02em;transition:background .15s}
-button:hover{background:#f0c56e}
-button:disabled{opacity:.6;cursor:wait}
-.err{margin-top:12px;color:#e0655c;font-size:13px;min-height:18px}
-.alt{margin:14px 0 0;text-align:center;font-size:13px}.alt a{color:#e8b04b;text-decoration:none}.alt a:hover{text-decoration:underline}
-</style></head><body>
-<div class="card" id="card">
-  <h1>RPGenius</h1>
-  <p class="sub" id="sub">닉네임을 입력하세요.</p>
-  <form id="f1">
-    <label>닉네임</label>
-    <input id="nameInput" autocomplete="off" spellcheck="false" placeholder="닉네임" required>
-    <button type="submit">다음</button>
-  </form>
-  <form id="f2" style="display:none">
-    <div id="codeField">
-      <label>로그인 코드</label>
-      <input id="codeInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE12345">
-    </div>
-    <div id="otpField" style="display:none">
-      <label>OTP 코드 (Google Authenticator)</label>
-      <input id="otpInput" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" spellcheck="false" placeholder="123456">
-    </div>
-    <button type="submit">로그인</button>
-    <p class="alt" id="otpAltWrap" style="display:none"><a href="#" id="otpAlt">OTP 코드로 로그인</a></p>
-  </form>
-  <form id="f3" style="display:none">
-    <label>닉네임</label>
-    <input id="regInput" autocomplete="off" spellcheck="false" placeholder="사용할 닉네임 (최대 10자)" required>
-    <button type="submit">등록</button>
-  </form>
-  <div class="err" id="err"></div>
-  <p class="alt"><a href="#" id="toggleLink">계정이 없으신가요? 등록하기</a></p>
-</div>
-<script>
-const err=document.getElementById('err');
-const f1=document.getElementById('f1'),f2=document.getElementById('f2');
-const nameInput=document.getElementById('nameInput'),codeInput=document.getElementById('codeInput'),otpInput=document.getElementById('otpInput');
-const codeField=document.getElementById('codeField'),otpField=document.getElementById('otpField');
-const otpAltWrap=document.getElementById('otpAltWrap'),otpAlt=document.getElementById('otpAlt');
-let savedName='',useOtp=false;
-function showStep2(){
-  codeField.style.display=useOtp?'none':'';
-  otpField.style.display=useOtp?'':'none';
-  codeInput.required=!useOtp;otpInput.required=useOtp;
-  document.getElementById('sub').textContent=useOtp?'OTP 코드를 입력하세요.':'코드를 입력하세요.';
-  otpAlt.textContent=useOtp?'로그인 코드로 로그인':'OTP 코드로 로그인';
-  f1.style.display='none';f2.style.display='';
-  (useOtp?otpInput:codeInput).focus();
-}
-otpAlt.addEventListener('click',e=>{e.preventDefault();err.textContent='';useOtp=!useOtp;showStep2();});
-f1.addEventListener('submit',async e=>{
-  e.preventDefault();err.textContent='';
-  const btn=f1.querySelector('button');btn.disabled=true;
-  try{
-    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nameInput.value.trim()})});
-    const j=await r.json();
-    if(!r.ok)throw new Error(j.error||'로그인 실패');
-    if(j.ok){location.reload();return;}
-    if(j.needCode){
-      savedName=nameInput.value.trim();
-      useOtp=false;
-      otpAltWrap.style.display=j.canOtp?'':'none';
-      showStep2();
-    }
-  }catch(x){err.textContent='❌ '+x.message;}
-  btn.disabled=false;
-});
-f2.addEventListener('submit',async e=>{
-  e.preventDefault();err.textContent='';
-  const btn=f2.querySelector('button');btn.disabled=true;
-  try{
-    const body={name:savedName};
-    if(useOtp)body.otp=otpInput.value.trim();
-    else body.code=codeInput.value.trim();
-    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const j=await r.json();
-    if(!r.ok)throw new Error(j.error||'로그인 실패');
-    location.reload();
-  }catch(x){err.textContent='❌ '+x.message;btn.disabled=false;}
-});
-const f3=document.getElementById('f3'),regInput=document.getElementById('regInput'),toggleLink=document.getElementById('toggleLink'),sub=document.getElementById('sub');
-let regMode=false;
-toggleLink.addEventListener('click',e=>{
-  e.preventDefault();err.textContent='';
-  regMode=!regMode;
-  if(regMode){f1.style.display='none';f2.style.display='none';f3.style.display='';sub.textContent='사용할 닉네임을 입력하세요.';toggleLink.textContent='이미 계정이 있으신가요? 로그인';regInput.focus();}
-  else{f3.style.display='none';f1.style.display='';sub.textContent='닉네임을 입력하세요.';toggleLink.textContent='계정이 없으신가요? 등록하기';nameInput.focus();}
-});
-f3.addEventListener('submit',async e=>{
-  e.preventDefault();err.textContent='';
-  const btn=f3.querySelector('button');btn.disabled=true;
-  try{
-    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:regInput.value.trim()})});
-    const j=await r.json();
-    if(!r.ok)throw new Error(j.error||'등록 실패');
-    location.reload();
-  }catch(x){err.textContent='❌ '+x.message;btn.disabled=false;}
-});
-</script></body></html>`;
-}
-
 function renderUserDashboard(sess, opts) {
     const initialPage = opts && opts.initialPage ? opts.initialPage : '';
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>RPGenius</title>
 <script>window.__INITIAL_PAGE=${JSON.stringify(initialPage)};</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/potential-forge.css"><link rel="stylesheet" href="/static/black-market.css"><link rel="stylesheet" href="/static/shop-scene.css"><link rel="stylesheet" href="/static/market-stage.css"><link rel="stylesheet" href="/static/orb-fusion.css"></head><body>
+<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/account-gameplay.css"><link rel="stylesheet" href="/static/artifact-ui.css"><link rel="stylesheet" href="/static/potential-forge.css"><link rel="stylesheet" href="/static/black-market.css"><link rel="stylesheet" href="/static/shop-scene.css"><link rel="stylesheet" href="/static/market-stage.css"><link rel="stylesheet" href="/static/orb-fusion.css"></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="otpBtn" style="padding:8px 12px;font-size:13px" title="2단계 인증 설정">OTP</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
@@ -9939,6 +9925,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/market-stage.js"></script>
 <script src="/static/direct-trade.js"></script>
 <script src="/static/mail-stage.js"></script>
+<script src="/static/account-gameplay.js"></script>
 <script src="/static/preset-stage.js"></script>
 <script src="/static/market-board.js"></script>
 <script type="module" src="/static/chuseok.js"></script>

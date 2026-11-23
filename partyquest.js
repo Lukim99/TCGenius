@@ -197,6 +197,7 @@ function getPartyLiveStats(member, room = getRoomOf(member?.name)) {
     randoCharacters.tickMental(stats, member?.runtime, member?.baseSnapshot?.slotEffects, Date.now());
     randoCharacters.applyStats(stats, member?.runtime, member?.baseSnapshot?.slotEffects,
         member?.runtime ? refreshMemberShield(member) : 0, Date.now());
+    require('./slot_runtime').applyMissingHp(stats, member?.baseSnapshot?.slotEffects, member?.runtime?.hp, member?.runtime?.hpMax || stats.hp);
     return transcendEquipment.capPrisonKeyCritical(armorExpansion.applyConditionalStats(stats));
 }
 
@@ -226,7 +227,7 @@ function tickPartyIlion(room, member) {
     const stage = Number(getTranscendEquipmentEntry(member, '무한홀덤덱')?.stage || 0);
     const motherStage = Number(getTranscendEquipmentEntry(member, '어머니의 마음')?.stage || 0);
     const drawn = ilionCards.tick(member.runtime, member.runtime.cooldownsUntil, stage, motherStage,
-        Number(member.runtime.equipmentState?.combatStartedAt || Date.now()), Date.now());
+        Number(member.runtime.equipmentState?.combatStartedAt || Date.now()), Date.now(), undefined, member.baseSnapshot.slotEffects);
     if (!drawn) return;
     const equipmentState = member.runtime.equipmentState || (member.runtime.equipmentState = {});
     tcgEquipment.record(equipmentState, '무한홀덤덱');
@@ -3473,7 +3474,6 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     }
     if (!actionElement) extraFinalDamage += Number(slotEffects.nonElementFinalDamage || 0);
     // 보호막 공격 시 최종 피해 증가 (전직 흠시원 슬롯 효과)
-    if (Number(monster && monster.shield || 0) > 0) extraFinalDamage += Number(slotEffects.shieldFinalDamage || 0);
     if (isDirectAttack && extra.isBasic && Number(runtime.nextFinalDamageBonus || 0) > 0) {
         extraFinalDamage += Number(runtime.nextFinalDamageBonus || 0);
         runtime.nextFinalDamageBonus = 0;
@@ -5433,7 +5433,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     const star = Number(def.star || 0);
     if (skillName === '헤즈업') {
         const drawn = ilionCards.draw(caster.runtime, caster.runtime.cooldownsUntil,
-            Number(getTranscendEquipmentEntry(caster, '무한홀덤덱')?.stage || 0), Number(getTranscendEquipmentEntry(caster, '어머니의 마음')?.stage || 0), Date.now());
+            Number(getTranscendEquipmentEntry(caster, '무한홀덤덱')?.stage || 0), Number(getTranscendEquipmentEntry(caster, '어머니의 마음')?.stage || 0), Date.now(), undefined, caster.baseSnapshot.slotEffects);
         pushCombat(room, caster.name + ' [헤즈업] ' + drawn.text, 'buff');
         caster.runtime.actionUntil = nowMs() + getActionCooldownSeconds(caster) * 1000;
         if (caster.baseSnapshot.stats.awakening?.effect !== 'headsUpDamage' && !caster.runtime.ilion.balanceHits) {

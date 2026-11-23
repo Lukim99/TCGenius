@@ -1,0 +1,81 @@
+/* 게임 화면 머리줄 계정 창(account-gameplay.js).
+   머리줄 오른쪽에는 계정 아이콘 하나만 남기고, 포인트와 충전, OTP, 관리자, 로그아웃은 계정 창 안에 둔다.
+   게임 화면의 토큰(style.css :root)을 그대로 쓴다: 크롬은 무채색, 색은 게임 값(재화, 한도)에만. */
+
+/* 스크립트가 옮기기 전에 옛 단추가 잠깐 보이지 않게 한다. 계정 창으로 옮겨진 뒤에는 이 규칙에 걸리지 않는다. */
+header .bar > #pointPill,header .bar > #who,header .bar > #otpBtn,header .bar > #adminLink,header .bar > #logout{display:none !important}
+
+.ag-account{
+  position:relative;flex:0 0 auto;display:inline-grid;place-items:center;width:38px;height:38px;padding:0;
+  border:1px solid var(--border,#2a2e37);border-radius:var(--radius-s,6px);background:var(--panel-2,#14161b);color:var(--text,#eceef2);
+  cursor:pointer;overflow:hidden;transition:background .15s,border-color .15s;
+}
+.ag-account:hover,.ag-account[aria-expanded="true"]{background:var(--panel-3,#1f232b);border-color:var(--border-strong,#3a404c)}
+.ag-account svg{display:block}
+/* 아이콘 아래 가는 줄: 오늘 사냥 골드 한도를 얼마나 썼는지 */
+.ag-account-bar{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--border,#2a2e37)}
+.ag-account-bar[hidden]{display:none}
+.ag-account-bar::after{content:"";position:absolute;inset:0;background:var(--accent,#e8b04b);transform-origin:0 50%;transform:scaleX(var(--fill,0));transition:transform .4s ease}
+.ag-account.is-out .ag-account-bar::after{background:var(--bad,#e0655c)}
+
+.ag-account:focus-visible,.ag-panel a:focus-visible,.ag-panel button:focus-visible{outline:2px solid var(--accent,#e8b04b);outline-offset:2px}
+.ag-panel:focus{outline:none}
+
+.ag-panel{
+  position:fixed;z-index:120;top:60px;right:12px;width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 76px);overflow:auto;overscroll-behavior:contain;
+  padding:16px;border:1px solid var(--border-strong,#3a404c);border-radius:var(--radius,10px);background:var(--panel,#181b21);color:var(--text,#eceef2);
+  box-shadow:0 20px 60px rgba(0,0,0,.55);font-size:14px;line-height:1.45;word-break:keep-all;
+}
+.ag-panel[hidden]{display:none}
+.ag-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.ag-badge{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--panel-2,#14161b);border:1px solid var(--border,#2a2e37);color:var(--text-2,#9aa3b2)}
+.ag-names{flex:1;min-width:0;display:flex;flex-direction:column}
+.ag-panel .ag-who{display:block;max-width:none;font-size:15px;font-weight:700;line-height:1.3;color:var(--text,#eceef2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-account-name{color:var(--text-3,#646c79);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-close{flex:none;padding:6px 10px;border:0;border-radius:var(--radius-s,6px);background:var(--panel-2,#14161b);color:var(--text-2,#9aa3b2);font-size:12px;font-weight:700;cursor:pointer}
+.ag-close:hover{background:var(--panel-3,#1f232b);color:var(--text,#eceef2)}
+
+.ag-rows{display:grid;grid-template-columns:1fr auto;margin:0;border-top:1px solid var(--border,#2a2e37);border-bottom:1px solid var(--border,#2a2e37)}
+.ag-rows dt,.ag-rows dd{margin:0;padding:10px 2px;border-top:1px solid var(--border,#2a2e37);display:flex;align-items:center;min-height:44px}
+.ag-rows dt:first-of-type,.ag-rows dt:first-of-type+dd{border-top:0}
+.ag-rows dt{gap:8px;color:var(--text-2,#9aa3b2);white-space:nowrap}
+.ag-rows dd{justify-content:flex-end;gap:10px;white-space:nowrap}
+.ag-rows b{font-weight:700;font-variant-numeric:tabular-nums;font-size:15px}
+.ag-rows #pointAmount{color:var(--accent,#e8b04b)}
+.ag-ico{width:18px;height:18px;object-fit:contain;flex:none}
+
+.ag-cap{margin-top:14px}
+.ag-cap[hidden]{display:none}
+.ag-cap-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;white-space:nowrap}
+.ag-cap-value{font-weight:700;font-variant-numeric:tabular-nums}
+.ag-meter{position:relative;height:8px;margin:8px 0 6px;border-radius:4px;background:var(--panel-2,#14161b);border:1px solid var(--border,#2a2e37);overflow:hidden}
+.ag-meter i{position:absolute;inset:0;background:var(--accent,#e8b04b);transform-origin:0 50%;transform:scaleX(0);transition:transform .4s ease}
+.ag-cap-left{margin:0;color:var(--good,#7fc98a);font-size:13px;font-weight:700}
+.ag-cap-left.is-out{color:var(--bad,#e0655c)}
+.ag-notes{margin:10px 0 0;padding:0 0 0 16px;color:var(--text-2,#9aa3b2);font-size:12px;display:grid;gap:3px}
+.ag-status{margin:10px 0 0;color:var(--bad,#e0655c);font-size:13px}
+.ag-status:empty{display:none}
+
+.ag-menu{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.ag-panel .ag-item{
+  display:flex;align-items:center;justify-content:center;min-height:42px;padding:8px 10px;border:1px solid var(--border,#2a2e37);border-radius:var(--radius-s,6px);
+  background:var(--panel-2,#14161b);color:var(--text,#eceef2);font-family:inherit;font-size:13px;font-weight:700;text-decoration:none;text-align:center;white-space:nowrap;cursor:pointer;
+}
+.ag-panel .ag-item:hover{background:var(--panel-3,#1f232b)}
+.ag-panel .ag-item-main{grid-column:1 / -1;background:var(--accent,#e8b04b);border-color:var(--accent,#e8b04b);color:var(--accent-ink,#1f1503)}
+.ag-panel .ag-item-main:hover{background:var(--accent-hover,#f0c56e)}
+.ag-panel .ag-item-out{grid-column:1 / -1;background:none;color:var(--text-2,#9aa3b2)}
+.ag-panel .ag-item-out:hover{color:var(--text,#eceef2)}
+
+@media (prefers-reduced-motion:reduce){.ag-account-bar::after,.ag-meter i{transition:none}}
+
+/* 낮은 화면(휴대폰 가로): 굴리지 않고 한눈에 보이도록 재화와 메뉴를 두 칸으로 나누고 한도 설명은 접는다. */
+@media (max-height:620px){.ag-notes{display:none}}
+@media (max-height:520px) and (min-width:640px){
+  .ag-panel:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:18px;align-items:start;width:min(620px,calc(100vw - 16px));padding:12px 14px}
+  .ag-head{grid-column:1 / -1;margin-bottom:8px}
+  .ag-rows,.ag-cap{grid-column:1}
+  .ag-rows dt,.ag-rows dd{min-height:38px;padding:6px 2px}
+  .ag-status{grid-column:1 / -1}
+  .ag-menu{grid-column:2;grid-row:2 / span 2;margin-top:0}
+}

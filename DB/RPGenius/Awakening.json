@@ -17,18 +17,14 @@
         },
         "slots": [
             {
-                "effect": "finalAttackBonus",
-                "name": "최종 공격력 증가",
-                "values": [
-                    0.01,
-                    0.02,
-                    0.03,
-                    0.04,
-                    0.06,
-                    0.08,
-                    0.11,
-                    0.14
-                ]
+                "effect": "skillCoolReduction",
+                "name": "스킬 쿨타임 감소",
+                "base": 0.15
+            },
+            {
+                "effect": "alternateDamage",
+                "name": "교차 공격 피해",
+                "base": -0.05
             }
         ]
     },
@@ -52,16 +48,12 @@
             {
                 "effect": "cmb",
                 "name": "연격 확률 증가",
-                "values": [
-                    0.01,
-                    0.02,
-                    0.03,
-                    0.04,
-                    0.05,
-                    0.06,
-                    0.08,
-                    0.1
-                ]
+                "base": 0.075
+            },
+            {
+                "effect": "finalAttackBonus",
+                "name": "공격력",
+                "base": -0.1
             }
         ]
     },
@@ -84,18 +76,14 @@
         },
         "slots": [
             {
-                "effect": "recoveryEfficiency",
-                "name": "회복 효율 증가",
-                "values": [
-                    0.1,
-                    0.15,
-                    0.2,
-                    0.35,
-                    0.45,
-                    0.6,
-                    0.8,
-                    1
-                ]
+                "effect": "maxHpBonus",
+                "name": "최대 HP 증가",
+                "base": 0.15
+            },
+            {
+                "effect": "shieldEfficiency",
+                "name": "보호막 효율",
+                "base": -0.05
             }
         ]
     },
@@ -127,32 +115,14 @@
         },
         "slots": [
             {
-                "effect": "takenDamageIncrease",
-                "name": "받는 피해 증가",
-                "values": [
-                    0.01,
-                    0.02,
-                    0.03,
-                    0.04,
-                    0.05,
-                    0.06,
-                    0.07,
-                    0.08
-                ]
-            },
-            {
                 "effect": "bossDmg",
                 "name": "보스 추가 피해 증가",
-                "values": [
-                    0.05,
-                    0.08,
-                    0.11,
-                    0.14,
-                    0.2,
-                    0.27,
-                    0.35,
-                    0.45
-                ]
+                "base": 0.15
+            },
+            {
+                "effect": "takenDamageIncrease",
+                "name": "받는 피해 증가",
+                "base": 0.2
             }
         ]
     },
@@ -175,18 +145,14 @@
         },
         "slots": [
             {
-                "effect": "mpCostReduction",
-                "name": "MP 소모량 감소",
-                "values": [
-                    0.02,
-                    0.04,
-                    0.06,
-                    0.08,
-                    0.11,
-                    0.14,
-                    0.18,
-                    0.25
-                ]
+                "effect": "maxMpBonus",
+                "name": "최대 MP 증가",
+                "base": 0.15
+            },
+            {
+                "effect": "attackBuffEfficiency",
+                "name": "공격력 버프 효율",
+                "base": -0.05
             }
         ]
     },
@@ -210,16 +176,12 @@
             {
                 "effect": "defBonus",
                 "name": "방어력 증가",
-                "values": [
-                    0.03,
-                    0.05,
-                    0.07,
-                    0.1,
-                    0.13,
-                    0.18,
-                    0.24,
-                    0.3
-                ]
+                "base": 0.15
+            },
+            {
+                "effect": "takenDamageIncrease",
+                "name": "받는 피해 증가",
+                "base": 0.05
             }
         ]
     },
@@ -241,18 +203,14 @@
         },
         "slots": [
             {
-                "effect": "criticalFinalDamage",
-                "name": "치명타 공격 시 최종 피해 증가",
-                "values": [
-                    0.006999999999999999,
-                    0.014,
-                    0.021,
-                    0.027999999999999997,
-                    0.04,
-                    0.06,
-                    0.09,
-                    0.12
-                ]
+                "effect": "critMul",
+                "name": "치명타 피해량",
+                "base": 0.15
+            },
+            {
+                "effect": "crit",
+                "name": "치명타 확률",
+                "base": -0.05
             }
         ]
     },
@@ -269,30 +227,13 @@
             {
                 "effect": "goldBonus",
                 "name": "골드 획득량 증가",
-                "values": [
-                    0.005,
-                    0.01,
-                    0.015,
-                    0.02,
-                    0.025,
-                    0.03,
-                    0.04,
-                    0.06
-                ]
+                "base": 0.15
             },
             {
-                "effect": "itemDropChance",
-                "name": "아이템 드랍율 증가",
-                "values": [
-                    0.03,
-                    0.05,
-                    0.07,
-                    0.09,
-                    0.12,
-                    0.16,
-                    0.2,
-                    0.25
-                ]
+                "effect": "lightAtk",
+                "name": "명속성 강화",
+                "base": -50,
+                "type": "flat"
             }
         ]
     },
@@ -307,32 +248,9 @@
         },
         "slots": [
             {
-                "effect": "goldBonus",
-                "name": "골드 획득량 증가",
-                "values": [
-                    0.005,
-                    0.01,
-                    0.015,
-                    0.02,
-                    0.025,
-                    0.03,
-                    0.04,
-                    0.06
-                ]
-            },
-            {
-                "effect": "itemDropChance",
-                "name": "아이템 드랍율 증가",
-                "values": [
-                    0.03,
-                    0.05,
-                    0.07,
-                    0.09,
-                    0.12,
-                    0.16,
-                    0.2,
-                    0.25
-                ]
+                "effect": "missingHpExtra",
+                "name": "잃은 HP 1%당 추가 피해 증가",
+                "base": 0.002
             }
         ]
     },
@@ -347,18 +265,14 @@
         },
         "slots": [
             {
-                "effect": "pnt",
-                "name": "방어 관통력 증가",
-                "values": [
-                    6,
-                    12,
-                    18,
-                    24,
-                    32,
-                    40,
-                    50,
-                    72
-                ],
+                "effect": "defReduction",
+                "name": "방어 관통력",
+                "base": 0.15
+            },
+            {
+                "effect": "waterAtk",
+                "name": "수속성 강화",
+                "base": -50,
                 "type": "flat"
             }
         ]
@@ -374,32 +288,15 @@
         },
         "slots": [
             {
-                "effect": "crit",
-                "name": "치명타 확률 증가",
-                "values": [
-                    0.005,
-                    0.01,
-                    0.015,
-                    0.02,
-                    0.025,
-                    0.03,
-                    0.04,
-                    0.06
-                ]
+                "effect": "critMul",
+                "name": "치명타 피해량",
+                "base": 0.15
             },
             {
-                "effect": "critMul",
-                "name": "치명타 피해량 증가",
-                "values": [
-                    0.005,
-                    0.01,
-                    0.015,
-                    0.02,
-                    0.03,
-                    0.04,
-                    0.06,
-                    0.08
-                ]
+                "effect": "darkAtk",
+                "name": "암속성 강화",
+                "base": -50,
+                "type": "flat"
             }
         ]
     },
@@ -422,17 +319,13 @@
         "slots": [
             {
                 "effect": "summonDuration",
-                "name": "소환수 지속 시간 증가",
-                "values": [
-                    0.2,
-                    0.22,
-                    0.24,
-                    0.26,
-                    0.3,
-                    0.35,
-                    0.4,
-                    0.5
-                ]
+                "name": "소환수 지속시간",
+                "base": 0.3
+            },
+            {
+                "effect": "summonAttack",
+                "name": "소환수 공격력",
+                "base": -0.1
             }
         ]
     },
@@ -454,32 +347,14 @@
         },
         "slots": [
             {
-                "effect": "basicDamageReduction",
-                "name": "일반 공격 피해 감소",
-                "values": [
-                    0.01,
-                    0.02,
-                    0.03,
-                    0.04,
-                    0.05,
-                    0.06,
-                    0.07,
-                    0.08
-                ]
+                "effect": "skillDamageBonus",
+                "name": "스킬 피해량 증가",
+                "base": 0.2
             },
             {
-                "effect": "skillDamageBonus",
-                "name": "스킬 피해 증가",
-                "values": [
-                    0.015,
-                    0.03,
-                    0.045,
-                    0.07,
-                    0.11,
-                    0.16,
-                    0.22,
-                    0.3
-                ]
+                "effect": "basicDamageBonus",
+                "name": "일반 공격 피해",
+                "base": -0.15
             }
         ]
     },
@@ -501,18 +376,14 @@
         },
         "slots": [
             {
+                "effect": "damageBonus",
+                "name": "일반 몬스터 피해 증가",
+                "base": 0.15
+            },
+            {
                 "effect": "dotDamage",
-                "name": "지속 피해 증가",
-                "values": [
-                    0.05,
-                    0.07,
-                    0.09,
-                    0.11,
-                    0.13,
-                    0.15,
-                    0.17,
-                    0.18
-                ]
+                "name": "지속 피해",
+                "base": -0.05
             }
         ]
     },
@@ -534,18 +405,10 @@
         },
         "slots": [
             {
-                "effect": "firstStrikeDamage",
-                "name": "선제공격 강화 (엘리트·보스 개체별 첫 직접 공격 1회, 일반 사냥 20초당 공격 명령 1회)",
-                "values": [
-                    0.04,
-                    0.07,
-                    0.1,
-                    0.14,
-                    0.2,
-                    0.28,
-                    0.38,
-                    0.5
-                ]
+                "effect": "ilionDeckSize",
+                "name": "일리온 카드덱 추가 칸",
+                "base": 1,
+                "type": "flat"
             }
         ]
     },
@@ -568,18 +431,9 @@
         },
         "slots": [
             {
-                "effect": "shieldAttack",
-                "name": "보호막 유지 중 공격력 강화",
-                "values": [
-                    0.01,
-                    0.02,
-                    0.03,
-                    0.04,
-                    0.06,
-                    0.08,
-                    0.11,
-                    0.14
-                ]
+                "effect": "shieldFinalDamage",
+                "name": "보호막 유지 중 최종 피해 증가",
+                "base": 0.1
             }
         ]
     },
@@ -601,18 +455,10 @@
         },
         "slots": [
             {
-                "effect": "dotDamage",
-                "name": "지속 피해 증가",
-                "values": [
-                    0.05,
-                    0.07,
-                    0.09,
-                    0.11,
-                    0.13,
-                    0.15,
-                    0.17,
-                    0.18
-                ]
+                "effect": "mentalMax",
+                "name": "키노 최대 정신력 증가",
+                "base": 30,
+                "type": "flat"
             }
         ]
     }

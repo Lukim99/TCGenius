@@ -1075,6 +1075,13 @@ function shopEntryRow(entry, displayIndex, onDelete) {
     if (!entry.limits || typeof entry.limits !== 'object') entry.limits = {};
     const limitRow = el('div', { class: 'entry shop-limit-fields', style: { marginTop: '6px' } });
     limitRow.appendChild(el('span', { class: 'lab shop-limit-title' }, '구매 제한 · 0은 무제한'));
+    const purchaseScope = el('select', { class: 'nf' });
+    purchaseScope.appendChild(el('option', { value: '' }, '기본값'));
+    purchaseScope.appendChild(el('option', { value: 'account' }, '계정 공용'));
+    purchaseScope.appendChild(el('option', { value: 'character' }, '캐릭터별'));
+    purchaseScope.value = entry.purchaseScope || '';
+    purchaseScope.onchange = () => { if (purchaseScope.value) entry.purchaseScope = purchaseScope.value; else delete entry.purchaseScope; };
+    limitRow.appendChild(el('label', { class: 'shop-field' }, '구매 제한 단위', purchaseScope));
     const fields = [
         { key: 'max', label: '누적' },
         { key: 'daily', label: '일일' },

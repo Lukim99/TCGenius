@@ -4,7 +4,7 @@
         "slot_effect": {
             "effect": "skillCoolReduction",
             "name": "스킬 쿨타임 감소",
-            "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12]
+            "base": 0.1
         },
         "skills": [
             0
@@ -15,25 +15,32 @@
                 {
                     "effect": "skillCoolReduction",
                     "name": "스킬 쿨타임 감소",
-                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.09]
+                    "base": 0.05
                 },
                 {
-                    "effect": "basicDamageBonus",
-                    "name": "일반 공격 피해 증가",
-                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.09]
+                    "effect": "alternateDamage",
+                    "name": "교차 공격 피해",
+                    "base": 0.05
                 }
             ],
             "skills": [
                 12
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "alternateDamage",
+                "name": "교차 공격 피해",
+                "base": 0.1
+            }
+        ]
     },
     {
         "name": "뭔마",
         "slot_effect": {
-            "effect": "basicDamageBonus",
-            "name": "일반 공격 피해 증가",
-            "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.1, 0.15, 0.22]
+            "effect": "cmb",
+            "name": "연격 확률 증가",
+            "base": 0.025
         },
         "skills": [
             1
@@ -42,27 +49,35 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "skillDamageReduction",
-                    "name": "스킬 공격 피해 감소",
-                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
+                    "effect": "cmb",
+                    "name": "연격 확률 증가",
+                    "base": 0.05
                 },
                 {
-                    "effect": "basicDamageBonus",
-                    "name": "일반 공격 피해 증가",
-                    "values": [0.02, 0.04, 0.06, 0.08, 0.11, 0.15, 0.21, 0.3]
+                    "effect": "finalAttackBonus",
+                    "name": "공격력",
+                    "base": -0.05
                 }
             ],
             "skills": [
                 13
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "maxCmb",
+                "name": "연격 최대 횟수 증가",
+                "base": 1,
+                "type": "flat"
+            }
+        ]
     },
     {
         "name": "글렌첵",
         "slot_effect": {
-            "effect": "shieldEfficiency",
-            "name": "보호막 효율 증가",
-            "values": [0.02, 0.03, 0.04, 0.05, 0.07, 0.09, 0.12, 0.15]
+            "effect": "maxHpBonus",
+            "name": "최대 HP 증가",
+            "base": 0.1
         },
         "skills": [
             2
@@ -71,27 +86,34 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "shieldEfficiency",
-                    "name": "보호막 효율 증가",
-                    "values": [0.01, 0.015, 0.02, 0.025, 0.04, 0.05, 0.07, 0.1]
+                    "effect": "maxHpBonus",
+                    "name": "최대 HP 증가",
+                    "base": 0.05
                 },
                 {
-                    "effect": "attackBuffEfficiency",
-                    "name": "공격력 버프 효율 증가",
-                    "values": [0.015, 0.02, 0.025, 0.03, 0.05, 0.06, 0.08, 0.11]
+                    "effect": "shieldEfficiency",
+                    "name": "보호막 효율",
+                    "base": 0.05
                 }
             ],
             "skills": [
                 18
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "shieldEfficiency",
+                "name": "보호막 효율",
+                "base": 0.1
+            }
+        ]
     },
     {
         "name": "오버라이드",
         "slot_effect": {
-            "effect": "finalDamage",
-            "name": "최종 피해 증가",
-            "values": [0.007, 0.014, 0.021, 0.028, 0.04, 0.06, 0.09, 0.12]
+            "effect": "bossDmg",
+            "name": "보스 추가 피해 증가",
+            "base": 0.05
         },
         "skills": [
             3
@@ -100,27 +122,39 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "takenDamageIncrease",
-                    "name": "받는 피해 증가",
-                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
+                    "effect": "bossDmg",
+                    "name": "보스 추가 피해 증가",
+                    "base": 0.1
                 },
                 {
-                    "effect": "finalDamage",
-                    "name": "최종 피해 증가",
-                    "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.085, 0.115, 0.15]
+                    "effect": "takenDamageIncrease",
+                    "name": "받는 피해 증가",
+                    "base": 0.1
                 }
             ],
             "skills": [
                 17
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "bossDmg",
+                "name": "보스 추가 피해 증가",
+                "base": 0.2
+            },
+            {
+                "effect": "takenDamageIncrease",
+                "name": "받는 피해 증가",
+                "base": 0.3
+            }
+        ]
     },
     {
         "name": "일레이나",
         "slot_effect": {
-            "effect": "attackBuffEfficiency",
-            "name": "공격력 버프 효율 증가",
-            "values": [0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.12, 0.15]
+            "effect": "maxMpBonus",
+            "name": "최대 MP 증가",
+            "base": 0.1
         },
         "skills": [
             4
@@ -129,27 +163,34 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "shieldEfficiency",
-                    "name": "보호막 효율 증가",
-                    "values": [0.01, 0.015, 0.02, 0.025, 0.04, 0.05, 0.07, 0.1]
+                    "effect": "maxMpBonus",
+                    "name": "최대 MP 증가",
+                    "base": 0.05
                 },
                 {
                     "effect": "attackBuffEfficiency",
-                    "name": "공격력 버프 효율 증가",
-                    "values": [0.015, 0.02, 0.025, 0.03, 0.05, 0.06, 0.08, 0.11]
+                    "name": "공격력 버프 효율",
+                    "base": 0.05
                 }
             ],
             "skills": [
                 19
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "attackBuffEfficiency",
+                "name": "공격력 버프 효율",
+                "base": 0.1
+            }
+        ]
     },
     {
         "name": "진필규",
         "slot_effect": {
-            "effect": "hpDamageReduction",
-            "name": "받는 피해 감소",
-            "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12]
+            "effect": "defBonus",
+            "name": "방어력 증가",
+            "base": 0.1
         },
         "skills": [
             5
@@ -158,27 +199,34 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "hpDamageReduction",
-                    "name": "받는 피해 감소",
-                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.09]
+                    "effect": "defBonus",
+                    "name": "방어력 증가",
+                    "base": 0.05
                 },
                 {
-                    "effect": "maxHpBonus",
-                    "name": "최대 HP 증가",
-                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.09]
+                    "effect": "hpDamageReduction",
+                    "name": "받는 피해 감소",
+                    "base": 0.05
                 }
             ],
             "skills": [
                 14
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "hpDamageReduction",
+                "name": "받는 피해 감소",
+                "base": 0.1
+            }
+        ]
     },
     {
         "name": "켄시",
         "slot_effect": {
             "effect": "critMul",
-            "name": "치명타 피해량 증가",
-            "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.08, 0.12, 0.15]
+            "name": "치명타 피해량",
+            "base": 0.1
         },
         "skills": [
             6
@@ -189,26 +237,32 @@
                 {
                     "effect": "crit",
                     "name": "치명타 확률 증가",
-                    "values": [0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.06]
+                    "base": 0.05
                 },
                 {
                     "effect": "critMul",
-                    "name": "치명타 피해량 증가",
-                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.08]
+                    "name": "치명타 피해량",
+                    "base": 0.05
                 }
             ],
             "skills": [
                 15
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "crit",
+                "name": "치명타 확률 증가",
+                "base": 0.1
+            }
+        ]
     },
     {
         "name": "제우스",
         "slot_effect": {
-            "effect": "lightAtk",
-            "name": "[명]속성 강화",
-            "type": "flat",
-            "values": [10, 25, 40, 55, 80, 110, 150, 200]
+            "effect": "goldBonus",
+            "name": "골드 획득량 증가",
+            "base": 0.1
         },
         "skills": [
             7
@@ -219,20 +273,34 @@
                 {
                     "effect": "goldBonus",
                     "name": "골드 획득량 증가",
-                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12]
+                    "base": 0.05
+                },
+                {
+                    "effect": "lightAtk",
+                    "name": "명속성 강화",
+                    "base": 50,
+                    "type": "flat"
                 }
             ],
             "skills": [
                 22
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "lightAtk",
+                "name": "명속성 강화",
+                "base": 100,
+                "type": "flat"
+            }
+        ]
     },
     {
         "name": "타이란트",
         "slot_effect": {
-            "effect": "maxHpBonus",
-            "name": "최대 HP 증가",
-            "values": [0.03, 0.06, 0.09, 0.12, 0.16, 0.2, 0.25, 0.3]
+            "effect": "missingHpDef",
+            "name": "잃은 HP 1%당 방어력 증가",
+            "base": 0.002
         },
         "skills": [
             8
@@ -241,23 +309,29 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "itemDropChance",
-                    "name": "아이템 드랍율 증가",
-                    "values": [0.06, 0.1, 0.14, 0.18, 0.24, 0.32, 0.4, 0.5]
+                    "effect": "missingHpFinal",
+                    "name": "잃은 HP 1%당 최종 피해 증가",
+                    "base": 0.002
                 }
             ],
             "skills": [
                 21
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "missingHpAttack",
+                "name": "잃은 HP 1%당 공격력 증가",
+                "base": 0.002
+            }
+        ]
     },
     {
         "name": "마쉐비",
         "slot_effect": {
-            "effect": "waterAtk",
-            "name": "[수]속성 강화",
-            "type": "flat",
-            "values": [10, 25, 40, 55, 80, 110, 150, 200]
+            "effect": "defReduction",
+            "name": "방어 관통력",
+            "base": 0.1
         },
         "skills": [
             9
@@ -268,21 +342,34 @@
                 {
                     "effect": "defReduction",
                     "name": "방어 관통력",
-                    "values": [0.06, 0.08, 0.1, 0.12, 0.15, 0.18, 0.24, 0.32]
+                    "base": 0.05
+                },
+                {
+                    "effect": "waterAtk",
+                    "name": "수속성 강화",
+                    "base": 50,
+                    "type": "flat"
                 }
             ],
             "skills": [
                 20
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "waterAtk",
+                "name": "수속성 강화",
+                "base": 100,
+                "type": "flat"
+            }
+        ]
     },
     {
         "name": "딜러장",
         "slot_effect": {
-            "effect": "darkAtk",
-            "name": "[암]속성 강화",
-            "type": "flat",
-            "values": [10, 25, 40, 55, 80, 110, 150, 200]
+            "effect": "critMul",
+            "name": "치명타 피해량",
+            "base": 0.1
         },
         "skills": [
             10
@@ -291,22 +378,36 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "crit",
-                    "name": "치명타 확률 증가",
-                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12]
+                    "effect": "critMul",
+                    "name": "치명타 피해량",
+                    "base": 0.05
+                },
+                {
+                    "effect": "darkAtk",
+                    "name": "암속성 강화",
+                    "base": 50,
+                    "type": "flat"
                 }
             ],
             "skills": [
                 16
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "darkAtk",
+                "name": "암속성 강화",
+                "base": 100,
+                "type": "flat"
+            }
+        ]
     },
     {
         "name": "이익태",
         "slot_effect": {
-            "effect": "skillDamageBonus",
-            "name": "스킬 피해 증가",
-            "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.1, 0.15, 0.22]
+            "effect": "summonDuration",
+            "name": "소환수 지속시간",
+            "base": 0.2
         },
         "skills": [
             11
@@ -315,27 +416,34 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "basicDamageReduction",
-                    "name": "일반 공격 피해 감소",
-                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
+                    "effect": "summonDuration",
+                    "name": "소환수 지속시간",
+                    "base": 0.1
                 },
                 {
-                    "effect": "skillDamageBonus",
-                    "name": "스킬 피해 증가",
-                    "values": [0.02, 0.04, 0.06, 0.08, 0.11, 0.15, 0.21, 0.3]
+                    "effect": "summonAttack",
+                    "name": "소환수 공격력",
+                    "base": 0.1
                 }
             ],
             "skills": [
                 23
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "summonAttack",
+                "name": "소환수 공격력",
+                "base": 0.2
+            }
+        ]
     },
     {
         "name": "안성재",
         "slot_effect": {
-            "effect": "tenthHitFinalAtk",
-            "name": "10번째 공격마다 최종 공격력 증가",
-            "values": [0.08, 0.1, 0.12, 0.14, 0.17, 0.2, 0.25, 0.3]
+            "effect": "skillDamageBonus",
+            "name": "스킬 피해량 증가",
+            "base": 0.1
         },
         "skills": [
             24
@@ -344,22 +452,39 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "ultimateDamage",
-                    "name": "궁극기 사용 시 추가 피해",
-                    "values": [0.08, 0.12, 0.16, 0.2, 0.25, 0.3, 0.45, 0.6]
+                    "effect": "skillDamageBonus",
+                    "name": "스킬 피해량 증가",
+                    "base": 0.15
+                },
+                {
+                    "effect": "basicDamageBonus",
+                    "name": "일반 공격 피해",
+                    "base": -0.1
                 }
             ],
             "skills": [
                 25
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "skillDamageBonus",
+                "name": "스킬 피해량 증가",
+                "base": 0.25
+            },
+            {
+                "effect": "basicDamageBonus",
+                "name": "일반 공격 피해",
+                "base": -0.2
+            }
+        ]
     },
     {
         "name": "흠시원",
         "slot_effect": {
-            "effect": "nonElementFinalDamage",
-            "name": "[무]속성 공격 시 최종 피해 증가",
-            "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.08, 0.11, 0.14]
+            "effect": "damageBonus",
+            "name": "일반 몬스터 피해 증가",
+            "base": 0.1
         },
         "skills": [
             26
@@ -368,31 +493,34 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "shieldFinalDamage",
-                    "name": "보호막 공격 시 최종 피해 증가",
-                    "values": [0.05, 0.08, 0.11, 0.15, 0.2, 0.25, 0.35, 0.5]
+                    "effect": "damageBonus",
+                    "name": "일반 몬스터 피해 증가",
+                    "base": 0.05
+                },
+                {
+                    "effect": "dotDamage",
+                    "name": "지속 피해",
+                    "base": 0.05
                 }
             ],
             "skills": [
                 27
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "dotDamage",
+                "name": "지속 피해",
+                "base": 0.1
+            }
+        ]
     },
     {
         "name": "일리온",
         "slot_effect": {
             "effect": "ilionDeckAttack",
-            "name": "(일리온 전용) 카드덱의 카드 1장당 최종 공격력 증가",
-            "values": [
-                0.008,
-                0.016,
-                0.024,
-                0.036,
-                0.05,
-                0.07,
-                0.09,
-                0.11
-            ]
+            "name": "일리온 카드덱 카드 1장당 공격력 증가",
+            "base": 0.1
         },
         "skills": [
             29
@@ -401,40 +529,31 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "damageBonus",
-                    "name": "일반 몬스터 피해 증가",
-                    "values": [
-                        0.015,
-                        0.03,
-                        0.045,
-                        0.06,
-                        0.09,
-                        0.12,
-                        0.16,
-                        0.2
-                    ]
+                    "effect": "ilionCardDuration",
+                    "name": "일리온 카드 지속시간 증가",
+                    "base": 2,
+                    "type": "seconds"
                 }
             ],
             "skills": [
                 30
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "actionCooldownFlat",
+                "name": "행동 쿨타임 감소",
+                "base": 0.2,
+                "type": "seconds"
+            }
+        ]
     },
     {
         "name": "워뇨띠",
         "slot_effect": {
             "effect": "wonyoddiBasicCooldown",
-            "name": "(워뇨띠 전용) 일반 공격 쿨타임 감소 (행동 쿨타임과 별개)",
-            "values": [
-                0.05,
-                0.08,
-                0.11,
-                0.14,
-                0.18,
-                0.22,
-                0.26,
-                0.3
-            ]
+            "name": "워뇨띠 일반 공격 쿨타임 감소",
+            "base": 0.3
         },
         "skills": [
             31
@@ -443,42 +562,31 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "actionCooldownFlat",
-                    "name": "행동 쿨타임 감소",
-                    "type": "seconds",
-                    "values": [
-                        0.02,
-                        0.04,
-                        0.07,
-                        0.1,
-                        0.15,
-                        0.2,
-                        0.27,
-                        0.35
-                    ]
+                    "effect": "shieldAttack",
+                    "name": "보호막 유지 중 공격력 증가",
+                    "base": 0.1
                 }
             ],
             "skills": [
                 32
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "actionCooldownFlat",
+                "name": "행동 쿨타임 감소",
+                "base": 0.2,
+                "type": "seconds"
+            }
+        ]
     },
     {
         "name": "키노",
         "slot_effect": {
-            "effect": "mentalRegen",
-            "name": "초당 정신력 회복량",
-            "type": "flat",
-            "values": [
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8
-            ]
+            "effect": "mentalCostReduction",
+            "name": "키노 정신력 소모량 감소",
+            "base": 10,
+            "type": "flat"
         },
         "skills": [
             33
@@ -487,23 +595,22 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "nonCriticalFinalDamage",
-                    "name": "비치명타 최종 피해 증가",
-                    "values": [
-                        0.015,
-                        0.03,
-                        0.045,
-                        0.06,
-                        0.09,
-                        0.12,
-                        0.17,
-                        0.22
-                    ]
+                    "effect": "mentalRegen",
+                    "name": "키노 초당 정신력 회복량 증가",
+                    "base": 5,
+                    "type": "flat"
                 }
             ],
             "skills": [
                 34
             ]
-        }
+        },
+        "berserkSlotEffects": [
+            {
+                "effect": "dotDamage",
+                "name": "지속 피해",
+                "base": 0.1
+            }
+        ]
     }
 ]

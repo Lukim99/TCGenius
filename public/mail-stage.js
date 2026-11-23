@@ -156,7 +156,7 @@
         const bx = mobile ? x + 14 : x + w - btnW - 14, by = mobile ? y + h - bh - 12 : y + (h - bh) / 2 + 10;
         if (mail.claimed) {
             K.plate(bx, by, btnW, bh, 10, { a: .9, edge: .5, tint: K.GOOD, tintA: .2 }); K.glyph('check', bx + 28, by + bh / 2, 12, K.GOOD);
-            K.text('수령 완료', bx + btnW / 2 + 10, by + bh / 2 + .5, 15, K.GOOD, 'center', 800);
+            K.text(mail.returned ? '반송 완료' : '수령 완료', bx + btnW / 2 + 10, by + bh / 2 + .5, 15, K.GOOD, 'center', 800);
         } else K.btn('claim', mail.id, bx, by, btnW, bh, '선물 받기', { primary: true, size: 17 });
     }
 
@@ -249,13 +249,14 @@
             try { await postApi('/api/mail/read', { id }); } catch (_) { }
         }
     }
-    async function claim(id) {
+    async function claim(id, returning = false) {
         const mail = box.mails.find(m => m.id === id); if (!mail || mail.claimed) return;
         ui.busy = true; stage.invalidate();
         try {
-            await postApi('/api/mail/claim', { id });
+            await postApi(returning ? '/api/mail/return' : '/api/mail/claim', { id });
             mail.claimed = true; stage.play('claim'); stage.pulse();
-            ui.dialog = { title: '수령 완료', lines: ['선물을 받았습니다.'], rows: mail.gifts.map(giftInfo), wide: true, tint: '#ffa36b' };
+            mail.returned = returning;
+            ui.dialog = { title: returning ? '반송 완료' : '수령 완료', lines: [returning ? '동봉된 선물을 발신 캐릭터의 우편함으로 돌려보냈습니다.' : '선물을 받았습니다.'], rows: mail.gifts.map(giftInfo), wide: true, tint: '#ffa36b' };
         } catch (error) { ui.dialog = { title: '받지 못했습니다', lines: [error.message], error: true }; }
         finally { ui.busy = false; stage?.invalidate(); }
     }
@@ -291,6 +292,7 @@
         const reserved = type => c.gifts.filter(x => x.type === type).reduce((s, x) => s + Number(x.amount || 0), 0), addedItem = id => c.gifts.filter(x => x.type === 'item' && x.id === id).reduce((s, x) => s + x.count, 0);
         const currency = key => ({ key, label: CUR_LABEL[key], currency: true, balance: Math.max(0, g[key] - reserved(key)), reserved: reserved(key), icon: g[key + 'IconUrl'], steps: key === 'gold' ? [10000, 100000, 1000000] : [100, 1000, 10000] });
         const kinds = [currency('gold'), currency('garnet'), currency('point'),
+            { key: 'card', label: '캐릭터 카드', entries: (g.cards || []).filter(o => !c.gifts.some(gift => gift.type === 'card' && gift.index === o.index)).map(o => ({ key: 'c' + o.index, raw: o, info: MS.identify(o, 'card') })), filter: e => e.raw.type || '일반' },
             { key: 'equipment', label: '장비', entries: g.equipment.filter(o => !usedEq.has(o.number)).map(o => ({ key: 'e' + o.number, raw: o, info: MS.identify(o, 'equipment') })), filter: e => e.raw.typeLabel || e.raw.rarity },
             { key: 'pet', label: '펫', entries: g.pets.filter(o => !usedPet.has(o.index)).map(o => ({ key: 'p' + o.index, raw: o, info: MS.identify(o, 'pet') })), filter: e => e.raw.rarity },
             { key: 'item', label: '아이템', entries: g.items.map(o => ({ ...o, left: o.count - addedItem(o.id) })).filter(o => o.left > 0).map(o => ({ key: 'i' + o.id, raw: o, info: MS.identify({ ...o, count: o.left }, 'item') })), filter: e => e.raw.type || '기타', quantity: e => e.raw.left },
@@ -309,7 +311,8 @@
         } else {
             const sel = MS.pickerSelected(P); if (!sel) { P.error = '담을 품목을 고르세요.'; return; }
             const o = sel.raw;
-            if (kind.key === 'equipment') c.gifts.push({ type: 'equipment', number: o.number, _info: sel.info });
+            if (kind.key === 'card') c.gifts.push({ type: 'card', index: o.index, version: o.version, _info: sel.info });
+            else if (kind.key === 'equipment') c.gifts.push({ type: 'equipment', number: o.number, _info: sel.info });
             else if (kind.key === 'pet') c.gifts.push({ type: 'pet', index: o.index, _info: sel.info });
             else if (kind.key === 'avatar') c.gifts.push({ type: 'avatar', name: o.name, avatarId: o.id, _info: sel.info });
             else {
@@ -338,7 +341,7 @@
     // ── 동작
     function act(action, id) {
         if (MS.linesAct(ui, action)) { stage.invalidate(); return; }
-        if (ui.dialog) { if (['dialog-close', 'back', 'claim-yes'].includes(action)) { const d = ui.dialog; ui.dialog = null; if (action === 'claim-yes') { claim(d.mailId); return; } } stage.invalidate(); return; }
+        if (ui.dialog) { if (['dialog-close', 'back', 'claim-yes', 'return-yes'].includes(action)) { const d = ui.dialog; ui.dialog = null; if (action === 'claim-yes' || action === 'return-yes') { claim(d.mailId, action === 'return-yes'); return; } } stage.invalidate(); return; }
         if (ui.picker && (action.startsWith('picker-') || action === 'back')) {
             if (action === 'picker-close' || (action === 'back' && !ui.picker.mobileDetail)) { ui.picker = null; stage.play('cancel'); }
             else if (action === 'back') ui.picker.mobileDetail = false;
@@ -356,7 +359,7 @@
             case 'body-next': ui.bodyPage++; break;
             case 'body-previous': ui.bodyPage--; break;
             case 'refresh': load(box.page); return;
-            case 'claim': ui.dialog = { title: '선물 받기', lines: ['동봉된 선물을 모두 받을까요?'], rows: (selected()?.gifts || []).map(giftInfo), wide: true, mailId: id, tint: '#ffa36b', actions: [{ action: 'dialog-close', label: '취소' }, { action: 'claim-yes', label: '받기', primary: true }] }; break;
+            case 'claim': ui.dialog = { title: '선물 받기', lines: ['동봉된 선물을 모두 받을까요?', ...(selected()?.cardTickets ? ['수령 시 거래권 ' + selected().cardTickets + '장을 사용합니다.'] : []), ...(selected()?.returnable ? ['전체 반송하면 동봉된 선물을 모두 돌려보냅니다. 이미 낸 발송 수수료는 반환되지 않습니다.'] : [])], rows: (selected()?.gifts || []).map(giftInfo), wide: true, mailId: id, tint: '#ffa36b', actions: [{ action: 'dialog-close', label: '취소' }, ...(selected()?.returnable ? [{ action: 'return-yes', label: '전체 반송' }] : []), { action: 'claim-yes', label: '받기', primary: true }] }; break;
             case 'gift': { const g = selected()?.gifts[Number(id)]; if (g) { ui.giftView = Number(id); stage.announce(giftInfo(g).title); } break; }
             case 'gift-close': ui.giftView = null; break;
             case 'compose': openCompose(); return;

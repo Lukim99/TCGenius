@@ -74,7 +74,14 @@ DynamoDBDocumentClient.prototype.send = async command => {
         if (fault === 'after') throw new Error('isolated response lost');
         return {};
     }
-    if (command.constructor.name === 'UpdateCommand' || command.constructor.name === 'PutCommand') { write(input, command.constructor.name === 'PutCommand'); return {}; }
+    if (command.constructor.name === 'UpdateCommand' || command.constructor.name === 'PutCommand') {
+        const fault = transactionFault; transactionFault = null;
+        if (fault === 'before') throw new Error('isolated DB failure');
+        if (!matches(input)) throw Object.assign(new Error('conditional conflict'), { name: 'ConditionalCheckFailedException' });
+        write(input, command.constructor.name === 'PutCommand');
+        if (fault === 'after') throw new Error('isolated response lost');
+        return {};
+    }
     throw new Error('Unexpected isolated database command: ' + command.constructor.name);
 };
 const rpg = require('../rpgenius');
@@ -363,7 +370,7 @@ test('다른 구매 등록과 암시장 입찰이 겹쳐도 두 지출 모두 �
         request('/api/black-market/bid', bidBody(view, 'card-gold', 70)),
         request('/api/buyorder/register', { kind: 'item', currency: 'gold', price: 30, count: 1, itemId })
     ]);
-    assert.ok(results.every(result => result.status === 200));
+    assert.ok(results.every(result => result.status === 200), JSON.stringify(results));
     assert.equal((await state()).balances.gold, before - 100);
 });
 

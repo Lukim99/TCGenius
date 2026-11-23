@@ -1,0 +1,154 @@
+{
+  "concept": "The Mirror Lake. The water does not reflect what stands above it. It reflects the other world. On the login screen you stand in a silent, drowned night world: a ruined half-ring gate rises out of a perfectly still lake under two moons. But the reflection in the water is wrong on purpose: it shows a radiant golden realm, and the ruined half ring is completed into a full, pristine circle by its reflected twin. Your nickname is written in light above the water and appears, alive and golden, only in the reflection. When the gate accepts you, the whole world turns over through the water surface and the reflection becomes the real place. Character selection happens on the other side: your real character illustrations stand on the mirror water of the golden realm in front of the pristine gate, each on a slowly turning magic sigil, and the lake under their feet now reflects the night world you came from, so every hero casts a starlit twin. Empty places are closed lotus buds of light floating on the lake, the extra slot is a bud bound by a golden chain. Everything is one continuous place seen from two sides, painted like premium high-fantasy RPG key art.",
+  "implementation": {
+    "renderer": "One fullscreen WebGL scene per screen, shared engine in public/account-stage.js. All generated images are loaded as textures. Nothing in the scene is a flat screenshot: the sky, horizon strip, gate, foreground framing, sigils, lotus buds, petals and the real character sprites (loaded from the backend imageUrl) are separate quads on depth layers with pointer and gyroscope parallax.",
+    "water": "The lower part of the view is a real-time shader. It mirrors the layers above the waterline with ripple distortion, fresnel and depth tint, but samples the OTHER world's sky, horizon and gate textures, which is the core idea. Selecting a character sends an expanding ripple ring from its feet. Character reflections are rendered live from the same sprite textures, flipped and graded into the opposite world's light.",
+    "transition": "Login success rotates the whole scene around the waterline (the camera passes through the surface) with a splash of light, then /characters opens already turned over, finishing the same motion. Reduced motion uses a short crossfade and static water.",
+    "responsive": "Sky textures are cover-scaled above a movable waterline. The horizon strip and gate are centered. Foreground framing pieces are anchored to their own screen corners, so portrait, 16:9 and ultrawide all compose correctly without stretching. Characters stand in perspective rows on the water: two per row receding toward the gate on phones, one wide arc on desktop, a swipeable arc on short landscape. Extra purchased slots add rows or arc length and the camera dollies.",
+    "hud": "A genuine game HUD drawn with the generated ornament art (9-slice dialog frame, start plaque, secondary plates, engraved ledger bar, crest, divider). Currency is shown in one engraved ledger bar with the real currency icons and inlaid numbers separated by engraved rules, not as tags or pills. No version badge. Korean copy stays live HTML text with keep-all line breaking and nowrap labels. New display fonts (a Korean serif display face plus a classical Latin serif, self hosted under an open license) replace the previous ones.",
+    "accessibility": "Every WebGL hero, bud and control has a real focusable button positioned over it, keyboard and screen reader operable. Start control, double click and double tap start remain. Sounds remain the existing external CC0 recordings."
+  },
+  "style_block": "Shared style for every asset: hand-painted high-fantasy RPG key art in the quality of a premium MMORPG character select scene, painterly realism with crisp fine detail, luminous atmospheric lighting, rich but controlled color, clean edges, no cartoon outlines, no pixel art, no photo. Absolutely no text, no letters, no numbers, no runes that read as real writing, no logos, no watermark, no signature, no UI, no characters or people, no border or frame unless the asset itself is a frame.",
+  "assets": [
+    {
+      "id": "sky_night",
+      "filename": "sky-night.png",
+      "transparent_background": false,
+      "prompt": "Landscape image, 3:2 aspect ratio, as large as possible. A vast night sky painted as high-fantasy RPG key art, seen from the middle of a still lake but showing ONLY sky: no ground, no water, no horizon line, no mountains, no trees, no buildings. Deep indigo to near black at the top, a dense detailed star field, a broad luminous river of stars crossing diagonally from lower left to upper right with violet and teal nebula dust, and two moons in the upper right third: one large pale silver moon partly veiled by thin cloud and one small cold blue moon near it. Thin high cirrus catching moonlight. The bottom fifth of the image must be an even, soft, slightly brighter blue-violet haze with no objects, so a horizon can be placed anywhere over it. Left and right edges should be calm and evenly dark so the image can be cropped or extended. Quiet, sacred, melancholy mood. Painterly realism, crisp fine detail, no text, no letters, no watermark, no characters, no frame.",
+      "use": "Sky above the waterline on the login screen (cover scaled). Also the texture the water samples for reflections on the character screen, so heroes there get a starlit reflection."
+    },
+    {
+      "id": "sky_realm",
+      "filename": "sky-realm.png",
+      "transparent_background": false,
+      "prompt": "Landscape image, 3:2 aspect ratio, as large as possible. A radiant golden-hour sky of a high-fantasy realm, painted as premium RPG key art, showing ONLY sky: no ground, no water, no horizon line, no mountains, no buildings, no birds. Towering sculpted cumulus clouds lit warm gold and rose on one side and cool lavender in shadow, deep clear teal-blue sky between them, long soft god rays fanning from a hidden sun low at center, a few very small distant floating rock islets with tiny waterfalls high in the upper left and upper right, faint daytime crescent moon. The bottom fifth of the image must be an even, soft, bright peach-gold haze with no objects, so a horizon can be placed anywhere over it. Left and right edges calm and even so the image can be cropped or extended. Majestic, hopeful, breathtaking mood. Painterly realism, crisp fine detail, no text, no letters, no watermark, no characters, no frame.",
+      "use": "Sky above the waterline on the character selection screen (cover scaled). Also the texture the water samples for the wrong-world reflection on the login screen."
+    },
+    {
+      "id": "horizon_night",
+      "filename": "horizon-night.png",
+      "transparent_background": true,
+      "prompt": "Landscape image, 3:2 aspect ratio, as large as possible, fully transparent background. A wide panoramic strip of distant scenery standing in a still lake at night, isolated with clean alpha, occupying only the lower 45 percent of the image and spanning the full width from left edge to right edge; everything above it is fully transparent. Content: drowned ruins of an ancient fantasy city seen far away in moonlight: broken slender towers, collapsed arched bridges, leaning obelisks, half-sunken colossal statues without faces, bare dead trees, a few faint cold blue lights in empty windows. Lower and sparser in the exact center third (leave the center low so a gate can stand in front), taller toward the left and right thirds. Painted in desaturated blue-grey and slate with silver rim light from the upper right. IMPORTANT: every object ends at one perfectly straight horizontal waterline located exactly at the bottom edge of the image; do not paint any water, reflection, mist band or ground below or at the base. The silhouette top edge must be crisp against transparency. High-fantasy RPG key art, painterly realism, fine detail. No text, no letters, no watermark, no characters, no sky, no frame.",
+      "use": "Distant horizon layer on the login screen, standing on the waterline. On the character screen it is what the water reflects behind the heroes."
+    },
+    {
+      "id": "horizon_realm",
+      "filename": "horizon-realm.png",
+      "transparent_background": true,
+      "prompt": "Landscape image, 3:2 aspect ratio, as large as possible, fully transparent background. A wide panoramic strip of distant scenery standing in a shallow mirror lake at golden hour, isolated with clean alpha, occupying only the lower 45 percent of the image and spanning the full width from left edge to right edge; everything above it is fully transparent. Content: a living high-fantasy city seen far away: slender white and gold spires, domes, graceful arched aqueducts spilling thin waterfalls, a colossal ancient tree whose crown holds terraces and lanterns on the left third, a cluster of sail-roofed towers and a lighthouse of crystal on the right third, tiny moored sky ships with folded sails, warm window lights. Lower and sparser in the exact center third (leave the center low so a gate can stand in front), taller toward the left and right thirds. Warm gold light from center behind, soft aerial perspective haze, colors ivory, gold, teal roofs, rose shadows. IMPORTANT: every object ends at one perfectly straight horizontal waterline located exactly at the bottom edge of the image; do not paint any water, reflection, mist band or ground below or at the base. The silhouette top edge must be crisp against transparency. High-fantasy RPG key art, painterly realism, fine detail. No text, no letters, no watermark, no characters, no sky, no frame.",
+      "use": "Distant horizon layer on the character selection screen. On the login screen it is the wrong-world reflection seen in the water."
+    },
+    {
+      "id": "gate_ruin",
+      "filename": "gate-ruin.png",
+      "transparent_background": true,
+      "prompt": "Landscape image, 3:2 aspect ratio, as large as possible, fully transparent background. A single monumental stone gate shaped as an exact upper half of a ring (a perfect semicircular arch, like the top half of a giant stone circle rising out of water), seen perfectly front-on and perfectly symmetric, isolated with clean alpha. Geometry: the outer diameter of the half ring spans 86 percent of the image width, centered horizontally; the band of the ring is thick, about one seventh of the outer radius; both ends of the half ring are cut flat and sit exactly on the bottom edge of the image; the inside of the arch is fully transparent. Surface: ancient weathered grey-blue stone blocks, cracked and chipped, one small section near the top right broken away with a gap, moss, hanging dead vines, barnacle and waterline stains near the two bases, worn carved abstract geometric grooves and concentric inlays with a very faint dying blue glow in a few grooves. Lit by cold silver moonlight from the upper right with deep blue shadows. No water, no reflection, no ground, no mist, no sky, no shadow below. High-fantasy RPG key art, painterly realism, crisp fine detail. No text, no real letters or readable runes, no watermark, no characters, no frame.",
+      "use": "The half-ring gate standing in the lake on the login screen. Its upper half is real, the lower half of the circle is supplied by the reflection of gate-realm. On the character screen it appears only as the reflection under the pristine gate."
+    },
+    {
+      "id": "gate_realm",
+      "filename": "gate-realm.png",
+      "transparent_background": true,
+      "prompt": "Landscape image, 3:2 aspect ratio, as large as possible, fully transparent background. A single monumental pristine gate shaped as an exact upper half of a ring (a perfect semicircular arch, like the top half of a giant circle rising out of water), seen perfectly front-on and perfectly symmetric, isolated with clean alpha. Geometry must match a twin asset: the outer diameter of the half ring spans 86 percent of the image width, centered horizontally; the band of the ring is thick, about one seventh of the outer radius; both ends of the half ring are cut flat and sit exactly on the bottom edge of the image; the inside of the arch is fully transparent. Surface: flawless ivory-white marble with polished gold inlay, concentric engraved bands, abstract geometric grooves filled with softly glowing warm golden light, small teal enamel and crystal studs evenly spaced, delicate filigree along the inner and outer rims, a larger faceted crystal keystone at the very top center. Lit by warm golden-hour light from behind and above with a soft bright rim and gentle rose shadow. No water, no reflection, no ground, no mist, no sky, no shadow below. High-fantasy RPG key art, painterly realism, crisp fine detail. No text, no real letters or readable runes, no watermark, no characters, no frame.",
+      "use": "The complete world's gate: centerpiece behind the heroes on the character screen, and the reflected lower half of the ring on the login screen."
+    },
+    {
+      "id": "fore_left",
+      "filename": "fore-left.png",
+      "transparent_background": true,
+      "prompt": "Portrait image, 2:3 aspect ratio, as large as possible, fully transparent background. Foreground framing element for the upper left corner of a fantasy scene, isolated with clean alpha. A graceful ancient blossoming tree bough enters from beyond the top edge and the left edge and arcs toward the right, heavy with pale gold and soft rose blossoms and fresh green leaves, with three small hanging lanterns made of crystal and gold filigree on thin chains at different lengths, a few loose petals. All content hugs the top edge and the left edge: dense in the top-left, thinning to nothing toward the right third and the bottom half, so the right 30 percent and the bottom 45 percent of the image are fully transparent. The parts touching the top and left edges should run off the canvas. Close foreground, slightly darker and richer than a background, lit by warm golden backlight with glowing translucent petals. High-fantasy RPG key art, painterly realism, crisp fine detail. No text, no letters, no watermark, no characters, no sky, no ground, no frame.",
+      "use": "Nearest parallax layer anchored to the top-left corner of the character selection screen, drawn slightly out of focus and moving most with the pointer."
+    },
+    {
+      "id": "fore_right",
+      "filename": "fore-right.png",
+      "transparent_background": true,
+      "prompt": "Portrait image, 2:3 aspect ratio, as large as possible, fully transparent background. Foreground framing element for the right side of a fantasy scene, isolated with clean alpha. A tall slender ancient marble mooring pillar with gold bands rises from below the bottom edge near the right edge, wrapped by a climbing wisteria-like vine with hanging clusters of lavender and gold flowers, with a long narrow silk pennant in deep teal with a plain gold border and no emblem drifting from its top toward the left, and a small crystal lantern hanging from a bracket. All content hugs the right edge: the pillar stands within the right 30 percent of the image and runs off the bottom edge, the pennant and flower sprays reach toward the left but stay in the upper half, so the left 40 percent of the image is fully transparent. Close foreground, slightly darker and richer than a background, lit by warm golden backlight from the left. High-fantasy RPG key art, painterly realism, crisp fine detail. No text, no letters, no emblem, no watermark, no characters, no sky, no ground, no water, no frame.",
+      "use": "Nearest parallax layer anchored to the right edge of the character selection screen."
+    },
+    {
+      "id": "fore_night",
+      "filename": "fore-night.png",
+      "transparent_background": true,
+      "prompt": "Landscape image, 3:2 aspect ratio, as large as possible, fully transparent background. Foreground framing element for the lower left corner of a night lake scene, isolated with clean alpha. A cluster of tall lake reeds and cattails with a few bent broken stems rising from below the bottom edge, and among them a tilted, half-sunken ancient stone lantern post covered in moss with a cracked empty lantern housing that holds one tiny cold blue ember of light. Two or three pale night moths. All content hugs the bottom edge and the left edge: dense in the bottom-left, thinning to nothing toward the right half and the top third, so the right 45 percent and the top 30 percent of the image are fully transparent. The reeds run off the bottom edge; do not paint water, reflection or ground. Close foreground silhouette quality: very dark blue-black with a thin silver moonlit rim from the upper right. High-fantasy RPG key art, painterly realism, crisp fine detail. No text, no letters, no watermark, no characters, no sky, no frame.",
+      "use": "Nearest parallax layer on the login screen, anchored bottom-left, and mirrored at lower opacity bottom-right."
+    },
+    {
+      "id": "sigil",
+      "filename": "sigil.png",
+      "transparent_background": true,
+      "prompt": "Square image, 1:1 aspect ratio, as large as possible, fully transparent background. A single ornate magic circle seen exactly from directly above (perfect circle, not in perspective), centered, filling 92 percent of the image, isolated with clean alpha. Drawn only in luminous white and very pale gold light lines of varying weight with a soft glow, on transparency, so it can be tinted and blended additively. Design: three concentric rings of different thickness, an inner twelve-pointed star formed by overlapping triangles, a ring of small evenly spaced abstract geometric glyphs made of dots, arcs and short strokes that do not resemble any real letters, twelve tiny diamond studs on the outer ring, and a small open circle left empty at the very center. Perfectly radially symmetric, precise and clean like engraved light, fine detail, no fill between lines. No text, no real letters, no numbers, no watermark, no background color, no frame.",
+      "use": "Magic sigil under each hero, drawn flattened on the water in perspective, slowly rotating, tinted per character from the sprite's own dominant color, brighter under the selected hero."
+    },
+    {
+      "id": "marker",
+      "filename": "marker.png",
+      "transparent_background": true,
+      "prompt": "Portrait image, 2:3 aspect ratio, fully transparent background. A single ornate floating selection marker for an RPG character select screen, centered, isolated with clean alpha, seen front-on and symmetric. A faceted elongated crystal shard of warm gold-white light pointing straight down, held in a delicate open gold filigree cradle with two small swept wings and a tiny ring halo above it. Bright inner glow, crisp facets, fine metalwork. The object occupies the middle 60 percent of the image with empty transparent margin around it for glow. High-fantasy RPG ornament, painterly realism with jewel-like detail. No text, no letters, no watermark, no background, no shadow, no frame.",
+      "use": "Hovers and bobs above the selected hero in the WebGL scene."
+    },
+    {
+      "id": "lotus_bud",
+      "filename": "lotus-bud.png",
+      "transparent_background": true,
+      "prompt": "Square image, 1:1 aspect ratio, fully transparent background. A single large closed lotus bud made of soft glowing light and translucent pearl-white petals with pale gold edges, resting upright on one round floating lily pad of dark jade green with fine gold veins, seen from a slightly raised front view, centered, isolated with clean alpha. The bud glows gently from within, as if something is waiting to be born inside it; a few tiny motes of light rise from its tip. The lily pad is a flat ellipse at the bottom of the object. No water, no reflection, no ripples, no shadow below the pad. The object occupies the middle 70 percent of the image. High-fantasy RPG key art, painterly realism, crisp fine detail. No text, no letters, no watermark, no background, no frame.",
+      "use": "An empty character place on the lake. Pressing it opens character creation. Reflected live in the water."
+    },
+    {
+      "id": "lotus_sealed",
+      "filename": "lotus-sealed.png",
+      "transparent_background": true,
+      "prompt": "Square image, 1:1 aspect ratio, fully transparent background. The same kind of large closed lotus bud of translucent pearl-white petals with pale gold edges on one round floating lily pad of dark jade green with fine gold veins, seen from a slightly raised front view, centered, isolated with clean alpha, but this bud is sealed: it is dimmer, cool silver-violet inside instead of glowing warm, and wrapped by two crossing fine golden chains fastened at the front with a small ornate round gold lock set with a blue gem (no keyhole text, no symbols). The lily pad is a flat ellipse at the bottom of the object. No water, no reflection, no ripples, no shadow below the pad. The object occupies the middle 70 percent of the image. High-fantasy RPG key art, painterly realism, crisp fine detail. No text, no letters, no watermark, no background, no frame.",
+      "use": "The purchasable extra slot at the end of the row. Pressing it opens the point spend confirmation."
+    },
+    {
+      "id": "petals",
+      "filename": "petals.png",
+      "transparent_background": true,
+      "prompt": "Square image, 1:1 aspect ratio, fully transparent background. A sprite sheet of exactly four separate small objects arranged in a clean 2 by 2 grid, each centered in its own quadrant with generous empty transparent space around it and nothing crossing the quadrant borders, isolated with clean alpha. Top left: one single pale gold flower petal, slightly curled. Top right: one single soft rose flower petal seen from another angle. Bottom left: one small fresh green leaf. Bottom right: one soft round mote of warm light with a tiny bright core and gentle falloff. Painterly realism, delicate translucency, crisp edges on the petals and leaf. No text, no letters, no watermark, no grid lines, no background, no frame.",
+      "use": "Particle atlas: drifting petals and leaves in the realm scene, light motes over the water in both scenes."
+    },
+    {
+      "id": "crest",
+      "filename": "crest.png",
+      "transparent_background": true,
+      "prompt": "Square image, 1:1 aspect ratio, fully transparent background. An ornate heraldic game emblem, centered, perfectly symmetric left to right, isolated with clean alpha. Motif: a ring split by a horizontal line into two halves that belong to two worlds: the upper half ring is polished ivory and gold with a tiny sun and cloud filigree, the lower half ring is dark blued steel and silver with tiny stars and a crescent, the two halves meeting at a thin bright horizontal line of light that extends a little beyond the ring on both sides like a horizon. Small swept metal wings or leaves flank the ring, a faceted crystal sits at the top. Jewel-like metalwork, engraved detail, soft inner glow. The emblem occupies the middle 80 percent of the image. High-fantasy RPG ornament, painterly realism. No text, no letters, no numbers, no banner with writing, no watermark, no background, no frame.",
+      "use": "Game crest above the live RPGENIUS wordmark on the login screen and as the small account emblem in the HUD."
+    },
+    {
+      "id": "ui_frame",
+      "filename": "ui-frame.png",
+      "transparent_background": true,
+      "prompt": "Square image, 1:1 aspect ratio, as large as possible, fully transparent background outside the object. An ornate rectangular RPG dialog window frame designed for nine-slice scaling, seen flat and front-on, filling 94 percent of the image, perfectly symmetric horizontally and vertically. The frame border is slim, about 5 percent of the width: dark blued steel with a fine polished gold inner and outer line. All ornament is confined to the four corners, each corner within the outer 16 percent of the width and height: gold filigree corner pieces with a small teal crystal stud. The four straight edges between the corners must be completely plain, uniform and identical along their length so they can be stretched or tiled. The entire interior is one flat, uniform, very dark midnight-navy enamel panel with an extremely subtle even texture, no vignette, no gradient, no pattern, no highlights, no objects. No drop shadow outside the frame. High-fantasy RPG interface ornament, crisp and clean, jewel-like metal detail. No text, no letters, no icons, no watermark.",
+      "use": "Nine-slice border for all dialogs (create, rename, expand, transfer, support slot links, gold cap) and the selected hero info plate."
+    },
+    {
+      "id": "ui_button_start",
+      "filename": "ui-button-start.png",
+      "transparent_background": true,
+      "prompt": "Landscape image, 3:2 aspect ratio, as large as possible, fully transparent background. One single wide ornate RPG main action button plaque with no label, seen flat and front-on, centered, perfectly symmetric left to right, about four times wider than tall, spanning 92 percent of the image width, isolated with clean alpha. Shape: an elongated plaque with pointed ornate end caps. The end caps (the outer 18 percent on each side) carry all the ornament: gold filigree wings and one faceted warm crystal each. The middle 64 percent must be a plain, uniform, horizontally identical band so it can be stretched: a polished deep midnight-blue enamel face with a slim double gold rim on top and bottom and a soft warm inner glow, no ornament, no texture variation along its length. Jewel-like metalwork, crisp bevels. No drop shadow. High-fantasy RPG interface ornament. No text, no letters, no icons, no watermark, no background.",
+      "use": "Three-slice background of the main 게임 시작 control and the login confirm control, with live Korean text on top."
+    },
+    {
+      "id": "ui_button",
+      "filename": "ui-button.png",
+      "transparent_background": true,
+      "prompt": "Landscape image, 3:2 aspect ratio, fully transparent background. One single secondary RPG interface button plate with no label, seen flat and front-on, centered, perfectly symmetric left to right, about three and a half times wider than tall, spanning 88 percent of the image width, isolated with clean alpha. A simple rectangular plate with small chamfered corners: dark blued steel face, slim gold rim, a tiny gold rivet ornament only at the far left end and far right end (within the outer 14 percent on each side). The middle 72 percent must be completely plain, uniform and horizontally identical so it can be stretched. Subtle bevel, clean and restrained, matching an ornate gold and midnight-blue RPG interface. No drop shadow. No text, no letters, no icons, no watermark, no background.",
+      "use": "Three-slice background of secondary controls (이름 변경, 물품 이전, 서포트 연결, 로그아웃, dialog cancel)."
+    },
+    {
+      "id": "ui_ledger",
+      "filename": "ui-ledger.png",
+      "transparent_background": true,
+      "prompt": "Landscape image, 3:2 aspect ratio, as large as possible, fully transparent background. One single long thin horizontal RPG status bar ornament with no content, seen flat and front-on, centered, perfectly symmetric left to right, about ten times wider than tall, spanning 94 percent of the image width, isolated with clean alpha. It looks like an engraved ledger rail: a slim dark midnight-navy enamel strip with a fine gold line along the top and bottom. The left and right ends (outer 10 percent each) finish in small tapered gold filigree finials with one tiny teal crystal. The middle 80 percent must be completely plain, uniform and horizontally identical so it can be stretched, with no dividers, no sockets, no pattern. Clean, elegant, jewel-like metal detail. No drop shadow. High-fantasy RPG interface ornament. No text, no letters, no numbers, no icons, no watermark, no background.",
+      "use": "Three-slice background of the single currency ledger in the HUD (gold, garnet, point and today's hunting gold inlaid in one bar with engraved rules between them, not separate tags)."
+    },
+    {
+      "id": "ui_divider",
+      "filename": "ui-divider.png",
+      "transparent_background": true,
+      "prompt": "Landscape image, 3:2 aspect ratio, fully transparent background. One single thin horizontal ornamental divider flourish, centered, perfectly symmetric left to right, spanning 90 percent of the image width and very slim, isolated with clean alpha. A small faceted gold diamond jewel at the exact center flanked by two tiny curled filigree leaves, from which a fine gold line runs out to the left and to the right and tapers to a needle point at both ends. Polished gold with a soft warm glow, crisp and delicate. High-fantasy RPG interface ornament. No text, no letters, no watermark, no background, no shadow.",
+      "use": "Under screen titles and dialog titles, and under the selected hero's name."
+    }
+  ]
+}

@@ -59,11 +59,12 @@ function spendMental(stats, runtime, amount, now) {
 }
 
 function mentalCost(stats, skill) {
-    return Math.max(0, Number(skill.mental_cost ?? skill.mp_cost ?? skill.mp ?? 0)) + (Number(stats.randoEquipment?.['청심환'] || 0) > 0 ? 10 : 0);
+    return Math.max(0, Number(skill.mental_cost ?? skill.mp_cost ?? skill.mp ?? 0) - Number(stats.mentalCostReduction || 0) + (Number(stats.randoEquipment?.['청심환'] || 0) > 0 ? 10 : 0));
 }
 
 function applyStats(stats, runtime, slots, shield, now, combatStartedAt) {
     if (Number(shield || 0) > 0) attackStats.addPercent(stats, Number(slots?.shieldAttack || 0));
+    if (Number(shield || 0) > 0) stats.finalDamage = Number(stats.finalDamage || 0) + Number(slots?.shieldFinalDamage || 0);
     if (stats.wonyoddi) {
         const mode = runtime?.wonyoddi?.mode || '기본', star = stats.randoStar;
         const base = { '즐리': .60, '쉐비': 1, '럭키비키': .77, '원영적사고': 1 + .10 * star }[mode] || 0;

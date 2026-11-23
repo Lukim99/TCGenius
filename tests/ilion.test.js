@@ -146,14 +146,27 @@ test('무한홀덤덱의 1/3단계 자동 추첨은 10/8초 간격이고 MP와 �
     }
 });
 
-test('일리온 전용 기본 슬롯, 전직 슬롯과 각성 슬롯은 각 타입에서만 적용', () => {
-    const u = user(); u.card_slot = [{ id: 14, star: 11, type: '일반' }]; u.field = runtime(['환희', '균형']);
-    near(rpg.calculateCardSlotEffects(u).ilionDeckAttack, .11);
+test('덱 크기·지속 시간 슬롯은 수동 및 자동 카드 뽑기에 모두 적용한다', () => {
+    const slots = { ilionDeckSize: 1, ilionCardDuration: 2 }, manual = {}, automatic = {};
+    for (let i = 0; i < 5; i++) {
+        ilion.draw(manual, {}, 1, 0, 1000 + i * 10000, () => 0, slots);
+        ilion.tick(automatic, {}, 1, 0, -9000, 1000 + i * 10000, () => 0, slots);
+        assert.deepEqual(automatic.ilion.deck, manual.ilion.deck);
+        assert.equal(manual.ilion.deck.length, Math.min(i + 1, 4));
+        const last = manual.ilion.deck.at(-1), seconds = ilion.cards.find(card => card.name === last.name).seconds;
+        assert.equal(last.until, seconds ? 1000 + i * 10000 + (seconds + 2) * 1000 : 0);
+    }
+});
+
+test('일리온 메인의 기본 슬롯과 다른 타입 보조 슬롯은 덱 공격력·지속 시간·크기를 적용한다', () => {
+    const u = user(); u.card_slot = [{ id: 14, star: 11, type: '전직' }]; u.field = runtime(['환희', '균형']);
+    near(rpg.calculateCardSlotEffects(u).ilionDeckAttack, .10);
     const before = rpg.calculateUserStats({ ...u, field: null }).atk;
-    assert.equal(rpg.calculateUserStats(u).atk, Math.round(before * 1.22));
+    assert.equal(rpg.calculateUserStats(u).atk, Math.round(before / 1.12 * 1.32));
+    near(rpg.calculateCardSlotEffects(u).ilionCardDuration, 2);
+    u.card_slot[0].type = '각성'; near(rpg.calculateCardSlotEffects(u).ilionDeckSize, 1);
     u.main_card.id = 0; assert.equal(rpg.calculateCardSlotEffects(u).ilionDeckAttack, 0);
-    u.card_slot[0].type = '전직'; near(rpg.calculateCardSlotEffects(u).damageBonus, .20);
-    u.card_slot[0].type = '각성'; near(rpg.calculateCardSlotEffects(u).firstStrikeDamage, .50);
+    near(rpg.calculateCardSlotEffects(u).ilionDeckSize, 0);
 });
 
 test('실제 필드 스킬: MP 부족 무변경, 헤즈업의 4성 비용 31MP, 각성 추가 피해', async () => {

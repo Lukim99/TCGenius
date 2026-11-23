@@ -45,12 +45,16 @@ require.cache[assetPath] = { id: assetPath, filename: assetPath, loaded: true, e
 const rpg = require('../rpgenius');
 const records = () => ({ '@items': Object.fromEntries([first, second, other].map(item => [item.shopId, { max: 3, global: 5 }])) });
 let userSaves = 0;
-const user = { name: 'admin-workflow-test', shopPurchases: records(), save: async () => { userSaves++; } };
+const user = { id: 'isolated-admin-record', name: 'admin-workflow-test', shopPurchases: records(), save: async () => { userSaves++; } };
 rpg.getAllRPGUsers = async () => [user];
+rpg.getUserByPrimaryId = async () => user;
 const buyer = new rpg.RPGUser(user.name, 'isolated-buyer');
 buyer.gold = 1000;
 buyer.save = async () => {};
 rpg.getRPGUserByName = async () => buyer;
+// This test isolates shop/admin logic; character migration has its own real HTTP tests.
+rpg.ensureCharacterAccount = async current => current;
+rpg.getCharacterStore = () => ({ accountFor: () => ({ id: 'isolated-account', activeCharacterId: buyer.id, selectionRevision: 0 }) });
 
 (async () => {
     await rpg.initRpgeniusData();

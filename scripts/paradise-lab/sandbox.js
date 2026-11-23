@@ -19,21 +19,51 @@ data.Paradise = { enabled: true, baseRewards: [{ type: '골드', count: 100, per
 data.Quest = []; data.Shop = {};
 const account = { _get: 1, name: '실험자', id: 'paradise-lab-id', code: 'LAB', level: 300, logged_in: [], avatarMigrated: true, need_character_card_select: false, main_card: { id: 0, star: 6, type: '일반' }, inventory: { card: [], item: [], equipment: [], pet: [] } };
 const persisted = new Map([[account.id, structuredClone(account)]]);
+const sidRecords = new Map(), mailRecords = new Map();
+require(path.join(ROOT, 'point_usage')).publish = async () => {}; // 실험실 포인트 기록도 외부 전송하지 않는다.
 AWS.S3.prototype.makeRequest = function (operation) {
     if (operation === 'listObjectsV2') return { promise: async () => ({ Contents: [] }) };
     throw new Error('실험실은 S3를 쓰지 않습니다: ' + operation);
 };
 DynamoDBDocumentClient.prototype.send = async command => {
     const input = command.input, type = command.constructor.name;
-    if (input.TableName === 'rpgenius_mail') return type === 'GetCommand' ? {} : {};
-    if (type === 'GetCommand') return input.TableName === 'rpgenius_data' ? { Item: data[input.Key.key] === undefined ? undefined : { data: structuredClone(data[input.Key.key]) } } : { Item: structuredClone(persisted.get(input.Key.id)) };
+    const table = name => name === 'rpgenius_user' ? persisted : name === 'rpgenius_sid' ? sidRecords : name === 'rpgenius_mail' ? mailRecords : null;
+    const keyOf = value => value.id ?? value.senderId;
+    if (type === 'GetCommand') return input.TableName === 'rpgenius_data' ? { Item: data[input.Key.key] === undefined ? undefined : { data: structuredClone(data[input.Key.key]) } } : { Item: structuredClone(table(input.TableName)?.get(keyOf(input.Key))) };
     if (type === 'ScanCommand') return { Items: input.TableName === 'rpgenius_user' ? [...persisted.values()].map(v => structuredClone(v)) : [] };
     if (type === 'PutCommand' && input.TableName === 'rpgenius_data') { data[input.Item.key] = structuredClone(input.Item.data); return {}; }
     if (type === 'UpdateCommand' && input.TableName === 'rpgenius_data') return {};
-    if (type === 'UpdateCommand' && input.TableName === 'rpgenius_user') {
-        const user = persisted.get(input.Key.id), names = input.ExpressionAttributeNames || {}, values = input.ExpressionAttributeValues || {};
-        for (const [, alias, value] of String(input.UpdateExpression).matchAll(/(#[a-zA-Z0-9_]+)\s*=\s*(:[a-zA-Z0-9_]+)/g)) if (names[alias]) user[names[alias]] = structuredClone(values[value]);
-        for (const [, alias] of String(input.UpdateExpression).matchAll(/REMOVE\s+(#[a-zA-Z0-9_]+)/g)) if (names[alias]) delete user[names[alias]];
+    if (['UpdateCommand', 'PutCommand', 'TransactWriteCommand'].includes(type)) {
+        const operations = type === 'TransactWriteCommand' ? input.TransactItems : [{ [type === 'PutCommand' ? 'Put' : 'Update']: input }];
+        const pending = [];
+        for (const operation of operations) {
+            const write = operation.Update || operation.Put, records = table(write.TableName);
+            if (!records) throw new Error('실험실에서 지원하지 않는 테이블: ' + write.TableName);
+            const key = keyOf(write.Key || write.Item), previous = records.get(key);
+            const names = write.ExpressionAttributeNames || {}, values = write.ExpressionAttributeValues || {};
+            const condition = write.ConditionExpression || '';
+            let valid = true;
+            for (const [, absent, attribute] of condition.matchAll(/attribute_(not_)?exists\(([^)]+)\)/g)) {
+                const exists = previous?.[names[attribute] || attribute] !== undefined;
+                if (absent ? exists : !exists) valid = false;
+            }
+            for (const [, alias, value] of condition.matchAll(/(#[a-zA-Z0-9_]+)\s*=\s*(:[a-zA-Z0-9_]+)/g)) {
+                if (JSON.stringify(previous?.[names[alias]]) !== JSON.stringify(values[value])) valid = false;
+            }
+            if (!valid) throw Object.assign(new Error('Isolated condition conflict'), { name: 'ConditionalCheckFailedException' });
+            const next = operation.Put ? structuredClone(write.Item) : structuredClone(previous || write.Key);
+            if (operation.Update) {
+                for (const [, alias, value] of String(write.UpdateExpression).matchAll(/(#[a-zA-Z0-9_]+)\s*=\s*(:[a-zA-Z0-9_]+)/g)) next[names[alias]] = structuredClone(values[value]);
+                for (const remove of (write.UpdateExpression.split('REMOVE ')[1] || '').split(',')) {
+                    const path = remove.trim().split('.').filter(Boolean).map(alias => names[alias] || alias);
+                    let target = next;
+                    for (const part of path.slice(0, -1)) target = target?.[part];
+                    if (target && path.length) delete target[path.at(-1)];
+                }
+            }
+            pending.push({ records, key, next });
+        }
+        pending.forEach(({ records, key, next }) => records.set(key, next));
         return {};
     }
     return {};
@@ -101,10 +131,17 @@ async function start() {
 }
 // 실험자 계정의 쿠키를 붙여 내부 서버로 넘긴다.
 function proxy(req, res, port) {
-    const headers = { ...req.headers, host: '127.0.0.1:' + port, cookie: cookie() };
+    const headers = { ...req.headers, host: '127.0.0.1:' + port, cookie: req.headers.cookie || cookie() };
     const upstream = http.request({ host: '127.0.0.1', port, path: req.url, method: req.method, headers }, reply => { res.writeHead(reply.statusCode, reply.headers); reply.pipe(res); });
     upstream.on('error', error => { res.writeHead(502); res.end(error.message); });
     req.pipe(upstream);
 }
 
-module.exports = { ROOT, account, rpg, corridor, boons, prism, AUGMENTS, cookie, reset, win, scenario, queue, start, proxy };
+async function close() {
+    if (!inner) return;
+    inner.closeAllConnections();
+    await new Promise(resolve => inner.close(resolve));
+    inner = null;
+}
+
+module.exports = { ROOT, account, rpg, corridor, boons, prism, AUGMENTS, cookie, reset, win, scenario, queue, start, proxy, close };

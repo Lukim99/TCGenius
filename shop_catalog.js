@@ -23,6 +23,11 @@ function shopRecordAddress(shopId) {
     throw new Error('올바르지 않은 상품 ID입니다. 상점을 다시 불러와주세요.');
 }
 
+function purchaseScope(product, items) {
+    if (product?.purchaseScope) return product.purchaseScope;
+    return product?.type === '아이템' && items?.[product.item_id]?.name === '초보자 지원 패키지' ? 'character' : 'account';
+}
+
 function validateShopCatalog(shops, previous) {
     if (!shops || typeof shops != 'object' || Array.isArray(shops)) throw new Error('Shop 데이터는 상점별 상품 목록이어야 합니다.');
     const knownIds = previous && new Set(Object.values(previous).flat().map(item => item.shopId));
@@ -31,6 +36,7 @@ function validateShopCatalog(shops, previous) {
         if (RESERVED_GROUPS.has(shopType) || !Array.isArray(items)) throw new Error('올바르지 않은 상점 목록: ' + shopType);
         for (const item of items) {
             if (!item || typeof item != 'object' || Array.isArray(item)) throw new Error('올바르지 않은 상점 상품입니다.');
+            if (item.purchaseScope !== undefined && !['account', 'character'].includes(item.purchaseScope)) throw new Error('구매 제한 단위는 계정 또는 캐릭터여야 합니다.');
             shopRecordAddress(item.shopId);
             if (seen.has(item.shopId)) throw new Error('상품 ID가 중복되었습니다. 새 상품에는 새로운 ID가 필요합니다.');
             if (knownIds && item.shopId.startsWith('legacy.') && !knownIds.has(item.shopId)) throw new Error('기존 상품 ID가 일치하지 않습니다. 상점을 다시 불러와주세요.');
@@ -72,4 +78,4 @@ function resetShopRecords(records, shopIds) {
     return changed;
 }
 
-module.exports = { newShopItemId, legacyShopItemId, shopRecordAddress, readShopCatalog, validateShopCatalog, shopCatalogRevision, resetShopRecords };
+module.exports = { purchaseScope, newShopItemId, legacyShopItemId, shopRecordAddress, readShopCatalog, validateShopCatalog, shopCatalogRevision, resetShopRecords };

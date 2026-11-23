@@ -60,6 +60,10 @@ function prepareAttack(stats, runtime, target, extra, kind, now) {
     if (!extra) return;
     const passive = stats && stats.awakening;
     const indirect = extra.summonAttack || extra.dotAttack || extra.isBotAutoAttack || (extra.trueDamage && !extra.isSkill) || extra.counterDamage;
+    if (!indirect && !extra.awakeningPrepared) {
+        if (runtime.slotLastAttack && runtime.slotLastAttack !== kind) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats?.alternateDamage || 0);
+        runtime.slotLastAttack = kind;
+    }
     if (passive && !indirect) {
         if (passive.effect === 'alternateAttack' && !extra.awakeningPrepared) {
             if (runtime.awakeningLastAttack && runtime.awakeningLastAttack !== kind) extra.awakeningExtraDamage = passive.value;

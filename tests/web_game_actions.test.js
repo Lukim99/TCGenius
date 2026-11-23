@@ -75,6 +75,12 @@ after(async () => {
     await new Promise(resolve => server.close(resolve));
 });
 
+function physicalRows(user) {
+    const { character } = require('../character_accounts').migrate(user, rpg.getDataCache('Item', []));
+    const account = structuredClone(rpg.getCharacterStore().accountFor(user));
+    return { [character.id]: character, [account.id]: account };
+}
+
 async function potentialUser(tier = '레전더리', gold = 1000000000, items = []) {
     return reset({ gold, pendingAction: null, potentialAuto: null,
         inventory: { item: items, card: [], pet: [], equipment: [{ type: 'accessory', id: 0, level: 0,
@@ -218,10 +224,11 @@ test('잠재 자동 재설정 저장 실패는 비용·후보·회차를 함께 
     await potentialUser(); const started = await startAuto();
     t.mock.method(Math, 'random', () => 0);
     const snapshot = JSON.parse(JSON.stringify(await rpg.getRPGUserByName(fixture.name)));
+    const snapshotRows = physicalRows(snapshot);
     const send = DynamoDBDocumentClient.prototype.send;
     t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function(command) {
-        if (command.constructor.name === 'UpdateCommand' && command.input.ConditionExpression?.startsWith('attribute_exists(id) AND')) throw Object.assign(new Error('Conflict'), { name: 'ConditionalCheckFailedException' });
-        if (command.constructor.name === 'GetCommand' && command.input.TableName === 'rpgenius_user') return { Item: snapshot };
+        if (['UpdateCommand', 'TransactWriteCommand'].includes(command.constructor.name)) throw Object.assign(new Error('Conflict'), { name: 'ConditionalCheckFailedException' });
+        if (command.constructor.name === 'GetCommand' && command.input.TableName === 'rpgenius_user') return { Item: snapshotRows[command.input.Key.id] };
         return send.call(this, command);
     });
     const response = await request('/api/potential/auto/step', { id: started.data.run.id, expectedRolls: 0, batchSize: 3 });
@@ -244,7 +251,7 @@ test('자동 각인 3회 묶음은 DB 읽기 없이 한 번 저장하고 재전�
     for (const batchSize of [0, 4, 1.5, '3']) assert.equal((await request('/api/potential/auto/step', { id, expectedRolls: 0, batchSize })).status, 400);
     const singlesBefore = commands.length;
     for (let i = 0; i < 3; i++) await request('/api/potential/auto/step', { id, expectedRolls: i });
-    const singleWrites = commands.slice(singlesBefore).filter(command => command.constructor.name === 'UpdateCommand').length;
+    const singleWrites = commands.slice(singlesBefore).filter(command => ['UpdateCommand', 'TransactWriteCommand'].includes(command.constructor.name)).length;
     const batchBefore = commands.length;
     const stepped = await request('/api/potential/auto/step', { id, expectedRolls: 3, batchSize: 3 });
     const batchCommands = commands.slice(batchBefore);
@@ -254,7 +261,7 @@ test('자동 각인 3회 묶음은 DB 읽기 없이 한 번 저장하고 재전�
     assert.equal(stepped.data.run.spent, cost * 6);
     assert.equal(stepped.data.result.combatPower, null, '진행 중에는 표시하지 않는 전투력을 계산하지 않는다');
     assert.equal(singleWrites, 3);
-    assert.equal(batchCommands.filter(command => command.constructor.name === 'UpdateCommand').length, 1);
+    assert.equal(batchCommands.filter(command => ['UpdateCommand', 'TransactWriteCommand'].includes(command.constructor.name)).length, 1);
     assert.equal(commands.filter(command => ['GetCommand', 'ScanCommand'].includes(command.constructor.name)).length, 0);
     assert.equal(potentialReads, 0, '변경되지 않은 잠재능력 JSON을 다시 읽지 않는다');
     const beforeReplay = commands.length;
@@ -265,7 +272,7 @@ test('자동 각인 3회 묶음은 DB 읽기 없이 한 번 저장하고 재전�
     const beforeConcurrent = commands.length;
     const replies = await Promise.all([request('/api/potential/auto/step', { id, expectedRolls: 6, batchSize: 3 }), request('/api/potential/auto/step', { id, expectedRolls: 6, batchSize: 3 })]);
     assert.ok(replies.every(reply => reply.status === 200 && reply.data.run.rolls === 9));
-    assert.equal(commands.slice(beforeConcurrent).filter(command => command.constructor.name === 'UpdateCommand').length, 1);
+    assert.equal(commands.slice(beforeConcurrent).filter(command => ['UpdateCommand', 'TransactWriteCommand'].includes(command.constructor.name)).length, 1);
     assert.equal((await rpg.getRPGUserByName(fixture.name)).gold, 1000000000 - cost * 9);
     const stopped = await request('/api/potential/auto/stop', { id });
     assert.ok(stopped.data.result.combatPower, '최종 비교 화면에서는 전투력을 계산한다');
@@ -1128,11 +1135,12 @@ test('신규 패키지 저장이 다른 재화 변경과 충돌하면 포인트�
     try {
         const user = await reset({ point: 50000 });
         const snapshot = JSON.parse(JSON.stringify(user));
+        const snapshotRows = physicalRows(snapshot);
         const originalSend = DynamoDBDocumentClient.prototype.send;
         t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function(command) {
             const input = command.input;
-            if (command.constructor.name === 'UpdateCommand' && input.TableName === 'rpgenius_user' && input.ConditionExpression?.startsWith('attribute_exists(id) AND')) throw Object.assign(new Error('Concurrent purchase'), { name: 'ConditionalCheckFailedException' });
-            if (command.constructor.name === 'GetCommand' && input.TableName === 'rpgenius_user') return { Item: structuredClone(snapshot) };
+            if (['UpdateCommand', 'TransactWriteCommand'].includes(command.constructor.name)) throw Object.assign(new Error('Concurrent purchase'), { name: 'ConditionalCheckFailedException' });
+            if (command.constructor.name === 'GetCommand' && input.TableName === 'rpgenius_user') return { Item: structuredClone(snapshotRows[input.Key.id]) };
             return originalSend.call(this, command);
         });
         const itemId = packageData.Item.findIndex(item => item.name === '왕꿈틀이맛보기패키지');
@@ -1209,11 +1217,12 @@ test('가을 패키지 저장 충돌은 포인트와 구성품, 구매 한도를
     try {
         const user = await reset({ point: 50000 });
         const snapshot = JSON.parse(JSON.stringify(user));
+        const snapshotRows = physicalRows(snapshot);
         const originalSend = DynamoDBDocumentClient.prototype.send;
         t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function(command) {
             const input = command.input;
-            if (command.constructor.name === 'UpdateCommand' && input.TableName === 'rpgenius_user' && input.ConditionExpression?.startsWith('attribute_exists(id) AND')) throw Object.assign(new Error('Concurrent purchase'), { name: 'ConditionalCheckFailedException' });
-            if (command.constructor.name === 'GetCommand' && input.TableName === 'rpgenius_user') return { Item: structuredClone(snapshot) };
+            if (['UpdateCommand', 'TransactWriteCommand'].includes(command.constructor.name)) throw Object.assign(new Error('Concurrent purchase'), { name: 'ConditionalCheckFailedException' });
+            if (command.constructor.name === 'GetCommand' && input.TableName === 'rpgenius_user') return { Item: structuredClone(snapshotRows[input.Key.id]) };
             return originalSend.call(this, command);
         });
         const itemId = packageData.Item.findIndex(item => item.name === '2026할로윈1100패키지');

@@ -28,6 +28,7 @@ const { applyBlackWhite } = require('./reggiero');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
+const characterAccounts = require('./character_accounts');
 const SID_TABLE_NAME = 'rpgenius_sid'; // senderId → accountId 매핑 (getRPGUserById 전체 스캔 제거용)
 const MAIL_TABLE_NAME = 'rpgenius_mail'; // 메일 본문/선물 저장 (user.mail에는 id+읽음여부만)
 const MAIL_GIFT_MAX = 5;                 // 메일당 최대 선물 슬롯
@@ -517,7 +518,7 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
     const now = Date.now();
     const pending = paradiseMechanics.takeTicks(user, now);
     const ilionBefore = captureFieldTickState(user);
-    const drawn = ilionCards.tick(user.field, user.field.skillCooldowns, deckStage, getIlionWeaponStage(user, '어머니의 마음'), Number(user.field.enteredAt || now), now);
+    const drawn = ilionCards.tick(user.field, user.field.skillCooldowns, deckStage, getIlionWeaponStage(user, '어머니의 마음'), Number(user.field.enteredAt || now), now, undefined, calculateCardSlotEffects(user));
     if (drawn) {
         tcgEquipment.record(state, '무한홀덤덱');
         tcgEquipment.outsideAttack(state, extra => activateFieldTcg(user, extra));
@@ -3128,22 +3129,30 @@ function calculateCardSlotEffects(user) {
         finalAttackBonus: 0, cmb: 0, recoveryEfficiency: 0, bossDmg: 0, defBonus: 0,
         criticalFinalDamage: 0, pnt: 0, summonDuration: 0, dotDamage: 0,
         ilionDeckAttack: 0, firstStrikeDamage: 0,
-        wonyoddiBasicCooldown: 0, actionCooldownFlat: 0, shieldAttack: 0, mentalRegen: 0, nonCriticalFinalDamage: 0
+        wonyoddiBasicCooldown: 0, actionCooldownFlat: 0, shieldAttack: 0, mentalRegen: 0, nonCriticalFinalDamage: 0,
+        alternateDamage: 0, maxCmb: 0, maxMpBonus: 0, summonAttack: 0, mentalCostReduction: 0, mentalMax: 0,
+        ilionCardDuration: 0, ilionDeckSize: 0, missingHpDef: 0, missingHpFinal: 0, missingHpExtra: 0, missingHpAttack: 0
     };
     // 감소형 페널티 키는 대응 보너스 키에서 차감 (표시 수치는 양수로 저장)
     const applyEffect = (key, value) => {
         if (!value) return;
         if (key === 'ilionDeckAttack' && Number(user.main_card?.id) !== ilionCards.CARD_ID) return;
         if (key === 'wonyoddiBasicCooldown' && Number(user.main_card?.id) !== randoCharacters.WONYODDI_ID) return;
+        if (['ilionCardDuration', 'ilionDeckSize'].includes(key) && Number(user.main_card?.id) !== ilionCards.CARD_ID) return;
+        if (['mentalCostReduction', 'mentalMax', 'mentalRegen'].includes(key) && Number(user.main_card?.id) !== randoCharacters.KINO_ID) return;
         if (key === 'skillDamageReduction') { effects.skillDamageBonus -= value; return; }
         if (key === 'basicDamageReduction') { effects.basicDamageBonus -= value; return; }
         if (typeof effects[key] === 'undefined') return;
         effects[key] += value;
     };
-    (user.card_slot || []).forEach(card => {
+    [user.main_card, ...(user.card_slot || [])].filter(Boolean).forEach(card => {
         const cardData = characterCards[card.id];
         if (!cardData) return;
-        const star = Number(card.star || 0);
+        const star = Math.max(card === user.main_card ? 4 : 0, Number(card.star || 0));
+        if (card.type === '광폭') {
+            (cardData.berserkSlotEffects || []).forEach(se => applyEffect(se.effect, getSlotEffectValueAtStar(se, star)));
+            return;
+        }
         if (card.type === '각성') {
             const awakening = cardAwakening.getDefinition(card);
             if (awakening) awakening.slots.forEach(se => applyEffect(se.effect, getSlotEffectValueAtStar(se, star)));
@@ -3157,12 +3166,28 @@ function calculateCardSlotEffects(user) {
         }
         if (cardData.slot_effect && cardData.slot_effect.effect) applyEffect(cardData.slot_effect.effect, getSlotEffectValueAtStar(cardData.slot_effect, star));
     });
+    const gradeAttack = [.01, .02, .03, .04, .06, .08, .10, .12];
+    effects.finalAttackBonus += (user.card_slot || []).reduce((sum, card) => sum + (gradeAttack[Math.min(7, Number(card.star || 0) - 4)] || 0), 0);
+    const levelSum = getLinkedCharacterLevelSum(user);
+    effects.linkedHp = levelSum;
+    effects.goldBonus += levelSum / 1000;
+    effects.expBonus += levelSum / 1000;
+    effects.itemDropChance += levelSum / 1000;
     return effects;
+}
+
+function getLinkedCharacterLevelSum(user) {
+    if (!user.accountId) return 0;
+    const members = getCharacterStore().members(user);
+    return (user.card_slot || []).reduce((sum, card, index) => {
+        const member = members.find(member => member.id === user.slotCharacterLinks?.[index]);
+        return sum + (member && member.id !== user.id && Number(member.main_card?.id) === Number(card.id) ? Number(member.level || 1) : 0);
+    }, 0);
 }
 
 function formatCardSlotEffectLines(user) {
     const slotEffects = calculateCardSlotEffects(user);
-    const flatKeys = new Set(['lightAtk', 'waterAtk', 'darkAtk', 'pnt', 'mentalRegen']);
+    const flatKeys = new Set(['lightAtk', 'waterAtk', 'darkAtk', 'pnt', 'mentalRegen', 'mentalMax', 'mentalCostReduction', 'maxCmb', 'ilionDeckSize', 'linkedHp']);
     const effectMap = [
         ['skillCoolReduction', '스킬 쿨타임 감소'],
         ['basicDamageBonus', '일반 공격 피해'],
@@ -3184,7 +3209,7 @@ function formatCardSlotEffectLines(user) {
         ['ultimateDamage', '궁극기 사용 시 추가 피해'],
         ['nonElementFinalDamage', '[무]속성 공격 시 최종 피해 증가'],
         ['tenthHitFinalAtk', '10번째 공격마다 공격력 증가'],
-        ['shieldFinalDamage', '보호막 공격 시 최종 피해 증가'],
+        ['shieldFinalDamage', '보호막 유지 중 최종 피해 증가'],
         ['expBonus', '경험치 획득 증가량'],
         ['killRecoveryChance', '받은 피해의 20%만큼 체력 회복 확률'],
         ['mpCostReduction', 'MP 소모량 감소'],
@@ -3194,13 +3219,18 @@ function formatCardSlotEffectLines(user) {
         ['pnt', '방어 관통력 증가'], ['summonDuration', '소환수 지속 시간 증가'], ['dotDamage', '지속 피해 증가'],
         ['ilionDeckAttack', '카드덱의 카드 1장당 공격력 증가'], ['firstStrikeDamage', '선제공격 강화'],
         ['wonyoddiBasicCooldown', '일반 공격 쿨타임 감소'], ['actionCooldownFlat', '행동 쿨타임 감소'],
-        ['shieldAttack', '보호막 유지 중 공격력 강화'], ['mentalRegen', '초당 정신력 회복량'], ['nonCriticalFinalDamage', '비치명타 최종 피해 증가']
+        ['shieldAttack', '보호막 유지 중 공격력 강화'], ['mentalRegen', '초당 정신력 회복량'], ['nonCriticalFinalDamage', '비치명타 최종 피해 증가'],
+        ['alternateDamage', '교차 공격 피해'], ['maxCmb', '최대 연격 횟수'], ['maxMpBonus', '최대 MP 증가'],
+        ['summonAttack', '소환수 공격력'], ['mentalCostReduction', '정신력 소모량 감소'], ['mentalMax', '최대 정신력'],
+        ['ilionCardDuration', '카드 지속 시간'], ['ilionDeckSize', '카드덱 최대 카드 수'], ['linkedHp', '연결 캐릭터 HP'],
+        ['missingHpDef', '잃은 HP 1%당 방어력'], ['missingHpFinal', '잃은 HP 1%당 최종 피해'],
+        ['missingHpExtra', '잃은 HP 1%당 추가 피해'], ['missingHpAttack', '잃은 HP 1%당 공격력']
     ];
     return effectMap
         .filter(entry => Number(slotEffects[entry[0]] || 0) != 0)
         .map(entry => {
             const value = Number(slotEffects[entry[0]] || 0);
-            const display = entry[0] === 'actionCooldownFlat' ? value + '초' : flatKeys.has(entry[0]) ? '+' + comma(value) : Math.round(value * 1000) / 10 + '%';
+            const display = ['actionCooldownFlat', 'ilionCardDuration'].includes(entry[0]) ? value + '초' : flatKeys.has(entry[0]) ? '+' + comma(value) : Math.round(value * 1000) / 10 + '%';
             return '◆ ' + entry[1] + ' ' + display;
         });
 }
@@ -3837,9 +3867,10 @@ function equipCharacterCardSlot(user, numberArg) {
     if (Number(card.star || 0) < 4) return '❌ 카드 슬롯에는 5성 이상 카드만 장착할 수 있습니다.';
     if (!Array.isArray(user.card_slot)) user.card_slot = [];
     if (user.main_card && typeof user.main_card.id != 'undefined' && Number(user.main_card.id) == Number(card.id) && (user.main_card.type || '일반') == (card.type || '일반')) return '❌ 메인 카드와 같은 타입의 동일 캐릭터는 카드 슬롯에 장착할 수 없습니다.';
-    if (user.card_slot.some(slotCard => slotCard && Number(slotCard.id) == Number(card.id) && (slotCard.type || '일반') == (card.type || '일반'))) return '❌ 이미 같은 타입의 동일 캐릭터가 카드 슬롯에 장착되어 있습니다.';
+    if (user.card_slot.some(slotCard => slotCard && Number(slotCard.id) == Number(card.id))) return '❌ 슬롯에는 타입에 관계없이 같은 캐릭터를 한 장만 장착할 수 있습니다.';
     user.inventory.card.splice(number - 1, 1);
     user.card_slot.push(card);
+    if (Array.isArray(user.slotCharacterLinks)) user.slotCharacterLinks[user.card_slot.length - 1] = null;
     return '✅ 카드 슬롯에 장착했습니다.\n- ' + formatUserCard(card);
 }
 
@@ -3853,6 +3884,7 @@ function removeCharacterCardSlot(user, slotArg) {
     if (getRemainingCardInventorySpace(user) < 1) return '❌ 캐릭터 카드 인벤토리가 가득 차서 슬롯에서 제거할 수 없습니다.';
     user.inventory.card.push(removed);
     user.card_slot.splice(slotNumber - 1, 1);
+    if (Array.isArray(user.slotCharacterLinks)) user.slotCharacterLinks.splice(slotNumber - 1, 1);
     return '✅ 카드 슬롯 ' + slotNumber + '번에서 제거했습니다.\n- ' + formatUserCard(removed);
 }
 
@@ -4342,6 +4374,7 @@ function calculateUserStats(user, _out) {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
+    stats.hp = Number(stats.hp || 0) + Number(slotEffects.linkedHp || 0);
     stats.crit = Number(stats.crit || 0) + slotEffects.crit;
     stats.critMul = Number(stats.critMul || 0) + slotEffects.critMul;
     // 스탯 파이프라인으로 흡수되는 슬롯 효과 (솔로/파티/PVP 공통 반영)
@@ -4359,6 +4392,9 @@ function calculateUserStats(user, _out) {
     });
     stats.def = Math.round(Number(stats.def || 0) * (1 + Number(slotEffects.defBonus || 0)));
     if (Number(slotEffects.maxHpBonus || 0) != 0) stats.hp = Math.round(Number(stats.hp || 0) * (1 + Number(slotEffects.maxHpBonus || 0)));
+    if (Number(slotEffects.maxMpBonus || 0) != 0) stats.mp = Math.round(Number(stats.mp || 0) * (1 + Number(slotEffects.maxMpBonus || 0)));
+    for (const key of ['maxCmb', 'summonAttack', 'alternateDamage', 'mentalCostReduction']) stats[key] = Number(stats[key] || 0) + Number(slotEffects[key] || 0);
+    stats.mental = Number(stats.mental || 0) + Number(slotEffects.mentalMax || 0);
     if (stats.forceZeroCrit) stats.crit = 0;
     // 칭호 특수 효과도 동일한 공격력%에 합산한다.
     if (titleDef && titleDef.specialEffect) {
@@ -4451,6 +4487,7 @@ function calculateUserStats(user, _out) {
         applyBlackWhite(stats, user.field?.enteredAt);
     }
     if (_out && typeof _out == 'object') _out.plusStats = stats.plusStats;
+    require('./slot_runtime').applyMissingHp(stats, slotEffects, resources.hp, stats.hp);
     return transcendEquipment.capPrisonKeyCritical(armorExpansion.applyConditionalStats(stats));
 }
 
@@ -4533,6 +4570,13 @@ function calculateCombatPower(user, knownStats, knownSlots) {
     }
     const base = computeCombatPowerFromStats(stats, slot, getAdvancedEquipmentCombatPowerModifiers(user, stats));
     return paradisePower.apply(user, stats, slot, base);
+}
+
+function calculateTownCombatPower(user) {
+    // A copy prevents ranking reads from advancing battle timers or changing the character's HP.
+    const town = structuredClone({ ...user, field: null, paradise: null, pvp: null, battleCryPotion: null,
+        hp: undefined, mp: undefined });
+    return calculateCombatPower(town);
 }
 
 function getTotalDefenseReductionRate(stats, slotEffects) {
@@ -5000,6 +5044,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         const damage = Math.max(0, Math.round(Number(rawDamage || 0)));
         return { hitCount: 1, comboHitCount: 1, attackUnitCount: 1, hitDamages: [damage], hitDetails: [{ damage, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false }], damageComponents: [{ damage, type: 'hit', label: null, hitIndex: 0, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false }], finalDamage: damage, criticalCount: 0, bonusTripleZero: 0, destinyDamageCount: 0, trueDamageCount: 0, extraDamageDealt: 0 };
     }
+    if (extra?.summonAttack && !extra.dotAttack) rawDamage *= Math.max(0, 1 + Number(stats?.summonAttack || 0));
     const isFixedMultiHit = !!(extra && extra.hitCount);
     const separateBasicAttackHits = !!(isFixedMultiHit && extra && extra.separateBasicAttackHits);
     const comboHitCount = isFixedMultiHit ? 1 : Math.max(1, Math.floor(Number(extra && extra.comboHitCount || getComboHitCount(stats, random))));
@@ -6251,6 +6296,17 @@ function getWorldBossState(bossName) {
     if (!state.rankRewards || typeof state.rankRewards != 'object') state.rankRewards = {};
     if (typeof state.rankRewardsDistributed == 'undefined') state.rankRewardsDistributed = false;
     if (!state.revivedAt && Number(state.hp || 0) > 0) state.revivedAt = Date.now();
+    // A character rename must keep past damage and claims under the same character.
+    for (const field of ['contributions', 'claimedRewards', 'rankRewards']) {
+        for (const [name, value] of Object.entries(state[field])) {
+            const current = userCacheById.get(userIdByName.get(name))?.raw.name;
+            if (!current || current === name) continue;
+            if (field === 'contributions') state[field][current] = Number(state[field][current] || 0) + Number(value || 0);
+            else if (field === 'claimedRewards') state[field][current] = Math.max(Number(state[field][current] || 0), Number(value || 0));
+            else state[field][current] ||= value;
+            delete state[field][name];
+        }
+    }
     return state;
 }
 
@@ -6316,7 +6372,8 @@ function getWorldBossContributionRanking() {
         Object.entries(state.contributions || {}).forEach(([name, damage]) => {
             const value = Number(damage || 0);
             if (value <= 0) return;
-            totals[name] = Number(totals[name] || 0) + value;
+            const currentName = userCacheById.get(userIdByName.get(name))?.raw.name || name;
+            totals[currentName] = Number(totals[currentName] || 0) + value;
         });
     });
     return Object.entries(totals)
@@ -6496,7 +6553,8 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
             return;
         }
         if (reward.type == '골드') {
-            const amount = Math.round((count + Number(stats.plusGold || 0)) * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0) + getGoldPotionBonus(user)));
+            const baseGold = (count + Number(stats.plusGold || 0)) * levelMultiplier;
+            const amount = capHuntingGold(user, baseGold, Math.round(baseGold * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0) + getGoldPotionBonus(user))));
             user.gold = Number(user.gold || 0) + amount;
             rewardLines.push('- 🪙 ' + comma(amount));
             return;
@@ -6754,6 +6812,7 @@ function grantDailyDungeonClearReward(user, dungeon, stats, slotEffects, extra, 
     const rewardMultiplier = rolled.lucky ? 2 : 1;
     expReward *= rewardMultiplier;
     goldReward *= rewardMultiplier;
+    goldReward = capHuntingGold(user, rolled.gold * rewardMultiplier, goldReward);
     itemRewards.forEach(item => { item.count *= rewardMultiplier; });
     const levelUps = addExperience(user, expReward);
     user.gold = Number(user.gold || 0) + goldReward;
@@ -6938,7 +6997,8 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         let expReward = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0) + getExpPotionBonus(user)))));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0)) + Number(stats.plusGold || 0);
-        goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0) + getGoldPotionBonus(user)));
+        const baseGold = goldReward * levelMultiplier;
+        goldReward = capHuntingGold(user, baseGold, Math.round(baseGold * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0) + getGoldPotionBonus(user))));
         user.gold = Number(user.gold || 0) + goldReward;
         const levelUps = addExperience(user, expReward);
         lines.push('', '[ 보상 ]');
@@ -8721,10 +8781,10 @@ function executeMainCardSkillInField(user, skillName) {
     }
     if (skillData.skill.name === '헤즈업') {
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
-        const drawn = ilionCards.draw(user.field, user.field.skillCooldowns, getIlionWeaponStage(user, '무한홀덤덱'), getIlionWeaponStage(user, '어머니의 마음'), now);
+        const drawn = ilionCards.draw(user.field, user.field.skillCooldowns, getIlionWeaponStage(user, '무한홀덤덱'), getIlionWeaponStage(user, '어머니의 마음'), now, undefined, slotEffects);
         paradiseCharacters.afterDraw(user, now);
         if (paradiseCharacters.has(user, 'doubleDraw')) {
-            const second = ilionCards.draw(user.field, user.field.skillCooldowns, getIlionWeaponStage(user, '무한홀덤덱'), getIlionWeaponStage(user, '어머니의 마음'), now);
+            const second = ilionCards.draw(user.field, user.field.skillCooldowns, getIlionWeaponStage(user, '무한홀덤덱'), getIlionWeaponStage(user, '어머니의 마음'), now, undefined, slotEffects);
             paradiseCharacters.afterDraw(user, now);
             drawn.text += ' / ' + second.text;
         }
@@ -10022,6 +10082,7 @@ function getEquipmentTradeBlockReason(equip, ownerName) {
     const type = equip && equip.type;
     const data = getEquipmentData(type, equip && equip.id);
     if (!data) return '잘못된 장비 데이터입니다.';
+    if (data.rarity === '초월') return '초월 장비는 거래할 수 없습니다. 장비 전송기로 같은 계정의 캐릭터에게 이전할 수 있습니다.';
     if (data.no_trade && data.rarity != '신화') return '거래 불가 장비입니다.';
     const tradeLimit = getEquipmentTradeLimitInfo(equip);
     if (tradeLimit && tradeLimit.remaining <= 0) return '거래 횟수가 ' + tradeLimit.max + '회에 도달한 장비입니다.';
@@ -10308,6 +10369,11 @@ async function fuseOrbs(user, body) {
     const prepared = require('./orb_fusion').prepareFusion(user, getDataCache('Item', []), materialIds);
     const receipt = { requestId, revision: revision + 1, materialIds, resultId: prepared.resultId };
     const changes = { inventory: prepared.inventory, boundItems: prepared.boundItems, orbFusionReceipt: receipt };
+    if (user.accountId) {
+        Object.assign(user, changes);
+        await getCharacterStore().commit([user], { keys: Object.keys(changes) });
+        return user.orbFusionReceipt;
+    }
     const flushed = await flushCachedUser(user.id);
     if (!flushed.success) throw flushed.result[0];
     const names = {}, values = {}, conditions = ['attribute_exists(id)'];
@@ -10977,12 +11043,13 @@ function normalizeShopPurchaseRecord(rec, now) {
     return rec;
 }
 
-function getUserShopRecord(user, shopId, now) {
-    if (!user.shopPurchases || typeof user.shopPurchases != 'object') user.shopPurchases = {};
+function getUserShopRecord(user, shopId, now, shopItem) {
+    const field = user.accountId && shopCatalog.purchaseScope(shopItem, getDataCache('Item', [])) === 'character' ? 'characterShopPurchases' : 'shopPurchases';
+    if (!user[field] || typeof user[field] != 'object') user[field] = {};
     const { group, key } = shopCatalog.shopRecordAddress(shopId);
-    if (!Object.hasOwn(user.shopPurchases, group)) user.shopPurchases[group] = {};
-    user.shopPurchases[group][key] = normalizeShopPurchaseRecord(user.shopPurchases[group][key], now || new Date());
-    return user.shopPurchases[group][key];
+    if (!Object.hasOwn(user[field], group)) user[field][group] = {};
+    user[field][group][key] = normalizeShopPurchaseRecord(user[field][group][key], now || new Date());
+    return user[field][group][key];
 }
 
 function getShopGlobalCount(shopId) {
@@ -11008,7 +11075,7 @@ async function addShopGlobalCount(shopId, delta) {
 function getShopRemainingLimits(user, shopType, index, shopItem, now) {
     const limits = getShopLimits(shopItem);
     const shopId = shopItem.shopId || shopCatalog.legacyShopItemId(shopType, index);
-    const rec = getUserShopRecord(user, shopId, now);
+    const rec = getUserShopRecord(user, shopId, now, shopItem);
     const globalCount = getShopGlobalCount(shopId);
     const out = {};
     if (typeof limits.max == 'number') out.max = Math.max(0, limits.max - rec.max);
@@ -11698,6 +11765,7 @@ function getArtifactView(user, equip) {
 
 // 신규 재화·최초 지급 처리는 변경한 필드와 원래 값이 함께 맞을 때만 저장한다.
 async function commitProtectedUserChange(user, keys) {
+    if (user.accountId) return getCharacterStore().commit([user], { keys });
     const flushed = await measureWork('protected_flush', () => flushCachedUser(user.id));
     if (!flushed.success) throw flushed.result[0];
     const usageEvents = keys.includes('point') ? pointUsage.pending(user, JSON.parse(user.__loaded?.point || '0')) : [];
@@ -12089,7 +12157,13 @@ function pruneUserPreset(user, preset) {
     };
     if (preset.mainCard && !takeMatch(preset.mainCard)) { preset.mainCard = null; changed = true; }
     const slotBefore = (preset.slotCards || []).length;
-    preset.slotCards = (preset.slotCards || []).filter(takeMatch);
+    const links = [];
+    preset.slotCards = (preset.slotCards || []).filter((card, index) => {
+        if (!takeMatch(card)) return false;
+        links.push(preset.slotCharacterLinks?.[index] || null);
+        return true;
+    });
+    preset.slotCharacterLinks = links;
     if (preset.slotCards.length != slotBefore) changed = true;
     return changed;
 }
@@ -12108,7 +12182,8 @@ function saveUserPreset(user, slotIndex) {
         name: (presets[slotIndex] && presets[slotIndex].name) || null,  // 덮어쓰기 시 이름 유지
         equipment,
         mainCard: cardPresetSignature(user.main_card),
-        slotCards
+        slotCards,
+        slotCharacterLinks: slotCards.map((_, index) => user.slotCharacterLinks?.[index] || null)
     };
     return presets[slotIndex];
 }
@@ -12142,11 +12217,17 @@ function applyUserPreset(user, slotIndex) {
     }
 
     // 3) 슬롯 카드
-    for (const sig of preset.slotCards || []) {
+    for (const [index, sig] of (preset.slotCards || []).entries()) {
         const num = findCardNumberBySignature(user, sig);
         if (!num) { warnings.push('슬롯 카드를 찾을 수 없어 건너뛰었습니다.'); continue; }
         const r = equipCharacterCardSlot(user, num);
         if (String(r).startsWith('❌')) warnings.push('슬롯 카드: ' + String(r).replace(/^❌\s*/, ''));
+        else {
+            const linkedId = preset.slotCharacterLinks?.[index];
+            const linked = getCharacterStore().members(user).find(member => member.id === linkedId && member.id !== user.id && Number(member.main_card?.id) === Number(sig.id));
+            user.slotCharacterLinks ||= [];
+            user.slotCharacterLinks[user.card_slot.length - 1] = linked?.id || null;
+        }
     }
 
     // 4) 장비 전부 해제 후 프리셋 장비 장착 (uid로 정확한 인스턴스 식별)
@@ -14165,7 +14246,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (typeof limits.monthly == 'number') rec.monthly = Number(rec.monthly || 0) + count;
 
     if (shopType === '레이드' || ['artifact-package', 'rando-release-package', '2026-autumn-release-package', '2026-pepero-package'].includes(shopItem.contentKey)) {
-        try { await commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'point', 'mileage', 'shopPurchases']); }
+        try { await commitProtectedUserChange(user, ['inventory', 'boundItems', 'gold', 'garnet', 'point', 'mileage', 'shopPurchases', 'characterShopPurchases']); }
         catch (error) { console.error('[raid shop] purchase:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 상점을 다시 불러와주세요.'; }
     } else {
         const saved = await user.save();
@@ -14231,6 +14312,14 @@ const USER_FLUSH_SWEEP_MS = 30 * 1000;
 const USER_CACHE_MISS_RELOAD_INTERVAL_MS = 60 * 1000;
 const userCacheById = new Map(); // id -> { raw, dbSnap, dirty, timer, flushChain }
 const userIdByName = new Map();  // name -> id
+let characterStore;
+function getCharacterStore() {
+    if (!characterStore) characterStore = require('./character_store').createStore({
+        table: TABLE_NAME, client: docClient, entries: userCacheById, putEntry: putUserCacheEntry,
+        flush: flushCachedUser, items: () => getDataCache('Item', []), shops: () => getDataCache('Shop', {}), usage: pointUsage, deliver: schedulePointUsageDelivery, schedule: scheduleUserFlush
+    });
+    return characterStore;
+}
 let userCacheLoadPromise = null;
 let userCacheMissReloadAt = 0;
 
@@ -14255,9 +14344,10 @@ function putUserCacheEntry(rawItem) {
         if (prev.timer) { clearTimeout(prev.timer); prev.timer = null; }
         if (prev.raw && prev.raw.name && prev.raw.name !== raw.name && userIdByName.get(prev.raw.name) === raw.id) userIdByName.delete(prev.raw.name);
     }
-    const entry = { raw, dbSnap: buildUserDbSnap(raw), dirty: false, timer: null, flushChain: null };
+    const entry = { raw, dbSnap: buildUserDbSnap(raw), dirty: false, timer: null, flushChain: null, usageRetryAt: prev?.usageRetryAt || 0 };
     userCacheById.set(raw.id, entry);
-    if (raw.name) userIdByName.set(raw.name, raw.id);
+    if (raw.name && raw.recordType !== 'account') userIdByName.set(raw.name, raw.id);
+    for (const name of raw.formerNames || []) userIdByName.set(name, raw.id);
     return entry;
 }
 
@@ -14329,7 +14419,13 @@ async function reloadUserCacheOnMiss() {
 }
 
 function makeUserFromCacheEntry(entry) {
-    return new RPGUser().load(cloneUserRaw(entry.raw));
+    if (entry.raw.recordType === 'account') {
+        const selected = userCacheById.get(entry.raw.activeCharacterId);
+        return selected ? makeUserFromCacheEntry(selected) : null;
+    }
+    const user = new RPGUser().load(getCharacterStore().hydrate(entry.raw));
+    if (user.accountId) Object.defineProperty(user, 'accountName', { value: getCharacterStore().accountFor(user)?.name, configurable: true });
+    return user;
 }
 
 // 인스턴스에서 직렬화 가능한 평문 객체를 만든다 (등록 직후 캐시 편입용 — PutCommand가 저장한 것과 동일 형태).
@@ -14340,8 +14436,13 @@ function serializeUserPlain(user) {
 // save() 본체: 인스턴스의 __loaded 대비 변경분을 캐시 raw에 반영하고 flush를 예약/실행한다.
 async function commitUserToCache(user, opts) {
     if (!user || typeof user.id == 'undefined') return { success: false, result: [new Error('유저 id 없음')] };
+    if (user.accountId) {
+        await getCharacterStore().commit([user], { defer: !!opts?.defer });
+        return { success: true, result: ['updated'] };
+    }
     await ensureUserCacheReady();
     let entry = userCacheById.get(user.id);
+    if (entry?.raw.accountId) throw Object.assign(new Error('계정 데이터가 전환되었습니다. 다시 시도해주세요.'), { status: 409 });
     if (!entry) {
         // 캐시에 없는 유저(캐시 초기화 실패·외부 생성 직후 등): 전체를 새로 편입하고 전체 쓰기를 유도
         entry = putUserCacheEntry(serializeUserPlain(user));
@@ -14399,6 +14500,7 @@ function scheduleUserFlush(entry) {
 
 // 같은 유저의 flush를 직렬화한다 (즉시 저장과 지연 flush가 겹쳐도 순서 보장).
 function flushUserEntry(entry) {
+    if (entry.raw.accountId || entry.raw.recordType === 'account') return getCharacterStore().flushGroup(entry.raw.accountId || entry.raw.id);
     const previous = entry.flushChain, delivery = entry.usageDelivery;
     const next = measureWork('user_flush', async () => {
         try {
@@ -14692,6 +14794,7 @@ class RPGUser {
             read: !!m.read,
             readAt: m.readAt ? Number(m.readAt) : null,
             claimed: !!m.claimed,
+            returned: !!m.returned,
             createdAt: m.createdAt ? Number(m.createdAt) : 0,
             shared: !!m.shared
         }));
@@ -14864,6 +14967,10 @@ async function commitBlackMarket(previous, next, user, mail) {
         ConditionExpression: previous ? '#data = :previous' : 'attribute_not_exists(#key)',
         ExpressionAttributeNames: previous ? { '#data': 'data' } : { '#key': 'key' },
         ...(previous ? { ExpressionAttributeValues: { ':previous': previous } } : {}) } }] : [];
+    if (user?.accountId) {
+        if (mail) items.push({ Put: { TableName: MAIL_TABLE_NAME, Item: mail, ConditionExpression: 'attribute_not_exists(id)' } });
+        return getCharacterStore().commit([user], { keys: ['gold', 'garnet', 'mail', 'mailNotified', ...(!next ? ['inventory', 'boundItems'] : [])], extras: items });
+    }
     if (Object.keys(changes).length) items.push({ Update: { TableName: TABLE_NAME, Key: { id: user.id },
         UpdateExpression: 'SET ' + Object.keys(changes).map(key => '#' + key + ' = :new_' + key).join(', '),
         ConditionExpression: conditions.join(' AND '), ExpressionAttributeNames: names, ExpressionAttributeValues: values } });
@@ -14893,6 +15000,7 @@ async function commitBlackMarket(previous, next, user, mail) {
 }
 
 async function commitTradeUsers(users) {
+    if (users.some(user => user.accountId)) return getCharacterStore().commit(users, { keys: ['gold', 'garnet', 'inventory', 'tradeEscrow'] });
     const updates = users.map(user => {
         const names = {}, values = {}, conditions = ['attribute_exists(id)'], sets = [], removes = [], changes = {};
         for (const [i, key] of ['gold', 'garnet', 'inventory', 'tradeEscrow'].entries()) {
@@ -15054,6 +15162,8 @@ async function cancelActiveTrade(session, reason, channel) {
 function createTradeRequest(user, targetName, channel) {
     if (!targetName) return '❌ /RPGenius 거래신청 [닉네임]';
     if (targetName == user.name) return '❌ 자기 자신에게는 거래를 신청할 수 없습니다.';
+    const target = userCacheById.get(userIdByName.get(targetName))?.raw;
+    if (target && (target.accountId || target.id) === (user.accountId || user.id)) return '❌ 같은 계정의 캐릭터에게는 거래를 신청할 수 없습니다.';
     if (hasAnyTradeInvolvement(user.name)) return '❌ 이미 진행 중인 거래가 있습니다.';
     if (hasAnyTradeInvolvement(targetName)) return '❌ 상대방이 이미 다른 거래에 참여 중입니다.';
     tradeRequests[user.name] = { id: crypto.randomUUID(), target: targetName, createdAt: Date.now() };
@@ -15087,6 +15197,7 @@ async function acceptTradeRequest(user, expected) {
     request.processing = true;
     const sender = await getRPGUserByName(senderName);
     if (!sender) { request.processing = false; return '❌ 거래 대상을 찾을 수 없습니다.'; }
+    if ((sender.accountId || sender.id) === (user.accountId || user.id)) { request.processing = false; return '❌ 같은 계정의 캐릭터와는 거래할 수 없습니다.'; }
     const session = createTradeSession(senderName, user.name);
     session.processing = true;
     activeTrades[senderName] = session;
@@ -15251,6 +15362,10 @@ async function finalizeTrade(session, channel) {
     const bUser = await getRPGUserByName(session.b);
     if (!aUser || !bUser) {
         await cancelActiveTrade(session, '❌ 거래 대상을 찾을 수 없어 거래가 취소되었습니다.', channel);
+        return;
+    }
+    if ([...(session.aOffer.equipments || []), ...(session.bOffer.equipments || [])].some(equip => getEquipmentData(equip.type, equip.id)?.rarity === '초월')) {
+        await cancelActiveTrade(session, '❌ 초월 장비는 거래할 수 없어 보관 품목을 돌려드렸습니다. 같은 계정의 장비 전송기를 이용해주세요.', channel);
         return;
     }
     const ticketId = getTradeTicketItemId();
@@ -15484,6 +15599,9 @@ function serializeMail(record, entry) {
         read: !!entry.read,
         hasGifts,
         claimed: hasGifts ? !!entry.claimed : true,
+        returned: !!entry.returned,
+        returnable: !entry.claimed && !!record.fromId && !record.gm && !record.returned && gifts.some(gift => gift.type === 'card'),
+        cardTickets: !record.fromId || record.gm || record.returned ? 0 : gifts.filter(gift => gift.type === 'card').reduce((sum, gift) => sum + getCardTicketCost(gift.card), 0),
         gifts: gifts.map(describeMailGift).filter(Boolean)
     };
 }
@@ -15565,6 +15683,12 @@ async function claimMailGifts(user, id) {
     const rec = await getMailRecord(id);
     if (!rec) return { error: '메일 정보를 불러올 수 없습니다.' };
     const gifts = Array.isArray(rec.gifts) ? rec.gifts : [];
+    const cards = gifts.filter(gift => gift.type === 'card' && gift.card);
+    if (getRemainingCardInventorySpace(user) < cards.length) return { error: '카드 가방의 공간이 부족합니다.' };
+    const ticketCost = !rec.fromId || rec.gm || rec.returned ? 0 : cards.reduce((sum, gift) => sum + getCardTicketCost(gift.card), 0);
+    const ticketId = getTradeTicketItemId();
+    if (ticketCost > 0 && (ticketId < 0 || getInventoryItemCount(user, ticketId) < ticketCost)) return { error: '거래권 ' + ticketCost + '장이 필요합니다. 수령하지 않고 반송할 수도 있습니다.' };
+    if (ticketCost > 0) removeInventoryItem(user, ticketId, ticketCost);
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
     if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
@@ -15576,7 +15700,7 @@ async function claimMailGifts(user, id) {
         else if (g.type == 'point') { user.point = Number(user.point || 0) + Number(g.amount || 0); lines.push('💰 ' + comma(g.amount) + 'P'); }
         else if (g.type == 'equipment' && g.equip) { user.inventory.equipment.push(JSON.parse(JSON.stringify(g.equip))); const d = describeMailGift(g); lines.push(d ? d.label : '장비'); }
         else if (g.type == 'pet' && g.pet) { user.inventory.pet.push(clonePetInstance(g.pet)); const d = describeMailGift(g); lines.push(d ? d.label : '펫'); }
-        else if (g.type == 'card' && g.card) { user.inventory.card.push({ id: Number(g.card.id), star: Number(g.card.star || 0), type: g.card.type || '일반' }); const d = describeMailGift(g); lines.push(d ? d.label : '캐릭터 카드'); }
+        else if (g.type == 'card' && g.card) { user.inventory.card.push(structuredClone(g.card)); const d = describeMailGift(g); lines.push(d ? d.label : '캐릭터 카드'); }
         else if (g.type == 'item') { lines.push(...formatItemReward(grantItemReward(user, Number(g.id), Number(g.count || 0)))); }
         else if (g.type == 'title') { const t = getTitleById(g.titleId); const first = unlockTitle(user, g.titleId); lines.push('🏅 칭호 「' + (t ? t.name : g.titleId) + '」' + (first ? '' : ' (이미 보유)')); }
         else if (g.type == 'avatar') { unlockAvatar(user, g.name, Number(g.trades || 0), g); lines.push('🧥 ' + String(g.name) + ' 아바타'); }
@@ -15588,6 +15712,24 @@ async function claimMailGifts(user, id) {
     return { ok: true, lines };
 }
 
+async function returnMailGifts(user, id) {
+    const entry = (user.mail || []).find(mail => mail.id === id);
+    if (!entry || entry.claimed) return { error: '아직 수령하지 않은 우편만 반송할 수 있습니다.' };
+    const record = await getMailRecord(id);
+    if (!record?.fromId || record.gm || record.returned || !(record.gifts || []).some(gift => gift.type === 'card')) return { error: '반송할 수 없는 우편입니다.' };
+    const sender = record.fromId ? await getUserByPrimaryId(record.fromId) : await getRPGUserByName(record.fromName);
+    if (!sender) return { error: '발신 캐릭터를 찾을 수 없습니다.' };
+    const returned = { ...record, id: 'return:' + id, fromName: user.name, fromId: user.id, toName: sender.name,
+        toId: sender.id, subject: '[반송] ' + record.subject, returned: true, createdAt: Date.now() };
+    entry.claimed = true; entry.returned = true; entry.read = true; entry.readAt = Date.now();
+    sender.mail.push({ id: returned.id, read: false, claimed: false, createdAt: returned.createdAt });
+    sender.mailNotified = false;
+    await getCharacterStore().commit([user, sender], { keys: ['mail', 'mailNotified'], extras: [{ Put: {
+        TableName: MAIL_TABLE_NAME, Item: returned, ConditionExpression: 'attribute_not_exists(id)'
+    } }] });
+    return { ok: true };
+}
+
 // 메일 발송(플레이어 간). giftSpecs: 웹에서 전달된 선물 지정 배열.
 //   {type:'gold'|'garnet'|'point', amount} | {type:'equipment', number} | {type:'pet', index} | {type:'item', id, count}
 async function sendMail(sender, recipientName, subject, body, giftSpecs) {
@@ -15596,6 +15738,7 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     if (toName == sender.name) return { error: '자신에게는 메일을 보낼 수 없습니다.' };
     const recipient = await getRPGUserByName(toName);
     if (!recipient) return { error: '존재하지 않는 닉네임입니다.' };
+    if (recipient.id === sender.id) return { error: '자신에게는 메일을 보낼 수 없습니다.' };
     subject = String(subject || '').trim().slice(0, 50) || '(제목 없음)';
     body = String(body || '').trim().slice(0, 1000);
     const specs = Array.isArray(giftSpecs) ? giftSpecs : [];
@@ -15606,11 +15749,13 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     let feeTotal = 0;
     const usedEquip = new Set();
     const usedPet = new Set();
+    const usedCards = new Set();
     const usedAvatar = new Set();
     const itemReq = {};
     const currencyReq = { gold: 0, garnet: 0, point: 0 };
     for (const spec of specs) {
         if (spec.type == 'gold' || spec.type == 'garnet' || spec.type == 'point') {
+            if ((sender.accountId || sender.id) === (recipient.accountId || recipient.id)) return { error: '같은 계정의 공용 재화는 우편으로 보낼 필요가 없습니다.' };
             const currencyName = spec.type == 'gold' ? '골드' : spec.type == 'garnet' ? '가넷' : '포인트';
             const amount = Math.floor(Number(spec.amount || 0));
             if (!(amount > 0)) return { error: currencyName + ' 수량이 올바르지 않습니다.' };
@@ -15622,6 +15767,11 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
             if (recv < 1) return { error: currencyName + ' 선물은 수수료(' + comma(fee) + ') 이상이어야 합니다.' };
             feeTotal += fee;
             resolved.push({ kind: spec.type, amount, recv });
+        } else if (spec.type == 'card') {
+            const index = Number(spec.index), card = sender.inventory.card?.[index];
+            if (!Number.isInteger(index) || index < 0 || !card || card.locked || usedCards.has(index)) return { error: '카드가 없거나 잠겨 있거나 중복 선택되었습니다.' };
+            usedCards.add(index);
+            resolved.push({ kind: 'card', index, card });
         } else if (spec.type == 'equipment') {
             const number = Number(spec.number);
             if (usedEquip.has(number)) return { error: '같은 장비를 중복으로 담을 수 없습니다.' };
@@ -15679,10 +15829,17 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     const gifts = [];
     const equipIndices = [];
     const petIndices = [];
+    const cardIndices = [];
     resolved.forEach(r => {
         if (r.kind == 'gold') { sender.gold = Number(sender.gold || 0) - r.amount; gifts.push({ type: 'gold', amount: r.recv }); }
         else if (r.kind == 'garnet') { sender.garnet = Number(sender.garnet || 0) - r.amount; gifts.push({ type: 'garnet', amount: r.recv }); }
         else if (r.kind == 'point') { sender.point = Number(sender.point || 0) - r.amount; gifts.push({ type: 'point', amount: r.recv }); }
+        else if (r.kind == 'card') {
+            const copy = structuredClone(r.card);
+            for (const key of ['skin', 'statSkin', 'avatarId', 'statAvatarId']) delete copy[key];
+            cardIndices.push(r.index);
+            gifts.push({ type: 'card', card: copy });
+        }
         else if (r.kind == 'equipment') {
             const idx = sender.inventory.equipment.indexOf(r.selected.equip);
             const copy = cloneEquipmentInstance(r.selected.equip, r.selected.type);
@@ -15704,11 +15861,14 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     });
     equipIndices.sort((a, b) => b - a).forEach(i => sender.inventory.equipment.splice(i, 1));
     petIndices.sort((a, b) => b - a).forEach(i => sender.inventory.pet.splice(i, 1));
+    cardIndices.sort((a, b) => b - a).forEach(i => sender.inventory.card.splice(i, 1));
 
     const record = {
         id: genMailId(),
         fromName: sender.name,
+        fromId: sender.id,
         toName: recipient.name,
+        toId: recipient.id,
         subject,
         body,
         gifts,
@@ -15723,7 +15883,7 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
             senderExpected[key] = senderBefore[key];
         }
     });
-    if (resolved.some(r => r.kind == 'equipment' || r.kind == 'pet' || r.kind == 'item')) {
+    if (resolved.some(r => ['card', 'equipment', 'pet', 'item'].includes(r.kind))) {
         senderChanges.inventory = sender.inventory;
         senderExpected.inventory = senderBefore.inventory;
     }
@@ -15739,6 +15899,21 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         senderExpected.main_card = senderBefore.main_card;
         senderChanges.card_slot = sender.card_slot;
         senderExpected.card_slot = senderBefore.card_slot;
+    }
+
+    if (sender.accountId || recipient.accountId) {
+        recipient.mail.push(mailEntry);
+        recipient.mailNotified = false;
+        if (currencyReq.point > 0) pointUsage.record(sender, { amount: currencyReq.point, kind: 'transfer', category: 'mail', action: 'send', productName: '포인트 우편 발송', details: { recipient: recipient.name } });
+        try {
+            await getCharacterStore().commit([sender, recipient], { extras: [{ Put: {
+                TableName: MAIL_TABLE_NAME, Item: record, ConditionExpression: 'attribute_not_exists(id)'
+            } }] });
+        } catch (error) {
+            Object.assign(sender, senderBefore);
+            return { error: '보유 정보가 변경되었거나 메일 저장에 실패했습니다. 다시 시도해주세요.' };
+        }
+        return { ok: true, mailId: record.id, fee: feeTotal };
     }
 
     const transactItems = [];
@@ -15877,8 +16052,10 @@ async function sendBroadcastMail(opts) {
     await putMailRecord(record);
 
     const users = await getAllRPGUsers();
+    const recipients = new Map(users.map(user => [user.accountId || user.id, user]));
     let count = 0;
-    for (const u of users) {
+    for (const ownerId of recipients.keys()) {
+        const u = await getUserByPrimaryId(ownerId);
         if (!Array.isArray(u.mail)) u.mail = [];
         u.mail.push({ id: record.id, read: false, readAt: null, claimed: gifts.length === 0, createdAt: record.createdAt, shared: true });
         u.mailNotified = false;
@@ -15957,7 +16134,10 @@ async function getRPGUserById(id) {
     const accountId = await getAccountIdBySid(id);
     if (accountId != null) {
         const mapped = await getUserByPrimaryId(accountId);
-        if (mapped && Array.isArray(mapped.logged_in) && mapped.logged_in.includes(id)) return mapped;
+        if (mapped && Array.isArray(mapped.logged_in) && mapped.logged_in.includes(id)) {
+            const account = getCharacterStore().accountFor(mapped);
+            return account ? getUserByPrimaryId(account.activeCharacterId) : mapped;
+        }
         // 매핑이 stale(계정 삭제/로그아웃 누락) → 정리 후 캐시로 재확인
         await deleteSidMapping(id);
     }
@@ -15973,7 +16153,7 @@ async function getRPGUserById(id) {
     if (!entry && await reloadUserCacheOnMiss()) entry = findEntry();
     if (!entry) return null;
     const user = makeUserFromCacheEntry(entry);
-    if (user && typeof user.id != 'undefined') await putSidMapping(id, user.id); // 백필
+    if (user && typeof user.id != 'undefined') await putSidMapping(id, user.accountId || user.id); // 백필
     return user;
 }
 
@@ -15989,6 +16169,47 @@ async function getRPGUserByName(name) {
     if (hit) return hit;
     if (await reloadUserCacheOnMiss()) return findUser();
     return null;
+}
+
+async function getAccountUserByLogin(name) {
+    await initUserCache();
+    for (const entry of userCacheById.values()) {
+        if (entry.raw.recordType === 'account' && entry.raw.name === name) return makeUserFromCacheEntry(entry);
+    }
+    const entry = userCacheById.get(userIdByName.get(name));
+    const legacy = entry ? makeUserFromCacheEntry(entry) : null;
+    return legacy?.accountId ? null : legacy;
+}
+
+async function isCharacterNameTaken(name) {
+    // Registration/name validation must not turn arbitrary misses into repeated whole-table scans.
+    await initUserCache();
+    if (userIdByName.has(name)) return true;
+    return [...userCacheById.values()].some(entry => entry.raw.recordType === 'account' && entry.raw.name === name);
+}
+
+async function ensureCharacterAccount(user) {
+    await initRpgeniusData();
+    return enqueueFieldAction(user, async () => {
+        await getCharacterStore().migrate(user);
+        return getUserByPrimaryId(user.id);
+    });
+}
+
+function getAccountGoldState(user) {
+    const level = Math.max(Number(user.level || 1), ...getCharacterStore().members(user).map(member => Number(member.level || 1)));
+    const date = getKoreanDateKey(new Date());
+    const used = user.huntingGold?.date === date ? Number(user.huntingGold.used || 0) : 0;
+    const limit = characterAccounts.goldLimit(level);
+    return { level, limit, used, remaining: Math.max(0, limit - used), date };
+}
+
+function capHuntingGold(user, base, boosted) {
+    if (!user.accountId) return boosted;
+    const state = getAccountGoldState(user);
+    const earned = Math.min(state.remaining, Math.max(0, base));
+    user.huntingGold = { date: state.date, used: state.used + earned };
+    return base > 0 ? Math.round(boosted * earned / base) : 0;
 }
 
 async function getRPGUserByCode(code) {
@@ -16017,7 +16238,7 @@ async function getAllRPGUsers() {
         }
     }
     const users = [];
-    for (const entry of userCacheById.values()) users.push(makeUserFromCacheEntry(entry));
+    for (const entry of userCacheById.values()) if (entry.raw.recordType !== 'account') users.push(makeUserFromCacheEntry(entry));
     return users;
 }
 
@@ -16025,13 +16246,26 @@ async function getAllRPGUsers() {
 async function getParadiseWeeklyRecords() {
     const ready = await ensureUserCacheReady();
     const users = !ready && userCacheById.size === 0 ? await getAllRPGUsers() : Array.from(userCacheById.values(), entry => entry.raw);
-    return users.map(user => ({ name: user.name, paradiseWeekly: user.paradiseWeekly ? { ...user.paradiseWeekly } : null }));
+    return users.filter(user => user.recordType !== 'account').map(user => ({ name: user.name, paradiseWeekly: user.paradiseWeekly ? { ...user.paradiseWeekly } : null }));
 }
 
 // 웹 회원가입. /RPGenius 등록과 동일한 검증 + 같은 UA로 로그인된 계정이 있으면 등록 불가.
+async function registerNamedUser(user) {
+    try {
+        await docClient.send(new TransactWriteCommand({ TransactItems: [
+            { Put: { TableName: TABLE_NAME, Item: serializeUserPlain(user), ConditionExpression: 'attribute_not_exists(id)' } },
+            { Put: { TableName: SID_TABLE_NAME, Item: { senderId: 'character-name:' + user.name, characterId: user.id }, ConditionExpression: 'attribute_not_exists(senderId)' } }
+        ] }));
+        return { success: true };
+    } catch (error) {
+        if (error.CancellationReasons?.some(reason => reason.Code === 'ConditionalCheckFailed')) error.name = 'ConditionalCheckFailedException';
+        return { success: false, result: [error] };
+    }
+}
+
 async function webRegisterRPGUser(nickname, ua) {
     const name = String(nickname || '').trim();
-    if (await getRPGUserByName(name)) return { error: '이미 존재하는 이름입니다.' };
+    if (await isCharacterNameTaken(name)) return { error: '이미 존재하는 이름입니다.' };
     if (name.match(/[^가-힣ㄱ-ㅎa-zA-Z0-9\s]/) || name.length == 0) return { error: '닉네임은 한글, 영어, 숫자 및 공백만 들어갈 수 있습니다.' };
     if (name.length > 10) return { error: '닉네임은 최대 10글자로 설정하셔야 합니다.' };
     const agent = String(ua || '').trim();
@@ -16043,7 +16277,7 @@ async function webRegisterRPGUser(nickname, ua) {
     }
     const user = new RPGUser(name, 'web_' + getRandomString(16));
     if (agent) user.logged_in_agent.push(agent);
-    const res = await putNewItem(TABLE_NAME, user);
+    const res = await registerNamedUser(user);
     if (!res.success) {
         const errorName = res.result && res.result[0] && res.result[0].name;
         if (errorName == 'ConditionalCheckFailedException') return { error: '이미 등록된 계정이 있습니다.' };
@@ -16057,7 +16291,7 @@ async function formatCombatPowerRanking(currentUser) {
     const users = await getAllRPGUsers();
     if (users.length == 0) return '❌ 랭킹 데이터를 불러올 수 없습니다.';
     const ranked = users
-        .map(u => ({ name: u.name, level: Number(u.level || 1), cp: calculateCombatPower(u).total }))
+        .map(u => ({ name: u.name, level: Number(u.level || 1), cp: calculateTownCombatPower(u).total }))
         .sort((a, b) => b.cp - a.cp || b.level - a.level || a.name.localeCompare(b.name));
 
     const myIndex = ranked.findIndex(entry => entry.name == (currentUser && currentUser.name));
@@ -16131,7 +16365,7 @@ function enqueueUserCommand(senderId, task) {
 
 function enqueueFieldAction(user, task) {
     if (!user || user.id == null || !user.name) return Promise.reject(new Error('필드 행동 유저 정보가 올바르지 않습니다.'));
-    const queueKey = 'account:' + user.id;
+    const queueKey = user.accountId || 'account:' + user.id;
     fieldQueueKeys[user.name] = queueKey;
     return enqueueUserCommand(queueKey, task);
 }
@@ -16139,7 +16373,7 @@ function enqueueFieldAction(user, task) {
 async function resolveCommandQueueKey(senderId, context) {
     if (context && context.queueKey) return String(context.queueKey);
     const user = await getRPGUserById(senderId);
-    return user && user.id != null ? 'account:' + user.id : 'sender:' + senderId;
+    return user && user.id != null ? user.accountId || 'account:' + user.id : 'sender:' + senderId;
 }
 
 function handleCommandQueueError(error, channel, context, label) {
@@ -16170,6 +16404,10 @@ async function handleRPGCommand(data, channel, context = {}) {
     const senderId = sender.userId + '';
     const args = cmd.substr(cmd.split(' ')[0].length + 1).split(' ');
     const reply = text => channel.sendChat(text);
+    const getPlayer = async () => {
+        const user = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
+        return user && !user.accountId ? ensureCharacterAccount(user) : user;
+    };
 
     if (args[0] == '질문') {
         const question = args.slice(1).join(' ').trim();
@@ -16188,17 +16426,17 @@ async function handleRPGCommand(data, channel, context = {}) {
 
     // 로그인된 유저가 채팅하면 미알림 메일 1회 알림
     try {
-        const mailUser = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
+        const mailUser = await getPlayer();
         if (mailUser) await maybeNotifyMail(mailUser, reply);
     } catch (_) { }
 
     if (args[0] == '등록') {
         const nickname = cmd.substr(cmd.split(' ')[0].length + 4).trim();
-        const existingById = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
+        const existingById = await getPlayer();
         if (existingById) {
             reply('❌ 이미 로그인된 상태입니다.\n- ' + existingById.name);
         } else {
-            const existsByName = await getRPGUserByName(nickname);
+            const existsByName = await isCharacterNameTaken(nickname);
             if (existsByName) {
                 reply('❌ 이미 존재하는 이름입니다.');
             } else if (nickname.match(/[^가-힣ㄱ-ㅎa-zA-Z0-9\s]/) || nickname.length == 0) {
@@ -16217,7 +16455,7 @@ async function handleRPGCommand(data, channel, context = {}) {
     }
 
     if (args[0] == '로그인') {
-        const existingById = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
+        const existingById = await getPlayer();
         if (existingById) {
             reply('❌ 이미 로그인된 상태입니다.\n- ' + existingById.name);
             return true;
@@ -16240,7 +16478,7 @@ async function handleRPGCommand(data, channel, context = {}) {
     if (pendingChecks[senderId] && args[0] == '확인') {
         if (pendingChecks[senderId].type == 'rpg등록') {
             const nickname = pendingChecks[senderId].arg.name;
-            const existingById = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
+            const existingById = await getPlayer();
             if (existingById) {
                 reply('❌ 이미 등록된 계정이 있습니다.\n- ' + existingById.name);
                 delete pendingChecks[senderId];
@@ -16253,7 +16491,7 @@ async function handleRPGCommand(data, channel, context = {}) {
                 return true;
             }
             const user = new RPGUser(nickname, senderId);
-            const res = await putNewItem(TABLE_NAME, user);
+            const res = await registerNamedUser(user);
             if (res.success) {
                 putUserCacheEntry(serializeUserPlain(user));
                 await putSidMapping(senderId, user.id); // 가입 기기 매핑 (user.id == senderId)
@@ -16271,7 +16509,7 @@ async function handleRPGCommand(data, channel, context = {}) {
 
     if (args[0] == '캐릭터카드' && args[1] == '선택') {
         const cardName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1 + args[1].length + 1).trim();
-        const user = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
+        const user = await getPlayer();
         if (!user) {
             reply('❌ 등록되지 않은 사용자입니다.\n/RPGenius 등록 [닉네임]');
         } else {
@@ -16283,7 +16521,7 @@ async function handleRPGCommand(data, channel, context = {}) {
         return true;
     }
 
-    const user = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
+    const user = await getPlayer();
     if (!user) {
         reply('❌ 등록되지 않은 사용자입니다.\n/RPGenius 등록 [닉네임]');
         return true;
@@ -17828,6 +18066,10 @@ function __setQuestDefs(defs) {
 }
 
 module.exports = {
+    returnMailGifts,
+    getLinkedCharacterLevelSum,
+    isCharacterNameTaken, calculateTownCombatPower,
+    getCharacterStore, ensureCharacterAccount, getAccountUserByLogin, getAccountGoldState,
     flushPointUsageOutboxes, getPointUsageDeliveryStatus,
     isRuntimeReady,
     getEquippedEquipmentData,

@@ -1,0 +1,148 @@
+'use strict';
+
+// Account records own shared resources. Character records retain the existing game shape.
+const SHARED_FIELDS = new Set([
+    'code', 'logged_in', 'logged_in_agent', 'otpSecret', 'otpPendingSecret', 'isAdmin',
+    'gold', 'garnet', 'point', 'total_point', 'mileage', 'pointUsageOutbox',
+    'usedCoupons', 'shopPurchases', 'lastAttendanceDate', 'blessings', 'prestige', 'jobPrestige',
+    'unlockedTitles', 'titles', 'titleProgress', 'chuseok2026', 'personalDraw', 'pointMine', 'yut', 'yutEvent',
+    'eventDiceDropDaily', 'songpyeonDropDaily', 'pointMineDropDaily', 'peperoDropDaily', 'peperoEvent', 'huntingGold'
+]);
+const clone = value => value === undefined ? undefined : structuredClone(value);
+const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+function isAccountItem(item) {
+    if (!item) return false;
+    if (item.accountScope !== undefined) return item.accountScope === 'account';
+    return item.type === '이벤트' || /^\[이벤트\]/.test(item.name || '') || /이벤트.*(?:상자|주머니)$/.test(item.name || '')
+        || ['이벤트 리스트 종이', '출석 도장', '송편', '랜덤 빼빼로 1종 ×11'].includes(item.name)
+        || /^26빼빼로데이\d패키지$/.test(item.name || '');
+}
+
+function splitInventory(inventory, items) {
+    const own = clone(inventory || { card: [], equipment: [], pet: [], item: [] });
+    const shared = [];
+    own.item = (own.item || []).filter(entry => {
+        if (!isAccountItem(items[entry.id])) return true;
+        shared.push(entry);
+        return false;
+    });
+    return { own, shared };
+}
+
+function hydrate(character, account) {
+    if (!account) return clone(character);
+    const result = clone(character);
+    for (const key of SHARED_FIELDS) {
+        if (account[key] === undefined) delete result[key];
+        else result[key] = clone(account[key]);
+    }
+    result.inventory ||= { card: [], equipment: [], pet: [], item: [] };
+    result.inventory.item = [...(result.inventory.item || []), ...clone(account.items || [])];
+    result.boundItems = { ...(result.boundItems || {}), ...(account.boundItems || {}) };
+    return result;
+}
+
+function normalizeSlots(user) {
+    const seen = new Set();
+    user.inventory ||= { card: [], equipment: [], pet: [], item: [] };
+    user.inventory.card ||= [];
+    user.card_slot = (user.card_slot || []).filter(card => {
+        const duplicate = seen.has(Number(card.id)) || (Number(user.main_card?.id) === Number(card.id)
+            && (user.main_card.type || '일반') === (card.type || '일반'));
+        if (duplicate) user.inventory.card.push(card);
+        else seen.add(Number(card.id));
+        return !duplicate;
+    });
+}
+
+function migrate(user, items, shops = {}) {
+    const character = clone(user);
+    normalizeSlots(character);
+    const account = { id: 'account:' + user.id, recordType: 'account', name: user.name,
+        schemaVersion: 2, characterIds: [user.id], activeCharacterId: user.id, capacity: 6,
+        selectionRevision: 0 };
+    character.accountId = account.id;
+    character.characterNumber = 1;
+    for (const key of SHARED_FIELDS) {
+        if (character[key] !== undefined) account[key] = character[key];
+        delete character[key];
+    }
+    const catalog = require('./shop_catalog');
+    for (const [shop, products] of Object.entries(shops)) {
+        if (!Array.isArray(products)) continue;
+        products.forEach((product, index) => {
+            if (catalog.purchaseScope(product, items) !== 'character') return;
+            const { group, key } = catalog.shopRecordAddress(product.shopId || catalog.legacyShopItemId(shop, index));
+            const record = account.shopPurchases?.[group]?.[key];
+            if (!record) return;
+            character.characterShopPurchases ||= {};
+            (character.characterShopPurchases[group] ||= {})[key] = record;
+            delete account.shopPurchases[group][key];
+            if (!Object.keys(account.shopPurchases[group]).length) delete account.shopPurchases[group];
+        });
+    }
+    const { own, shared } = splitInventory(character.inventory, items);
+    character.inventory = own;
+    account.items = shared;
+    account.boundItems = {};
+    character.boundItems ||= {};
+    for (const [id, count] of Object.entries(character.boundItems || {})) {
+        if (isAccountItem(items[id])) { account.boundItems[id] = count; delete character.boundItems[id]; }
+    }
+    return { account, character };
+}
+
+function splitChanges(user, keys, items) {
+    const own = {}, shared = {}, ownBefore = {}, sharedBefore = {};
+    for (const key of keys) {
+        if (['id', 'accountId', 'characterNumber', 'recordType'].includes(key)) continue;
+        const before = user.__loaded?.[key] === undefined ? undefined : JSON.parse(user.__loaded[key]);
+        const after = user[key];
+        if (equal(before, after)) continue;
+        if (key === 'inventory') {
+            const prior = splitInventory(before, items), next = splitInventory(after, items);
+            if (!equal(prior.own, next.own)) { own.inventory = next.own; ownBefore.inventory = prior.own; }
+            if (!equal(prior.shared, next.shared)) { shared.items = next.shared; sharedBefore.items = prior.shared; }
+        } else if (key === 'boundItems') {
+            for (const [target, source] of [[ownBefore, before], [own, after], [sharedBefore, before], [shared, after]]) {
+                const account = target === sharedBefore || target === shared;
+                target.boundItems = Object.fromEntries(Object.entries(source || {}).filter(([id]) => isAccountItem(items[id]) === account));
+            }
+            if (equal(own.boundItems, ownBefore.boundItems)) { delete own.boundItems; delete ownBefore.boundItems; }
+            if (equal(shared.boundItems, sharedBefore.boundItems)) { delete shared.boundItems; delete sharedBefore.boundItems; }
+        } else {
+            const target = SHARED_FIELDS.has(key) ? shared : own;
+            const previous = SHARED_FIELDS.has(key) ? sharedBefore : ownBefore;
+            target[key] = clone(after); previous[key] = clone(before);
+        }
+    }
+    return [{ id: user.id, changes: own, before: ownBefore }, { id: user.accountId, changes: shared, before: sharedBefore }];
+}
+
+function updateInput(table, id, changes, before) {
+    const names = {}, values = {}, sets = [], removes = [], conditions = ['attribute_exists(id)'];
+    Object.entries(changes).forEach(([key, value], index) => {
+        const alias = '#k' + index;
+        names[alias] = key;
+        if (value === undefined) removes.push(alias);
+        else { sets.push(alias + ' = :v' + index); values[':v' + index] = clone(value); }
+        if (before[key] === undefined) conditions.push('attribute_not_exists(' + alias + ')');
+        else { conditions.push(alias + ' = :p' + index); values[':p' + index] = clone(before[key]); }
+    });
+    const clauses = [];
+    if (sets.length) clauses.push('SET ' + sets.join(', '));
+    if (removes.length) clauses.push('REMOVE ' + removes.join(', '));
+    return { TableName: table, Key: { id }, UpdateExpression: clauses.join(' '),
+        ConditionExpression: conditions.join(' AND '), ExpressionAttributeNames: names,
+        ...(Object.keys(values).length ? { ExpressionAttributeValues: values } : {}) };
+}
+
+function goldLimit(level) {
+    if (level < 100) return 20000000;
+    if (level < 200) return 40000000;
+    if (level < 260) return 80000000 + Math.floor((level - 200) / 5) * 5000000;
+    return 150000000 + Math.floor((Math.min(300, level) - 260) / 5) * 10000000;
+}
+
+module.exports = { SHARED_FIELDS, isAccountItem, splitInventory, hydrate, normalizeSlots, migrate, splitChanges, updateInput, goldLimit };

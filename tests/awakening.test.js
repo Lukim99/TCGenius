@@ -40,7 +40,52 @@ async function rolls(value, fn) {
     try { return await fn(); } finally { Math.random = original; }
 }
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, actual + ' ≠ ' + expected);
+
+test('타이란트 슬롯은 잃은 체력이 바뀔 때만 증감하고 회복하면 원래 스탯으로 돌아온다', () => {
+    const { applyMissingHp } = require('../slot_runtime');
+    const stats = { atk: 1500, baseAtk: 1000, plusStats: { atk: .5 }, def: 1000, finalDamage: .1, extraDamage: .2 };
+    const slots = { missingHpDef: .002, missingHpAttack: .002, missingHpFinal: .002, missingHpExtra: .002 };
+    applyMissingHp(stats, slots, 500, 1000);
+    assert.equal(stats.atk, 1600); assert.equal(stats.def, 1100);
+    near(stats.finalDamage, .2); near(stats.extraDamage, .3);
+    const once = structuredClone(stats);
+    applyMissingHp(stats, slots, 500, 1000); assert.deepEqual(stats, once);
+    applyMissingHp(stats, slots, 1000, 1000);
+    assert.equal(stats.atk, 1500); assert.equal(stats.def, 1000);
+    near(stats.finalDamage, .1); near(stats.extraDamage, .2);
+});
+
+test('빵귤 교차 공격 슬롯은 각성 없이도 발동하며 간접 공격·중복 처리에는 누적하지 않는다', () => {
+    const stats = { alternateDamage: .1 }, runtime = {};
+    for (const [kind, indirect, expected] of [['basic', false, 0], ['skill', false, .1], ['basic', true, 0], ['skill', false, 0], ['basic', false, .1]]) {
+        const extra = { isBasic: kind === 'basic', summonAttack: indirect };
+        awakening.prepareAttack(stats, runtime, {}, extra, kind, 1000);
+        near(extra.damageBonusMul || 0, expected);
+        awakening.prepareAttack(stats, runtime, {}, extra, kind, 1000);
+        near(extra.damageBonusMul || 0, expected);
+    }
+});
+
+test('소환수 공격력 슬롯은 직접 소환 공격에 적용하고 지속 피해를 중복 증폭하지 않는다', async () => {
+    const stats = { atk: 1000, crit: 0, summonAttack: .2 };
+    const hit = extra => rpg.calculateAttackHitResult(1000, 0, 0, stats, {}, extra, {}).finalDamage;
+    await rolls(.5, () => {
+        assert.equal(hit({ summonAttack: true }), 1200);
+        assert.equal(hit({ summonAttack: true, dotAttack: true }), 1000);
+        assert.equal(hit({ isBasic: true }), 1000);
+    });
+});
 test.before(() => rpg.initRpgeniusData());
+
+test('켄시의 네 타입은 수정된 고정 치명타 피해량과 확률을 적용한다', () => {
+    for (const [type, critMul, crit] of [['일반', .10, 0], ['전직', .05, .05], ['각성', .15, -.05], ['광폭', 0, .10]]) {
+        for (const star of [0, 11]) {
+            const u = user('켄시', star, type);
+            const slots = rpg.calculateCardSlotEffects(u);
+            near(slots.critMul, critMul); near(slots.crit, crit);
+        }
+    }
+});
 
 test('공격력%는 스탯포인트·각성·슬롯·포션을 plusStats.atk에 합산한다', () => {
     const u = user('오버라이드');
@@ -157,7 +202,9 @@ test('15종 × 8등급의 패시브·슬롯·스킬과 각성 이미지 레이�
         for (const effect of definition.slots) {
             const key = effect.effect === 'basicDamageReduction' ? 'basicDamageBonus' : effect.effect;
             const sign = effect.effect === 'basicDamageReduction' ? -1 : 1;
-            near(effects[key], sign * effect.values[star - 4]);
+            const exclusive = ['ilionDeckAttack', 'ilionCardDuration', 'ilionDeckSize', 'mentalMax', 'mentalRegen', 'mentalCostReduction', 'wonyoddiBasicCooldown'].includes(key);
+            const gradeAttack = key === 'finalAttackBonus' ? [.01, .02, .03, .04, .06, .08, .10, .12][star - 4] : 0;
+            near(effects[key], exclusive ? 0 : sign * effect.base + gradeAttack);
         }
     }
 });
@@ -167,7 +214,7 @@ test('글렌첵·일레이나의 원래 기준 및 소수 배수, 오버라이�
         const u = user(name); u.statPointStats[stat] = divisor * 1.5;
         const normal = rpg.calculateUserStats({ ...u, main_card: { ...u.main_card, type: '전직' } });
         const awakened = rpg.calculateUserStats(u);
-        assert.equal(awakened.atk, Math.round(normal.atk + normal[stat] / divisor * 20));
+        assert.equal(awakened.atk, Math.round(normal.atk + awakened[stat] / divisor * 20));
         near(awakening.runtimeAttackRatio({ atk: 100, hp: 10000, mp: 1000, awakening: passive(name), awakeningAttackBonus: 0 }, {}, 15000, 1500, 0, 0), 1.1);
     }
     near(awakening.getAttackBonus(passive('오버라이드', 11), 0, 0), .29);
@@ -175,7 +222,7 @@ test('글렌첵·일레이나의 원래 기준 및 소수 배수, 오버라이�
     near(awakening.getAttackBonus(passive('진필규'), -.1, 0), 0);
     near(awakening.getAttackBonus(passive('안성재', 11), 0, 12), .153);
     const jin = user('진필규'); jin.field = { buffs: { receivedDamageReduction: { value: .4, expired_at: Date.now() + 10000 }, receivedDamageMultiplier: { value: 1.1, expired_at: Date.now() + 10000 } } };
-    near(rpg.calculateUserStats(jin).awakeningAttackBonus, .075);
+    near(rpg.calculateUserStats(jin).awakeningAttackBonus, (.4 - .1 - .05) * .25);
 });
 
 test('빵귤 공격 종류 전환·첫 공격 제외·간접 피해 제외·실제 피해 기준 추가 피해', async () => {
@@ -505,9 +552,9 @@ test('초심권 초월 단계는 궁극기 피해만 늘리고 일반 전투·�
     }
 });
 
-test('실제 일반 사냥의 인내의 보석 0.1%와 드랍율 슬롯 적용', async () => {
+test('실제 일반 사냥의 인내의 보석 0.1%는 새 제우스 슬롯에 드랍 보너스를 추가하지 않는다', async () => {
     const dungeon = require('../DB/RPGenius/Dungeon.json')[0];
-    for (const [withSlot, expected] of [[false, 0], [true, 1]]) {
+    for (const [withSlot, expected] of [[false, 0], [true, 0]]) {
         const u = user('빵귤'); u.level = Number(dungeon.requireLevel || 1) + 10; // 기존 레벨 드랍 배율 1배 구간
         if (withSlot) u.card_slot = [card('제우스', 11)];
         u.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: null };
