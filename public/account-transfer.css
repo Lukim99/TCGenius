@@ -71,7 +71,6 @@
 .tr-plate.is-bare .tr-altar-img { top: 48%; width: 60%; height: 64%; }
 .tr-altar-name { margin: 6px 0 0; font-size: .86rem; font-weight: 700; text-align: center; line-height: 1.35; }
 .tr-altar.is-empty .tr-altar-name { font-weight: 400; color: var(--tr-dim); font-size: .76rem; }
-.tr-altar-name.is-done { color: var(--tr-gold) !important; }
 .is-casting .tr-sigil { opacity: 1; animation-duration: 2.4s; filter: drop-shadow(0 0 14px rgba(184, 144, 255, .9)); }
 
 /* 단계 표시 */

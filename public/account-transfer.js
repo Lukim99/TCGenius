@@ -377,8 +377,7 @@
       altarImg.hidden = !it; if (it) itemArt(altarImg, it);
       dev.hidden = !icon(); if (icon()) setSrc(dev, icon());
       plate.classList.toggle('is-bare', !icon());
-      if (it) cardText(altarName, it.name); else altarName.textContent = S.done || '옮길 물품을 고르세요';
-      altarName.classList.toggle('is-done', !it && !!S.done);
+      if (it) cardText(altarName, it.name); else altarName.textContent = S.done ? '' : '옮길 물품을 고르세요';
       navBtns.forEach(function (b, i) {
         var s = STEPS[i][0];
         if (s === S.step || (s === 'item' && S.step === 'inspect')) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
