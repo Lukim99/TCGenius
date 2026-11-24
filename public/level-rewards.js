@@ -203,9 +203,16 @@
         s.dialControl.setAttribute('role', 'slider'); s.dialControl.setAttribute('aria-label', '보상 레벨 선택');
         s.dialControl.setAttribute('aria-valuemin', '10'); s.dialControl.setAttribute('aria-valuemax', '300');
         s.dial = node('div', 'lr-dial');
-        s.prev = button('lr-dial-prev', '‹', () => select(s, s.selected - 1)); s.prev.setAttribute('aria-label', '이전 레벨');
-        s.next = button('lr-dial-next', '›', () => select(s, s.selected + 1)); s.next.setAttribute('aria-label', '다음 레벨');
-        s.dialControl.append(s.dial, node('div', 'lr-needle'), s.prev, s.next);
+        s.prev = button('lr-dial-prev', '', () => select(s, s.selected - 1)); s.prev.setAttribute('aria-label', '이전 레벨');
+        s.next = button('lr-dial-next', '', () => select(s, s.selected + 1)); s.next.setAttribute('aria-label', '다음 레벨');
+        for (const control of [s.prev, s.next]) {
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'm9 5 7 7-7 7'); icon.append(path); control.append(icon);
+        }
+        const navigation = node('div', 'lr-dial-nav'); navigation.append(s.prev, s.next);
+        s.dialControl.append(s.dial, node('div', 'lr-needle'), navigation);
         const progress = node('div', 'lr-progress');
         progress.append(node('span', '', '현재 레벨'), node('strong', '', String(s.userLevel)), s.remaining);
         s.stage = node('article', 'lr-stage'); s.stage.setAttribute('aria-live', 'polite');
