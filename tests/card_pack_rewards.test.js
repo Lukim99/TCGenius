@@ -385,7 +385,8 @@ test('레벨 보상 HTTP 수령은 카드로 지급하며 수령 기록으로 �
     const after = await rpg.getRPGUserByName(seed.name);
     assert.equal(after.inventory.card.length, 2);
     assert.equal(rpg.getInventoryItemCount(after, itemId('5성 카드팩')), 0);
-    assert.equal((await post('/api/levelreward', { level: 10 })).status, 400);
+    assert.equal((await post('/api/levelreward', { level: 10 })).status, 200);
+    assert.equal((await rpg.getRPGUserByName(seed.name)).inventory.card.length, 2);
 });
 
 test('반환용 원시 인벤토리 추가는 기존 카드팩을 자동 개봉하지 않는다', () => {

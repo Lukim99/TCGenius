@@ -242,6 +242,7 @@ function buildSubNav(group) {
             onclick: () => navigatePage(pageId) }, PAGE_LABELS[pageId] || pageId)
     ));
     updateMailBadge();
+    window.LevelRewardsUI?.updateBadge();
 }
 
 function activateGroup(groupId) {
@@ -292,7 +293,8 @@ function navigatePage(pageId) {
     if (pageId === 'awakeningcombine') loadAwakeningCombine();
     if (pageId === 'orb-fusion') window.OrbFusionUI.mount($('#orbFusionRoot'), { api, postApi }); else window.OrbFusionUI?.unmount();
     if (pageId === 'equipment-synthesis') loadEquipmentSynthesis();
-    if (pageId === '레벨보상') loadLevelRewards();
+    if (pageId === '레벨보상') window.LevelRewardsUI.mount($('#levelRewardRoot'), { api, postApi, onProfile: renderProfile, onClose: () => activatePage('home') });
+    else window.LevelRewardsUI?.unmount();
     if (pageId === 'shop') loadShop(); else { window.ShopSceneUI?.unmount(); }
     if (pageId === 'auction') window.MarketBoardUI?.open('sell');
     else if (pageId === 'buyorder') window.MarketBoardUI?.open('buy');
@@ -2002,6 +2004,7 @@ function renderProfile(data) {
         window.HAS_PARTY = !!data.user.canPartyQuest;
         setHeaderPoint(data.user.point);
         myGoods = { gold: Number(data.user.gold || 0), garnet: Number(data.user.garnet || 0) };
+        window.LevelRewardsUI?.observe(data.user.levelRewards, () => activatePage('레벨보상'));
     }
     $('#profileName').textContent = data.user.name;
     const pTitle = $('#profileTitle');
@@ -4815,111 +4818,6 @@ async function loadEquipmentSynthesis() {
 window.addEventListener('scroll', updateEquipmentSynthesisDockVisibility, { passive: true });
 window.addEventListener('resize', updateEquipmentSynthesisDockVisibility, { passive: true });
 equipmentSynthesisMobileQuery.addEventListener('change', updateEquipmentSynthesisDockVisibility);
-
-// ===== 레벨 보상 =====
-
-function openLevelRewardModal(r) {
-    $('#modalTitle').textContent = 'Lv.' + r.level + ' 달성 보상';
-    $('#modalSub').textContent = r.claimed ? '수령 완료' : r.unlocked ? '수령 가능' : 'Lv.' + r.level + ' 달성 시 수령 가능';
-    $('#modalSub').style.display = '';
-    const body = el('div', { class: 'lvreward-modal-body' });
-    r.items.forEach(item => {
-        const row = el('div', { class: 'lvreward-modal-row' });
-        if (item.iconUrl || item.frameUrl) {
-            const thumb = el('div', { class: 'lvreward-thumb' });
-            if (item.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: item.frameUrl, alt: '' }));
-            if (item.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: item.iconUrl, alt: item.name }));
-            row.appendChild(thumb);
-        }
-        row.appendChild(el('span', { class: 'lvreward-modal-name' }, item.name));
-        row.appendChild(el('span', { class: 'lvreward-modal-count' }, 'x' + item.count));
-        body.appendChild(row);
-    });
-    if (r.garnet) {
-        const row = el('div', { class: 'lvreward-modal-row' });
-        if (r.garnetIconUrl) {
-            const thumb = el('div', { class: 'lvreward-thumb' });
-            thumb.appendChild(el('img', { class: 'auc-item-img', src: r.garnetIconUrl, alt: '가넷', style: 'width:100%;height:100%' }));
-            row.appendChild(thumb);
-        }
-        row.appendChild(el('span', { class: 'lvreward-modal-name' }, '가넷'));
-        row.appendChild(el('span', { class: 'lvreward-modal-count' }, r.garnet.toLocaleString()));
-        body.appendChild(row);
-    }
-    $('#modalBody').replaceChildren(body);
-    $('#modalBg').classList.add('active');
-}
-
-async function loadLevelRewards() {
-    const list = $('#levelRewardList');
-    if (!list) return;
-    try {
-        const data = await api('/api/levelrewards');
-        renderLevelRewardList(data.list || [], data.userLevel || 1);
-    } catch (e) {
-        list.replaceChildren(el('div', { class: 'empty err' }, e.message));
-    }
-}
-
-function renderLevelRewardList(rewards, userLevel) {
-    const list = $('#levelRewardList');
-    if (!list) return;
-    list.replaceChildren(...rewards.map(r => {
-        const row = el('div', { class: 'lvreward-row' + (r.claimed ? ' claimed' : ''), style: 'cursor:pointer', onclick: () => openLevelRewardModal(r) });
-
-        const itemsEl = el('div', { class: 'lvreward-items' });
-        r.items.forEach(item => {
-            const wrap = el('div', { class: 'lvreward-icon-wrap' });
-            if (item.iconUrl || item.frameUrl) {
-                const thumb = el('div', { class: 'lvreward-thumb' });
-                if (item.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: item.frameUrl, alt: '' }));
-                if (item.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: item.iconUrl, alt: item.name }));
-                wrap.appendChild(thumb);
-            } else {
-                wrap.appendChild(el('div', { class: 'lvreward-thumb-fallback' }, item.name));
-            }
-            wrap.appendChild(el('div', { class: 'lvreward-icon-count' }, 'x' + item.count));
-            itemsEl.appendChild(wrap);
-        });
-        if (r.garnet) {
-            const gWrap = el('div', { class: 'lvreward-icon-wrap' });
-            const gThumb = el('div', { class: 'lvreward-garnet' });
-            if (r.garnetIconUrl) gThumb.appendChild(el('img', { src: r.garnetIconUrl, alt: '가넷' }));
-            gWrap.appendChild(gThumb);
-            gWrap.appendChild(el('div', { class: 'lvreward-icon-count' }, r.garnet.toLocaleString()));
-            itemsEl.appendChild(gWrap);
-        }
-
-        const right = el('div', { class: 'lvreward-right' });
-        const labelClass = (r.claimed || !r.unlocked) ? 'lvreward-label gray' : 'lvreward-label';
-        right.appendChild(el('div', { class: labelClass }, 'Lv.' + r.level + ' 달성보상'));
-        if (r.claimed) {
-            right.appendChild(el('button', { class: 'lvreward-btn done', disabled: true }, '수령 완료'));
-        } else if (r.unlocked) {
-            const btn = el('button', { class: 'lvreward-btn claim' }, '보상받기');
-            btn.onclick = async (e) => {
-                e.stopPropagation();
-                btn.disabled = true;
-                try {
-                    const result = await postApi('/api/levelreward', { level: r.level });
-                    if (result.profile) renderProfile(result.profile);
-                    if (result.discardedCards) showAlert('카드 인벤토리 공간 부족으로 캐릭터 카드 ' + comma(result.discardedCards) + '장을 버렸습니다.');
-                    await loadLevelRewards();
-                } catch (e) {
-                    showAlert(e.message);
-                    btn.disabled = false;
-                }
-            };
-            right.appendChild(btn);
-        } else {
-            right.appendChild(el('button', { class: 'lvreward-btn locked', disabled: true }, 'Lv.' + r.level + ' 필요'));
-        }
-
-        row.appendChild(itemsEl);
-        row.appendChild(right);
-        return row;
-    }));
-}
 
 // ===== 상점 =====
 

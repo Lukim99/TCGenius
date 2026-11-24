@@ -181,19 +181,19 @@ const ITEM_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'itemImage');
 
 const LEVEL_REWARDS = [
     { level: 10,  items: [['황금 주머니', 5], ['5성 카드팩', 3], ['레어 장비 상자', 3]] },
-    { level: 20,  items: [['황금 주머니', 5], ['6성 카드팩', 1], ['하급 고유의 보석', 1]] },
-    { level: 30,  items: [['황금 주머니', 5], ['6성 카드팩', 2], ['6성 보호 카드', 1]] },
+    { level: 20,  items: [['황금 주머니', 5], ['6성 카드팩', 1], ['하급 고유의 보석', 1], ['유니크 장비 상자', 1]] },
+    { level: 30,  items: [['황금 주머니', 5], ['6성 카드팩', 2], ['6성 보호 카드', 1], ['유니크 장비 상자', 1]] },
     { level: 40,  items: [['황금 주머니', 5], ['7성 카드팩', 1], ['유니크 장비 상자', 1]] },
-    { level: 50,  items: [['황금 주머니', 5], ['7성 카드팩', 1], ['장비 보호권', 1]] },
-    { level: 60,  items: [['황금 주머니', 5], ['7성 카드팩', 1], ['7성 보호 카드', 1]] },
-    { level: 70,  items: [['황금 주머니', 5], ['8성 카드팩', 1], ['패션 적용권', 1]] },
-    { level: 80,  items: [['황금 주머니', 5], ['8성 카드팩', 1], ['지니어스의 열쇠', 30]] },
-    { level: 90,  items: [['황금 주머니', 5], ['8성 카드팩', 1], ['8성 보호 카드', 1]] },
-    { level: 100, items: [['황금 주머니', 10], ['9성 카드팩', 1], ['캐릭터 변환석', 5]] },
-    { level: 110, items: [['황금 주머니', 10], ['고유의 보석', 1], ['장비 보호권', 1]] },
-    { level: 120, items: [['황금 주머니', 10], ['딜러 지렁이', 200], ['패션 상자', 10]] },
-    { level: 130, items: [['황금 주머니', 10], ['익명 지렁이', 200], ['지니어스의 열쇠', 30]] },
-    { level: 140, items: [['황금 주머니', 10], ['6성 카드팩', 5], ['쥬얼', 20]] },
+    { level: 50,  items: [['황금 주머니', 5], ['7성 카드팩', 1], ['장비 보호권', 1], ['유니크 장비 상자', 1]] },
+    { level: 60,  items: [['황금 주머니', 5], ['7성 카드팩', 1], ['7성 보호 카드', 1], ['유니크 장비 상자', 1]] },
+    { level: 70,  items: [['황금 주머니', 5], ['8성 카드팩', 1], ['패션 적용권', 1], ['유니크 장비 상자', 1]] },
+    { level: 80,  items: [['황금 주머니', 5], ['8성 카드팩', 1], ['지니어스의 열쇠', 30], ['유니크 장비 상자', 1]] },
+    { level: 90,  items: [['황금 주머니', 5], ['8성 카드팩', 1], ['8성 보호 카드', 1], ['유니크 장비 상자', 1]] },
+    { level: 100, items: [['황금 주머니', 10], ['9성 카드팩', 1], ['캐릭터 변환석', 5], ['유니크 장비 상자', 1]] },
+    { level: 110, items: [['황금 주머니', 10], ['고유의 보석', 1], ['장비 보호권', 1], ['유니크 장비 상자', 1]] },
+    { level: 120, items: [['황금 주머니', 10], ['딜러 지렁이', 200], ['아바타 상자', 1], ['유니크 장비 상자', 1]] },
+    { level: 130, items: [['황금 주머니', 10], ['익명 지렁이', 200], ['지니어스의 열쇠', 30], ['유니크 장비 상자', 1]] },
+    { level: 140, items: [['황금 주머니', 10], ['6성 카드팩', 5], ['쥬얼', 20], ['헬 초대장', 300]] },
     { level: 150, items: [['황금 주머니', 15], ['9성 카드팩', 1], ['9성 보호 카드', 1]] },
     { level: 160, items: [['황금 주머니', 15], ['7성 카드팩', 3], ['장비 보호권', 1]] },
     { level: 170, items: [['황금 주머니', 15], ['7성 카드팩', 5], ['전직 캐릭터 변환석', 3]] },
@@ -2078,6 +2078,17 @@ server.post('/api/jobcombine', requireUser, async (req, res) => {
     }
 });
 
+function buildLevelRewardStatus(user) {
+    const claimed = new Set(user.claimedLevelRewards || []);
+    return { characterId: user.id, available: LEVEL_REWARDS.filter(r => r.level <= user.level && !claimed.has(r.level)).map(r => r.level) };
+}
+
+function buildLevelRewardReceipt(receipt) {
+    if (!receipt) return null;
+    return { level: receipt.level, rewards: buildRewardSummaryDisplay(receipt.summary).filter(r => r.type !== 'discardedCard'),
+        discardedCards: Number(receipt.summary.discardedCard?.count || 0) };
+}
+
 server.get('/api/levelrewards', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -2098,7 +2109,7 @@ server.get('/api/levelrewards', requireUser, async (req, res) => {
                 return { name, count, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl };
             }),
         }));
-        res.json({ list, userLevel });
+        res.json({ list, userLevel, status: buildLevelRewardStatus(user), receipt: buildLevelRewardReceipt(user.levelRewardReceipt) });
     } catch (e) {
         console.error('levelrewards error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -2115,20 +2126,33 @@ server.post('/api/levelreward', requireUser, async (req, res) => {
         const userLevel = Number(user.level || 1);
         if (userLevel < level) return res.status(400).json({ error: '레벨이 부족합니다.' });
         if (!Array.isArray(user.claimedLevelRewards)) user.claimedLevelRewards = [];
-        if (user.claimedLevelRewards.includes(level)) return res.status(400).json({ error: '이미 수령한 보상입니다.' });
-        const allItems = rpgenius.getDataCache('Item', []);
-        const granted = [];
-        for (const [name, count] of reward.items) {
-            const itemId = allItems.findIndex(it => it && it.name === name);
-            if (itemId !== -1) granted.push(rpgenius.grantItemReward(user, itemId, count));
+        if (user.claimedLevelRewards.includes(level)) {
+            if (user.levelRewardReceipt?.level !== level) return res.status(400).json({ error: '이미 수령한 보상입니다.' });
+            // A lost response can be retried without granting anything twice. Flush a pending save before acknowledging it.
+            const saved = await user.save();
+            if (!saved.success) throw new Error('레벨 보상 저장 실패');
+            return res.json({ ok: true, profile: buildUserProfile(user), ...buildLevelRewardReceipt(user.levelRewardReceipt) });
         }
-        if (reward.garnet) user.garnet = Number(user.garnet || 0) + reward.garnet;
+        const allItems = rpgenius.getDataCache('Item', []);
+        const entries = reward.items.map(([name, count]) => ({ itemId: allItems.findIndex(it => it && it.name === name), count }));
+        if (entries.some(entry => entry.itemId < 0)) return res.status(503).json({ error: '보상 정보를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.' });
+        const summary = {};
+        for (const { itemId, count } of entries) {
+            rpgenius.grantItemReward(user, itemId, count, summary);
+        }
+        if (reward.garnet) {
+            user.garnet = Number(user.garnet || 0) + reward.garnet;
+            summary.garnet = { label: '가넷', count: reward.garnet };
+        }
         user.claimedLevelRewards.push(level);
-        await user.save();
-        res.json({ ok: true, profile: buildUserProfile(user), discardedCards: granted.reduce((sum, result) => sum + result.discarded, 0) });
+        // Keep only the latest receipt, atomically with the inventory and claimed level.
+        user.levelRewardReceipt = { level, summary };
+        const saved = await user.save();
+        if (!saved.success) throw new Error('레벨 보상 저장 실패');
+        res.json({ ok: true, profile: buildUserProfile(user), ...buildLevelRewardReceipt(user.levelRewardReceipt) });
     } catch (e) {
         console.error('levelreward claim error:', e);
-        res.status(500).json({ error: '서버 오류' });
+        res.status(500).json({ error: '보상 저장을 확인하지 못했습니다. 같은 보상을 다시 시도해주세요.' });
     }
 });
 
@@ -6359,6 +6383,7 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
+    if (item.name === '아바타 상자') return getItemImageUrl(String(item.type), '아바타 상자.png') || getItemImageUrl(String(item.type), '패션 상자.png');
     if (item.use === '전직프레스티지') return getItemImageUrl(String(item.type), '전직 프레스티지 증표.png');
     if (['제타 각성 캐릭터 변환석', '시그마 각성 캐릭터 변환석'].includes(item.name)) return getItemImageUrl('사용', '각성 캐릭터 변환석.png');
     const paradiseRewardIcons = { '천상의 회랑 입장권': 'ticket', '천상의 증표': 'heaven-token', '지옥 열쇠': 'hell-key', '화려한 지옥 열쇠': 'hell-key-ornate', '찬란한 지옥 열쇠': 'hell-key-radiant' };
@@ -9626,6 +9651,7 @@ function buildUserProfile(user) {
             isAdmin: !!user.isAdmin,
             canPartyQuest: partyquest.canOpenPartyQuest(user),
             maxAccessory: Number(user.maxAccessory || 3),
+            levelRewards: buildLevelRewardStatus(user),
             title: buildTitleDisplay(user)
         },
         combatPower: cp,
@@ -9907,7 +9933,7 @@ function renderUserDashboard(sess, opts) {
     </section>
   </div>
   <div class="page" data-page="레벨보상">
-    <section class="panel"><h2>레벨 달성 보상</h2><div id="levelRewardList" class="lvreward-list"></div></section>
+    <div id="levelRewardRoot"></div>
   </div>
   <div class="page" data-page="퀘스트">
     <section class="quest-board" aria-labelledby="questBoardTitle">
@@ -9975,6 +10001,8 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/unique-avatar-ui.js"></script>
 <link rel="stylesheet" href="/static/dispatch.css">
 <script src="/static/dispatch.js"></script>
+<link rel="stylesheet" href="/static/level-rewards.css">
+<script src="/static/level-rewards.js"></script>
 <link rel="stylesheet" href="/static/dex-scene.css">
 <link rel="stylesheet" href="/static/dex-catalogs.css">
 <link rel="stylesheet" href="/static/dex-passives.css">
