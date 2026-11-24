@@ -5,7 +5,7 @@
 // 화면에 필요한 값은 public/account-stage.js가 API에서 받아 textContent로만 그린다.
 // 장면(하늘, 문, 호수, 캐릭터)은 WebGL 캔버스가 그리고, 여기 있는 단추와 글자는 그 위에 얹는 게임 HUD다.
 
-const VERSION = '20261123m13';
+const VERSION = '20261124nickname';
 const CSS = '/static/account-stage.css?v=' + VERSION;
 const JS = '/static/account-stage.js?v=' + VERSION;
 const ART = '/static/assets/account-stage/';
@@ -22,6 +22,8 @@ function head(title, fonts, transfer = false) {
 ${fonts.map(href => `<link rel="preload" href="${href}" as="font" type="font/woff2" crossorigin>`).join('')}
 <link rel="stylesheet" href="${CSS}">
 <link rel="stylesheet" href="/static/game-font.css?v=20261123">
+<link rel="stylesheet" href="/static/nickname-colors.css">
+<script src="/static/nickname-colors.js"></script>
 ${transfer ? '<link rel="stylesheet" href="/static/account-transfer.css?v=' + VERSION + '">' : ''}
 </head>`;
 }
@@ -104,6 +106,7 @@ function renderCharacterSelection() {
   <footer class="as-dock" id="asDock">
     <div class="as-dock-actions">
       <button type="button" class="as-btn" id="asRename" disabled>이름 변경</button>
+      <button type="button" class="as-btn" id="asNicknameColor" hidden>닉네임 색상</button>
       <button type="button" class="as-btn" id="asTransfer" disabled>물품 이전</button>
       <button type="button" class="as-btn" id="asLinks" disabled>슬롯 연결</button>
     </div>

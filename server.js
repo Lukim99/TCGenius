@@ -409,7 +409,8 @@ server.use(async (req, res, next) => {
         const send = res.send;
         res.send = function(body) {
             if (typeof body === 'string' && body.includes('</head>')) {
-                body = body.replace('</head>', '<script src="/static/character-session.js" data-character-id="' + escapeHtml(user.id) + '"></script></head>');
+                const nicknameAssets = body.includes('/static/nickname-colors.js') ? '' : '<link rel="stylesheet" href="/static/nickname-colors.css"><script src="/static/nickname-colors.js"></script>';
+                body = body.replace('</head>', '<script src="/static/character-session.js" data-character-id="' + escapeHtml(user.id) + '"></script>' + nicknameAssets + '</head>');
             }
             return send.call(this, body);
         };
@@ -6311,7 +6312,7 @@ function getCardImageUrl(card, user, square = false, characterData) {
     const data = characterData || (card && readJson(CHARACTER_CARDS_PATH, [])[card.id]);
     if (!data) return null;
     const type = ['전직', '각성'].includes(card.type) ? card.type : '일반';
-    const prestige = type === '전직' ? (user && user.jobPrestige === true) : (user && user.prestige === true);
+    const prestige = type === '일반' && user && user.prestige === true;
     const spec = {
         name: data.name,
         star: Number(card.star || 0),
@@ -6358,6 +6359,7 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
+    if (item.use === '전직프레스티지') return getItemImageUrl(String(item.type), '전직 프레스티지 증표.png');
     if (['제타 각성 캐릭터 변환석', '시그마 각성 캐릭터 변환석'].includes(item.name)) return getItemImageUrl('사용', '각성 캐릭터 변환석.png');
     const paradiseRewardIcons = { '천상의 회랑 입장권': 'ticket', '천상의 증표': 'heaven-token', '지옥 열쇠': 'hell-key', '화려한 지옥 열쇠': 'hell-key-ornate', '찬란한 지옥 열쇠': 'hell-key-radiant' };
     if (paradiseRewardIcons[item.name]) {
@@ -7718,7 +7720,7 @@ function buildItemUsageFacts(item) {
         '만능캐릭터변환': ['적용 대상', '등급과 전직 여부에 관계없이 캐릭터 카드를 무작위 변환'],
         '전직캐릭터변환': ['적용 대상', '전직 캐릭터 카드를 다른 전직 캐릭터로 무작위 변환'],
         '각성캐릭터변환': ['적용 대상', '각성 상태와 등급을 유지하고 다른 각성 캐릭터로 무작위 변환'],
-        '전직프레스티지': ['사용 효과', '제타 이상 전직 카드에 프레스티지 표시 및 영구 효과 적용'],
+        '전직프레스티지': ['사용 효과', '계정의 모든 캐릭터가 닉네임 색을 자유롭게 변경할 수 있습니다. 골드 획득량 +5%가 영구 적용됩니다.'],
         '스탯초기화': ['사용 효과', '투자한 스탯포인트를 모두 회수'],
         '장신구선택권': ['사용 효과', (item.rarity || '지정 등급') + ' 장신구 중 하나를 선택해 획득'],
         '보조장비리롤': ['적용 대상', '보유한 보조 장비의 스탯을 재설정'],
@@ -7905,7 +7907,7 @@ function buildItemUseEffectResult(before, user) {
     });
     if (after.statPoint !== before.statPoint) result.statPoint = { before: before.statPoint, after: after.statPoint };
     if (after.prestige && !before.prestige) result.notes.push({ title: '프레스티지 적용', text: '계정에 프레스티지 효과가 적용되었습니다.' });
-    if (after.jobPrestige && !before.jobPrestige) result.notes.push({ title: '전직 프레스티지 적용', text: '골드 획득량 +5%' });
+    if (after.jobPrestige && !before.jobPrestige) result.notes.push({ title: '닉네임 색깔 변경 권한 획득', text: '계정 메뉴에서 색상 변경 가능. 골드 획득량 +5%' });
     if (after.bait !== before.bait) result.bait = { before: before.bait, after: after.bait };
     return result;
 }

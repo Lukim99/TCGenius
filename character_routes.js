@@ -60,7 +60,7 @@ function registerCharacterRoutes(server, deps) {
     function summary(user, account) {
         const data = cards()[user.main_card?.id];
         const display = data ? { ...data, ...user.main_card } : null;
-        return { id: user.id, name: user.name, level: Number(user.level || 1), characterName: data?.name || '',
+        return { id: user.id, name: user.name, nicknameColor: user.nicknameColor || null, level: Number(user.level || 1), characterName: data?.name || '',
             type: user.main_card?.type || '일반', power: rpg.calculateTownCombatPower(user).total,
             cardLabel: data ? rpg.formatUserCard(user.main_card) : '',
             imageUrl: sprite(display), renameTickets: count(user, '닉네임 변경권'), expandTickets: count(user, '캐릭터 슬롯 확장권'),
@@ -94,7 +94,7 @@ function registerCharacterRoutes(server, deps) {
             const user = req.accountUser, account = store().accountFor(user);
             const members = await Promise.all(account.characterIds.map(id => member(account, id)));
             const skillData = skills();
-            res.json({ accountName: account.name, activeId: account.activeCharacterId, capacity: account.capacity,
+            res.json({ accountName: account.name, activeId: account.activeCharacterId, capacity: account.capacity, canChangeNicknameColor: account.jobPrestige === true,
                 slotCost: 800, renameCost: 300, renameTickets: count(user, '닉네임 변경권'),
                 itemIcons: Object.fromEntries(['닉네임 변경권', '캐릭터 슬롯 확장권'].map(name => [name, itemIcon({ name, type: '티켓' })])),
                 wallet: { gold: user.gold, garnet: user.garnet, point: user.point }, goldCap: rpg.getAccountGoldState(user),
@@ -113,6 +113,32 @@ function registerCharacterRoutes(server, deps) {
                 }).filter(Boolean),
                 transferItems: { card: count(user, ticketName('card')), equipment: count(user, ticketName('equipment')) } });
         } catch (error) { next(error); }
+    });
+
+    // 색 목록은 이미 적재된 사용자 캐시에서 읽는다. 화면 갱신마다 DB를 조회하지 않는다.
+    server.get('/api/characters/nickname-colors', requireAccount, (req, res) => {
+        res.set('Cache-Control', 'private, no-cache');
+        res.json(rpg.getNicknameColors());
+    });
+
+    server.post('/api/characters/nickname-color', requireAccount, async (req, res) => {
+        try {
+            const color = req.body?.color;
+            if (color !== null && (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color))) fail('색상은 #RRGGBB 형식으로 선택해주세요.');
+            await rpg.enqueueFieldAction(req.accountUser, async () => {
+                const current = await rpg.getUserByPrimaryId(req.accountUser.id);
+                const account = store().accountFor(current);
+                if (account.jobPrestige !== true) fail('닉네임 색깔 변경권을 먼저 사용해주세요.', 403);
+                const user = await member(account, req.body.id);
+                user.nicknameColor = color === null ? null : color.toUpperCase();
+                // 전투 중에도 바꿀 수 있는 외형 설정이다. 변경할 필드를 색상으로 한정한다.
+                await store().commit([user], { keys: ['nicknameColor'] });
+                res.json({ ok: true, id: user.id, name: user.name, color: user.nicknameColor });
+            });
+        } catch (error) {
+            if (!error.status) console.error('nickname color', error);
+            res.status(error.status || 500).json({ error: error.status ? error.message : '색상을 저장하지 못했습니다. 다시 시도해주세요.' });
+        }
     });
 
     function action(path, task) {

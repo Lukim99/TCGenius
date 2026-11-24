@@ -119,6 +119,25 @@ test('기본 골드만 한도에 적립하고 메인 레벨과 추가 골드 보
     user.field = null; await rpg.getCharacterStore().commit([user]);
 });
 
+test('레벨 보정 후 기본 골드는 반올림해 한도에 적립하고 한도 전 실제 지급액은 유지한다', async () => {
+    const user = await rpg.getUserByPrimaryId(sandbox.account.id);
+    user.level = 200; user.main_card = { id: 0, type: '일반', star: 4 }; user.slotCharacterLinks = []; user.card_slot = [];
+    user.equipments = {}; user.battleCryPotion = null; user.goldPotion = null; user.jobPrestige = false;
+    const original = require('../DB/RPGenius/Dungeon.json')[0];
+    const dungeon = { ...original, requireLevel: 196, reward: { ...original.reward, exp: 0, gold: { min: 1005, max: 1005 } } };
+    const cap = rpg.getAccountGoldState(user);
+    for (const [used, expectedUsed, expectedGold] of [[0, 1106, 1879], [100.10000000003, 1206, 1879], [cap.limit - 553, cap.limit, 940], [cap.limit, cap.limit, 0]]) {
+        user.huntingGold = { date: cap.date, used }; user.hp = user.mp = 1000000;
+        user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: null };
+        const gold = user.gold;
+        await rpg.buildHuntResult(user, dungeon, dungeon.hp, { isBasic: true, goldBonus: .5 });
+        assert.equal(user.huntingGold.used, expectedUsed);
+        assert.equal(user.gold - gold, expectedGold);
+        user.field = null; await rpg.getCharacterStore().commit([user]);
+        assert.equal(rpg.getAccountGoldState(await rpg.getUserByPrimaryId(altId)).used, expectedUsed);
+    }
+});
+
 test('아티팩트 슬롯 조건은 연결 부캐로 판정하며 상세 표시와 실제 발현 효과가 일치한다', async () => {
     const alt = await rpg.getUserByPrimaryId(altId);
     alt.main_card = { id: 1, type: '각성', star: 8 }; await rpg.getCharacterStore().commit([alt]);

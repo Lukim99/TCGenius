@@ -155,7 +155,9 @@
     function report(run) {
         const destination = destinationOf(run.destination), active = run.status === 'active';
         const box = el('section', 'dispatch-report ' + (active ? 'is-active' : 'is-complete') + (!active && fresh ? ' is-fresh' : '')), copy = el('div', 'dispatch-report-copy');
-        copy.append(el('p', 'dispatch-eyebrow', state.characterName + (active ? ' 파견 중' : ' 귀환')), el('h2', '', destination.name));
+        const owner = el('p', 'dispatch-eyebrow');
+        owner.append(window.NicknameColors.mark(el('span', '', state.characterName), state.characterName), active ? ' 파견 중' : ' 귀환');
+        copy.append(owner, el('h2', '', destination.name));
         if (run.floor) copy.append(el('p', 'dispatch-floor', '천상 ' + fmt(run.floor) + '층'));
         if (active) {
             copy.append(el('strong', 'dispatch-clock', time(run.endsAt - now())),
@@ -234,7 +236,7 @@
             const layer = el('div', 'dispatch-cine ' + kind); layer.dataset.realm = run.destination;
             const marker = el('img', 'dispatch-cine-marker'); marker.src = STAGE + 'marker.webp'; marker.alt = '';
             const caption = el('div', 'dispatch-cine-caption');
-            caption.append(el('span', '', state.characterName), el('strong', '', destination.name), el('em', '', kind === 'depart' ? '출발' : '귀환'));
+            caption.append(window.NicknameColors.mark(el('span', '', state.characterName), state.characterName), el('strong', '', destination.name), el('em', '', kind === 'depart' ? '출발' : '귀환'));
             layer.append(el('i', 'dispatch-cine-veil'), el('i', 'dispatch-cine-sigil'), marker, caption, el('span', 'dispatch-cine-skip', '눌러서 건너뛰기'));
             let done = false;
             const finish = () => {

@@ -94,7 +94,7 @@
         const fs = hh - (mobile ? 8 : 10); K.face(player, x + p, y + (hh - fs) / 2 + 4, fs, color);
         const tx = x + p + fs + 10;
         K.text(mine ? '내가 줄 것' : '내가 받을 것', tx, y + hh * .36 + 2, 12, color, 'left', 800);
-        K.line((player?.name || state.session.partnerName) + (player?.level ? '  Lv.' + player.level : ''), tx, y + hh * .7 + 2, w * .4, mobile ? 14 : 16, K.INK, 'left', 800, 11);
+        K.line((player?.name || state.session.partnerName) + (player?.level ? '  Lv.' + player.level : ''), tx, y + hh * .7 + 2, w * .4, mobile ? 14 : 16, K.INK, 'left', 800, 11, player?.name || state.session.partnerName);
         const addW = mine ? (mobile ? 44 : 150) : 0, stW = 86;
         const sx = x + w - p - addW - (addW ? 8 : 0) - stW;
         K.plate(sx, y + (hh - 30) / 2 + 4, stW, 30, 7, { a: .9, edge: .6, tint: confirmed ? K.GOOD : K.MUTE, tintA: confirmed ? .3 : .05 });
@@ -203,7 +203,7 @@
         const card = player?.mainCard;
         if (card) { const info = MS.identify(card, 'card'); A.art(info.art, x + 6, y + 6, w - 12, h - 12, { fx: info.fx, big: true }); if (info.ribbon) K.ribbon(info.ribbon.text, x + w - 4, y + 10, info.ribbon.color); }
         K.plate(x + 8, y + h - 34, w - 16, 28, 6, { a: .9, edge: .6, tint: color, tintA: .25 });
-        K.line((player?.name || label) + (player?.level ? '  Lv.' + player.level : ''), x + w / 2, y + h - 19.5, w - 28, 13, K.INK, 'center', 800, 9);
+        K.line((player?.name || label) + (player?.level ? '  Lv.' + player.level : ''), x + w / 2, y + h - 19.5, w - 28, 13, K.INK, 'center', 800, 9, player?.name);
         if (card) A.hit('portrait', label, x, y, w, h, (player?.name || label) + ' 대표 카드 ' + card.formatted, true);
     }
     // 신청 대기, 신청 도착

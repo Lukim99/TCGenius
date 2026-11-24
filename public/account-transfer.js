@@ -323,6 +323,7 @@
     }
     function row(dl, k, v, s) {
       var d = h('div', 'tr-row'), dd = h('dd', '', v);
+      if (k === '보내는 이' || k === '받는 이') dd.replaceChildren(window.NicknameColors.mark(h('span', '', v), v));
       if (k === '카드') cardText(dd, v);
       if (s) dd.appendChild(cardText(h('span', 'tr-row-sub'), s));
       add(dl, add(d, h('dt', '', k), dd));

@@ -187,7 +187,7 @@ function resolveCardLayers(card) {
         const border = firstExisting(path.join(ICON_DIR, '프레임'), [kind + ' ' + (greek || s + '성') + ' 프레임.png']);
         return character && border ? { background: null, character, border } : null;
     }
-    const prestige = !isAwakening && card.prestige === true && !!greek; // 프레스티지 프레임/아트는 제타+ 전용
+    const prestige = !isAwakening && !isJob && card.prestige === true && !!greek; // 일반 프레스티지만 유지한다.
 
     // 아바타는 카드 유형과 무관하게 장착할 수 있다. 기본 외형보다 모든 아바타 레이어를 먼저 찾는다.
     const tiers = isAwakening ? ['각성'] : isJob
@@ -203,7 +203,7 @@ function resolveCardLayers(card) {
     const character = firstExisting(path.join(CHARACTER_DIR, card.name), artNames);
     if (!character) return null;
 
-    // 프레임 (배경 필수, 테두리는 있으면 사용 — 전직 프레스티지는 테두리 없이 배경에 통합돼 있음)
+    // 프레임 (배경 필수, 테두리는 있으면 사용)
     const frameKind = isAwakening ? '각성카드' : isJob ? '전직카드' : '일반카드';
     const frameDir = path.join(FRAME_DIR, frameKind);
     let bgLabel, borderLabel;

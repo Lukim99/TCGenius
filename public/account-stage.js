@@ -1649,7 +1649,9 @@
             const state = assigned ? '슬롯 ' + (assigned.index + 1) + ' 연결됨' : option.error ? '연결 불가' : '연결 가능';
             button.setAttribute('aria-label', option.cardLabel + ', ' + option.name + ', ' + state);
             const words = el('span', 'as-link-option-name');
-            words.append(cardLabel(option.cardLabel), el('small', 'as-link-owner', option.name + ' Lv.' + fmt(option.level)));
+            const owner = el('small', 'as-link-owner');
+            owner.append(window.NicknameColors.mark(el('span', '', option.name), option.name), ' Lv.' + fmt(option.level));
+            words.append(cardLabel(option.cardLabel), owner);
             button.append(el('span', 'as-link-state' + (assigned ? ' is-linked' : ''), state), portrait(option.imageUrl, 'as-link-option-art'), words);
             button.addEventListener('click', () => { if (handle.isBusy()) return; chosenId = option.id; paintSlots(); paintCommand(); });
             candidates.appendChild(button);
@@ -1728,6 +1730,7 @@
     }
     function paint(fresh) {
       const list = characters();
+      $('asNicknameColor').hidden = !data.canChangeNicknameColor;
       $('asAccount').textContent = data.accountName || '';
       $('asCount').textContent = list.length + ' / ' + Math.max(Number(data.capacity) || 0, list.length);
       paintWallet(); paintRoster(fresh); paintDock();
@@ -1773,6 +1776,7 @@
 
     startButton.addEventListener('click', start);
     renameButton.addEventListener('click', openRename);
+    $('asNicknameColor').addEventListener('click', () => window.NicknameColors.openEditor(selected()));
     transferButton.addEventListener('click', openTransfer);
     linksButton.addEventListener('click', openLinks);
     $('asCap').addEventListener('click', openCap);

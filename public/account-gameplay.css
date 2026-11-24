@@ -26,7 +26,7 @@ header .bar > #pointPill,header .bar > #who,header .bar > #otpBtn,header .bar > 
   padding:16px;border:1px solid var(--border-strong,#3a404c);border-radius:var(--radius,10px);background:var(--panel,#181b21);color:var(--text,#eceef2);
   box-shadow:0 20px 60px rgba(0,0,0,.55);font-size:14px;line-height:1.45;word-break:keep-all;
 }
-.ag-panel[hidden]{display:none}
+.ag-panel[hidden],.ag-item[hidden]{display:none}
 .ag-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
 .ag-badge{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--panel-2,#14161b);border:1px solid var(--border,#2a2e37);color:var(--text-2,#9aa3b2)}
 .ag-names{flex:1;min-width:0;display:flex;flex-direction:column}

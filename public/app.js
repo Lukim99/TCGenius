@@ -406,7 +406,7 @@ function webChatMessageNode(message) {
         }, '전체보기'));
     }
     row.append(
-        el('div', { class: 'webchat-sender' }, own ? '' : ((message.sender && message.sender.name) || '알 수 없음')),
+        el('div', { class: 'webchat-sender', 'data-nickname': bot ? '' : message.sender?.name || '' }, own ? '' : ((message.sender && message.sender.name) || '알 수 없음')),
         el('div', { class: 'webchat-bubble-line' }, bubble, el('time', null, webChatTime(message.createdAt)))
     );
     return row;
@@ -5651,7 +5651,7 @@ function pvpRankingNode(d) {
         ...list.map(e => el('div', { class: 'rank-row' + (e.name === meName ? ' me' : '') },
             el('div', { class: 'rk ' + (e.rank === 1 ? 'gold' : e.rank === 2 ? 'silver' : e.rank === 3 ? 'bronze' : '') }, comma(e.rank) + '위'),
             el('div', { class: 'ttl' }, e.cardImageUrl ? el('img', { class: 'pvp-rank-card', src: e.cardImageUrl, alt: e.cardName || '' }) : null),
-            el('div', { class: 'nm' }, e.name, el('span', { class: 'lv' }, 'Lv. ' + comma(e.level))),
+            el('div', { class: 'nm' }, el('span', { 'data-nickname': e.name }, e.name), el('span', { class: 'lv' }, 'Lv. ' + comma(e.level))),
             el('div', { class: 'vl' }, comma(e.rating),
                 el('span', { class: 'pvp-rank-wl' }, comma(e.wins) + '승 ' + comma(e.losses) + '패'))))));
 }
@@ -5662,7 +5662,7 @@ function pvpHistoryNode(d) {
     return pvpSection('최근 전적', null, el('div', { class: 'pvp-hist' },
         ...list.map(h => el('div', { class: 'pvp-hist-row' },
             el('span', { class: 'pvp-role ' + (h.role === 'defense' ? 'def' : 'atk') }, h.role === 'defense' ? '방어' : '공격'),
-            el('b', { class: 'pvp-hist-name' }, h.opponent),
+            el('b', { class: 'pvp-hist-name', 'data-nickname': h.opponent }, h.opponent),
             el('span', { class: 'pvp-hist-result ' + (h.result === 'win' ? 'win' : 'lose') }, h.result === 'win' ? '승' : '패'),
             el('span', { class: 'pvp-hist-delta ' + (h.result === 'win' ? 'win' : 'lose') },
                 (h.result === 'win' ? '+' : '−') + comma(Math.abs(Number(h.ratingDelta || 0)))),
@@ -5764,7 +5764,7 @@ function rankRow(entry, isMe, valueFormatter) {
     return el('div', { class: 'rank-row ' + (isMe ? 'me' : ''), onclick: () => loadProfile(entry.name).catch(e => showAlert(e.message)) },
         el('div', { class: 'rk ' + rkClass }, medal),
         el('div', { class: 'ttl' }, rankTitleImg(entry.title)),
-        el('div', { class: 'nm' }, entry.name, el('span', { class: 'lv' }, 'Lv. ' + comma(entry.level))),
+        el('div', { class: 'nm' }, el('span', { 'data-nickname': entry.name }, entry.name), el('span', { class: 'lv' }, 'Lv. ' + comma(entry.level))),
         el('div', { class: 'vl' }, valueFormatter(entry.value))
     );
 }

@@ -13899,10 +13899,10 @@ async function useItem(user, itemName, countArg, options = {}) {
         if (item.use == '전직프레스티지') {
             if (user.jobPrestige === true) {
                 user.mileage = Number(user.mileage || 0) + 20000;
-                lines.push('- 이미 전직 프레스티지가 적용되어 Ⓜ️ 20,000 마일리지를 획득했습니다.');
+                lines.push('- 이미 닉네임 색깔 변경 권한이 있어 Ⓜ️ 20,000 마일리지를 획득했습니다.');
             } else {
                 user.jobPrestige = true;
-                lines.push('✨ 전직 프레스티지가 적용되었습니다.\n- 골드 획득량 +5%');
+                lines.push('✨ 닉네임 색깔 변경 권한을 획득했습니다.\n- 계정 메뉴에서 캐릭터마다 자유롭게 변경할 수 있습니다.\n- 골드 획득량 +5%');
             }
         }
         if (item.use == '전직캐릭터변환') {
@@ -16222,10 +16222,20 @@ async function ensureCharacterAccount(user) {
     });
 }
 
+function getNicknameColors() {
+    const colors = Object.create(null);
+    for (const { raw } of userCacheById.values()) {
+        if (raw.recordType === 'account' || !/^#[0-9a-f]{6}$/i.test(raw.nicknameColor || '')) continue;
+        const owner = raw.accountId ? userCacheById.get(raw.accountId)?.raw : raw;
+        if (owner?.jobPrestige === true) colors[raw.name] = raw.nicknameColor.toUpperCase();
+    }
+    return colors;
+}
+
 function getAccountGoldState(user) {
     const level = Math.max(Number(user.level || 1), ...getCharacterStore().members(user).map(member => Number(member.level || 1)));
     const date = getKoreanDateKey(new Date());
-    const used = user.huntingGold?.date === date ? Number(user.huntingGold.used || 0) : 0;
+    const used = user.huntingGold?.date === date ? Math.round(Number(user.huntingGold.used || 0)) : 0;
     const limit = characterAccounts.goldLimit(level);
     return { level, limit, used, remaining: Math.max(0, limit - used), date };
 }
@@ -16233,9 +16243,10 @@ function getAccountGoldState(user) {
 function capHuntingGold(user, base, boosted) {
     if (!user.accountId) return boosted;
     const state = getAccountGoldState(user);
-    const earned = Math.min(state.remaining, Math.max(0, base));
+    const roundedBase = Math.max(0, Math.round(base));
+    const earned = Math.min(state.remaining, roundedBase);
     user.huntingGold = { date: state.date, used: state.used + earned };
-    return base > 0 ? Math.round(boosted * earned / base) : 0;
+    return roundedBase > 0 ? Math.round(boosted * earned / roundedBase) : 0;
 }
 
 async function getRPGUserByCode(code) {
@@ -18108,7 +18119,7 @@ module.exports = {
     returnMailGifts,
     getLinkedCharacterLevelSum, getCharacterSlots, getCharacterSlotCards, getCardSlotEffectDefinitions, getCardSlotGradeBonus,
     isCharacterNameTaken, calculateTownCombatPower,
-    getCharacterStore, ensureCharacterAccount, getAccountUserByLogin, getAccountGoldState,
+    getCharacterStore, ensureCharacterAccount, getAccountUserByLogin, getAccountGoldState, getNicknameColors,
     flushPointUsageOutboxes, getPointUsageDeliveryStatus,
     isRuntimeReady,
     getEquippedEquipmentData,

@@ -108,10 +108,11 @@
             } else ctx.fillStyle = 'rgba(21,19,31,.88)';
             ctx.fill(); ctx.strokeStyle = gold ? '#f2cf7a' : 'rgba(217,164,65,.6)'; ctx.lineWidth = 1; ctx.stroke();
         }
-        function text(value, x, y, size = 14, color = IVORY, align = 'left', weight = 600) {
+        function text(value, x, y, size = 14, color = IVORY, align = 'left', weight = 600, nickname) {
             ctx.font = weight + ' ' + size + 'px Pretendard, sans-serif';
             ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle';
-            ctx.fillText(String(value), x, y);
+            const draw = () => ctx.fillText(String(value), x, y);
+            if (nickname && window.NicknameColors) window.NicknameColors.draw(ctx, nickname, draw); else draw();
         }
         function namePlate(name, detail, x, y, w) {
             panel(x, y, w, 61);
@@ -121,7 +122,7 @@
                 if (ctx.measureText(lines.at(-1) + char).width > w - 20) lines.push('');
                 lines[lines.length - 1] += char;
             }
-            lines.slice(0, 2).forEach((line, i) => text(line, x + w / 2, y + (lines.length > 1 ? 15 + i * 17 : 22), 16, IVORY, 'center', 700));
+            lines.slice(0, 2).forEach((line, i) => text(line, x + w / 2, y + (lines.length > 1 ? 15 + i * 17 : 22), 16, IVORY, 'center', 700, name));
             text(detail, x + w / 2, y + 48, 12, MUTED, 'center', 500);
         }
         function draw() {
@@ -139,7 +140,7 @@
             const ribbonY = narrow ? 113 : 111;
             text(count ? '상대 ' + (selectedIndex + 1) + ' / ' + count + (kinds[o?.kind] ? '   ' + kinds[o.kind] : '') : '매칭 가능한 상대가 없습니다.', width / 2, ribbonY, 14, '#7de2ef', 'center');
             if (narrow) {
-                namePlate('나', me.mainCard?.formatted || '카드 없음', 16, 306, 118);
+                namePlate(me.name || '나', me.mainCard?.formatted || '카드 없음', 16, 306, 118);
                 namePlate(o?.name || '상대 없음', o ? 'Lv.' + number(o.level) + '   레이팅 ' + number(o.rating) : '', width * .34, 339, width * .66 - 16);
             } else {
                 const plateW = Math.min(250, width * .29);

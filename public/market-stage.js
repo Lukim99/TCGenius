@@ -100,8 +100,8 @@
         const rgba = (hex, a) => { const n = parseInt(String(hex).slice(1), 16); return `rgba(${n >> 16},${n >> 8 & 255},${n & 255},${a})`; };
         const font = (sz, wt) => { C.font = `${wt || 600} ${sz}px ${FONT}`; };
         const tw = (s, sz, wt) => { font(sz, wt); return C.measureText(String(s)).width; };
-        const text = (s, x, y, sz, col, al, wt) => { font(sz, wt); C.fillStyle = col; C.textAlign = al || 'left'; C.textBaseline = 'middle'; C.fillText(String(s), x, y); };
-        const line = (s, x, y, w, sz, col, al, wt, min = 10) => { while (sz > min && tw(s, sz, wt) > w) sz--; text(s, x, y, sz, col, al, wt); return tw(s, sz, wt); };
+        const text = (s, x, y, sz, col, al, wt, nickname) => { font(sz, wt); C.fillStyle = col; C.textAlign = al || 'left'; C.textBaseline = 'middle'; const draw = () => C.fillText(String(s), x, y); if (nickname && window.NicknameColors) window.NicknameColors.draw(C, nickname, draw); else draw(); };
+        const line = (s, x, y, w, sz, col, al, wt, min = 10, nickname) => { while (sz > min && tw(s, sz, wt) > w) sz--; text(s, x, y, sz, col, al, wt, nickname); return tw(s, sz, wt); };
         function wrap(s, w, sz, wt) {
             font(sz, wt); const out = [];
             for (const para of String(s ?? '').split('\n')) {

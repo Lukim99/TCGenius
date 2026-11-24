@@ -535,7 +535,15 @@
             card.node.dataset.mine = hit ? '1' : '';
             const who = uniq.length ? uniq.map(x => x === me ? '나' : x).join(', ') : '';
             card.hint.hidden = !who;
-            setText(card.hint, (hit ? '◆ ' : '') + who);
+            if (card.hint.textContent !== (hit ? '◆ ' : '') + who) {
+                card.hint.replaceChildren(hit ? '◆ ' : '');
+                uniq.forEach((name, index) => {
+                    if (index) card.hint.append(', ');
+                    const nickname = node('span', '', name === me ? '나' : name);
+                    nickname.dataset.nickname = name;
+                    card.hint.append(nickname);
+                });
+            }
             return;
         }
         const ls = loc(card.id);
@@ -557,7 +565,11 @@
         card.who.hidden = !label || !list.length;
         if (card.who.hidden) { card.who.replaceChildren(); return; }
         card.who.replaceChildren(node('span', 'mr-who-k', label + ' ' + list.length),
-            ...list.map(n => node('span', 'mr-chip' + (n === me ? ' me' : ''), n === me ? n + ' (나)' : n)));
+            ...list.map(n => {
+                const chip = node('span', 'mr-chip' + (n === me ? ' me' : ''), n === me ? n + ' (나)' : n);
+                chip.dataset.nickname = n;
+                return chip;
+            }));
     }
 
     // ===== 상단 (난이도·형태·전환) =====

@@ -445,7 +445,7 @@
         }
         resize(){const dpr=Math.min(2,devicePixelRatio||1),w=Math.round(innerWidth*dpr),h=Math.round(innerHeight*dpr);if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;this.canvas.style.width=innerWidth+'px';this.canvas.style.height=innerHeight+'px';}this.ctx.setTransform(dpr,0,0,dpr,0,0);return{w:innerWidth,h:innerHeight};}
         image(url){if(!url)return null;if(!this.images.has(url)){const img=new Image();img.decoding='async';img.src=url;this.images.set(url,img);}const img=this.images.get(url);return img.complete&&img.naturalWidth?img:null;}
-        text(value,x,y,size,weight,align,color,maxWidth){const c=this.ctx;c.font=(weight||700)+' '+size+'px Pretendard, sans-serif';c.textAlign=align||'left';c.textBaseline='middle';c.fillStyle=color||'#fff';if(maxWidth)c.fillText(String(value||''),x,y,maxWidth);else c.fillText(String(value||''),x,y);}
+        text(value,x,y,size,weight,align,color,maxWidth,nickname){const c=this.ctx;c.font=(weight||700)+' '+size+'px Pretendard, sans-serif';c.textAlign=align||'left';c.textBaseline='middle';c.fillStyle=color||'#fff';const draw=()=>{if(maxWidth)c.fillText(String(value||''),x,y,maxWidth);else c.fillText(String(value||''),x,y);};if(nickname&&window.NicknameColors)window.NicknameColors.draw(c,nickname,draw);else draw();}
         gameText(value,x,y,size,align,color,maxWidth){const c=this.ctx;c.font='400 '+size+'px "Black Han Sans", Pretendard, sans-serif';c.textAlign=align||'center';c.textBaseline='middle';c.fillStyle=color||'#fff';if(maxWidth)c.fillText(String(value||''),x,y,maxWidth);else c.fillText(String(value||''),x,y);}
         line(x1,y1,x2,y2,color,width){const c=this.ctx;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.strokeStyle=color;c.lineWidth=width||1;c.stroke();}
         cutPath(x,y,w,h,cut){const c=this.ctx,k=Math.min(cut||7,w*.2,h*.35);c.beginPath();c.moveTo(x+k,y);c.lineTo(x+w,y);c.lineTo(x+w,y+h-k);c.lineTo(x+w-k,y+h);c.lineTo(x,y+h);c.lineTo(x,y+k);c.closePath();}
@@ -486,7 +486,7 @@
             const ps=narrow?46:54,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardIconUrl || side.cardImageUrl);
             c.save();this.cutPath(px,py,ps,ps,6);c.clip();if(portrait)c.drawImage(portrait,px,py,ps,ps);else{c.fillStyle='#11141b';c.fillRect(px,py,ps,ps);}c.restore();
             this.cutPath(px,py,ps,ps,6);c.strokeStyle='rgba(224,101,92,.7)';c.stroke();
-            this.text(side.name,infoX,y+15,narrow?12:14,900,'left','#ffeae5',infoW-52);
+            this.text(side.name,infoX,y+15,narrow?12:14,900,'left','#ffeae5',infoW-52,side?.name);
             this.text('Lv. '+number(side.level),infoRight,y+15,9,800,'right','#c9c8c5');
             this.text('레이팅 '+number(side.rating),infoX,y+32,9,700,'left','#e8b04b',infoW-52);
             if(Number(side.defendUntil||0)>now())this.badge(infoRight,y+25,'방어 중','#7ec4ff');
@@ -504,7 +504,7 @@
             const ps=narrow?50:58,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardIconUrl || side.cardImageUrl);
             c.save();this.cutPath(px,py,ps,ps,6);c.clip();if(portrait)c.drawImage(portrait,px,py,ps,ps);else{c.fillStyle='#11141b';c.fillRect(px,py,ps,ps);}c.restore();
             this.cutPath(px,py,ps,ps,6);c.strokeStyle='rgba(232,176,75,.72)';c.stroke();
-            this.text(side.name,infoX,y+16,narrow?13:15,900,'left','#fff5df',infoW-52);
+            this.text(side.name,infoX,y+16,narrow?13:15,900,'left','#fff5df',infoW-52,side?.name);
             this.text('Lv. '+number(side.level),infoRight,y+16,9,800,'right','#c9c8c5');
             if(Number(side.defendUntil||0)>now())this.badge(px+ps,y+68,'방어 중','#7ec4ff');
             this.text(side.cardFormatted||[side.cardSkin,side.cardName].filter(Boolean).join(' '),infoX,y+34,narrow?8:10,700,'left','#aeb4bf',infoW);
@@ -563,7 +563,7 @@
             const art=Math.min(cw-26,ch*.52),ax=x+(cw-art)/2,ay=y+16,portrait=this.image(side&&(side.cardIconUrl || side.cardImageUrl));
             c.save();this.cutPath(ax,ay,art,art,8);c.clip();if(portrait)c.drawImage(portrait,ax,ay,art,art);else{c.fillStyle='#11141b';c.fillRect(ax,ay,art,art);}c.restore();
             this.cutPath(ax,ay,art,art,8);c.strokeStyle=accent;c.lineWidth=1;c.stroke();
-            this.text(side&&side.name||'-',x+cw/2,ay+art+20,narrow?13:16,900,'center','#f7f2e8',cw-16);
+            this.text(side&&side.name||'-',x+cw/2,ay+art+20,narrow?13:16,900,'center','#f7f2e8',cw-16,side?.name);
             this.text('Lv. '+number(side&&side.level),x+cw/2,ay+art+40,narrow?9:11,700,'center','#aeb4bf',cw-16);
             this.text('레이팅 '+number(side&&side.rating),x+cw/2,ay+art+58,narrow?10:12,900,'center','#e8b04b',cw-16);
             const card=side&&(side.cardFormatted||side.cardName);

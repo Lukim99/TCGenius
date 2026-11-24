@@ -203,14 +203,14 @@
             K.well(sx, sy, sw, sh, 6, K.rgba(mm.accent, .08));
             A.currency(e.currency, sx + 8, sy + sh / 2 - 17, 16);
             K.line(fmt(e.unitPrice), sx + sw - 8, sy + sh / 2 - 9, sw - 32, 14, GOLD, 'right', 800, 10);
-            K.line((e.kind === 'item' && e.count > 1 ? '개당  ' : '') + e[mm.who], sx + sw - 8, sy + sh / 2 + 12, sw - 14, 10, K.MUTE, 'right', 700, 8);
+            K.line((e.kind === 'item' && e.count > 1 ? '개당  ' : '') + e[mm.who], sx + sw - 8, sy + sh / 2 + 12, sw - 14, 10, K.MUTE, 'right', 700, 8, e[mm.who]);
         };
         K.slot(info, x, y, w, h, { action: 'pick', id: e.id, on, small: mobile, chips: [...badges, ...info.chips], side: mobile ? side : null, sideW: 118, footer: mobile ? null : (fx, fy, fw, fh) => {
             K.well(fx + 6, fy, fw - 12, fh - 6, 6, K.rgba(mm.accent, .08));
             const isz = 18; A.currency(e.currency, fx + 12, fy + 6, isz);
             K.line(fmt(e.unitPrice), fx + 16 + isz, fy + 15, fw - isz - 36, 15, GOLD, 'left', 800, 10);
             const sub = (e.kind === 'item' && e.count > 1 ? '개당  ' : '') + e[mm.who];
-            K.line(sub, fx + 12, fy + 31, fw - 24, 10, K.MUTE, 'left', 700, 8);
+            K.line(sub, fx + 12, fy + 31, fw - 24, 10, K.MUTE, 'left', 700, 8, e[mm.who]);
         }, footerH: footH, aria: [info.title, ...badges.map(b => b.text), fmt(e.unitPrice) + ' ' + CUR[e.currency], mm.whoLabel + ' ' + e[mm.who]].join(', ') });
     }
     // 감정대와 거래 버튼
@@ -245,16 +245,16 @@
         if (mode === 'sell') return e.mine ? 128 : (e.kind === 'item' ? 200 : 178);
         return e.mine ? 150 : 168;
     }
-    function row(K, label, value, x, y, w, color, goods, A) {
+    function row(K, label, value, x, y, w, color, goods, A, nickname) {
         K.text(label, x, y + 9, 12, K.DIM, 'left', 700);
         const vw = K.tw(value, 14, 800);
         if (goods) A.currency(goods, x + w - vw - 22, y, 18);
-        K.text(value, x + w, y + 9, 14, color || K.INK, 'right', 800);
+        K.text(value, x + w, y + 9, 14, color || K.INK, 'right', 800, nickname);
     }
     function actions(A, K, e, x, y, w, h) {
         const mm = M(), cur = CUR[e.currency];
         K.rule(x, y, w, .6, mm.accent); let yy = y + 10;
-        row(K, mm.whoLabel, e[mm.who], x, yy, w, K.INK); yy += 24;
+        row(K, mm.whoLabel, e[mm.who], x, yy, w, K.INK, null, null, e[mm.who]); yy += 24;
         if (mode === 'sell' && !e.mine) {
             const max = e.kind === 'item' ? Math.max(1, e.count) : 1; ui.qty = K.clamp(ui.qty, 1, max);
             if (e.kind === 'item') {

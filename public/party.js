@@ -403,7 +403,7 @@
                 el('div', { class: 'pq-room-body' },
                     el('span', { class: 'pq-diff-tag', 'data-difficulty': difficulty }, difficulty.toUpperCase()),
                     el('div', { class: 'pq-room-quest' }, r.questName),
-                    el('div', { class: 'pq-room-title' }, r.hostName + '님의 파티')
+                    el('div', { class: 'pq-room-title' }, el('span', { 'data-nickname': r.hostName }, r.hostName), '님의 파티')
                 ),
                 el('div', { class: 'pq-room-side' },
                     el('b', null, count + '/' + max),
@@ -467,7 +467,7 @@
             $('#pqJoinTitle').textContent = spectate ? '파티 관전' : '파티 입장';
             $('#pqJoinConfirm').textContent = spectate ? '관전' : '입장';
             const sub = $('#pqJoinSub');
-            sub.textContent = r.hostName + '님의 파티 (' + r.questName + ')';
+            sub.replaceChildren(el('span', { 'data-nickname': r.hostName }, r.hostName), '님의 파티 (' + r.questName + ')');
             $('#pqJoinPw').value = '';
             $('#pqJoinBg').classList.add('active');
             $('#pqJoinConfirm').onclick = async () => {
@@ -1057,7 +1057,7 @@
             $('#pqRaidFacts').replaceChildren(...facts.map(([k, v]) => el('span', null, el('i', null, k), v)));
         }
         const host = $('#pqRoomHost');
-        if (host) host.textContent = snap.hostName ? snap.hostName + '님의 파티' : '';
+        if (host) host.replaceChildren(...(snap.hostName ? [el('span', { 'data-nickname': snap.hostName }, snap.hostName), '님의 파티'] : []));
         const box = $('#pqQuestInfo');
         box.replaceChildren();
         if (!snap.questDef) {
@@ -1109,7 +1109,7 @@
             return el('div', { class: 'pq-slot ' + state[0] + (isHost ? ' host' : '') + (m.name === me ? ' me' : '') },
                 art,
                 el('div', { class: 'pq-slot-plate' },
-                    el('div', { class: 'pq-slot-name' }, titleImg(m.title), el('span', { class: 't', title: m.name }, m.name)),
+                    el('div', { class: 'pq-slot-name' }, titleImg(m.title), el('span', { class: 't', title: m.name, 'data-nickname': m.name }, m.name)),
                     el('div', { class: 'pq-slot-sub' },
                         el('span', null, 'Lv.' + (m.level || 1)),
                         snap.noPositions ? null : el('span', { class: 'pos' + (m.position ? ' set' : '') }, m.position || '미선택')
@@ -1152,7 +1152,7 @@
                         await api('/api/party/position', { method: 'POST', body: JSON.stringify({ position: next }) });
                     } catch (e) { toast(e.message); }
                 }
-            }, el('span', null, pos), isTaken && !isMine ? el('small', null, owners[pos]) : null);
+            }, el('span', null, pos), isTaken && !isMine ? el('small', { 'data-nickname': owners[pos] }, owners[pos]) : null);
             grid.append(btn);
         }
         const detail = $('#pqPositionDetail');
@@ -1171,7 +1171,7 @@
             root.replaceChildren();
             for (const c of chatList) {
                 root.append(el('div', { class: 'pq-chat-line' },
-                    el('span', { class: 'from' }, c.from + ':'),
+                    el('span', { class: 'from', 'data-nickname': c.from }, c.from + ':'),
                     c.text
                 ));
             }
@@ -1185,7 +1185,7 @@
         for (const root of [$('#pqChat'), $('#pqPlayChat')]) {
             if (!root) continue;
             root.append(el('div', { class: 'pq-chat-line' },
-                el('span', { class: 'from' }, entry.from + ':'),
+                el('span', { class: 'from', 'data-nickname': entry.from }, entry.from + ':'),
                 entry.text
             ));
             root.scrollTop = root.scrollHeight;
@@ -1369,7 +1369,7 @@
                 portrait,
                 el('div', { class: 'pq-damage-player-body' },
                     el('div', { class: 'pq-damage-player-head' },
-                        el('div', null, el('strong', null, member.name || '-'), el('span', null, member.position || '파티원')),
+                        el('div', null, el('strong', { 'data-nickname': member.name || '' }, member.name || '-'), el('span', null, member.position || '파티원')),
                         el('b', null, battleNumber(member.damage))
                     ),
                     el('div', { class: 'pq-damage-track' },
@@ -1888,7 +1888,7 @@
                 })
             ));
             card.append(img);
-            card.append(el('div', { class: 'nm' }, titleImg(m.title), el('span', { class: 't' }, m.name)));
+            card.append(el('div', { class: 'nm' }, titleImg(m.title), el('span', { class: 't', 'data-nickname': m.name }, m.name)));
             if (r) {
                 card.append(makeHpBar(r));
                 card.append(makeMpBar(r));
@@ -1964,7 +1964,7 @@
         box.replaceChildren(...[
             el('div', { class: 'head' },
                 titleImg(m.title),
-                el('b', null, m.name + (m.name === me ? ' (나)' : '')),
+                el('b', null, el('span', { 'data-nickname': m.name }, m.name), m.name === me ? ' (나)' : ''),
                 m.position ? el('span', { class: 'pos' }, m.position) : null,
                 el('button', { class: 'x', type: 'button', onClick: () => { detailMemberName = null; renderMemberDetail(); } }, '×')
             ),
@@ -2271,7 +2271,7 @@
                 const r = m.runtime;
                 const pct = hpPct(r);
                 const row = el('div', { class: 'pq-target-row', onClick: () => choose(m.name) },
-                    el('div', null, m.name + (m.name === me ? ' (나)' : '')),
+                    el('div', null, el('span', { 'data-nickname': m.name }, m.name), m.name === me ? ' (나)' : ''),
                     el('div', { class: 'pq-target-hp' },
                         el('div', { class: 'txt' }, r ? (r.hp + ' / ' + r.hpMax) : ''),
                         el('div', { class: 'pct' }, r ? pct.toFixed(1) + '%' : ''),

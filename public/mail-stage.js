@@ -96,7 +96,7 @@
         const tx = x + 72, right = x + w - 10, timeW = K.tw(relTime(mail.createdAt), 12, 600);
         let fx = tx;
         if (mail.gm) { fx += K.chip('GM', tx, y + 8, GM, { h: 20, size: 11 }) + 6; }
-        K.line(mail.from, fx, y + 18, right - timeW - 10 - fx, 13, unread ? K.INK : K.DIM, 'left', 800, 10);
+        K.line(mail.from, fx, y + 18, right - timeW - 10 - fx, 13, unread ? K.INK : K.DIM, 'left', 800, 10, mail.gm ? null : mail.from);
         K.text(relTime(mail.createdAt), right, y + 18, 12, K.MUTE, 'right', 600);
         K.line(mail.subject, tx, y + 40, right - tx, 15, unread ? K.INK : K.DIM, 'left', unread ? 800 : 600, 11);
         if (mail.hasGifts) {
@@ -121,7 +121,7 @@
         ty += Math.max(mobile ? 44 : 0, f.lines.length * f.lh) + 8;
         let mx = x + p; K.text('보낸 사람', mx, ty + 10, 12, K.DIM, 'left', 700); mx += K.tw('보낸 사람', 12, 700) + 8;
         if (mail.gm) mx += K.chip('GM', mx, ty, GM, { h: 20, size: 11 }) + 6;
-        K.line(mail.from, mx, ty + 10, w * .45, 14, K.INK, 'left', 800, 10);
+        K.line(mail.from, mx, ty + 10, w * .45, 14, K.INK, 'left', 800, 10, mail.gm ? null : mail.from);
         K.text(new Date(mail.createdAt).toLocaleString('ko-KR'), x + w - p, ty + 10, 12, K.MUTE, 'right', 600);
         ty += 26; K.rule(x + p, ty, w - p * 2, .7, ACC); ty += 10;
         // 동봉물 영역 높이를 먼저 정한다.

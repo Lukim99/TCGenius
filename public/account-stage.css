@@ -266,7 +266,7 @@ body.is-leaving .as-camp{opacity:0}
   padding:16px calc(var(--safe-r) + var(--pad)) calc(var(--safe-b) + 12px) calc(var(--safe-l) + var(--pad));
   background:linear-gradient(180deg,transparent,rgba(4,6,22,.78) 46%);
 }
-.as-dock-actions{display:flex;gap:8px;justify-content:flex-start;min-width:0}
+.as-dock-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;min-width:0}
 .as-dock-side{display:flex;justify-content:flex-end;min-width:0}
 .as-start{--h:clamp(3.75rem,8.6vh,4.9rem);min-width:min(40vw,22.5rem)}
 @media (max-width:860px){
